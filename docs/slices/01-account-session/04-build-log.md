@@ -233,3 +233,67 @@ policy are console settings. See "Not covered" below.
 
 - **AC-56 (CORS)** — proposed in the plan's coverage gaps, not yet added to the PRD. T16
   implements it; the criterion needs adding to `02-prd.md` at review.
+
+
+---
+
+## Acceptance-criteria coverage
+
+Suite at close: **321 tests** — 252 unit (108 functions, 144 frontend), 17 rules,
+48 integration, 4 e2e. `typecheck` and `lint` clean.
+
+| AC | Proved by |
+|---|---|
+| 1 | `auth-register.spec.ts` — "creates the account unverified", "sends exactly one activation email" |
+| 2 | `auth-register.spec.ts` — "responds byte-identically", "leaves the existing password alone" |
+| 3 | **Amended** — see T11/T12. `auth-register.spec.ts` — "never changes the password of an account that already exists" |
+| 4 | `schema.spec.ts` + `auth-register.spec.ts` — "rejects a weak password identically for an address that does exist" |
+| 5 | `schema.spec.ts` + `auth-register.spec.ts` — "rejects a malformed address" |
+| 6 | `authApi.spec.ts` — source scan for four banned calls; ESLint `no-restricted-imports` |
+| 7 | `SignUpView.spec.ts` — submitting / field-error / failure / success |
+| 8 | `smtp2go.spec.ts` — URL, header, payload, `succeeded` handling |
+| 9 | `auth-register.spec.ts` "the mail provider is down" + `log.spec.ts` |
+| 10 | `email/index.spec.ts` — five env vars proven unable to select the fake |
+| 11, 12, 16, 29 | `guard.spec.ts` — three-state matrix |
+| 13 | `guard.spec.ts` "lets an unverified user reach the action handler" + e2e |
+| 14 | `VerifyEmailView.spec.ts` "refreshes the token before releasing" + e2e |
+| 15, 20 | `VerifyEmailView.spec.ts` |
+| 17 | `VerifyEmailView.spec.ts` "lets someone signed in as the wrong account get out" |
+| 18 | `AuthActionView.spec.ts` — expired vs spent vs unknown mode |
+| 19 | `auth-cleanup.spec.ts` "retires the activation link" + `AuthActionView.spec.ts` |
+| 21, 23 | `SignInView.spec.ts` + e2e (reload) |
+| 22 | `SignInView.spec.ts` — four codes, one message |
+| 24, 30 | `stores/auth.spec.ts` + e2e |
+| 25, 28, 31 | `guard.spec.ts` + `stores/auth.spec.ts` (`ready`) |
+| 26, 27 | `redirect.spec.ts` — 14 hostile inputs; `SignInView.spec.ts` |
+| 32, 33 | `auth-reset.spec.ts` |
+| 34 | `ForgotPasswordView.spec.ts` |
+| 35, 36, 45 | `stores/auth.spec.ts` + `firestore.spec.ts` |
+| 37–44 | `firestore.spec.ts` — 17 rules tests, denials first |
+| 46, 47, 48 | `throttle.spec.ts` + `auth-throttle.spec.ts` |
+| 49 | `log.spec.ts` + `errors.spec.ts` |
+| 52 | `auth-cleanup.spec.ts` |
+| 54 | `firebase.spec.ts` + production build artifact grep |
+| 55 | e2e runs under `emulators:exec` with no credentials |
+| 56 | `auth-cors.spec.ts` — proposed in the plan, still not in the PRD |
+
+### Not covered — the slice is not complete
+
+| AC | Why |
+|---|---|
+| **50, 51** | App Check (T29). Needs reCAPTCHA Enterprise registration in the Firebase console. |
+| **53** | Enumeration protection and password policy (T31). Console settings; the emulator enforces neither, so this was never automatable — PRD R2 said so. |
+
+All three are PR-B and all three need console access.
+
+## Deviations from the plan, collected
+
+1. **D18a is not implementable** — the largest amendment; see T11/T12.
+2. `firebase-admin` added as a root **dev** dependency for the L4 harness.
+3. `auth/links.ts` and `auth/mail.ts` added beyond the file map.
+4. `errors.spec.ts` added; the plan's refactor step changed behaviour that had no test.
+5. Emulator mode is `emulator`, not `test`, so Vitest never reaches an emulator.
+6. E2E **added to CI**, against the B4 assumption — it is hermetic now, and it is the only
+   test covering the D27 deadlock.
+7. T15's implementation preceded its spec; verified after the fact by disabling it.
+8. Phase 5 views were written implementation-first.
