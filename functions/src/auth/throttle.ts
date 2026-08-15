@@ -22,6 +22,16 @@ import { createHash } from 'node:crypto'
 export const THROTTLE_LIMIT = 5
 export const THROTTLE_WINDOW_MS = 15 * 60 * 1000
 
+/**
+ * The per-IP ceiling is deliberately looser than the per-email one.
+ *
+ * An IP is shared — an office, a campus, a mobile carrier's NAT — so a limit
+ * tight enough to be meaningful against one attacker would lock out everyone
+ * behind the same address. It is a blunt backstop; the email counter is the one
+ * that actually holds, because it is the only key an attacker cannot rotate.
+ */
+export const THROTTLE_IP_LIMIT = 30
+
 export interface ThrottleCounter {
   count: number
   /** Epoch milliseconds. */
@@ -46,13 +56,17 @@ function freshWindow(now: number): ThrottleDecision {
  * rather than honoured: it can only arise from clock skew or a tampered write,
  * and honouring it would lock an address out for as long as the skew lasts.
  */
-export function evaluate(current: ThrottleCounter | null, now: number): ThrottleDecision {
+export function evaluate(
+  current: ThrottleCounter | null,
+  now: number,
+  limit: number = THROTTLE_LIMIT,
+): ThrottleDecision {
   if (current === null) return freshWindow(now)
 
   const elapsed = now - current.windowStart
   if (elapsed >= THROTTLE_WINDOW_MS || elapsed < 0) return freshWindow(now)
 
-  if (current.count >= THROTTLE_LIMIT) {
+  if (current.count >= limit) {
     return {
       allowed: false,
       // Unchanged: a refused attempt must not extend its own lockout, or an
