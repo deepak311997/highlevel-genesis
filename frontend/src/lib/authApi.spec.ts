@@ -38,7 +38,7 @@ afterEach(() => {
 
 describe('authApi', () => {
   it.each([
-    ['register', () => register('a@b.test', 'a-password'), '/api/auth/register'],
+    ['register', () => register('a@b.test', 'A-Password-1'), '/api/auth/register'],
     ['resendVerification', () => resendVerification('a@b.test'), '/api/auth/resend'],
     ['requestPasswordReset', () => requestPasswordReset('a@b.test'), '/api/auth/password-reset'],
   ])('%s posts JSON to %s', async (_label, call, path) => {
@@ -54,7 +54,7 @@ describe('authApi', () => {
   it('resolves without inspecting the body, which is identical across branches', async () => {
     stubFetch(async () => ok())
 
-    await expect(register('a@b.test', 'a-password')).resolves.toBeUndefined()
+    await expect(register('a@b.test', 'A-Password-1')).resolves.toBeUndefined()
   })
 
   it('surfaces the field error the server sent', async () => {
@@ -66,19 +66,19 @@ describe('authApi', () => {
   it('uses its own message for a throttle refusal', async () => {
     stubFetch(async () => failure(429, { error: 'whatever', code: 'throttled' }))
 
-    await expect(register('a@b.test', 'a-password')).rejects.toThrow('Too many attempts')
+    await expect(register('a@b.test', 'A-Password-1')).rejects.toThrow('Too many attempts')
   })
 
   it('reports a network failure as one, not as a server error', async () => {
     stubFetch(() => Promise.reject(new Error('offline')))
 
-    await expect(register('a@b.test', 'a-password')).rejects.toThrow('connection')
+    await expect(register('a@b.test', 'A-Password-1')).rejects.toThrow('connection')
   })
 
   it('degrades when the response is not JSON at all', async () => {
     stubFetch(async () => new Response('<html>502</html>', { status: 502 }))
 
-    await expect(register('a@b.test', 'a-password')).rejects.toThrow('Something went wrong')
+    await expect(register('a@b.test', 'A-Password-1')).rejects.toThrow('Something went wrong')
   })
 })
 

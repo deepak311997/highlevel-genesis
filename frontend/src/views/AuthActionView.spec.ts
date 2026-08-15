@@ -72,10 +72,10 @@ describe('AuthActionView — resetting a password', () => {
     expect(wrapper.find('#new-password').exists()).toBe(true)
   })
 
-  it('refuses a short password without calling Firebase', async () => {
+  it('refuses a password that misses the policy, without calling Firebase', async () => {
     const wrapper = await mountWith({ mode: 'resetPassword', oobCode: 'XYZ' })
 
-    await wrapper.find('#new-password').setValue('short')
+    await wrapper.find('#new-password').setValue('correct-horse-9')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
@@ -86,11 +86,11 @@ describe('AuthActionView — resetting a password', () => {
   it('sets the password and confirms', async () => {
     const wrapper = await mountWith({ mode: 'resetPassword', oobCode: 'XYZ' })
 
-    await wrapper.find('#new-password').setValue('a-long-enough-one')
+    await wrapper.find('#new-password').setValue('Long-Enough-1')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(confirmPasswordReset).toHaveBeenCalledWith({}, 'XYZ', 'a-long-enough-one')
+    expect(confirmPasswordReset).toHaveBeenCalledWith({}, 'XYZ', 'Long-Enough-1')
     expect(wrapper.find('[data-testid="action-password-set"]').exists()).toBe(true)
   })
 })

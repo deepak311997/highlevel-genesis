@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { auth } from '@/lib/firebase'
+import { passwordProblem } from '@/lib/password'
 import { useAuthStore } from '@/stores/auth'
 
 /**
@@ -25,9 +26,6 @@ import { useAuthStore } from '@/stores/auth'
  */
 const MODES = ['verifyEmail', 'resetPassword'] as const
 type Mode = (typeof MODES)[number]
-
-/** Mirrors PASSWORD_MIN in functions/src/auth/schema.ts. */
-const PASSWORD_MIN = 8
 
 type State =
   | { kind: 'working' }
@@ -111,8 +109,9 @@ async function savePassword(): Promise<void> {
   const current = state.value
   if (current.kind !== 'needs-password') return
 
-  if (password.value.length < PASSWORD_MIN) {
-    passwordError.value = `Use at least ${String(PASSWORD_MIN)} characters.`
+  const problem = passwordProblem(password.value)
+  if (problem !== null) {
+    passwordError.value = problem
     return
   }
   passwordError.value = ''

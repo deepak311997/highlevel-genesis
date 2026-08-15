@@ -19,8 +19,8 @@ import {
 const DEV_MAIL_FAILURE_ADDRESS = 'bounce@example.test'
 
 const EMAIL = 'alice@example.test'
-const PASSWORD = 'correct-horse-battery'
-const OTHER_PASSWORD = 'a-completely-different-one'
+const PASSWORD = 'Correct-Horse-9'
+const OTHER_PASSWORD = 'Different-Horse-7'
 
 beforeEach(async () => {
   await resetEmulators()
@@ -175,8 +175,8 @@ describe('POST /auth/register — address registered but never verified', () => 
     await postJson('/auth/register', { email: EMAIL, password: OTHER_PASSWORD })
     const code = codeFrom(linkFrom(await onlyMail()))
 
-    expect(await applyPasswordReset(code, 'a-third-password')).toBe(true)
-    expect(await canSignIn(EMAIL, 'a-third-password')).toBe(true)
+    expect(await applyPasswordReset(code, 'Third-Horse-3')).toBe(true)
+    expect(await canSignIn(EMAIL, 'Third-Horse-3')).toBe(true)
     expect(await canSignIn(EMAIL, PASSWORD)).toBe(false)
   })
 

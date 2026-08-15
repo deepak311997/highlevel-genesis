@@ -20,7 +20,7 @@ import { adminDb, linkFrom, resetEmulators, type RecordedMail } from '../integra
  *    page renders and then fails, which looks like a working app until it isn't.
  */
 
-const PASSWORD = 'correct-horse-battery'
+const PASSWORD = 'Correct-Horse-9'
 
 /** Unique per run, so a re-run does not collide with a previous account. */
 function freshEmail(): string {
@@ -109,7 +109,7 @@ test.describe('Slice 01 — account and session', () => {
 
     await page.goto('/signup')
     await page.fill('#signup-email', email)
-    await page.fill('#signup-password', 'a-completely-different-one')
+    await page.fill('#signup-password', 'Different-Horse-7')
     await page.click('button[type="submit"]')
     const second = await page.getByTestId('signup-sent').textContent()
 

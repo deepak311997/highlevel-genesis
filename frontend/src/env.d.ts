@@ -9,6 +9,12 @@ interface ImportMetaEnv {
   readonly VITE_FIREBASE_APP_ID?: string
   readonly VITE_FIREBASE_DATABASE_ID?: string
   readonly VITE_FUNCTIONS_BASE_URL?: string
+  /**
+   * reCAPTCHA v3 **site** key for App Check. Public by design — it ships in the
+   * bundle. The matching secret key must never appear in this file; anything
+   * prefixed VITE_ is compiled into assets any visitor can read.
+   */
+  readonly VITE_GOOGLE_RECAPTCHA_V3_KEY?: string
 }
 
 interface ImportMeta {

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const register = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/authApi', () => ({ register }))
 
+import { PASSWORD_POLICY_MESSAGE } from '@/lib/password'
 import SignUpView from './SignUpView.vue'
 
 const stubs = { RouterLink: { template: '<a><slot /></a>' } }
@@ -35,32 +36,39 @@ describe('SignUpView', () => {
   it('submits the address and password', async () => {
     const wrapper = mountView()
 
-    await fill(wrapper, 'alice@example.test', 'correct-horse')
+    await fill(wrapper, 'alice@example.test', 'Correct-Horse-9')
 
-    expect(register).toHaveBeenCalledWith('alice@example.test', 'correct-horse')
+    expect(register).toHaveBeenCalledWith('alice@example.test', 'Correct-Horse-9')
   })
 
   it('trims the address before sending it', async () => {
     const wrapper = mountView()
 
-    await fill(wrapper, '  alice@example.test  ', 'correct-horse')
+    await fill(wrapper, '  alice@example.test  ', 'Correct-Horse-9')
 
-    expect(register).toHaveBeenCalledWith('alice@example.test', 'correct-horse')
+    expect(register).toHaveBeenCalledWith('alice@example.test', 'Correct-Horse-9')
   })
 
-  it('rejects a short password client-side, without calling the API', async () => {
+  it.each([
+    ['too short', 'Aa1!'],
+    ['no uppercase', 'correct-horse-9'],
+    ['no digit', 'Correct-Horse-x'],
+    ['no symbol', 'CorrectHorse9x'],
+  ])('rejects a password that is %s, without calling the API', async (_label, password) => {
     const wrapper = mountView()
 
-    await fill(wrapper, 'alice@example.test', 'short')
+    await fill(wrapper, 'alice@example.test', password)
 
     expect(register).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-testid="signup-password-error"]').text()).toContain('8')
+    expect(wrapper.find('[data-testid="signup-password-error"]').text()).toBe(
+      PASSWORD_POLICY_MESSAGE,
+    )
   })
 
   it('rejects a malformed address without calling the API', async () => {
     const wrapper = mountView()
 
-    await fill(wrapper, 'not-an-email', 'correct-horse')
+    await fill(wrapper, 'not-an-email', 'Correct-Horse-9')
 
     expect(register).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="signup-email-error"]').exists()).toBe(true)
@@ -71,7 +79,7 @@ describe('SignUpView', () => {
     const wrapper = mountView()
 
     await wrapper.find('#signup-email').setValue('alice@example.test')
-    await wrapper.find('#signup-password').setValue('correct-horse')
+    await wrapper.find('#signup-password').setValue('Correct-Horse-9')
     await wrapper.find('form').trigger('submit')
 
     expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBeDefined()
@@ -87,7 +95,7 @@ describe('SignUpView', () => {
   it('shows a non-committal confirmation on success', async () => {
     const wrapper = mountView()
 
-    await fill(wrapper, 'alice@example.test', 'correct-horse')
+    await fill(wrapper, 'alice@example.test', 'Correct-Horse-9')
 
     const sent = wrapper.find('[data-testid="signup-sent"]')
     expect(sent.exists()).toBe(true)
@@ -103,7 +111,7 @@ describe('SignUpView', () => {
     register.mockRejectedValue(new Error('Too many attempts. Try again in a few minutes.'))
     const wrapper = mountView()
 
-    await fill(wrapper, 'alice@example.test', 'correct-horse')
+    await fill(wrapper, 'alice@example.test', 'Correct-Horse-9')
 
     expect(wrapper.find('[data-testid="signup-error"]').text()).toContain('Too many attempts')
     expect(wrapper.find('form').exists()).toBe(true)

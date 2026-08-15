@@ -16,7 +16,7 @@ import {
 
 const EMAIL = 'alice@example.test'
 const UNKNOWN = 'nobody@example.test'
-const PASSWORD = 'correct-horse-battery'
+const PASSWORD = 'Correct-Horse-9'
 
 beforeEach(async () => {
   await resetEmulators()
@@ -62,8 +62,8 @@ describe('POST /auth/password-reset', () => {
     await postJson('/auth/password-reset', { email: EMAIL })
     const code = codeFrom(linkFrom(await onlyMail()))
 
-    expect(await applyPasswordReset(code, 'a-brand-new-password')).toBe(true)
-    expect(await canSignIn(EMAIL, 'a-brand-new-password')).toBe(true)
+    expect(await applyPasswordReset(code, 'Brand-New-5')).toBe(true)
+    expect(await canSignIn(EMAIL, 'Brand-New-5')).toBe(true)
     expect(await canSignIn(EMAIL, PASSWORD)).toBe(false)
   })
 

@@ -7,7 +7,7 @@ const LIMIT = 5
 
 const EMAIL = 'alice@example.test'
 const UNKNOWN = 'nobody@example.test'
-const PASSWORD = 'correct-horse-battery'
+const PASSWORD = 'Correct-Horse-9'
 
 beforeEach(async () => {
   await resetEmulators()

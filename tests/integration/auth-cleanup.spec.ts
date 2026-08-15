@@ -66,12 +66,12 @@ describe('deleting accounts that were never verified', () => {
   })
 
   it('frees the address, so the real owner can register it', async () => {
-    await postJson('/auth/register', { email: 'squatted@example.test', password: 'attacker-pw' })
+    await postJson('/auth/register', { email: 'squatted@example.test', password: 'Attacker-Pw-1' })
     await sweep(Date.now() + DAY_MS + 1_000)
 
     const res = await postJson('/auth/register', {
       email: 'squatted@example.test',
-      password: 'owner-password',
+      password: 'Owner-Pass-2',
     })
 
     expect(res.status).toBe(200)
@@ -81,7 +81,7 @@ describe('deleting accounts that were never verified', () => {
 
   /** AC-19: the link the deleted account was issued must stop working. */
   it('retires the activation link the deleted account was issued', async () => {
-    await postJson('/auth/register', { email: 'gone@example.test', password: 'a-password' })
+    await postJson('/auth/register', { email: 'gone@example.test', password: 'A-Password-1' })
     const code = codeFrom(linkFrom(await onlyMail()))
 
     await sweep(Date.now() + DAY_MS + 1_000)

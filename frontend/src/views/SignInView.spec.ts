@@ -20,7 +20,7 @@ function mountView() {
   return mount(SignInView)
 }
 
-async function submit(wrapper: ReturnType<typeof mountView>, password = 'a-password') {
+async function submit(wrapper: ReturnType<typeof mountView>, password = 'A-Password-1') {
   await wrapper.find('#signin-email').setValue('alice@example.test')
   await wrapper.find('#signin-password').setValue(password)
   await wrapper.find('form').trigger('submit')
@@ -44,7 +44,7 @@ describe('SignInView', () => {
 
     await submit(wrapper)
 
-    expect(signIn).toHaveBeenCalledWith('alice@example.test', 'a-password')
+    expect(signIn).toHaveBeenCalledWith('alice@example.test', 'A-Password-1')
     expect(push).toHaveBeenCalledWith('/dashboard')
   })
 
@@ -115,7 +115,7 @@ describe('SignInView', () => {
     const wrapper = mountView()
 
     await wrapper.find('#signin-email').setValue('alice@example.test')
-    await wrapper.find('#signin-password').setValue('a-password')
+    await wrapper.find('#signin-password').setValue('A-Password-1')
     await wrapper.find('form').trigger('submit')
 
     expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBeDefined()

@@ -128,12 +128,12 @@ describe('session state', () => {
     const store = useAuthStore()
     signInWithEmailAndPassword.mockResolvedValue({})
 
-    await store.signIn('alice@example.test', 'a-password')
+    await store.signIn('alice@example.test', 'A-Password-1')
 
     expect(signInWithEmailAndPassword).toHaveBeenCalledWith(
       expect.anything(),
       'alice@example.test',
-      'a-password',
+      'A-Password-1',
     )
   })
 })

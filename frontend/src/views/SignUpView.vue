@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { register } from '@/lib/authApi'
+import { PASSWORD_POLICY_MESSAGE, passwordProblem } from '@/lib/password'
 
 /**
  * The success screen is reached for *every* accepted submission — a new
@@ -21,9 +22,6 @@ type State =
   | { kind: 'sent' }
   | { kind: 'failed'; message: string }
 
-/** Mirrors PASSWORD_MIN in functions/src/auth/schema.ts. */
-const PASSWORD_MIN = 8
-
 const email = ref('')
 const password = ref('')
 const state = ref<State>({ kind: 'editing' })
@@ -35,8 +33,9 @@ function validate(): boolean {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim())) {
     errors.email = 'Enter a valid email address.'
   }
-  if (password.value.length < PASSWORD_MIN) {
-    errors.password = `Use at least ${String(PASSWORD_MIN)} characters.`
+  const problem = passwordProblem(password.value)
+  if (problem !== null) {
+    errors.password = problem
   }
 
   fieldError.value = errors
@@ -120,8 +119,7 @@ async function submit(): Promise<void> {
               {{ fieldError.password }}
             </p>
             <p v-else class="text-xs text-muted-foreground">
-              At least {{ PASSWORD_MIN }} characters. Length is what matters — a passphrase beats a
-              short password with symbols.
+              {{ PASSWORD_POLICY_MESSAGE }}
             </p>
           </div>
 
