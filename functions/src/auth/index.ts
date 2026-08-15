@@ -2,6 +2,7 @@ import { Router } from 'express'
 
 import { asyncHandler } from '../lib/errors'
 import { handleRegister } from './register'
+import { handlePasswordReset, handleResend } from './resend'
 
 /**
  * The auth endpoints.
@@ -14,3 +15,5 @@ import { handleRegister } from './register'
 export const authRouter: Router = Router()
 
 authRouter.post('/auth/register', asyncHandler(handleRegister))
+authRouter.post('/auth/resend', asyncHandler(handleResend))
+authRouter.post('/auth/password-reset', asyncHandler(handlePasswordReset))

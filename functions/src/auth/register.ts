@@ -1,11 +1,10 @@
 import type { Request, Response } from 'express'
 
-import { getTransport } from '../lib/email'
-import { activationEmail, alreadyRegisteredEmail, type EmailContent } from '../lib/email/templates'
+import { activationEmail, alreadyRegisteredEmail } from '../lib/email/templates'
 import { getAdminAuth } from '../lib/firebase'
 import { HttpError } from '../lib/errors'
 import { logAuthEvent } from '../lib/log'
-import { appActionLink, extractOobCode, type ActionMode } from './links'
+import { sendActionLink } from './mail'
 import { registerSchema } from './schema'
 import { hashKey } from './throttle'
 
@@ -70,24 +69,6 @@ function isEmailAlreadyExists(err: unknown): boolean {
     err !== null &&
     (err as { code?: unknown }).code === 'auth/email-already-exists'
   )
-}
-
-/** Mint a link on our own action route and mail it. */
-async function sendActionLink(
-  email: string,
-  mode: ActionMode,
-  build: (link: string) => EmailContent,
-): Promise<void> {
-  const auth = getAdminAuth()
-  const firebaseLink =
-    mode === 'verifyEmail'
-      ? await auth.generateEmailVerificationLink(email)
-      : await auth.generatePasswordResetLink(email)
-
-  await getTransport().send({
-    to: email,
-    ...build(appActionLink(mode, extractOobCode(firebaseLink))),
-  })
 }
 
 /**
