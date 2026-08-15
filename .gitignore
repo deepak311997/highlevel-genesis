@@ -11,10 +11,13 @@ firestore-debug.log
 ui-debug.log
 functions/lib/
 
-# Secrets — never commit
+# Secrets — never commit.
+# Broad glob on purpose: .env.backup, .env.prod, .env.save and friends all
+# carry the same secrets as .env, and a narrow list misses whichever variant
+# someone creates next.
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 *.pem
 service-account*.json
 

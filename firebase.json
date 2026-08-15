@@ -1,0 +1,71 @@
+{
+  "firestore": {
+    "database": "highlevel-genesis",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "runtime": "nodejs22",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "src",
+        "*.test.ts"
+      ],
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run build"
+      ]
+    }
+  ],
+  "hosting": {
+    "public": "frontend/dist",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/api/**",
+        "function": {
+          "functionId": "api",
+          "region": "asia-south1"
+        }
+      },
+      {
+        "source": "/generate",
+        "function": {
+          "functionId": "generate",
+          "region": "asia-south1"
+        }
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "/generate",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-transform"
+          }
+        ]
+      }
+    ]
+  },
+  "emulators": {
+    "_comment": "Test-only. The app talks to real Firebase; the Firestore emulator exists so `npm run test:rules` can exercise firestore.rules hermetically, offline, against a throwaway project id \u2014 never the live database.",
+    "firestore": {
+      "port": 8080
+    },
+    "singleProjectMode": true
+  }
+}

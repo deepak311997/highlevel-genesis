@@ -1,0 +1,38 @@
+rules_version = '2';
+
+// Genesis security rules.
+//
+// Principle: deny by default. Every collection is owner-scoped, and the
+// OAuth token document is unreachable from any client — only the Admin SDK
+// inside a Cloud Function may touch it.
+//
+// Rules are additive (OR'd), so the absence of an `allow` is the denial.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // --- user profile -------------------------------------------------
+    match /users/{uid} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // --- HighLevel OAuth tokens ---------------------------------------
+    // Deliberately has no allow rule of any kind. The Admin SDK bypasses
+    // rules; every client — including the owner — is denied.
+    match /hlConnections/{uid} {
+      allow read, write: if false;
+    }
+
+    // --- everything else ----------------------------------------------
+    // Collections are added slice by slice, each with its own rules and
+    // its own denial test. Nothing is reachable until it is.
+  }
+}
