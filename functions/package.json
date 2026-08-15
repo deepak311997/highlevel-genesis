@@ -1,0 +1,37 @@
+{
+  "name": "genesis-functions",
+  "version": "0.1.0",
+  "private": true,
+  "main": "lib/index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "watch": "tsc -w",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --max-warnings 0",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "serve": "npm run build && firebase emulators:start --only functions --project demo-genesis"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.117.1",
+    "cors": "^2.8.6",
+    "express": "^4.22.2",
+    "firebase-admin": "^14.2.0",
+    "firebase-functions": "^7.3.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^4.17.25",
+    "@types/node": "^26.2.0",
+    "eslint": "^10.8.1",
+    "globals": "^17.11.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.67.0",
+    "vitest": "^4.1.10"
+  }
+}

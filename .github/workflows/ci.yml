@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+            functions/package-lock.json
+
+      # The Firestore emulator is a Java process; rules tests fail without a JDK.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # `npm ci`, not `npm install` — it installs exactly what the lockfiles
+      # pin and fails if they disagree with package.json, so CI can't silently
+      # resolve different versions than a developer got.
+      - name: Install
+        run: |
+          npm ci
+          npm --prefix frontend ci
+          npm --prefix functions ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Firestore rules tests
+        run: npm run test:rules
+
+      - name: Build
+        run: npm run build

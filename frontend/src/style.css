@@ -1,0 +1,89 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:is(.dark *));
+
+/* Genesis palette — cobalt carries structure, ember marks anything live.
+   Same rule as the logo: exactly one ember element per view. */
+:root {
+  --background: hsl(220 30% 98%);
+  --foreground: hsl(226 30% 8%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(226 30% 8%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(226 30% 8%);
+  --primary: hsl(230 88% 56%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(225 25% 95%);
+  --secondary-foreground: hsl(226 30% 12%);
+  --muted: hsl(225 25% 95%);
+  --muted-foreground: hsl(226 12% 44%);
+  --accent: hsl(18 100% 58%);
+  --accent-foreground: hsl(0 0% 100%);
+  --destructive: hsl(348 74% 42%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --border: hsl(225 22% 89%);
+  --input: hsl(225 22% 89%);
+  --ring: hsl(230 88% 56%);
+  --radius: 0.5rem;
+}
+
+.dark {
+  --background: hsl(226 30% 5%);
+  --foreground: hsl(225 25% 93%);
+  --card: hsl(226 26% 9%);
+  --card-foreground: hsl(225 25% 93%);
+  --popover: hsl(226 26% 9%);
+  --popover-foreground: hsl(225 25% 93%);
+  --primary: hsl(230 100% 71%);
+  --primary-foreground: hsl(226 30% 8%);
+  --secondary: hsl(226 22% 15%);
+  --secondary-foreground: hsl(225 25% 93%);
+  --muted: hsl(226 22% 15%);
+  --muted-foreground: hsl(226 14% 62%);
+  --accent: hsl(18 100% 66%);
+  --accent-foreground: hsl(226 30% 8%);
+  --destructive: hsl(348 90% 68%);
+  --destructive-foreground: hsl(226 30% 8%);
+  --border: hsl(226 20% 20%);
+  --input: hsl(226 20% 20%);
+  --ring: hsl(230 100% 71%);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family:
+      -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+}
