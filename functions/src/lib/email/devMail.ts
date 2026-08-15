@@ -16,8 +16,21 @@ import type { EmailMessage, EmailTransport } from './types'
 
 export const DEV_MAIL_COLLECTION = '_devMail'
 
+/**
+ * A recipient this transport always refuses.
+ *
+ * The integration suite has to prove that a dead mail provider does not change
+ * the registration response — that is the difference between "we send email"
+ * and "our response leaks whether email was sent". Driving that from data
+ * rather than an environment variable keeps it per-test, and keeps the seam
+ * inside code that only ever runs under the emulator.
+ */
+export const DEV_MAIL_FAILURE_ADDRESS = 'bounce@example.test'
+
 export class DevMailTransport implements EmailTransport {
   async send(message: EmailMessage): Promise<boolean> {
+    if (message.to === DEV_MAIL_FAILURE_ADDRESS) return false
+
     try {
       await getDb()
         .collection(DEV_MAIL_COLLECTION)

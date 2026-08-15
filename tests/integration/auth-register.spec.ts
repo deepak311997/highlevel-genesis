@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
+  API_BASE,
   adminAuth,
   applyPasswordReset,
   applyVerification,
@@ -14,6 +15,8 @@ import {
   resetEmulators,
   seedUser,
 } from './helpers'
+
+const DEV_MAIL_FAILURE_ADDRESS = 'bounce@example.test'
 
 const EMAIL = 'alice@example.test'
 const PASSWORD = 'correct-horse-battery'
@@ -209,5 +212,97 @@ describe('platform behaviour: verification codes are not superseded', () => {
     // own account.
     expect(await applyVerification(firstCode)).toBe(true)
     expect(await canSignIn(EMAIL, PASSWORD)).toBe(true)
+  })
+})
+
+describe('POST /auth/register — rejected input', () => {
+  /**
+   * Validation must run before any Auth call. If a weak password were only
+   * rejected after Firebase had been consulted, the difference between
+   * "refused instantly" and "refused after a round trip" would answer the
+   * question the endpoint exists to refuse.
+   */
+  it('rejects a weak password without creating anything', async () => {
+    const res = await postJson('/auth/register', { email: EMAIL, password: 'short' })
+
+    expect(res.status).toBe(400)
+    await expect(adminAuth().getUserByEmail(EMAIL)).rejects.toThrow()
+    expect(await recordedMail()).toHaveLength(0)
+  })
+
+  it('rejects a weak password identically for an address that does exist', async () => {
+    await seedUser(EMAIL, PASSWORD, true)
+
+    const unknown = await postJson('/auth/register', {
+      email: 'nobody@example.test',
+      password: 'short',
+    })
+    const known = await postJson('/auth/register', { email: EMAIL, password: 'short' })
+
+    expect(known.status).toBe(unknown.status)
+    expect(known.raw).toBe(unknown.raw)
+    expect(await canSignIn(EMAIL, PASSWORD)).toBe(true)
+    expect(await recordedMail()).toHaveLength(0)
+  })
+
+  it('rejects a malformed address', async () => {
+    const res = await postJson('/auth/register', { email: 'not-an-email', password: PASSWORD })
+
+    expect(res.status).toBe(400)
+    expect(await recordedMail()).toHaveLength(0)
+  })
+
+  it('rejects a body that is not the expected shape', async () => {
+    expect((await postJson('/auth/register', {})).status).toBe(400)
+    expect((await postJson('/auth/register', { email: EMAIL })).status).toBe(400)
+    expect((await postJson('/auth/register', 'nonsense')).status).toBe(400)
+  })
+
+  /**
+   * Platform behaviour, pinned rather than fought.
+   *
+   * A body the Functions runtime cannot parse as JSON is refused by the runtime
+   * itself, before this Express app runs, with an HTML error page. That cannot
+   * be intercepted from inside the app — an error handler mounted after
+   * `express.json()` never sees it. The status is still 400, and no request our
+   * own client makes can reach this path.
+   *
+   * Where the request *does* reach us, the contract holds: the second case
+   * below arrives as a string and comes back in the standard JSON shape.
+   */
+  it('refuses an unparseable body at the runtime, and a wrong-typed one in our shape', async () => {
+    const unparseable = await postJson('/auth/register', 'nonsense')
+    expect(unparseable.status).toBe(400)
+
+    const wrongType = await fetch(`${API_BASE}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: 'nonsense',
+    })
+    expect(wrongType.status).toBe(400)
+    expect(await wrongType.json()).toEqual({
+      error: expect.any(String),
+      code: 'invalid_request',
+    })
+  })
+})
+
+describe('POST /auth/register — the mail provider is down', () => {
+  /**
+   * AC-9. If a transport failure changed the response, the endpoint would leak
+   * on exactly the branch an attacker can provoke.
+   */
+  it('still reports success, and still creates the account', async () => {
+    const healthy = await postJson('/auth/register', { email: EMAIL, password: PASSWORD })
+    const failing = await postJson('/auth/register', {
+      email: DEV_MAIL_FAILURE_ADDRESS,
+      password: PASSWORD,
+    })
+
+    expect(failing.status).toBe(healthy.status)
+    expect(failing.raw).toBe(healthy.raw)
+
+    const user = await adminAuth().getUserByEmail(DEV_MAIL_FAILURE_ADDRESS)
+    expect(user.emailVerified).toBe(false)
   })
 })
