@@ -76,6 +76,23 @@ The e2e suite builds the frontend with `--mode emulator`; every other mode targe
 Firebase, and that choice is made at build time so a production bundle cannot reach an
 emulator.
 
+### Testing the verification gate
+
+`emailVerified` cannot be toggled from the Firebase console, so there is a script:
+
+```bash
+node scripts/set-verified.mjs alice@example.test false          # emulator
+node scripts/set-verified.mjs alice@example.test false --live   # real project
+```
+
+It defaults to the emulator and needs `--live` to touch the real project, which also
+requires `gcloud auth application-default login`.
+
+Un-verifying revokes the user's refresh tokens, and it has to: `email_verified` travels
+_inside_ the ID token and Firestore rules read it from there, so a browser already holding
+a token would keep the old claim for up to an hour and the app would not notice. **Sign out
+and back in** to land on the gate.
+
 ---
 
 ## HighLevel setup
