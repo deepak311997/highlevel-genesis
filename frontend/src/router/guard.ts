@@ -1,0 +1,110 @@
+import type { NavigationGuardWithThis, Router } from 'vue-router'
+
+import { useAuthStore } from '@/stores/auth'
+import { DEFAULT_REDIRECT, storeRedirect } from '@/lib/redirect'
+
+/**
+ * How a route is reachable. Declared per route rather than inferred, so adding
+ * a route in a later slice is a decision someone has to make rather than a
+ * default they inherit.
+ */
+export type RouteAccess =
+  /** Reachable by anyone, signed in or not. */
+  | 'public'
+  /** Sign in, sign up, forgot password — for people who do *not* have a session. */
+  | 'auth-flow'
+  /** The verify-email gate itself. */
+  | 'gate'
+  /**
+   * The handler for emailed links.
+   *
+   * Exempt in **every** auth state, and that exemption is the whole reason this
+   * class exists. The verification link lands here, and the person following it
+   * is by definition signed in and unverified — the exact state the gate
+   * intercepts. Treated as `protected`, the guard would bounce them to the gate
+   * before the code could be applied, and they could never verify at all.
+   */
+  | 'action'
+  /** Requires a session *and* a verified address. */
+  | 'protected'
+
+declare module 'vue-router' {
+  interface RouteMeta {
+    access?: RouteAccess
+  }
+}
+
+export const SIGN_IN_PATH = '/signin'
+export const GATE_PATH = '/verify-email'
+
+export interface AuthSnapshot {
+  isSignedIn: boolean
+  isVerified: boolean
+}
+
+/**
+ * Where a navigation should end up, or `null` to let it through.
+ *
+ * Pure, so the whole three-state matrix is testable without a router: the guard
+ * below is only responsible for waiting on auth state and applying this.
+ */
+export function resolveNavigation(
+  access: RouteAccess,
+  auth: AuthSnapshot,
+  intendedPath: string,
+): string | null {
+  if (access === 'public' || access === 'action') return null
+
+  if (!auth.isSignedIn) {
+    // Only `protected` routes are worth returning to; the auth-flow pages and
+    // the gate are means, not destinations.
+    if (access === 'protected') {
+      return `${SIGN_IN_PATH}?redirect=${encodeURIComponent(intendedPath)}`
+    }
+    return access === 'gate' ? SIGN_IN_PATH : null
+  }
+
+  if (!auth.isVerified) {
+    // Signed in but unverified: everything funnels to the gate, including the
+    // auth-flow pages — bouncing them to the dashboard instead would just cost
+    // a second redirect.
+    return access === 'gate' ? null : GATE_PATH
+  }
+
+  return access === 'protected' ? null : DEFAULT_REDIRECT
+}
+
+/**
+ * Install the guard.
+ *
+ * Awaits the store's `ready` promise before deciding anything. Firebase reports
+ * auth state asynchronously, so without that wait the first navigation of every
+ * page load sees "signed out" and redirects — the sign-in flash on refreshing a
+ * protected page.
+ */
+export function installAuthGuard(router: Router): void {
+  const guard: NavigationGuardWithThis<undefined> = async (to) => {
+    const store = useAuthStore()
+    await store.ready
+
+    const access: RouteAccess = to.meta.access ?? 'protected'
+    const target = resolveNavigation(
+      access,
+      { isSignedIn: store.isSignedIn, isVerified: store.isVerified },
+      to.fullPath,
+    )
+
+    if (target === null) return true
+
+    // Hold the destination across the emailed link, which leaves the SPA and
+    // comes back on /auth/action — a target living only in the query string is
+    // lost the moment the user verifies in the tab they signed in from.
+    if (access === 'protected' && !store.isSignedIn) {
+      storeRedirect(to.fullPath)
+    }
+
+    return target
+  }
+
+  router.beforeEach(guard)
+}
