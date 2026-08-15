@@ -79,7 +79,7 @@ async function submit(): Promise<void> {
           <Alert tone="success">
             You can sign in now. We'll confirm your email address next.
           </Alert>
-          <RouterLink to="/signin"><Button>Sign in</Button></RouterLink>
+          <Button as-child><RouterLink to="/signin">Sign in</RouterLink></Button>
         </div>
 
         <form v-else class="flex flex-col gap-4" novalidate @submit.prevent="submit">

@@ -55,9 +55,9 @@ async function signOut(): Promise<void> {
             <Button v-if="auth.isSignedIn" variant="ghost" size="sm" @click="signOut">
               Sign out
             </Button>
-            <RouterLink v-else to="/signin">
-              <Button variant="secondary" size="sm">Sign in</Button>
-            </RouterLink>
+            <Button v-else as-child variant="secondary" size="sm">
+              <RouterLink to="/signin">Sign in</RouterLink>
+            </Button>
           </template>
           <ThemeToggle />
         </div>

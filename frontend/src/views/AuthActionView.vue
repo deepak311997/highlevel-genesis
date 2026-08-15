@@ -169,7 +169,7 @@ onMounted(run)
           class="flex flex-col gap-4"
         >
           <Alert tone="success">Your password is set.</Alert>
-          <RouterLink to="/signin"><Button>Sign in</Button></RouterLink>
+          <Button as-child><RouterLink to="/signin">Sign in</RouterLink></Button>
         </div>
 
         <form
@@ -207,11 +207,11 @@ onMounted(run)
           class="flex flex-col gap-4"
         >
           <Alert tone="error">{{ state.message }}</Alert>
-          <RouterLink :to="state.canResend ? '/verify-email' : '/signup'">
-            <Button variant="outline">
+          <Button as-child variant="outline">
+            <RouterLink :to="state.canResend ? '/verify-email' : '/signup'">
               {{ state.canResend ? 'Get a new link' : 'Start again' }}
-            </Button>
-          </RouterLink>
+            </RouterLink>
+          </Button>
         </div>
       </CardContent>
     </Card>

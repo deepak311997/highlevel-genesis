@@ -181,6 +181,23 @@
     letter-spacing: -0.02em;
   }
 
+  /* Tailwind v3's Preflight set `cursor: pointer` on buttons; v4 removed it to
+     match the browser default, where a <button> really is `cursor: default`.
+     Restored at the base layer rather than as a utility per component, so a
+     button added later cannot forget it — including plain <button> elements
+     that are not the Button component, like the password reveal toggle. */
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+
+  /* The Button component sets `pointer-events: none` when disabled, which
+     suppresses any cursor of its own; this covers every other disabled button. */
+  button:disabled,
+  [role='button'][aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
