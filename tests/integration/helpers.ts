@@ -1,3 +1,13 @@
+import { initializeApp as initClientApp, type FirebaseApp } from 'firebase/app'
+import {
+  applyActionCode,
+  confirmPasswordReset,
+  connectAuthEmulator,
+  getAuth as getClientAuth,
+  signInWithEmailAndPassword,
+  signOut,
+  type Auth as ClientAuth,
+} from 'firebase/auth'
 import { getApps, initializeApp, type App } from 'firebase-admin/app'
 import { getAuth, type Auth } from 'firebase-admin/auth'
 import { getFirestore, type Firestore } from 'firebase-admin/firestore'
@@ -57,6 +67,47 @@ export function adminAuth(): Auth {
 
 export function adminDb(): Firestore {
   return getFirestore(adminApp(), DATABASE_ID)
+}
+
+let clientApp: FirebaseApp | undefined
+
+/**
+ * A real client SDK pointed at the Auth emulator.
+ *
+ * Needed because "was the password left alone?" is only answerable by trying to
+ * sign in with it — the Admin SDK exposes no way to read or compare a password,
+ * which is the point of it.
+ */
+function clientAuth(): ClientAuth {
+  clientApp ??= initClientApp({ apiKey: 'fake-api-key', projectId: PROJECT_ID }, 'integration')
+  const auth = getClientAuth(clientApp)
+  connectAuthEmulator(auth, `http://${emulatorHost('FIREBASE_AUTH_EMULATOR_HOST')}`, {
+    disableWarnings: true,
+  })
+  return auth
+}
+
+/** Whether these credentials are currently valid. */
+export async function canSignIn(email: string, password: string): Promise<boolean> {
+  const auth = clientAuth()
+  try {
+    await signInWithEmailAndPassword(auth, email, password)
+    return true
+  } catch {
+    return false
+  } finally {
+    await signOut(auth).catch(() => undefined)
+  }
+}
+
+/** Create an account directly, bypassing the endpoint under test. */
+export async function seedUser(
+  email: string,
+  password: string,
+  emailVerified: boolean,
+): Promise<string> {
+  const user = await adminAuth().createUser({ email, password, emailVerified })
+  return user.uid
 }
 
 /** Wipe both emulators so each test starts from a known, empty state. */
@@ -133,4 +184,37 @@ export function linkFrom(mail: RecordedMail): string {
   const match = /https?:\/\/\S+/.exec(mail.textBody)
   if (match === null) throw new Error('no link in the recorded email')
   return match[0]
+}
+
+/** The one-time code carried by an action link. */
+export function codeFrom(link: string): string {
+  const code = new URL(link).searchParams.get('oobCode')
+  if (code === null || code === '') throw new Error('no oobCode in the link')
+  return code
+}
+
+/** Delete recorded mail so a second request's message can be read on its own. */
+export async function clearMail(): Promise<void> {
+  const snapshot = await adminDb().collection(DEV_MAIL_COLLECTION).get()
+  await Promise.all(snapshot.docs.map((d) => d.ref.delete()))
+}
+
+/** Whether a verification code is still live. */
+export async function applyVerification(oobCode: string): Promise<boolean> {
+  try {
+    await applyActionCode(clientAuth(), oobCode)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Whether a reset code is still live, setting the password if it is. */
+export async function applyPasswordReset(oobCode: string, newPassword: string): Promise<boolean> {
+  try {
+    await confirmPasswordReset(clientAuth(), oobCode, newPassword)
+    return true
+  } catch {
+    return false
+  }
 }

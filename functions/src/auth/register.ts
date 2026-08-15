@@ -1,11 +1,11 @@
 import type { Request, Response } from 'express'
 
 import { getTransport } from '../lib/email'
-import { activationEmail } from '../lib/email/templates'
+import { activationEmail, alreadyRegisteredEmail, type EmailContent } from '../lib/email/templates'
 import { getAdminAuth } from '../lib/firebase'
 import { HttpError } from '../lib/errors'
 import { logAuthEvent } from '../lib/log'
-import { appActionLink, extractOobCode } from './links'
+import { appActionLink, extractOobCode, type ActionMode } from './links'
 import { registerSchema } from './schema'
 import { hashKey } from './throttle'
 
@@ -40,13 +40,81 @@ export async function handleRegister(req: Request, res: Response): Promise<void>
   const emailHash = hashKey(email)
   const auth = getAdminAuth()
 
-  await auth.createUser({ email, password, emailVerified: false })
-  const link = appActionLink(
-    'verifyEmail',
-    extractOobCode(await auth.generateEmailVerificationLink(email)),
-  )
-  await getTransport().send({ to: email, ...activationEmail(link) })
+  // Create first and catch the collision, rather than checking existence and
+  // then creating. The check-then-act version has a race — two simultaneous
+  // registrations both see "absent" — and this way the atomicity is Firebase's
+  // problem, not ours.
+  let created = true
+  try {
+    await auth.createUser({ email, password, emailVerified: false })
+  } catch (err) {
+    if (!isEmailAlreadyExists(err)) throw err
+    created = false
+  }
 
-  logAuthEvent('register.completed', { emailHash, branch: 'new', outcome: 'ok' })
+  let branch: 'new' | 'existing_verified' | 'existing_unverified'
+  if (created) {
+    await sendActionLink(email, 'verifyEmail', activationEmail)
+    branch = 'new'
+  } else {
+    branch = await handleExistingAccount(email)
+  }
+
+  logAuthEvent('register.completed', { emailHash, branch, outcome: 'ok' })
   res.json({ ok: true })
+}
+
+function isEmailAlreadyExists(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { code?: unknown }).code === 'auth/email-already-exists'
+  )
+}
+
+/** Mint a link on our own action route and mail it. */
+async function sendActionLink(
+  email: string,
+  mode: ActionMode,
+  build: (link: string) => EmailContent,
+): Promise<void> {
+  const auth = getAdminAuth()
+  const firebaseLink =
+    mode === 'verifyEmail'
+      ? await auth.generateEmailVerificationLink(email)
+      : await auth.generatePasswordResetLink(email)
+
+  await getTransport().send({
+    to: email,
+    ...build(appActionLink(mode, extractOobCode(firebaseLink))),
+  })
+}
+
+/**
+ * The address is taken. What happens next depends on whether the real owner
+ * ever proved they hold the mailbox — and either way the caller learns nothing.
+ */
+async function handleExistingAccount(
+  email: string,
+): Promise<'existing_verified' | 'existing_unverified'> {
+  const existing = await getAdminAuth().getUserByEmail(email)
+
+  // One behaviour, verified or not: change nothing, mail a reset link.
+  //
+  // The password is deliberately untouched. This request may be an attacker
+  // probing someone else's address, and it must not be able to alter an account
+  // it does not control. A reset link is safe to send because it is useful only
+  // to whoever holds the mailbox.
+  //
+  // An *activation* link would not be safe here. It would let whoever submitted
+  // this form activate an account whose password someone else set — which is
+  // the pre-hijacking attack rather than a defence against it.
+  //
+  // This replaces the plan's "replace the password and issue a fresh link that
+  // retires the old one": measured, Firebase does not retire outstanding codes,
+  // and not even deleting the account does so — codes resolve by address, not
+  // by uid. See the platform-behaviour test in auth-register.spec.ts.
+  await sendActionLink(email, 'resetPassword', alreadyRegisteredEmail)
+
+  return existing.emailVerified ? 'existing_verified' : 'existing_unverified'
 }
