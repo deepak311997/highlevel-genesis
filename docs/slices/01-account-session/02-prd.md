@@ -158,13 +158,19 @@ Every authenticated Cloud Function from Slice 2 onward rejects a decoded token w
   with a different password, then the response body and status are identical to AC-1, the
   screen is identical, the stored password is **unchanged**, and the email sent is the
   "you already have an account" variant containing a reset link.
-- **AC-3** `[A]` Given an **unverified** account for `a@x.test`, when sign-up is submitted
-  again with a new password, then no second account is created, the password becomes the new
-  one, a fresh verification link is issued, and the previously issued link no longer
-  verifies.
-- **AC-4** `[A]` Given a password shorter than 8 characters, when sign-up is submitted, then
-  a `400` is returned with a field-level error, **no** Auth call is made and **no** email is
-  sent — and this holds identically whether or not the address exists.
+- **AC-3** `[A]` **Revised during the build — the original was not achievable.** It required
+  "the previously issued link no longer verifies"; measured, Firebase retires no outstanding
+  code, and deleting the account does not either. Now: given an **unverified** account for
+  `a@x.test`, when sign-up is submitted again with a different password, then no second
+  account is created, the stored password is **unchanged**, and the email sent is a reset
+  link — never a fresh activation link, which would let whoever submitted the form activate
+  an account whose password someone else set. See discovery D29.
+- **AC-4** `[A]` Given a password that misses the policy — under 8 characters, over 50, or
+  lacking an uppercase, lowercase, numeric or special character — when sign-up is submitted,
+  then a `400` is returned with a field-level error, **no** Auth call is made and **no** email
+  is sent, and this holds identically whether or not the address exists. Every failure returns
+  the *same* message, so the error cannot report which rules a candidate already satisfies.
+  *(Composition rules per discovery D30, which reverses D23.)*
 - **AC-5** `[A]` Given a malformed email, when sign-up is submitted, then a `400` with a
   field-level error is returned and no Auth call is made.
 - **AC-6** `[A]` The frontend bundle contains no call to `createUserWithEmailAndPassword`.
@@ -289,6 +295,13 @@ Every authenticated Cloud Function from Slice 2 onward rejects a decoded token w
   verified users and unverified users younger than 24h untouched.
 - **AC-53** `[B]` Email-enumeration protection and the password policy are confirmed enabled
   on the real project, with evidence recorded in the review. *(Console-enforced; see R2.)*
+
+### CORS
+
+- **AC-56** `[A]` Given a request carrying an `Origin` that is not on the allowlist, when it
+  reaches any `/api` route, then no `Access-Control-Allow-Origin` header is returned; matching
+  is exact, so neither a lookalike prefix nor a lookalike suffix is accepted. *(Proposed in
+  the technical plan's coverage gaps and implemented in T16; folded into the PRD here.)*
 
 ### Build and infrastructure
 
