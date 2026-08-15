@@ -1,52 +1,108 @@
 @import 'tailwindcss';
 
+/* Self-hosted so there is no third-party request and no flash of fallback text.
+   Space Grotesk carries the interface; IBM Plex Mono carries anything the
+   machine produced — file paths, event names, IDs, timings, generated code. */
+@import '@fontsource-variable/space-grotesk';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+
 @custom-variant dark (&:is(.dark *));
 
-/* Genesis palette — cobalt carries structure, ember marks anything live.
-   Same rule as the logo: exactly one ember element per view. */
+/* ============================================================================
+   Genesis tokens
+   Cobalt carries structure. Ember marks whatever is live — exactly one element
+   per view, the same rule the logo follows.
+   ========================================================================== */
 :root {
-  --background: hsl(220 30% 98%);
+  /* neutrals: biased toward cobalt, never a flat grey */
+  --background: hsl(220 30% 97%);
   --foreground: hsl(226 30% 8%);
   --card: hsl(0 0% 100%);
   --card-foreground: hsl(226 30% 8%);
+  --raised: hsl(0 0% 100%);
   --popover: hsl(0 0% 100%);
   --popover-foreground: hsl(226 30% 8%);
+
   --primary: hsl(230 88% 56%);
+  --primary-hi: hsl(230 92% 63%);
+  --primary-lo: hsl(230 84% 49%);
   --primary-foreground: hsl(0 0% 100%);
-  --secondary: hsl(225 25% 95%);
+
+  --secondary: hsl(225 25% 95.5%);
   --secondary-foreground: hsl(226 30% 12%);
-  --muted: hsl(225 25% 95%);
+  --muted: hsl(225 25% 95.5%);
   --muted-foreground: hsl(226 12% 44%);
-  --accent: hsl(18 100% 58%);
+
+  /* live state only — never "success", never a decorative highlight */
+  --accent: hsl(18 100% 55%);
   --accent-foreground: hsl(0 0% 100%);
-  --destructive: hsl(348 74% 42%);
+
+  /* semantic, deliberately separate from the accent */
+  --good: hsl(152 58% 34%);
+  --warn: hsl(38 92% 40%);
+  --destructive: hsl(348 74% 45%);
   --destructive-foreground: hsl(0 0% 100%);
-  --border: hsl(225 22% 89%);
-  --input: hsl(225 22% 89%);
+
+  /* two-tone borders: dividers vs. things you can interact with */
+  --border: hsl(225 22% 88%);
+  --border-strong: hsl(225 20% 80%);
+  --input: hsl(225 20% 80%);
   --ring: hsl(230 88% 56%);
-  --radius: 0.5rem;
+
+  /* the editor ground stays dark in both themes */
+  --code-bg: hsl(226 32% 10%);
+  --code-fg: hsl(225 25% 87%);
+
+  /* depth is three steps, no more */
+  --sh-1: 0 1px 2px hsl(226 30% 8% / 0.06), 0 1px 1px hsl(226 30% 8% / 0.04);
+  --sh-2: 0 2px 4px hsl(226 30% 8% / 0.06), 0 4px 12px hsl(226 30% 8% / 0.07);
+  --sh-3: 0 8px 20px hsl(226 30% 8% / 0.12), 0 2px 6px hsl(226 30% 8% / 0.08);
+  /* inner top highlight — gives raised surfaces a light source */
+  --sh-hi: inset 0 1px 0 hsl(0 0% 100% / 0.16);
+
+  --radius: 0.4375rem;
 }
 
 .dark {
-  --background: hsl(226 30% 5%);
+  --background: hsl(226 32% 6%);
   --foreground: hsl(225 25% 93%);
-  --card: hsl(226 26% 9%);
+  --card: hsl(226 26% 9.5%);
   --card-foreground: hsl(225 25% 93%);
-  --popover: hsl(226 26% 9%);
+  --raised: hsl(226 24% 12%);
+  --popover: hsl(226 24% 12%);
   --popover-foreground: hsl(225 25% 93%);
-  --primary: hsl(230 100% 71%);
+
+  --primary: hsl(230 100% 70%);
+  --primary-hi: hsl(230 100% 76%);
+  --primary-lo: hsl(230 92% 62%);
   --primary-foreground: hsl(226 30% 8%);
-  --secondary: hsl(226 22% 15%);
+
+  --secondary: hsl(226 24% 13.5%);
   --secondary-foreground: hsl(225 25% 93%);
-  --muted: hsl(226 22% 15%);
-  --muted-foreground: hsl(226 14% 62%);
-  --accent: hsl(18 100% 66%);
+  --muted: hsl(226 24% 13.5%);
+  --muted-foreground: hsl(226 14% 60%);
+
+  --accent: hsl(18 100% 63%);
   --accent-foreground: hsl(226 30% 8%);
+
+  --good: hsl(152 55% 55%);
+  --warn: hsl(38 95% 62%);
   --destructive: hsl(348 90% 68%);
   --destructive-foreground: hsl(226 30% 8%);
-  --border: hsl(226 20% 20%);
-  --input: hsl(226 20% 20%);
-  --ring: hsl(230 100% 71%);
+
+  --border: hsl(226 20% 19%);
+  --border-strong: hsl(226 18% 27%);
+  --input: hsl(226 18% 27%);
+  --ring: hsl(230 100% 70%);
+
+  --code-bg: hsl(226 32% 7.5%);
+  --code-fg: hsl(225 25% 87%);
+
+  --sh-1: 0 1px 2px hsl(0 0% 0% / 0.4);
+  --sh-2: 0 2px 6px hsl(0 0% 0% / 0.45);
+  --sh-3: 0 10px 26px hsl(0 0% 0% / 0.55);
+  --sh-hi: inset 0 1px 0 hsl(0 0% 100% / 0.07);
 }
 
 @theme inline {
@@ -54,36 +110,84 @@
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
+  --color-raised: var(--raised);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
+
   --color-primary: var(--primary);
+  --color-primary-hi: var(--primary-hi);
+  --color-primary-lo: var(--primary-lo);
   --color-primary-foreground: var(--primary-foreground);
+
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
+  --color-code-bg: var(--code-bg);
+  --color-code-fg: var(--code-fg);
+
+  --shadow-e1: var(--sh-1);
+  --shadow-e2: var(--sh-2);
+  --shadow-e3: var(--sh-3);
+  --shadow-hi: var(--sh-hi);
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 4px);
+
+  --font-sans: 'Space Grotesk Variable', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
 }
 
 @layer base {
   * {
     border-color: var(--border);
   }
+
+  html {
+    /* Set by the inline script in index.html before paint, so switching
+       themes never flashes the wrong ground. */
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+
   body {
     background-color: var(--background);
     color: var(--foreground);
-    font-family:
-      -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Space Grotesk sets tight at display sizes; let it. */
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.02em;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* Digits line up in tables, timings, and counters. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
   }
 }

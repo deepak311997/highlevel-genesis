@@ -5,7 +5,14 @@ const props = withDefaults(defineProps<{ class?: string }>(), { class: '' })
 </script>
 
 <template>
-  <div :class="cn('rounded-lg border bg-card text-card-foreground', props.class)">
+  <div
+    :class="
+      cn(
+        'rounded-lg border bg-gradient-to-b from-raised to-card text-card-foreground shadow-e1',
+        props.class,
+      )
+    "
+  >
     <slot />
   </div>
 </template>

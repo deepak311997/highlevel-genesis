@@ -13,9 +13,7 @@ import { fetchHealth, type HealthResult } from '@/lib/health'
  * paper over.
  */
 type State =
-  | { kind: 'loading' }
-  | { kind: 'ok'; result: HealthResult }
-  | { kind: 'error'; message: string }
+  { kind: 'loading' } | { kind: 'ok'; result: HealthResult } | { kind: 'error'; message: string }
 
 const state = ref<State>({ kind: 'loading' })
 
