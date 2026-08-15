@@ -44,7 +44,7 @@ Then open **http://localhost:5173/health**. A green round trip means every layer
 |---|---|
 | App (Vite dev) | http://localhost:5173 |
 | Emulator UI | http://localhost:4000 |
-| Functions | http://localhost:5001/demo-genesis/us-central1/api |
+| Functions | http://localhost:5001/<project-id>/asia-south1/api |
 | Hosting (built assets) | http://localhost:5050 |
 
 Use `localhost`, not `127.0.0.1`, for the Vite dev server — it binds to IPv6 by default.

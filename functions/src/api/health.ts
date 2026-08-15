@@ -1,7 +1,7 @@
 import { Router } from 'express'
 
 import { asyncHandler, HttpError } from '../lib/errors'
-import { db } from '../lib/firebase'
+import { getDb } from '../lib/firebase'
 
 export const healthRouter: Router = Router()
 
@@ -16,7 +16,7 @@ healthRouter.get(
   '/health',
   asyncHandler(async (_req, res) => {
     const started = Date.now()
-    const ref = db.collection('_health').doc()
+    const ref = getDb().collection('_health').doc()
 
     const writeStarted = Date.now()
     await ref.set({ createdAt: new Date().toISOString() })

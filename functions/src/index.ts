@@ -3,7 +3,7 @@ import { onRequest } from 'firebase-functions/v2/https'
 
 import { createApiApp } from './api'
 
-setGlobalOptions({ region: 'us-central1', maxInstances: 10 })
+setGlobalOptions({ region: 'asia-south1', maxInstances: 10 })
 
 /**
  * Short-lived request/response endpoints: OAuth callback, HighLevel proxy,

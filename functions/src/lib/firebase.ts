@@ -11,4 +11,32 @@ if (getApps().length === 0) {
   initializeApp()
 }
 
-export const db: Firestore = getFirestore()
+let cached: Firestore | undefined
+
+/**
+ * Firestore handle for the project's *named* database.
+ *
+ * Two things this deliberately does not do:
+ *
+ * 1. It does not call `getFirestore()` with no argument, which would connect to
+ *    `(default)` — a database this project does not keep its data in. The id is
+ *    mirrored by `database` in firebase.json and VITE_FIREBASE_DATABASE_ID in
+ *    the frontend.
+ * 2. It does not read the environment at module scope. `firebase deploy` loads
+ *    and analyses the module before injecting functions/.env, so a top-level
+ *    throw fails the deploy rather than the request. Resolving on first use
+ *    also keeps it off the cold-start path until something needs Firestore.
+ */
+export function getDb(): Firestore {
+  if (cached) return cached
+
+  const databaseId = process.env['FIRESTORE_DATABASE_ID']?.trim()
+  if (databaseId === undefined || databaseId === '') {
+    throw new Error(
+      'Missing FIRESTORE_DATABASE_ID. Set it in functions/.env — see functions/.env.example.',
+    )
+  }
+
+  cached = getFirestore(databaseId)
+  return cached
+}
