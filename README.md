@@ -15,11 +15,11 @@ streamed token-by-token into an editor, with a live preview rendering real CRM d
 
 ## Live URLs
 
-| | URL |
-|---|---|
+|                             | URL                           |
+| --------------------------- | ----------------------------- |
 | Frontend (Firebase Hosting) | _not deployed yet — Slice 13_ |
-| Cloud Functions base | _not deployed yet — Slice 13_ |
-| Loom walkthrough | _not recorded yet — Slice 13_ |
+| Cloud Functions base        | _not deployed yet — Slice 13_ |
+| Loom walkthrough            | _not recorded yet — Slice 13_ |
 
 ---
 
@@ -42,12 +42,12 @@ npm run dev                   # emulators + Vite dev server together
 
 Then open **http://localhost:5173/health**. A green round trip means every layer is wired.
 
-| Surface | URL |
-|---|---|
-| App (Vite dev) | http://localhost:5173 |
-| Emulator UI | http://localhost:4000 |
-| Functions | http://localhost:5001/<project-id>/asia-south1/api |
-| Hosting (built assets) | http://localhost:5050 |
+| Surface                | URL                                                |
+| ---------------------- | -------------------------------------------------- |
+| App (Vite dev)         | http://localhost:5173                              |
+| Emulator UI            | http://localhost:4000                              |
+| Functions              | http://localhost:5001/<project-id>/asia-south1/api |
+| Hosting (built assets) | http://localhost:5050                              |
 
 Use `localhost`, not `127.0.0.1`, for the Vite dev server — it binds to IPv6 by default.
 
@@ -94,7 +94,7 @@ emulator.
      to re-authorize.
    - **Secrets → Client Keys → Add** generates the Client ID and Client Secret.
      ⚠️ **The client secret is shown exactly once.** Copy it straight into `.env`.
-4. **Sandbox account** — Developer Portal → Testing → *Create App Test Account*. Provisioned
+4. **Sandbox account** — Developer Portal → Testing → _Create App Test Account_. Provisioned
    instantly, Enterprise features enabled, valid for six months. This is the demo data source;
    seed it with `scripts/seed-sandbox.ts`.
 
@@ -106,33 +106,38 @@ Full research notes, including API versions and known gotchas, are in
 ## Auth setup
 
 Sign-up runs through a Cloud Function rather than the Firebase client SDK, so the response
-cannot reveal whether an address is already registered. That means outbound email is ours to
-send, and two controls live in the Firebase console rather than in this repo.
+cannot reveal whether an address is already registered. Everything else — sign-in,
+verification email, password reset — is the client SDK, because Firebase already sends
+those and does not disclose either.
 
-**Needed to run locally:** nothing. The emulators record mail into a Firestore collection
-instead of sending it, and the e2e suite reads verification links from there.
+**Needed to run locally:** nothing. The Auth emulator generates the verification codes and
+the e2e suite reads them from `/emulator/v1/projects/demo-genesis/oobCodes`.
 
-**Needed to deploy:**
+**Needed to deploy:** no mail provider and no secret. Firebase sends from
+`noreply@<project>.firebaseapp.com`. Two console settings are worth making, neither of
+which needs a domain:
 
-```bash
-firebase functions:secrets:set SMTP2GO_API_KEY   # verified sender domain required
-```
+| Console setting                                                                                      | Why                                                                                                                                           |
+| ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Authentication → Templates → **customise the action URL** to `https://<project>.web.app/auth/action` | Sends verification and reset links to our own branded page instead of Firebase's. Without it the flow still works, on Firebase's hosted page. |
+| Authentication → Templates → sender name and subject                                                 | Otherwise the emails read as generic Firebase notices.                                                                                        |
 
-plus `MAIL_FROM_EMAIL`, `APP_BASE_URL` and `ALLOWED_ORIGINS` in `functions/.env` — see
-`functions/.env.example`.
-
-**Console settings, which no test can verify.** The emulator enforces neither, so a green
+**Console settings that no test can verify.** The emulator enforces neither, so a green
 suite says nothing about either one:
 
-| Setting | Why |
-|---|---|
-| Email enumeration protection | Sign-in goes browser-to-Identity-Toolkit directly and we never see it. Our endpoints close sign-up; only this closes sign-in. |
-| Password policy (min 8, no composition rules) | Passwords are set through Identity Toolkit, so client-side validation alone is bypassable. Requires Identity Platform. |
+| Setting                      | Why                                                                                                                                                                                                           |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Email enumeration protection | Sign-in and password reset go browser-to-Identity-Toolkit directly and we never see them. Our endpoint closes sign-up; only this closes those. **Currently enabled.**                                         |
+| Password policy              | Passwords are set through Identity Toolkit, so client-side validation alone is bypassable. `functions/src/auth/schema.ts` and `frontend/src/lib/password.ts` mirror it; change one and all three must change. |
 
-**A limit worth stating plainly:** the registration endpoint returns a byte-identical response
-whichever branch it takes, but the branches do measurably different work, so response *timing*
-can still distinguish them. Rate limiting raises the cost of exploiting that; it does not
-remove it.
+**Two limits worth stating plainly:**
+
+- The registration endpoint returns a byte-identical response either way, but the branches
+  do measurably different work, so response _timing_ can still distinguish them. Rate
+  limiting raises the cost of exploiting that; it does not remove it.
+- Registration deliberately sends no email. Someone who registers an address that already
+  exists gets no nudge saying so — they meet a sign-in failure with a forgot-password link
+  instead. That is the price of the endpoint being unusable to mail a stranger.
 
 ---
 

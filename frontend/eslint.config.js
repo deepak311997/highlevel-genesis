@@ -81,9 +81,10 @@ export default tseslint.config(
        *
        * `fetchSignInMethodsForEmail` answers the same question outright.
        *
-       * The two client-side senders would deliver Firebase's own unbranded
-       * templates alongside ours, so one action would produce two
-       * different-looking emails.
+       * `sendEmailVerification` and `sendPasswordResetEmail` were banned here
+       * too, back when we sent mail ourselves and two senders would have meant
+       * two differently-branded emails for one action. Firebase is now the only
+       * sender, so they are the intended path and the ban is lifted.
        */
       'no-restricted-imports': [
         'error',
@@ -91,14 +92,9 @@ export default tseslint.config(
           paths: [
             {
               name: 'firebase/auth',
-              importNames: [
-                'createUserWithEmailAndPassword',
-                'fetchSignInMethodsForEmail',
-                'sendPasswordResetEmail',
-                'sendEmailVerification',
-              ],
+              importNames: ['createUserWithEmailAndPassword', 'fetchSignInMethodsForEmail'],
               message:
-                'Account creation and outbound email are server-side. Use @/lib/authApi — see functions/src/auth/register.ts for why.',
+                'Account creation is server-side — it is the only way the response can avoid disclosing whether an address is registered. Use @/lib/authApi; see functions/src/auth/register.ts.',
             },
           ],
         },

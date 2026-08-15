@@ -1,13 +1,13 @@
 import { expect, test } from '@playwright/test'
 
-import { adminDb, linkFrom, resetEmulators, type RecordedMail } from '../integration/helpers'
+import { latestCodeFor, resetEmulators } from '../integration/helpers'
 
 /**
  * The slice's one end-to-end test, covering the demo path.
  *
- * SMTP2GO is never called: under the emulator the transport records mail into
- * Firestore, and this test reads the activation link straight out of it. That
- * seam is what makes an email-based flow testable without a mailbox.
+ * No mail provider is involved. Firebase sends the verification email itself,
+ * and the Auth emulator exposes the code it generated, so the test can follow
+ * the link without a mailbox.
  *
  * Two things here are worth more than the rest, because they are the ones unit
  * tests cannot see:
@@ -27,15 +27,23 @@ function freshEmail(): string {
   return `e2e-${String(Date.now())}-${String(Math.floor(Math.random() * 10_000))}@example.test`
 }
 
+/**
+ * The verification link, pointed at *our* action route.
+ *
+ * The emulator's own link targets its built-in handler; in production the
+ * equivalent is the custom action URL configured on the email template. Either
+ * way the oobCode is the payload, so the test rebuilds the URL the deployed app
+ * would receive.
+ */
 async function activationLinkFor(email: string): Promise<string> {
-  const snapshot = await adminDb().collection('_devMail').get()
-  const mail = snapshot.docs
-    .map((doc) => doc.data() as RecordedMail)
-    .filter((m) => m.to === email && m.textBody.includes('mode=verifyEmail'))
-
-  const latest = mail.at(-1)
-  if (latest === undefined) throw new Error(`no activation email recorded for ${email}`)
-  return linkFrom(latest)
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const code = await latestCodeFor(email, 'VERIFY_EMAIL')
+    if (code !== undefined) {
+      return `/auth/action?mode=verifyEmail&oobCode=${encodeURIComponent(code.oobCode)}`
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  throw new Error(`no verification code was issued for ${email}`)
 }
 
 test.describe('Slice 01 — account and session', () => {
@@ -59,15 +67,16 @@ test.describe('Slice 01 — account and session', () => {
     await page.click('button[type="submit"]')
 
     // Non-committal by design — the same screen an already-registered address
-    // would produce.
-    await expect(page.getByTestId('signup-sent')).toContainText('If that address can be used')
+    // would produce, and it promises no email, because registration sends none.
+    await expect(page.getByTestId('signup-sent')).toContainText('You can sign in now')
 
     await page.goto('/signin')
     await page.fill('#signin-email', email)
     await page.fill('#signin-password', PASSWORD)
     await page.click('button[type="submit"]')
 
-    // Signed in, but held: the dashboard is not reachable yet.
+    // Signed in, but held: the dashboard is not reachable yet. Reaching the gate
+    // is also what sends the verification email — registration sent nothing.
     await expect(page).toHaveURL(/\/verify-email/)
     await expect(page.getByTestId('verify-address')).toHaveText(email)
 

@@ -217,15 +217,6 @@ describe('server-only collections', () => {
     await assertFails(setDoc(doc(alice, 'authThrottle/email:abc'), { count: 0 }))
     await assertFails(getDoc(doc(anon, 'authThrottle/email:abc')))
   })
-
-  it('denies every client the recorded mail, which holds live action codes', async () => {
-    const alice = verified('alice')
-    const anon = asModular(env.unauthenticatedContext().firestore())
-
-    await assertFails(getDoc(doc(alice, '_devMail/some-id')))
-    await assertFails(setDoc(doc(alice, '_devMail/some-id'), { to: 'x@y.test' }))
-    await assertFails(getDoc(doc(anon, '_devMail/some-id')))
-  })
 })
 
 describe('unknown collections', () => {

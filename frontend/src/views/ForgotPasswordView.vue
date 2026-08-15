@@ -7,13 +7,19 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { requestPasswordReset } from '@/lib/authApi'
+import { sendPasswordResetEmail } from 'firebase/auth'
+
+import { auth } from '@/lib/firebase'
 
 /**
- * The confirmation is deliberately non-committal, and it is shown for every
- * accepted submission. Saying "we've sent you a link" would confirm the address
- * is registered — the same disclosure the registration endpoint exists to
- * avoid, on a form that is easier to reach.
+ * Firebase sends this one directly.
+ *
+ * `sendPasswordResetEmail` does not disclose whether the account exists —
+ * *provided email-enumeration protection is enabled on the project*, which
+ * suppresses the `auth/user-not-found` it would otherwise throw. That is a
+ * console setting this repo cannot enforce, so the confirmation below is
+ * non-committal regardless: it is shown for every accepted submission, and
+ * saying "we've sent you a link" would disclose what the API is trying not to.
  */
 type State =
   | { kind: 'editing' }
@@ -34,12 +40,24 @@ async function submit(): Promise<void> {
 
   state.value = { kind: 'submitting' }
   try {
-    await requestPasswordReset(email.value.trim())
+    await sendPasswordResetEmail(auth, email.value.trim())
     state.value = { kind: 'sent' }
   } catch (err) {
+    const code = (err as { code?: unknown }).code
+
+    // Belt and braces: if enumeration protection is off, this is the code that
+    // would leak. Treated as success so the screen cannot become the oracle.
+    if (code === 'auth/user-not-found' || code === 'auth/invalid-email') {
+      state.value = { kind: 'sent' }
+      return
+    }
+
     state.value = {
       kind: 'failed',
-      message: err instanceof Error ? err.message : 'Something went wrong. Please try again.',
+      message:
+        code === 'auth/too-many-requests'
+          ? 'Too many attempts. Try again in a few minutes.'
+          : 'Something went wrong. Please try again.',
     }
   }
 }

@@ -82,8 +82,8 @@ export function describeError(err: unknown): string {
 export interface AuthLogContext {
   /** SHA-256 of the normalised address. Never the address itself. */
   emailHash?: string
-  branch?: 'new' | 'existing_verified' | 'existing_unverified'
-  outcome?: 'ok' | 'throttled' | 'invalid' | 'transport_failed'
+  branch?: 'new' | 'existing'
+  outcome?: 'ok' | 'throttled' | 'invalid'
   status?: number
   detail?: string
 }

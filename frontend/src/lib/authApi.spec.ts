@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { register, requestPasswordReset, resendVerification } from './authApi'
+import { register } from './authApi'
 
 function stubFetch(impl: () => Promise<Response>) {
   const spy = vi.fn(impl)
@@ -37,17 +37,13 @@ afterEach(() => {
 })
 
 describe('authApi', () => {
-  it.each([
-    ['register', () => register('a@b.test', 'A-Password-1'), '/api/auth/register'],
-    ['resendVerification', () => resendVerification('a@b.test'), '/api/auth/resend'],
-    ['requestPasswordReset', () => requestPasswordReset('a@b.test'), '/api/auth/password-reset'],
-  ])('%s posts JSON to %s', async (_label, call, path) => {
+  it('posts JSON to the register endpoint', async () => {
     const spy = stubFetch(async () => ok())
 
-    await call()
+    await register('a@b.test', 'A-Password-1')
 
     const { url, init } = firstCall(spy)
-    expect(url).toContain(path)
+    expect(url).toContain('/api/auth/register')
     expect(init.method).toBe('POST')
   })
 
@@ -89,12 +85,7 @@ describe('authApi', () => {
  * rule can be disabled inline. This is the assertion that would notice.
  */
 describe('the client never creates accounts itself', () => {
-  const BANNED = [
-    'createUserWithEmailAndPassword',
-    'fetchSignInMethodsForEmail',
-    'sendPasswordResetEmail',
-    'sendEmailVerification',
-  ]
+  const BANNED = ['createUserWithEmailAndPassword', 'fetchSignInMethodsForEmail']
 
   function sourceFiles(dir: string): string[] {
     return readdirSync(dir).flatMap((entry) => {

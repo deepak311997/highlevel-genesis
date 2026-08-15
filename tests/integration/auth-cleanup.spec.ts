@@ -1,14 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import {
-  adminAuth,
-  applyVerification,
-  codeFrom,
-  linkFrom,
-  onlyMail,
-  postJson,
-  resetEmulators,
-} from './helpers'
+import { adminAuth, applyVerification, latestCodeFor, postJson, resetEmulators } from './helpers'
 
 /**
  * The cleanup runs inside the functions runtime, so the integration suite
@@ -79,13 +71,18 @@ describe('deleting accounts that were never verified', () => {
     expect(user.emailVerified).toBe(false)
   })
 
-  /** AC-19: the link the deleted account was issued must stop working. */
-  it('retires the activation link the deleted account was issued', async () => {
-    await postJson('/auth/register', { email: 'gone@example.test', password: 'A-Password-1' })
-    const code = codeFrom(linkFrom(await onlyMail()))
+  /** AC-19: a link issued to the deleted account must stop working. */
+  it('retires a verification code the deleted account was issued', async () => {
+    const uid = (await adminAuth().createUser({ email: 'gone@example.test', emailVerified: false }))
+      .uid
+    // Generating a link is what registers an oob code with the emulator.
+    await adminAuth().generateEmailVerificationLink('gone@example.test')
+    const issued = await latestCodeFor('gone@example.test', 'VERIFY_EMAIL')
+    expect(issued).toBeDefined()
+    expect(uid).toBeTruthy()
 
     await sweep(Date.now() + DAY_MS + 1_000)
 
-    expect(await applyVerification(code)).toBe(false)
+    expect(await applyVerification(issued?.oobCode ?? '')).toBe(false)
   })
 })

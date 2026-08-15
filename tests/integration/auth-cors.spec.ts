@@ -49,10 +49,10 @@ describe('CORS', () => {
   })
 
   it('still serves a request that carries no Origin at all', async () => {
-    const res = await fetch(`${API_BASE}/auth/password-reset`, {
+    const res = await fetch(`${API_BASE}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'someone@example.test' }),
+      body: JSON.stringify({ email: 'no-origin@example.test', password: 'Correct-Horse-9' }),
     })
 
     expect(res.status).toBe(200)

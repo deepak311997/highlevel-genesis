@@ -15,12 +15,10 @@ import { getFirestore, type Firestore } from 'firebase-admin/firestore'
 /**
  * L4 harness — Cloud Functions end to end against the emulators.
  *
- * HighLevel and the LLM are stubbed everywhere; here the third party that
- * matters is SMTP2GO, and it is never called: `FUNCTIONS_EMULATOR` selects
- * DevMailTransport, which records into Firestore. Reading that collection is
- * how these tests assert *which* email a branch sent, which is the only
- * observable difference between the register branches — the HTTP response is
- * identical by design.
+ * No third-party mail provider is involved: Firebase sends verification and
+ * reset email itself, and the Auth emulator exposes the codes it generates at
+ * `/emulator/v1/projects/{id}/oobCodes`. That endpoint is how these tests read
+ * a verification link without a mailbox.
  */
 
 export const PROJECT_ID = 'demo-genesis'
@@ -33,8 +31,6 @@ export const DATABASE_ID = 'highlevel-genesis'
  * rewrite reaches at `/api/auth/register`.
  */
 export const API_BASE = `http://127.0.0.1:5001/${PROJECT_ID}/${REGION}/api`
-
-export const DEV_MAIL_COLLECTION = '_devMail'
 
 function emulatorHost(name: 'FIREBASE_AUTH_EMULATOR_HOST' | 'FIRESTORE_EMULATOR_HOST'): string {
   const value = process.env[name]
@@ -153,50 +149,28 @@ export async function postJson(
   return { status: res.status, body: parsed, raw }
 }
 
-export interface RecordedMail {
-  to: string
-  subject: string
-  textBody: string
-  htmlBody: string | null
+export interface OobCode {
+  email: string
+  requestType: 'VERIFY_EMAIL' | 'PASSWORD_RESET' | string
+  oobCode: string
+  oobLink: string
 }
 
-/** Every message the fake transport recorded, oldest first. */
-export async function recordedMail(): Promise<RecordedMail[]> {
-  const snapshot = await adminDb().collection(DEV_MAIL_COLLECTION).get()
-  return snapshot.docs
-    .map((d) => d.data() as RecordedMail & { createdAt: string })
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+/** Every out-of-band code the Auth emulator has generated, oldest first. */
+export async function oobCodes(): Promise<OobCode[]> {
+  const host = emulatorHost('FIREBASE_AUTH_EMULATOR_HOST')
+  const res = await fetch(`http://${host}/emulator/v1/projects/${PROJECT_ID}/oobCodes`)
+  const body = (await res.json()) as { oobCodes?: OobCode[] }
+  return body.oobCodes ?? []
 }
 
-/** The single message sent, failing loudly if the count is not exactly one. */
-export async function onlyMail(): Promise<RecordedMail> {
-  const all = await recordedMail()
-  if (all.length !== 1) {
-    throw new Error(`expected exactly one email, found ${String(all.length)}`)
-  }
-  const [first] = all
-  if (first === undefined) throw new Error('unreachable')
-  return first
-}
-
-/** Pull the action link out of a recorded message. */
-export function linkFrom(mail: RecordedMail): string {
-  const match = /https?:\/\/\S+/.exec(mail.textBody)
-  if (match === null) throw new Error('no link in the recorded email')
-  return match[0]
-}
-
-/** The one-time code carried by an action link. */
-export function codeFrom(link: string): string {
-  const code = new URL(link).searchParams.get('oobCode')
-  if (code === null || code === '') throw new Error('no oobCode in the link')
-  return code
-}
-
-/** Delete recorded mail so a second request's message can be read on its own. */
-export async function clearMail(): Promise<void> {
-  const snapshot = await adminDb().collection(DEV_MAIL_COLLECTION).get()
-  await Promise.all(snapshot.docs.map((d) => d.ref.delete()))
+/** The latest code of a given type for an address, or undefined. */
+export async function latestCodeFor(
+  email: string,
+  requestType: OobCode['requestType'],
+): Promise<OobCode | undefined> {
+  const all = await oobCodes()
+  return all.filter((c) => c.email === email && c.requestType === requestType).at(-1)
 }
 
 /** Whether a verification code is still live. */

@@ -4,20 +4,27 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const refreshVerification = vi.hoisted(() => vi.fn())
 const ensureProfile = vi.hoisted(() => vi.fn())
 const signOutNow = vi.hoisted(() => vi.fn())
-const resendVerification = vi.hoisted(() => vi.fn())
+const sendEmailVerification = vi.hoisted(() => vi.fn())
+const markVerificationSent = vi.hoisted(() => vi.fn())
+const sent = vi.hoisted((): { value: boolean } => ({ value: false }))
 const push = vi.hoisted(() => vi.fn())
 const consumeRedirect = vi.hoisted(() => vi.fn())
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
     email: 'alice@example.test',
+    user: { uid: 'alice' },
+    get verificationSent() {
+      return sent.value
+    },
+    markVerificationSent,
     refreshVerification,
     ensureProfile,
     signOutNow,
   }),
 }))
 
-vi.mock('@/lib/authApi', () => ({ resendVerification }))
+vi.mock('firebase/auth', () => ({ sendEmailVerification }))
 
 vi.mock('@/lib/redirect', () => ({ consumeRedirect }))
 
@@ -33,8 +40,9 @@ beforeEach(() => {
   refreshVerification.mockResolvedValue(false)
   ensureProfile.mockResolvedValue(undefined)
   signOutNow.mockResolvedValue(undefined)
-  resendVerification.mockResolvedValue(undefined)
+  sendEmailVerification.mockResolvedValue(undefined)
   consumeRedirect.mockReturnValue('/dashboard')
+  sent.value = false
 })
 
 describe('VerifyEmailView', () => {
@@ -114,19 +122,42 @@ describe('VerifyEmailView', () => {
     expect(refreshVerification).not.toHaveBeenCalled()
   })
 
-  it('resends without confirming whether the address needs it', async () => {
+  /**
+   * Registration sends nothing — it runs through the Admin SDK, which only
+   * generates links, and Firebase's sender needs a signed-in currentUser. So
+   * this screen is where the first verification email actually goes out.
+   */
+  it('sends the verification email when the gate is first reached', async () => {
+    mount(VerifyEmailView)
+    await flushPromises()
+
+    expect(sendEmailVerification).toHaveBeenCalledWith({ uid: 'alice' })
+    expect(markVerificationSent).toHaveBeenCalled()
+  })
+
+  it('does not send again on a remount within the same session', async () => {
+    sent.value = true
+    mount(VerifyEmailView)
+    await flushPromises()
+
+    expect(sendEmailVerification).not.toHaveBeenCalled()
+  })
+
+  it('resends on request', async () => {
+    sent.value = true
     const wrapper = mount(VerifyEmailView)
 
     await wrapper.findAll('button')[1]?.trigger('click')
     await flushPromises()
 
-    expect(resendVerification).toHaveBeenCalledWith('alice@example.test')
-    expect(wrapper.find('[data-testid="verify-resent"]').text()).toContain('If that address needs')
+    expect(sendEmailVerification).toHaveBeenCalledOnce()
+    expect(wrapper.find('[data-testid="verify-resent"]').text()).toContain('Sent again')
   })
 
-  it('surfaces a resend failure', async () => {
-    resendVerification.mockRejectedValue(
-      new Error('Too many attempts. Try again in a few minutes.'),
+  it('surfaces a rate-limited resend', async () => {
+    sent.value = true
+    sendEmailVerification.mockRejectedValue(
+      Object.assign(new Error('slow down'), { code: 'auth/too-many-requests' }),
     )
     const wrapper = mount(VerifyEmailView)
 

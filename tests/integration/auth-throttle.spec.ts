@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { API_BASE, postJson, recordedMail, resetEmulators, seedUser } from './helpers'
+import { adminAuth, API_BASE, postJson, resetEmulators, seedUser } from './helpers'
 
 /** Mirrors THROTTLE_LIMIT in functions/src/auth/throttle.ts. */
 const LIMIT = 5
@@ -78,13 +78,14 @@ describe('rate limiting the auth endpoints', () => {
     expect(other.status).toBe(200)
   })
 
-  it('sends no mail for a refused attempt', async () => {
+  it('creates no account for a refused attempt', async () => {
     await registerTimes(UNKNOWN, LIMIT)
-    const before = (await recordedMail()).length
 
-    await postJson('/auth/register', { email: UNKNOWN, password: PASSWORD })
+    await postJson('/auth/register', { email: 'refused@example.test', password: PASSWORD })
+    await registerTimes('refused@example.test', LIMIT + 1)
 
-    expect(await recordedMail()).toHaveLength(before)
+    const { users } = await adminAuth().listUsers()
+    expect(users.filter((u) => u.email === 'refused@example.test')).toHaveLength(1)
   })
 
   it('tells the caller how long to wait', async () => {
@@ -98,15 +99,5 @@ describe('rate limiting the auth endpoints', () => {
 
     expect(res.status).toBe(429)
     expect(Number(res.headers.get('retry-after'))).toBeGreaterThan(0)
-  })
-
-  it('applies to resend and password-reset as well as register', async () => {
-    for (let i = 0; i < LIMIT; i += 1) {
-      await postJson('/auth/resend', { email: UNKNOWN })
-    }
-
-    expect((await postJson('/auth/resend', { email: UNKNOWN })).status).toBe(429)
-    // Same address, and the budget is per address rather than per route.
-    expect((await postJson('/auth/password-reset', { email: UNKNOWN })).status).toBe(429)
   })
 })

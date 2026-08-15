@@ -297,3 +297,55 @@ All three are PR-B and all three need console access.
    test covering the D27 deadlock.
 7. T15's implementation preceded its spec; verified after the fact by disabling it.
 8. Phase 5 views were written implementation-first.
+
+
+---
+
+## Post-review rework — SMTP2GO removed
+
+Raised by the project owner: no email domain available, and the provider flow looked like
+over-engineering. It was.
+
+**Firebase Authentication sends verification and password-reset email itself**, from
+`noreply@<project>.firebaseapp.com`, with no domain to verify. The only email we could not
+delegate was the "you already have an account" nudge — and dropping that one email removes
+the entire provider. Recorded as **D31**, reversing D7 and D8.
+
+**Deleted:** the SMTP2GO transport, the `EmailTransport` seam, the fake transport, all three
+templates, `auth/links.ts`, `auth/mail.ts`, `/auth/resend`, `/auth/password-reset`, the
+`_devMail` collection and its rule, and their tests. Roughly 700 lines net.
+
+**Moved to the client SDK:** password reset (`sendPasswordResetEmail`, non-disclosing given
+enumeration protection) and verification (`sendEmailVerification`, sent by the gate).
+
+**The one structural consequence.** Registration cannot send the first verification email —
+it runs through the Admin SDK, which only generates links, and Firebase's sender needs a
+signed-in `currentUser`. So the gate sends it on first arrival, tracked on the store so a
+remount does not send twice. Sign-up copy changed from "check your inbox" to "you can sign
+in now", because the old copy would have been a lie.
+
+**This strengthened D5.** Previously the register branches sent *different emails*, so the
+branch was observable to whoever held the mailbox. Now nothing differs at all — an
+integration test asserts zero codes issued on both branches. Registering someone else's
+address also now mails them nothing, so the endpoint cannot be used to send unsolicited mail.
+
+**Reversed my own guardrail:** the ESLint rule banning `sendEmailVerification` and
+`sendPasswordResetEmail` from the frontend existed because two senders would have meant two
+differently-branded emails. Firebase is the only sender now, so those are the intended path.
+`createUserWithEmailAndPassword` and `fetchSignInMethodsForEmail` stay banned.
+
+**e2e** now reads codes from the Auth emulator's `/emulator/v1/projects/{id}/oobCodes`
+instead of `_devMail`, and rebuilds the URL against our own `/auth/action` route — which in
+production requires the custom action URL set on the email template.
+
+**Suite after the rework:** typecheck 0, lint 0, 235 unit, 16 rules, 34 integration, 4 e2e.
+
+## Password policy — D23 reversed
+
+The Identity Platform policy on the project requires uppercase, lowercase, numeric and
+special, capped at 50. The code follows the console rather than diverging from it, because
+that policy governs `confirmPasswordReset`, which runs client-side — a password our schema
+accepted and the console refused would let someone sign up with a password they could never
+set again on reset. Recorded as **D30**. `frontend/src/lib/password.ts` and
+`functions/src/auth/schema.ts` both mirror it, and both assert the bounds explicitly so the
+coupling to an unreadable console setting is visible where it would break.

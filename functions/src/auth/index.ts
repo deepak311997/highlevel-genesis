@@ -2,18 +2,21 @@ import { Router } from 'express'
 
 import { asyncHandler } from '../lib/errors'
 import { deleteExpiredUnverifiedUsers } from './cleanup'
-import { isEmulator } from '../lib/email'
+import { isEmulator } from '../lib/env'
 import { handleRegister } from './register'
-import { handlePasswordReset, handleResend } from './resend'
 import { throttleAuthRequest } from './throttleGuard'
 
 /**
- * The auth endpoints.
+ * The auth endpoint.
  *
- * These exist because the Firebase client SDK cannot implement a
- * non-disclosing registration: it reports `EMAIL_EXISTS` on the wire, so any
- * branching done in the browser is visible to whoever is asking. Everything
- * that must not vary by account state runs here instead.
+ * Only registration lives server-side, and only because the Firebase client
+ * SDK cannot implement it without disclosure: it reports `EMAIL_EXISTS` on the
+ * wire, so any branching done in the browser is visible to whoever is asking.
+ *
+ * Everything else — sign-in, sign-out, verification email, password reset — is
+ * client SDK. Firebase sends those emails itself, and with email-enumeration
+ * protection enabled `sendPasswordResetEmail` does not disclose either, so
+ * routing them through here would add a hop and buy nothing.
  *
  * The throttle is attached per route rather than with `router.use`. This router
  * is mounted at both `/` and `/api` — for the emulator and for the Hosting
@@ -25,8 +28,6 @@ export const authRouter: Router = Router()
 const throttled = asyncHandler(throttleAuthRequest)
 
 authRouter.post('/auth/register', throttled, asyncHandler(handleRegister))
-authRouter.post('/auth/resend', throttled, asyncHandler(handleResend))
-authRouter.post('/auth/password-reset', throttled, asyncHandler(handlePasswordReset))
 
 /**
  * Test-only door onto the scheduled sweep.

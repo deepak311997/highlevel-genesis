@@ -12,9 +12,14 @@ import { PASSWORD_POLICY_MESSAGE, passwordProblem } from '@/lib/password'
 
 /**
  * The success screen is reached for *every* accepted submission — a new
- * address, one already registered, one registered but unverified. That
- * sameness is the feature: the server returns an identical response for all
- * three, and this screen must not undo that by looking different.
+ * address or one already registered. That sameness is the feature: the server
+ * returns an identical response either way, and this screen must not undo that
+ * by looking different.
+ *
+ * It does not promise an email, because registration deliberately sends none.
+ * Verification is sent by the gate, after sign-in, once Firebase has a
+ * `currentUser` to send it for — which also means registering someone else's
+ * address mails them nothing.
  */
 type State =
   | { kind: 'editing' }
@@ -62,20 +67,16 @@ async function submit(): Promise<void> {
   <div class="mx-auto flex max-w-md flex-col gap-6">
     <Card>
       <CardHeader>
-        <CardTitle>{{
-          state.kind === 'sent' ? 'Check your inbox' : 'Create an account'
-        }}</CardTitle>
+        <CardTitle>{{ state.kind === 'sent' ? 'Almost there' : 'Create an account' }}</CardTitle>
       </CardHeader>
 
       <CardContent class="flex flex-col gap-4">
         <div v-if="state.kind === 'sent'" data-testid="signup-sent" class="flex flex-col gap-4">
           <Alert tone="success">
-            If that address can be used, we've sent it an email. Follow the link to finish setting
-            up your account.
+            You can sign in now. We'll confirm your email address next.
           </Alert>
           <p class="text-sm text-muted-foreground">
-            Didn't get it? Check your spam folder, or
-            <RouterLink to="/signin" class="underline">try signing in</RouterLink>.
+            <RouterLink to="/signin" class="underline">Go to sign in</RouterLink>
           </p>
         </div>
 

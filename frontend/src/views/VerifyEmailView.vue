@@ -1,11 +1,11 @@
 <script setup lang="ts">
+import { sendEmailVerification } from 'firebase/auth'
 import { onScopeDispose, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { resendVerification } from '@/lib/authApi'
 import { consumeRedirect } from '@/lib/redirect'
 import { useAuthStore } from '@/stores/auth'
 
@@ -20,6 +20,12 @@ import { useAuthStore } from '@/stores/auth'
  *
  * Polls rather than requiring a click, so verifying in a second tab releases
  * this one on its own.
+ *
+ * This screen also *sends* the verification email. Registration cannot: it runs
+ * server-side through the Admin SDK, which only generates links, and Firebase's
+ * own sender needs a signed-in `currentUser`. Sending here rather than at
+ * sign-up has a second benefit — registering someone else's address mails them
+ * nothing at all, so the endpoint cannot be used to send unsolicited email.
  */
 const POLL_INTERVAL_MS = 4_000
 
@@ -65,20 +71,29 @@ async function checkNow(): Promise<void> {
   state.value = { kind: 'waiting' }
 }
 
-async function resend(): Promise<void> {
-  const address = auth.email
-  if (address === null) return
+async function send(): Promise<boolean> {
+  const user = auth.user
+  if (user === null) return false
 
-  state.value = { kind: 'resending' }
   try {
-    await resendVerification(address)
-    state.value = { kind: 'resent' }
+    await sendEmailVerification(user)
+    return true
   } catch (err) {
+    const code = (err as { code?: unknown }).code
     state.value = {
       kind: 'failed',
-      message: err instanceof Error ? err.message : 'Something went wrong. Please try again.',
+      message:
+        code === 'auth/too-many-requests'
+          ? 'Too many attempts. Try again in a few minutes.'
+          : 'Something went wrong. Please try again.',
     }
+    return false
   }
+}
+
+async function resend(): Promise<void> {
+  state.value = { kind: 'resending' }
+  if (await send()) state.value = { kind: 'resent' }
 }
 
 async function signOut(): Promise<void> {
@@ -93,6 +108,14 @@ function stop(): void {
 }
 
 onMounted(() => {
+  // Sent once when the gate is first reached, so the user has a link without
+  // pressing anything. `sent` lives on the store rather than here, so returning
+  // to the gate — or a remount from a route change — does not send again.
+  if (!auth.verificationSent) {
+    auth.markVerificationSent()
+    void send()
+  }
+
   timer = setInterval(() => void releaseIfVerified(), POLL_INTERVAL_MS)
 })
 
@@ -108,7 +131,7 @@ onScopeDispose(stop)
 
       <CardContent class="flex flex-col gap-4" data-testid="verify-gate">
         <p class="text-sm text-muted-foreground">
-          We sent a link to
+          We've sent a link to
           <span class="font-medium text-foreground" data-testid="verify-address">{{
             auth.email ?? 'your address'
           }}</span
@@ -116,7 +139,7 @@ onScopeDispose(stop)
         </p>
 
         <Alert v-if="state.kind === 'resent'" tone="success" data-testid="verify-resent">
-          If that address needs a link, we've sent another one.
+          Sent again — check your inbox.
         </Alert>
 
         <Alert v-else-if="state.kind === 'failed'" tone="error" data-testid="verify-error">

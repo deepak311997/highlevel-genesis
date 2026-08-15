@@ -1,24 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import {
-  API_BASE,
-  adminAuth,
-  applyPasswordReset,
-  applyVerification,
-  canSignIn,
-  clearMail,
-  codeFrom,
-  linkFrom,
-  onlyMail,
-  postJson,
-  recordedMail,
-  resetEmulators,
-  seedUser,
-} from './helpers'
-
-const DEV_MAIL_FAILURE_ADDRESS = 'bounce@example.test'
+import { adminAuth, canSignIn, oobCodes, postJson, resetEmulators, seedUser } from './helpers'
 
 const EMAIL = 'alice@example.test'
+const UNKNOWN = 'nobody@example.test'
 const PASSWORD = 'Correct-Horse-9'
 const OTHER_PASSWORD = 'Different-Horse-7'
 
@@ -41,177 +26,77 @@ describe('POST /auth/register — address not registered', () => {
     expect(user.emailVerified).toBe(false)
   })
 
-  it('sends exactly one activation email, to that address', async () => {
-    await postJson('/auth/register', { email: EMAIL, password: PASSWORD })
-
-    const mail = await onlyMail()
-    expect(mail.to).toBe(EMAIL)
-    expect(mail.subject.toLowerCase()).toContain('verify')
-    expect(mail.textBody).toContain('/auth/action?')
-    expect(mail.textBody).toContain('mode=verifyEmail')
-  })
-
   it('normalises the address, so casing cannot fork one account into two', async () => {
     await postJson('/auth/register', { email: '  Alice@Example.TEST ', password: PASSWORD })
 
     const user = await adminAuth().getUserByEmail(EMAIL)
     expect(user.email).toBe(EMAIL)
-    expect(await recordedMail()).toHaveLength(1)
+  })
+
+  /**
+   * Registration sends nothing at all. Verification is sent later by the gate,
+   * once the user has signed in — which is what stops this endpoint from being
+   * usable to mail someone who never asked for an account.
+   */
+  it('sends no email', async () => {
+    await postJson('/auth/register', { email: EMAIL, password: PASSWORD })
+
+    expect(await oobCodes()).toHaveLength(0)
   })
 })
 
-describe('POST /auth/register — address already registered and verified', () => {
-  /**
-   * The criterion the whole server-side design exists for. If these two
-   * responses differ in any observable way — status, body, even byte length —
-   * the endpoint is an account-existence oracle and the rest of the flow is
-   * decoration.
-   */
-  it('responds byte-identically to a registration for an unknown address', async () => {
-    const fresh = await postJson('/auth/register', {
-      email: 'nobody@example.test',
-      password: PASSWORD,
-    })
+/**
+ * The criterion the whole server-side design exists for.
+ *
+ * The client SDK's `createUserWithEmailAndPassword` reports EMAIL_EXISTS on the
+ * wire, so branching in the browser closes nothing. Here nothing observable
+ * differs between the two branches — not the status, not the body, and now not
+ * even an email, since neither branch sends one.
+ */
+describe('POST /auth/register — address already registered', () => {
+  it.each([
+    ['verified', true],
+    ['unverified', false],
+  ])('responds byte-identically for an existing %s account', async (_label, verified) => {
+    const fresh = await postJson('/auth/register', { email: UNKNOWN, password: PASSWORD })
 
-    await seedUser(EMAIL, PASSWORD, true)
+    await seedUser(EMAIL, PASSWORD, verified)
     const existing = await postJson('/auth/register', { email: EMAIL, password: OTHER_PASSWORD })
 
     expect(existing.status).toBe(fresh.status)
     expect(existing.raw).toBe(fresh.raw)
   })
 
-  it('leaves the existing password alone', async () => {
-    await seedUser(EMAIL, PASSWORD, true)
-
-    await postJson('/auth/register', { email: EMAIL, password: OTHER_PASSWORD })
-
-    expect(await canSignIn(EMAIL, PASSWORD)).toBe(true)
-    expect(await canSignIn(EMAIL, OTHER_PASSWORD)).toBe(false)
-  })
-
-  it('does not create a second account', async () => {
-    await seedUser(EMAIL, PASSWORD, true)
-
-    await postJson('/auth/register', { email: EMAIL, password: OTHER_PASSWORD })
-
-    const { users } = await adminAuth().listUsers()
-    expect(users.filter((u) => u.email === EMAIL)).toHaveLength(1)
-  })
-
-  it('emails a reset link instead, and never a way to verify', async () => {
-    await seedUser(EMAIL, PASSWORD, true)
-
-    await postJson('/auth/register', { email: EMAIL, password: OTHER_PASSWORD })
-
-    const mail = await onlyMail()
-    expect(mail.to).toBe(EMAIL)
-    expect(mail.textBody.toLowerCase()).toContain('already have an account')
-    expect(mail.textBody).toContain('mode=resetPassword')
-    // An activation link here would let whoever submitted the form verify an
-    // account they do not control.
-    expect(mail.textBody).not.toContain('mode=verifyEmail')
-  })
-})
-
-/**
- * D18 — account pre-hijacking, and an amendment to how it is mitigated.
- *
- * An attacker can register a victim's address before the victim does. The
- * account existing is not the danger — Firestore rules deny an unverified token
- * everything. The danger is the victim later clicking "verify" and thereby
- * activating an account whose password the attacker chose.
- *
- * The plan called for replacing the password on a repeat registration and
- * issuing a fresh link that retires the old one. **Firebase does not retire
- * outstanding codes** — measured below — so that mitigation is not available.
- *
- * The rule instead is simpler and stronger: a registration request never
- * changes anything about an account that already exists. It only ever mails a
- * reset link, which lets whoever holds the mailbox take control of the
- * password. Both orderings then end safely:
- *
- *   attacker first — victim registers, gets a reset link, sets their own
- *   password; the attacker's password is gone before any link can verify it.
- *
- *   victim first — the attacker's registration changes nothing, and the reset
- *   link goes to the victim's mailbox, which the attacker does not hold.
- */
-describe('POST /auth/register — address registered but never verified', () => {
-  it('never changes the password of an account that already exists', async () => {
-    await seedUser(EMAIL, PASSWORD, false)
-
-    await postJson('/auth/register', { email: EMAIL, password: OTHER_PASSWORD })
-
-    expect(await canSignIn(EMAIL, PASSWORD)).toBe(true)
-    expect(await canSignIn(EMAIL, OTHER_PASSWORD)).toBe(false)
-  })
-
-  it('does not create a second account', async () => {
-    await seedUser(EMAIL, PASSWORD, false)
-
-    await postJson('/auth/register', { email: EMAIL, password: OTHER_PASSWORD })
-
-    const { users } = await adminAuth().listUsers()
-    expect(users.filter((u) => u.email === EMAIL)).toHaveLength(1)
-  })
-
   /**
-   * A reset link, not an activation link. An activation link here would let
-   * whoever submitted this form activate an account whose password someone else
-   * set — which is the pre-hijacking attack itself.
+   * A registration request may well be an attacker probing someone else's
+   * address. It must not be able to change, resend, or reveal anything about an
+   * account it does not control — which also closes the account pre-hijacking
+   * path, because Firebase does not retire outstanding verification codes.
    */
-  it('emails a reset link, never a fresh activation link', async () => {
-    await seedUser(EMAIL, PASSWORD, false)
+  it.each([
+    ['verified', true],
+    ['unverified', false],
+  ])('changes nothing about an existing %s account', async (_label, verified) => {
+    await seedUser(EMAIL, PASSWORD, verified)
 
     await postJson('/auth/register', { email: EMAIL, password: OTHER_PASSWORD })
 
-    const mail = await onlyMail()
-    expect(mail.textBody).toContain('mode=resetPassword')
-    expect(mail.textBody).not.toContain('mode=verifyEmail')
-  })
-
-  it('lets the mailbox holder take control through that link', async () => {
-    await seedUser(EMAIL, PASSWORD, false)
-    await postJson('/auth/register', { email: EMAIL, password: OTHER_PASSWORD })
-    const code = codeFrom(linkFrom(await onlyMail()))
-
-    expect(await applyPasswordReset(code, 'Third-Horse-3')).toBe(true)
-    expect(await canSignIn(EMAIL, 'Third-Horse-3')).toBe(true)
-    expect(await canSignIn(EMAIL, PASSWORD)).toBe(false)
-  })
-
-  it('responds identically to the other branches', async () => {
-    const fresh = await postJson('/auth/register', {
-      email: 'nobody@example.test',
-      password: PASSWORD,
-    })
-    await seedUser(EMAIL, PASSWORD, false)
-
-    const repeat = await postJson('/auth/register', { email: EMAIL, password: OTHER_PASSWORD })
-
-    expect(repeat.status).toBe(fresh.status)
-    expect(repeat.raw).toBe(fresh.raw)
-  })
-})
-
-/**
- * Pins the platform behaviour the design now works around, so that if Firebase
- * ever starts retiring superseded codes this test fails and someone re-reads
- * the reasoning above rather than inheriting it as folklore.
- */
-describe('platform behaviour: verification codes are not superseded', () => {
-  it('keeps an earlier verification link live after a later registration', async () => {
-    await postJson('/auth/register', { email: EMAIL, password: PASSWORD })
-    const firstCode = codeFrom(linkFrom(await onlyMail()))
-    await clearMail()
-
-    await postJson('/auth/register', { email: EMAIL, password: OTHER_PASSWORD })
-
-    // Still live — which is safe only because the second registration left the
-    // password alone, so this link can only ever verify the first registrant's
-    // own account.
-    expect(await applyVerification(firstCode)).toBe(true)
     expect(await canSignIn(EMAIL, PASSWORD)).toBe(true)
+    expect(await canSignIn(EMAIL, OTHER_PASSWORD)).toBe(false)
+
+    const user = await adminAuth().getUserByEmail(EMAIL)
+    expect(user.emailVerified).toBe(verified)
+
+    const { users } = await adminAuth().listUsers()
+    expect(users.filter((u) => u.email === EMAIL)).toHaveLength(1)
+  })
+
+  it('sends nothing, so the branch is invisible from the mailbox too', async () => {
+    await seedUser(EMAIL, PASSWORD, false)
+
+    await postJson('/auth/register', { email: EMAIL, password: OTHER_PASSWORD })
+
+    expect(await oobCodes()).toHaveLength(0)
   })
 })
 
@@ -222,87 +107,40 @@ describe('POST /auth/register — rejected input', () => {
    * "refused instantly" and "refused after a round trip" would answer the
    * question the endpoint exists to refuse.
    */
-  it('rejects a weak password without creating anything', async () => {
+  it('rejects a password that misses the policy without creating anything', async () => {
     const res = await postJson('/auth/register', { email: EMAIL, password: 'short' })
 
     expect(res.status).toBe(400)
     await expect(adminAuth().getUserByEmail(EMAIL)).rejects.toThrow()
-    expect(await recordedMail()).toHaveLength(0)
   })
 
-  it('rejects a weak password identically for an address that does exist', async () => {
+  it('rejects it identically for an address that does exist', async () => {
     await seedUser(EMAIL, PASSWORD, true)
 
-    const unknown = await postJson('/auth/register', {
-      email: 'nobody@example.test',
-      password: 'short',
-    })
+    const unknown = await postJson('/auth/register', { email: UNKNOWN, password: 'short' })
     const known = await postJson('/auth/register', { email: EMAIL, password: 'short' })
 
     expect(known.status).toBe(unknown.status)
     expect(known.raw).toBe(unknown.raw)
     expect(await canSignIn(EMAIL, PASSWORD)).toBe(true)
-    expect(await recordedMail()).toHaveLength(0)
+  })
+
+  it.each([
+    ['no uppercase', 'correct-horse-9'],
+    ['no digit', 'Correct-Horse-x'],
+    ['no symbol', 'CorrectHorse9x'],
+  ])('rejects a password with %s', async (_label, password) => {
+    expect((await postJson('/auth/register', { email: EMAIL, password })).status).toBe(400)
   })
 
   it('rejects a malformed address', async () => {
     const res = await postJson('/auth/register', { email: 'not-an-email', password: PASSWORD })
 
     expect(res.status).toBe(400)
-    expect(await recordedMail()).toHaveLength(0)
   })
 
   it('rejects a body that is not the expected shape', async () => {
     expect((await postJson('/auth/register', {})).status).toBe(400)
     expect((await postJson('/auth/register', { email: EMAIL })).status).toBe(400)
-    expect((await postJson('/auth/register', 'nonsense')).status).toBe(400)
-  })
-
-  /**
-   * Platform behaviour, pinned rather than fought.
-   *
-   * A body the Functions runtime cannot parse as JSON is refused by the runtime
-   * itself, before this Express app runs, with an HTML error page. That cannot
-   * be intercepted from inside the app — an error handler mounted after
-   * `express.json()` never sees it. The status is still 400, and no request our
-   * own client makes can reach this path.
-   *
-   * Where the request *does* reach us, the contract holds: the second case
-   * below arrives as a string and comes back in the standard JSON shape.
-   */
-  it('refuses an unparseable body at the runtime, and a wrong-typed one in our shape', async () => {
-    const unparseable = await postJson('/auth/register', 'nonsense')
-    expect(unparseable.status).toBe(400)
-
-    const wrongType = await fetch(`${API_BASE}/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: 'nonsense',
-    })
-    expect(wrongType.status).toBe(400)
-    expect(await wrongType.json()).toEqual({
-      error: expect.any(String),
-      code: 'invalid_request',
-    })
-  })
-})
-
-describe('POST /auth/register — the mail provider is down', () => {
-  /**
-   * AC-9. If a transport failure changed the response, the endpoint would leak
-   * on exactly the branch an attacker can provoke.
-   */
-  it('still reports success, and still creates the account', async () => {
-    const healthy = await postJson('/auth/register', { email: EMAIL, password: PASSWORD })
-    const failing = await postJson('/auth/register', {
-      email: DEV_MAIL_FAILURE_ADDRESS,
-      password: PASSWORD,
-    })
-
-    expect(failing.status).toBe(healthy.status)
-    expect(failing.raw).toBe(healthy.raw)
-
-    const user = await adminAuth().getUserByEmail(DEV_MAIL_FAILURE_ADDRESS)
-    expect(user.emailVerified).toBe(false)
   })
 })

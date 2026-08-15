@@ -78,15 +78,6 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // --- recorded mail (emulator only) --------------------------------
-    // Written by DevMailTransport when FUNCTIONS_EMULATOR is set, so the e2e
-    // suite can read a verification link without a mailbox. The documents
-    // contain live action codes — whoever holds one can verify an address or
-    // set a password — so no client may read them, in any environment.
-    match /_devMail/{id} {
-      allow read, write: if false;
-    }
-
     // --- everything else ----------------------------------------------
     // Collections are added slice by slice, each with its own rules and
     // its own denial test. Nothing is reachable until it is.

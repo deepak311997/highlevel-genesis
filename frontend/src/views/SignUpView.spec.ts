@@ -87,23 +87,28 @@ describe('SignUpView', () => {
   })
 
   /**
-   * The screen must look the same whether the address was new, already
-   * registered, or registered but unverified. The server returns an identical
-   * response for all three; a confirmation that said "we've created your
-   * account" would leak what the response deliberately does not.
+   * The screen must look the same whether the address was new or already
+   * registered. The server returns an identical response either way, and a
+   * confirmation saying "we've created your account" would leak what the
+   * response deliberately does not.
+   *
+   * It also must not promise an email: registration sends none, and telling
+   * someone to check an inbox that will stay empty is worse than saying
+   * nothing.
    */
-  it('shows a non-committal confirmation on success', async () => {
+  it('shows a non-committal confirmation that promises no email', async () => {
     const wrapper = mountView()
 
     await fill(wrapper, 'alice@example.test', 'Correct-Horse-9')
 
     const sent = wrapper.find('[data-testid="signup-sent"]')
     expect(sent.exists()).toBe(true)
-    expect(wrapper.text()).toContain('Check your inbox')
-    // "If that address can be used" — conditional on purpose. Anything
-    // declarative would confirm whether the address was already registered.
-    expect(sent.text()).toContain('If that address can be used')
-    expect(sent.text().toLowerCase()).not.toContain('account created')
+    expect(sent.text()).toContain('You can sign in now')
+
+    const copy = sent.text().toLowerCase()
+    expect(copy).not.toContain('account created')
+    expect(copy).not.toContain('check your inbox')
+    expect(copy).not.toContain("we've sent")
     expect(wrapper.find('form').exists()).toBe(false)
   })
 

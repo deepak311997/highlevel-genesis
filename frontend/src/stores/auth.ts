@@ -24,6 +24,8 @@ export interface AuthStore {
   isSignedIn: ComputedRef<boolean>
   isVerified: ComputedRef<boolean>
   email: ComputedRef<string | null>
+  verificationSent: Ref<boolean>
+  markVerificationSent: () => void
   signIn: (email: string, password: string) => Promise<void>
   signOutNow: () => Promise<void>
   refreshVerification: () => Promise<boolean>
@@ -34,12 +36,22 @@ export const useAuthStore = defineStore('auth', (): AuthStore => {
   const user = ref<User | null>(null)
   const initialised = ref(false)
 
+  /**
+   * Whether the gate has already sent a verification email this session.
+   *
+   * Lives here rather than in the component so a remount — a route change, a
+   * bounce through the guard — does not send a second email. Reset whenever the
+   * session changes, so signing in as someone else sends theirs.
+   */
+  const verificationSent = ref(false)
+
   let settle: () => void = () => undefined
   const ready = new Promise<void>((resolve) => {
     settle = resolve
   })
 
   onAuthStateChanged(auth, (next) => {
+    if (next?.uid !== user.value?.uid) verificationSent.value = false
     user.value = next
     if (!initialised.value) {
       initialised.value = true
@@ -50,6 +62,10 @@ export const useAuthStore = defineStore('auth', (): AuthStore => {
   const isSignedIn = computed(() => user.value !== null)
   const isVerified = computed(() => user.value?.emailVerified === true)
   const email = computed(() => user.value?.email ?? null)
+
+  function markVerificationSent(): void {
+    verificationSent.value = true
+  }
 
   async function signIn(address: string, password: string): Promise<void> {
     await signInWithEmailAndPassword(auth, address, password)
@@ -122,6 +138,8 @@ export const useAuthStore = defineStore('auth', (): AuthStore => {
     isSignedIn,
     isVerified,
     email,
+    verificationSent,
+    markVerificationSent,
     signIn,
     signOutNow,
     refreshVerification,
