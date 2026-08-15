@@ -5,9 +5,11 @@
 Describe an app in chat; an LLM generates working code that calls **real HighLevel APIs**,
 streamed token-by-token into an editor, with a live preview rendering real CRM data.
 
-> **Status: Slice 0 (Rails) complete.** The scaffold, test harness, and CI are in place, and a
-> `/health` page proves the full path — browser → Cloud Function → Firestore → back. Feature
-> slices land one pull request at a time; see [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
+> **Status: Slice 1 (Account & session) in review.** Sign up, verify by email, sign in, sign
+> out, with a blocking verification gate and a non-disclosing registration flow. Slice 0's
+> `/health` page still proves the full path — browser → Cloud Function → Firestore → back.
+> Feature slices land one pull request at a time; see
+> [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
 
 ---
 
@@ -61,11 +63,18 @@ offline. You only need a real Firebase project to deploy.
 ```bash
 npm run typecheck      # vue-tsc + tsc
 npm run lint           # eslint, zero warnings tolerated
-npm run test:unit      # Vitest — pure logic + Vue components
-npm run test:rules     # Firestore security rules against the emulator
-npm run test:e2e       # Playwright (needs `npm run dev` running)
-npm test               # typecheck + lint + unit + rules
+npm run test:unit         # Vitest — pure logic + Vue components
+npm run test:rules        # Firestore security rules against the emulator
+npm run test:integration  # Cloud Functions end to end against the emulators
+npm run test:e2e          # Playwright — starts the emulators itself
+npm test                  # typecheck + lint + unit + rules + integration
 ```
+
+`test:integration` and `test:e2e` wrap themselves in `firebase emulators:exec` and pass their
+own configuration inline, so both run from a fresh clone with no `.env` and no credentials.
+The e2e suite builds the frontend with `--mode emulator`; every other mode targets real
+Firebase, and that choice is made at build time so a production bundle cannot reach an
+emulator.
 
 ---
 
@@ -94,6 +103,39 @@ Full research notes, including API versions and known gotchas, are in
 
 ---
 
+## Auth setup
+
+Sign-up runs through a Cloud Function rather than the Firebase client SDK, so the response
+cannot reveal whether an address is already registered. That means outbound email is ours to
+send, and two controls live in the Firebase console rather than in this repo.
+
+**Needed to run locally:** nothing. The emulators record mail into a Firestore collection
+instead of sending it, and the e2e suite reads verification links from there.
+
+**Needed to deploy:**
+
+```bash
+firebase functions:secrets:set SMTP2GO_API_KEY   # verified sender domain required
+```
+
+plus `MAIL_FROM_EMAIL`, `APP_BASE_URL` and `ALLOWED_ORIGINS` in `functions/.env` — see
+`functions/.env.example`.
+
+**Console settings, which no test can verify.** The emulator enforces neither, so a green
+suite says nothing about either one:
+
+| Setting | Why |
+|---|---|
+| Email enumeration protection | Sign-in goes browser-to-Identity-Toolkit directly and we never see it. Our endpoints close sign-up; only this closes sign-in. |
+| Password policy (min 8, no composition rules) | Passwords are set through Identity Toolkit, so client-side validation alone is bypassable. Requires Identity Platform. |
+
+**A limit worth stating plainly:** the registration endpoint returns a byte-identical response
+whichever branch it takes, but the branches do measurably different work, so response *timing*
+can still distinguish them. Rate limiting raises the cost of exploiting that; it does not
+remove it.
+
+---
+
 ## Architecture decisions
 
 1. **Firestore security rules are the API for reads.** The SPA subscribes to Firestore
@@ -118,7 +160,14 @@ Full research notes, including API versions and known gotchas, are in
    a malformed response cannot leave a project half-written.
 9. **The HighLevel cheat-sheet sits behind a prompt-cache breakpoint.** It is identical on every
    generation, so it should be a cache read rather than a re-send.
-10. **Vertical slices, each its own pull request.** Every slice ships UI, API, data, and tests
+10. **Account creation is server-side, and the response never varies.** The client SDK reports
+    `EMAIL_EXISTS` on the wire, so no amount of careful error copy hides whether an address is
+    registered — an attacker reads the network response, not the form. Moving creation behind
+    the Admin SDK is the only thing that actually closes it.
+11. **`email_verified` is enforced in Firestore rules, not just the router.** A route guard
+    stops a browser; it does not stop anyone holding a valid token. This is what makes an
+    account registered at someone else's address able to reach nothing.
+12. **Vertical slices, each its own pull request.** Every slice ships UI, API, data, and tests
     together and is demoable when it merges — no branch accumulates a backend with no screen.
 
 ---
@@ -135,6 +184,9 @@ Full research notes, including API versions and known gotchas, are in
    generated output without spending tokens or depending on model nondeterminism.
 5. **Per-user rate limiting and cost accounting on `generate`.** Right now a loop in a generated
    app could run up a bill with nothing to stop it.
+6. **Breached-password screening on sign-up.** A Have I Been Pwned k-anonymity lookup is the
+   single highest-value addition to a length-only password policy, and the password never
+   leaves the browser to do it.
 
 ---
 
