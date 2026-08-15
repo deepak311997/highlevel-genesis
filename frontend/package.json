@@ -11,7 +11,9 @@
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write src",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "dev:emulator": "vite --mode emulator",
+    "build:emulator": "vite build --mode emulator"
   },
   "dependencies": {
     "@fontsource-variable/space-grotesk": "^5.3.0",

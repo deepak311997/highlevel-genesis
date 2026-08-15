@@ -1,6 +1,6 @@
 import { initializeApp, type FirebaseApp, type FirebaseOptions } from 'firebase/app'
-import { getAuth, type Auth } from 'firebase/auth'
-import { getFirestore, type Firestore } from 'firebase/firestore'
+import { connectAuthEmulator, getAuth, type Auth } from 'firebase/auth'
+import { connectFirestoreEmulator, getFirestore, type Firestore } from 'firebase/firestore'
 
 const env = import.meta.env
 
@@ -48,3 +48,20 @@ const databaseId = required('VITE_FIREBASE_DATABASE_ID', env.VITE_FIREBASE_DATAB
 export const app: FirebaseApp = initializeApp(config)
 export const auth: Auth = getAuth(app)
 export const db: Firestore = getFirestore(app, databaseId)
+
+/**
+ * Emulators are chosen by **build mode**, never by a runtime flag.
+ *
+ * `import.meta.env.MODE` is replaced with a literal at build time, so in any
+ * other mode this comparison is `'production' === 'emulator'` and the whole
+ * block — including the imports it is the only user of — is eliminated. A
+ * production bundle cannot reach an emulator even if something at runtime
+ * asked it to, which is the property a runtime flag could not give us.
+ *
+ * Reached by `vite --mode emulator`, which is what the Playwright suite builds.
+ * Vitest runs in mode `test`, so unit tests never open a socket.
+ */
+if (import.meta.env.MODE === 'emulator') {
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true })
+  connectFirestoreEmulator(db, '127.0.0.1', 8080)
+}

@@ -10,9 +10,30 @@ const FUNCTIONS_REGION = 'asia-south1'
 
 const HERE = fileURLToPath(new URL('.', import.meta.url))
 
+/**
+ * Config for `--mode emulator`, supplied here rather than in a .env file.
+ *
+ * None of it is secret — it identifies a throwaway demo project — but `.env.*`
+ * is deliberately gitignored with a broad glob, so a committed `.env.emulator`
+ * is not available. Baking the values in keeps the e2e suite runnable from a
+ * fresh clone with no setup, which is the whole point of the emulator path.
+ */
+const EMULATOR_ENV: Record<string, string> = {
+  VITE_FIREBASE_API_KEY: 'fake-api-key',
+  VITE_FIREBASE_AUTH_DOMAIN: 'demo-genesis.firebaseapp.com',
+  VITE_FIREBASE_PROJECT_ID: 'demo-genesis',
+  VITE_FIREBASE_DATABASE_ID: 'highlevel-genesis',
+  // Blank: requests stay same-origin and go through the proxy below, exactly
+  // as the Hosting rewrite does in production.
+  VITE_FUNCTIONS_BASE_URL: '',
+}
+
+/** Where the emulated `api` function lives. */
+const EMULATOR_FUNCTIONS_TARGET = 'http://127.0.0.1:5001/demo-genesis/asia-south1'
+
 export default defineConfig(({ mode }) => {
   // .env sits next to this file, which is where Vite looks by default.
-  const env = loadEnv(mode, HERE, '')
+  const env = mode === 'emulator' ? EMULATOR_ENV : loadEnv(mode, HERE, '')
 
   // Where /api and /generate go in development.
   //
@@ -38,12 +59,28 @@ export default defineConfig(({ mode }) => {
   }
 
   const functionsTarget =
-    override !== undefined && override !== ''
-      ? override
-      : `https://${FUNCTIONS_REGION}-${projectId ?? ''}.cloudfunctions.net`
+    mode === 'emulator'
+      ? EMULATOR_FUNCTIONS_TARGET
+      : override !== undefined && override !== ''
+        ? override
+        : `https://${FUNCTIONS_REGION}-${projectId ?? ''}.cloudfunctions.net`
+
+  // In emulator mode the values above have to reach the *app*, not just this
+  // config. Vite only injects import.meta.env from .env files it loads itself,
+  // and .env.* is gitignored, so they are substituted statically instead.
+  const define =
+    mode === 'emulator'
+      ? Object.fromEntries(
+          Object.entries(EMULATOR_ENV).map(([key, value]) => [
+            `import.meta.env.${key}`,
+            JSON.stringify(value),
+          ]),
+        )
+      : {}
 
   return {
     plugins: [vue(), tailwindcss()],
+    define,
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
