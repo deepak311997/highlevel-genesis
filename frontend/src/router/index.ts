@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-import HomeView from '@/views/HomeView.vue'
 import { installAuthGuard } from './guard'
 
 /**
@@ -8,17 +7,16 @@ import { installAuthGuard } from './guard'
  * the guard, but relying on it would mean a route added in a later slice is
  * protected by accident rather than by decision — and the one route that must
  * *not* be protected, `/auth/action`, would be the easiest to get wrong.
+ *
+ * There is no landing page. `/` is classed `protected`, so the guard resolves
+ * it the same way it resolves anything else: signed out goes to sign-in,
+ * unverified to the gate, verified to the dashboard. A marketing page in front
+ * of a tool nobody can use without an account is a step, not a welcome.
  */
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', name: 'home', component: HomeView, meta: { access: 'public' } },
-    {
-      path: '/health',
-      name: 'health',
-      component: () => import('@/views/HealthView.vue'),
-      meta: { access: 'public' },
-    },
+    { path: '/', name: 'home', redirect: '/dashboard', meta: { access: 'protected' } },
     {
       path: '/signup',
       name: 'signup',
@@ -57,6 +55,8 @@ const router = createRouter({
       component: () => import('@/views/DashboardView.vue'),
       meta: { access: 'protected' },
     },
+    // Anything unrecognised resolves through the guard rather than 404ing.
+    { path: '/:pathMatch(.*)*', redirect: '/dashboard', meta: { access: 'protected' } },
   ],
 })
 

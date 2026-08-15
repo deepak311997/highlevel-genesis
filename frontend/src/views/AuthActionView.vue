@@ -6,8 +6,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import PasswordField from '@/components/PasswordField.vue'
 import { auth } from '@/lib/firebase'
 import { passwordProblem } from '@/lib/password'
 import { useAuthStore } from '@/stores/auth'
@@ -180,12 +179,13 @@ onMounted(run)
           @submit.prevent="savePassword"
         >
           <div class="flex flex-col gap-1.5">
-            <Label for="new-password">New password</Label>
-            <Input
+            <PasswordField
               id="new-password"
               v-model="password"
-              type="password"
+              label="New password"
               autocomplete="new-password"
+              show-rules
+              autofocus
               :invalid="passwordError !== ''"
             />
             <p

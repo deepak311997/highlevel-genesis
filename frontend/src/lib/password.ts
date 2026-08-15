@@ -26,6 +26,36 @@ export const PASSWORD_POLICY_MESSAGE =
 /** Non-alphanumeric, matching how Identity Platform counts a "special" character. */
 const SPECIAL = /[^A-Za-z0-9]/
 
+export interface PasswordCheck {
+  id: string
+  label: string
+  met: boolean
+}
+
+/**
+ * Per-rule state, for live feedback while someone types.
+ *
+ * Itemised here even though the *error message* deliberately is not. The
+ * asymmetry is the point: the server's message must not report which rules a
+ * candidate password already satisfies, because that helps someone probing an
+ * endpoint. This runs on a password the user is typing into their own browser
+ * and touches no account, so it reveals nothing — and with four composition
+ * rules to satisfy, guessing which one is missing is a miserable way to sign up.
+ */
+export function passwordChecks(value: string): PasswordCheck[] {
+  return [
+    {
+      id: 'length',
+      label: `${String(PASSWORD_MIN)}–${String(PASSWORD_MAX)} characters`,
+      met: value.length >= PASSWORD_MIN && value.length <= PASSWORD_MAX,
+    },
+    { id: 'upper', label: 'An uppercase letter', met: /[A-Z]/.test(value) },
+    { id: 'lower', label: 'A lowercase letter', met: /[a-z]/.test(value) },
+    { id: 'digit', label: 'A number', met: /[0-9]/.test(value) },
+    { id: 'special', label: 'A symbol', met: SPECIAL.test(value) },
+  ]
+}
+
 /**
  * `null` when the password is acceptable, otherwise the message to show.
  *

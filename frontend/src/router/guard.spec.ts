@@ -61,7 +61,7 @@ describe('resolveNavigation — signed in but unverified', () => {
   )
 
   it('still allows public routes', () => {
-    expect(resolveNavigation('public', UNVERIFIED, '/health')).toBeNull()
+    expect(resolveNavigation('public', UNVERIFIED, '/anything-public')).toBeNull()
   })
 })
 
@@ -78,7 +78,7 @@ describe('resolveNavigation — verified', () => {
   )
 
   it('leaves public and action routes alone', () => {
-    expect(resolveNavigation('public', VERIFIED, '/health')).toBeNull()
+    expect(resolveNavigation('public', VERIFIED, '/anything-public')).toBeNull()
     expect(resolveNavigation('action', VERIFIED, '/auth/action')).toBeNull()
   })
 })

@@ -12,7 +12,12 @@ import { defineConfig, devices } from '@playwright/test'
  */
 export default defineConfig({
   testDir: './tests/e2e',
-  fullyParallel: true,
+  // One emulator, shared by every test, and each clears it before running —
+  // so a parallel run has one test wiping another's account mid-flight. The
+  // rules and integration suites set fileParallelism: false for the same
+  // reason; this was the one place still running concurrently.
+  fullyParallel: false,
+  workers: 1,
   forbidOnly: !!process.env['CI'],
   retries: process.env['CI'] ? 1 : 0,
   reporter: process.env['CI'] ? 'github' : 'list',
@@ -24,7 +29,10 @@ export default defineConfig({
   webServer: {
     command: 'npm --prefix frontend run dev:emulator',
     url: 'http://localhost:5173',
-    reuseExistingServer: !process.env['CI'],
+    // Never reuse. A development-mode server on the same port talks to real
+    // Firebase, and reusing it means the suite tests production while looking
+    // like it tested the emulator. Failing to start is the better outcome.
+    reuseExistingServer: false,
     timeout: 60_000,
   },
 })

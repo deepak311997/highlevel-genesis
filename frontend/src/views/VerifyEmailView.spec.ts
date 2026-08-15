@@ -34,6 +34,24 @@ vi.mock('vue-router', () => ({
 
 import VerifyEmailView from './VerifyEmailView.vue'
 
+/**
+ * Found by the text a user reads, not by position. The buttons have been
+ * reordered twice while this screen was designed, and an index-based selector
+ * silently starts asserting about a different control each time.
+ */
+function clickButton(wrapper: ReturnType<typeof mount>, text: string) {
+  const button = wrapper.findAll('button').find((b) => b.text().includes(text))
+  if (button === undefined) {
+    throw new Error(
+      `no button containing "${text}". Present: ${wrapper
+        .findAll('button')
+        .map((b) => b.text())
+        .join(' | ')}`,
+    )
+  }
+  return button.trigger('click')
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   vi.useFakeTimers()
@@ -55,7 +73,7 @@ describe('VerifyEmailView', () => {
   it('keeps the user here while the address is still unverified', async () => {
     const wrapper = mount(VerifyEmailView)
 
-    await wrapper.findAll('button')[0]?.trigger('click')
+    await clickButton(wrapper, "I've verified")
     await flushPromises()
 
     expect(push).not.toHaveBeenCalled()
@@ -74,7 +92,7 @@ describe('VerifyEmailView', () => {
     refreshVerification.mockResolvedValue(true)
     const wrapper = mount(VerifyEmailView)
 
-    await wrapper.findAll('button')[0]?.trigger('click')
+    await clickButton(wrapper, "I've verified")
     await flushPromises()
 
     expect(refreshVerification).toHaveBeenCalled()
@@ -85,7 +103,7 @@ describe('VerifyEmailView', () => {
     refreshVerification.mockResolvedValue(true)
     const wrapper = mount(VerifyEmailView)
 
-    await wrapper.findAll('button')[0]?.trigger('click')
+    await clickButton(wrapper, "I've verified")
     await flushPromises()
 
     expect(ensureProfile).toHaveBeenCalled()
@@ -96,7 +114,7 @@ describe('VerifyEmailView', () => {
     consumeRedirect.mockReturnValue('/health')
     const wrapper = mount(VerifyEmailView)
 
-    await wrapper.findAll('button')[0]?.trigger('click')
+    await clickButton(wrapper, "I've verified")
     await flushPromises()
 
     expect(push).toHaveBeenCalledWith('/health')
@@ -147,7 +165,7 @@ describe('VerifyEmailView', () => {
     sent.value = true
     const wrapper = mount(VerifyEmailView)
 
-    await wrapper.findAll('button')[1]?.trigger('click')
+    await clickButton(wrapper, 'Resend')
     await flushPromises()
 
     expect(sendEmailVerification).toHaveBeenCalledOnce()
@@ -161,7 +179,7 @@ describe('VerifyEmailView', () => {
     )
     const wrapper = mount(VerifyEmailView)
 
-    await wrapper.findAll('button')[1]?.trigger('click')
+    await clickButton(wrapper, 'Resend')
     await flushPromises()
 
     expect(wrapper.find('[data-testid="verify-error"]').text()).toContain('Too many attempts')
@@ -170,7 +188,7 @@ describe('VerifyEmailView', () => {
   it('lets someone signed in as the wrong account get out', async () => {
     const wrapper = mount(VerifyEmailView)
 
-    await wrapper.findAll('button')[2]?.trigger('click')
+    await clickButton(wrapper, 'Sign out')
     await flushPromises()
 
     expect(signOutNow).toHaveBeenCalled()

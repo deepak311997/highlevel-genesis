@@ -5,7 +5,7 @@ import { useRouter } from 'vue-router'
 
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { consumeRedirect } from '@/lib/redirect'
 import { useAuthStore } from '@/stores/auth'
 
@@ -41,6 +41,16 @@ const router = useRouter()
 const state = ref<State>({ kind: 'waiting' })
 const stillUnverified = ref(false)
 
+/**
+ * Whether the link has actually gone out.
+ *
+ * Tracked rather than assumed: the headline below used to claim "we've sent a
+ * link" from the first frame, which was untrue while the request was in flight
+ * and stayed untrue if it failed — leaving the screen asserting a send and
+ * showing an error about it at the same time.
+ */
+const delivery = ref<'sending' | 'sent' | 'failed'>('sending')
+
 let timer: ReturnType<typeof setInterval> | undefined
 
 /**
@@ -75,10 +85,13 @@ async function send(): Promise<boolean> {
   const user = auth.user
   if (user === null) return false
 
+  delivery.value = 'sending'
   try {
     await sendEmailVerification(user)
+    delivery.value = 'sent'
     return true
   } catch (err) {
+    delivery.value = 'failed'
     const code = (err as { code?: unknown }).code
     state.value = {
       kind: 'failed',
@@ -125,40 +138,75 @@ onScopeDispose(stop)
 <template>
   <div class="mx-auto flex max-w-md flex-col gap-6">
     <Card>
-      <CardHeader>
-        <CardTitle>Verify your email</CardTitle>
-      </CardHeader>
+      <CardContent class="flex flex-col gap-5 pt-6" data-testid="verify-gate">
+        <!-- A single focal point. The page has no action the user takes *here* —
+             the work happens in their mail client — so the design points at the
+             inbox rather than at a button. -->
+        <div class="flex flex-col items-center gap-3 text-center">
+          <span
+            class="flex h-12 w-12 items-center justify-center rounded-full bg-secondary text-2xl"
+            aria-hidden="true"
+            >✉️</span
+          >
+          <h1 class="text-xl font-bold tracking-tight">Check your email</h1>
 
-      <CardContent class="flex flex-col gap-4" data-testid="verify-gate">
-        <p class="text-sm text-muted-foreground">
-          We've sent a link to
-          <span class="font-medium text-foreground" data-testid="verify-address">{{
-            auth.email ?? 'your address'
-          }}</span
-          >. Open it to finish setting up your account — you can leave this page open.
-        </p>
+          <p class="text-sm text-muted-foreground" data-testid="verify-headline">
+            <template v-if="delivery === 'sending'">Sending a verification link to </template>
+            <template v-else-if="delivery === 'failed'">We couldn't send a link to </template>
+            <template v-else>We've sent a link to </template>
+            <span class="font-medium text-foreground" data-testid="verify-address">{{
+              auth.email ?? 'your address'
+            }}</span>
+          </p>
+        </div>
 
-        <Alert v-if="state.kind === 'resent'" tone="success" data-testid="verify-resent">
-          Sent again — check your inbox.
-        </Alert>
-
-        <Alert v-else-if="state.kind === 'failed'" tone="error" data-testid="verify-error">
+        <Alert v-if="state.kind === 'failed'" tone="error" data-testid="verify-error">
           {{ state.message }}
         </Alert>
 
-        <Alert v-else-if="stillUnverified" tone="info" data-testid="verify-still-waiting">
+        <Alert v-else-if="state.kind === 'resent'" tone="success" data-testid="verify-resent">
+          Sent again — check your inbox.
+        </Alert>
+
+        <!-- The page polls, so the user does not have to come back and press
+             anything. Saying so is what stops the screen looking stuck. -->
+        <div
+          v-else-if="delivery === 'sent'"
+          data-testid="verify-watching"
+          class="flex items-center justify-center gap-2 rounded-md border border-border-strong bg-secondary px-3 py-2 text-sm text-muted-foreground"
+        >
+          <span class="relative flex h-2 w-2" aria-hidden="true">
+            <span
+              class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60"
+            ></span>
+            <span class="relative inline-flex h-2 w-2 rounded-full bg-accent"></span>
+          </span>
+          <span>Waiting for you to open it — this page continues on its own.</span>
+        </div>
+
+        <Alert v-if="stillUnverified" tone="info" data-testid="verify-still-waiting">
           We can't see a verification yet — check your inbox, or resend the link.
         </Alert>
 
-        <div class="flex flex-wrap gap-2">
-          <Button :disabled="state.kind === 'checking'" @click="checkNow">
+        <div class="flex flex-col gap-2">
+          <Button variant="secondary" :disabled="state.kind === 'resending'" @click="resend">
+            {{ state.kind === 'resending' ? 'Sending…' : 'Resend the link' }}
+          </Button>
+          <Button variant="outline" :disabled="state.kind === 'checking'" @click="checkNow">
             {{ state.kind === 'checking' ? 'Checking…' : "I've verified — continue" }}
           </Button>
-          <Button variant="outline" :disabled="state.kind === 'resending'" @click="resend">
-            {{ state.kind === 'resending' ? 'Sending…' : 'Resend link' }}
-          </Button>
-          <Button variant="ghost" @click="signOut">Sign out</Button>
         </div>
+
+        <p class="text-center text-xs text-muted-foreground">
+          Not in your inbox? Check the spam folder — it can take a minute to arrive.
+        </p>
+
+        <p class="border-t pt-4 text-center text-xs text-muted-foreground">
+          Signed in as {{ auth.email }}. Not you?
+          <button type="button" class="underline hover:text-foreground" @click="signOut">
+            Sign out
+          </button>
+        </p>
       </CardContent>
     </Card>
   </div>

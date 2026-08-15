@@ -7,8 +7,10 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import PasswordField from '@/components/PasswordField.vue'
 import { register } from '@/lib/authApi'
-import { PASSWORD_POLICY_MESSAGE, passwordProblem } from '@/lib/password'
+import { rememberEmail } from '@/lib/handoff'
+import { passwordProblem } from '@/lib/password'
 
 /**
  * The success screen is reached for *every* accepted submission — a new
@@ -53,6 +55,8 @@ async function submit(): Promise<void> {
   state.value = { kind: 'submitting' }
   try {
     await register(email.value.trim(), password.value)
+    // So sign-in can prefill rather than asking for it a second time.
+    rememberEmail(email.value.trim())
     state.value = { kind: 'sent' }
   } catch (err) {
     state.value = {
@@ -75,9 +79,7 @@ async function submit(): Promise<void> {
           <Alert tone="success">
             You can sign in now. We'll confirm your email address next.
           </Alert>
-          <p class="text-sm text-muted-foreground">
-            <RouterLink to="/signin" class="underline">Go to sign in</RouterLink>
-          </p>
+          <RouterLink to="/signin"><Button>Sign in</Button></RouterLink>
         </div>
 
         <form v-else class="flex flex-col gap-4" novalidate @submit.prevent="submit">
@@ -92,6 +94,7 @@ async function submit(): Promise<void> {
               v-model="email"
               type="email"
               autocomplete="email"
+              autofocus
               :invalid="fieldError.email !== undefined"
             />
             <p
@@ -104,12 +107,12 @@ async function submit(): Promise<void> {
           </div>
 
           <div class="flex flex-col gap-1.5">
-            <Label for="signup-password">Password</Label>
-            <Input
+            <PasswordField
               id="signup-password"
               v-model="password"
-              type="password"
+              label="Password"
               autocomplete="new-password"
+              show-rules
               :invalid="fieldError.password !== undefined"
             />
             <p
@@ -118,9 +121,6 @@ async function submit(): Promise<void> {
               class="text-xs text-destructive"
             >
               {{ fieldError.password }}
-            </p>
-            <p v-else class="text-xs text-muted-foreground">
-              {{ PASSWORD_POLICY_MESSAGE }}
             </p>
           </div>
 

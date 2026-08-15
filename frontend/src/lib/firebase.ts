@@ -64,4 +64,12 @@ export const db: Firestore = getFirestore(app, databaseId)
 if (import.meta.env.MODE === 'emulator') {
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true })
   connectFirestoreEmulator(db, '127.0.0.1', 8080)
+
+  // A marker the e2e suite checks before it does anything. Playwright will
+  // happily reuse whatever dev server is already on the port, and a
+  // development-mode server talks to *real* Firebase — so without this the
+  // suite silently creates accounts on the live project and reports a
+  // confusing failure rather than the true one. Statically eliminated in
+  // every other mode, like the block it sits in.
+  document.documentElement.dataset['genesisEmulator'] = 'true'
 }

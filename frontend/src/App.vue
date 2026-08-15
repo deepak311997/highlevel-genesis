@@ -31,37 +31,49 @@ async function signOut(): Promise<void> {
         </RouterLink>
 
         <RouterLink
-          v-if="auth.isVerified"
+          v-if="auth.initialised && auth.isVerified"
           to="/dashboard"
           class="text-sm text-muted-foreground hover:text-foreground"
         >
           Dashboard
         </RouterLink>
-        <RouterLink to="/health" class="text-sm text-muted-foreground hover:text-foreground">
-          Health
-        </RouterLink>
-
         <div class="ml-auto flex items-center gap-3">
-          <span
-            v-if="auth.isSignedIn"
-            data-testid="header-email"
-            class="hidden text-sm text-muted-foreground sm:inline"
-          >
-            {{ auth.email }}
-          </span>
-          <Button v-if="auth.isSignedIn" variant="ghost" size="sm" @click="signOut">
-            Sign out
-          </Button>
-          <RouterLink v-else to="/signin">
-            <Button variant="secondary" size="sm">Sign in</Button>
-          </RouterLink>
+          <!--
+            Nothing auth-dependent renders until Firebase has answered. Without
+            the guard the header paints "Sign in" on every load and then swaps
+            to the signed-in state a moment later — a flicker on the one element
+            that is on every page.
+          -->
+          <template v-if="auth.initialised">
+            <span
+              v-if="auth.isSignedIn"
+              data-testid="header-email"
+              class="hidden text-sm text-muted-foreground sm:inline"
+            >
+              {{ auth.email }}
+            </span>
+            <Button v-if="auth.isSignedIn" variant="ghost" size="sm" @click="signOut">
+              Sign out
+            </Button>
+            <RouterLink v-else to="/signin">
+              <Button variant="secondary" size="sm">Sign in</Button>
+            </RouterLink>
+          </template>
           <ThemeToggle />
         </div>
       </nav>
     </header>
 
     <main class="mx-auto max-w-5xl px-6 py-10">
-      <RouterView />
+      <!--
+        The router guard awaits the same signal before resolving any route, so
+        until Firebase answers there is nothing to show. Saying so beats an
+        empty page on a slow connection.
+      -->
+      <p v-if="!auth.initialised" data-testid="app-loading" class="text-sm text-muted-foreground">
+        Loading…
+      </p>
+      <RouterView v-else />
     </main>
   </div>
 </template>

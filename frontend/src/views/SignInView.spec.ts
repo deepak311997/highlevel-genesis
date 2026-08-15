@@ -10,7 +10,7 @@ vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ signIn }) }))
 
 vi.mock('vue-router', () => ({
   RouterLink: { template: '<a><slot /></a>' },
-  useRouter: () => ({ push, getRoutes: () => [{ path: '/dashboard' }, { path: '/health' }] }),
+  useRouter: () => ({ push, getRoutes: () => [{ path: '/dashboard' }, { path: '/signup' }] }),
   useRoute: () => ({ query: query.value }),
 }))
 
@@ -49,12 +49,12 @@ describe('SignInView', () => {
   })
 
   it('honours a safe redirect target', async () => {
-    query.value = { redirect: '/health' }
+    query.value = { redirect: '/signup' }
     const wrapper = mountView()
 
     await submit(wrapper)
 
-    expect(push).toHaveBeenCalledWith('/health')
+    expect(push).toHaveBeenCalledWith('/signup')
   })
 
   it.each([

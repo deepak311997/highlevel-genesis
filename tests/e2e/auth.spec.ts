@@ -47,8 +47,19 @@ async function activationLinkFor(email: string): Promise<string> {
 }
 
 test.describe('Slice 01 — account and session', () => {
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ page }) => {
     await resetEmulators()
+
+    // Refuse to run against anything but an emulator build. Playwright will
+    // reuse a dev server on the same port, and a development-mode server talks
+    // to *real* Firebase — which once meant this suite created accounts on the
+    // live project and failed with a confusing message about missing codes.
+    await page.goto('/signin')
+    const marker = await page.locator('html').getAttribute('data-genesis-emulator')
+    expect(
+      marker,
+      'the app under test is not an emulator build — start it with `vite --mode emulator`',
+    ).toBe('true')
   })
 
   test('sign up, get held at the gate, verify, and reach the dashboard', async ({ page }) => {
@@ -70,8 +81,9 @@ test.describe('Slice 01 — account and session', () => {
     // would produce, and it promises no email, because registration sends none.
     await expect(page.getByTestId('signup-sent')).toContainText('You can sign in now')
 
+    // Sign-in prefills the address from sign-up, so it should already be there.
     await page.goto('/signin')
-    await page.fill('#signin-email', email)
+    await expect(page.locator('#signin-email')).toHaveValue(email)
     await page.fill('#signin-password', PASSWORD)
     await page.click('button[type="submit"]')
 
@@ -79,6 +91,10 @@ test.describe('Slice 01 — account and session', () => {
     // is also what sends the verification email — registration sent nothing.
     await expect(page).toHaveURL(/\/verify-email/)
     await expect(page.getByTestId('verify-address')).toHaveText(email)
+    // The headline only claims a send once one has actually succeeded.
+    await expect(page.getByTestId('verify-headline')).toContainText("We've sent a link", {
+      timeout: 15_000,
+    })
 
     await page.goto('/dashboard')
     await expect(page).toHaveURL(/\/verify-email/)

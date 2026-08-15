@@ -89,6 +89,7 @@ async function submit(): Promise<void> {
               v-model="email"
               type="email"
               autocomplete="email"
+              autofocus
               :invalid="fieldError !== ''"
             />
             <p v-if="fieldError" data-testid="forgot-email-error" class="text-xs text-destructive">

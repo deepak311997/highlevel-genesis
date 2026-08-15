@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import PasswordField from '@/components/PasswordField.vue'
+import { recallEmail } from '@/lib/handoff'
 import { DEFAULT_REDIRECT, safeRedirect, storeRedirect } from '@/lib/redirect'
 import { useAuthStore } from '@/stores/auth'
 
@@ -22,7 +24,9 @@ const CREDENTIAL_MESSAGE = 'Email or password is incorrect.'
 
 type State = { kind: 'editing' } | { kind: 'submitting' } | { kind: 'failed'; message: string }
 
-const email = ref('')
+// Prefilled when the user has just registered, so they do not retype it.
+const prefilled = recallEmail()
+const email = ref(prefilled)
 const password = ref('')
 const state = ref<State>({ kind: 'editing' })
 
@@ -80,18 +84,22 @@ async function submit(): Promise<void> {
 
           <div class="flex flex-col gap-1.5">
             <Label for="signin-email">Email</Label>
-            <Input id="signin-email" v-model="email" type="email" autocomplete="email" />
-          </div>
-
-          <div class="flex flex-col gap-1.5">
-            <Label for="signin-password">Password</Label>
             <Input
-              id="signin-password"
-              v-model="password"
-              type="password"
-              autocomplete="current-password"
+              id="signin-email"
+              v-model="email"
+              type="email"
+              autocomplete="email"
+              :autofocus="prefilled === ''"
             />
           </div>
+
+          <PasswordField
+            id="signin-password"
+            v-model="password"
+            label="Password"
+            autocomplete="current-password"
+            :autofocus="prefilled !== ''"
+          />
 
           <Button type="submit" :disabled="state.kind === 'submitting'">
             {{ state.kind === 'submitting' ? 'Signing in…' : 'Sign in' }}
