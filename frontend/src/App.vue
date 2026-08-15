@@ -1,7 +1,17 @@
 <script setup lang="ts">
-import { RouterLink, RouterView } from 'vue-router'
+import { RouterLink, RouterView, useRouter } from 'vue-router'
 
 import ThemeToggle from '@/components/ThemeToggle.vue'
+import { Button } from '@/components/ui/button'
+import { useAuthStore } from '@/stores/auth'
+
+const auth = useAuthStore()
+const router = useRouter()
+
+async function signOut(): Promise<void> {
+  await auth.signOutNow()
+  await router.push('/signin')
+}
 </script>
 
 <template>
@@ -19,10 +29,32 @@ import ThemeToggle from '@/components/ThemeToggle.vue'
           </svg>
           Genesis
         </RouterLink>
+
+        <RouterLink
+          v-if="auth.isVerified"
+          to="/dashboard"
+          class="text-sm text-muted-foreground hover:text-foreground"
+        >
+          Dashboard
+        </RouterLink>
         <RouterLink to="/health" class="text-sm text-muted-foreground hover:text-foreground">
           Health
         </RouterLink>
-        <div class="ml-auto">
+
+        <div class="ml-auto flex items-center gap-3">
+          <span
+            v-if="auth.isSignedIn"
+            data-testid="header-email"
+            class="hidden text-sm text-muted-foreground sm:inline"
+          >
+            {{ auth.email }}
+          </span>
+          <Button v-if="auth.isSignedIn" variant="ghost" size="sm" @click="signOut">
+            Sign out
+          </Button>
+          <RouterLink v-else to="/signin">
+            <Button variant="secondary" size="sm">Sign in</Button>
+          </RouterLink>
           <ThemeToggle />
         </div>
       </nav>
