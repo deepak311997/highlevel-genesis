@@ -1,9 +1,7 @@
 import { setGlobalOptions } from 'firebase-functions/v2'
 import { onRequest } from 'firebase-functions/v2/https'
-import { onSchedule } from 'firebase-functions/v2/scheduler'
 
 import { createApiApp } from './api'
-import { deleteExpiredUnverifiedUsers } from './auth/cleanup'
 
 setGlobalOptions({ region: 'asia-south1', maxInstances: 10 })
 
@@ -31,16 +29,18 @@ export const api = onRequest(
 export { generate } from './generate'
 
 /**
- * Daily sweep of accounts that were never verified.
+ * The daily sweep of never-verified accounts is deliberately NOT deployed.
  *
- * The last of the account pre-hijacking mitigations: an attacker can register
- * someone else's address, and although that account can reach nothing, leaving
- * it in place leaves the victim available to be talked into verifying it. This
- * bounds that window to a day and frees the address for its real owner.
+ * `deleteExpiredUnverifiedUsers` in ./auth/cleanup is written and tested, but
+ * no trigger is exported, so nothing runs it in production. That leaves one of
+ * D18's mitigations unshipped: an account an attacker registered at someone
+ * else's address now persists indefinitely rather than expiring after a day.
+ *
+ * What still holds without it: Firestore rules deny an unverified token every
+ * read and write, so such an account can reach nothing, and a registration
+ * request can never alter an account that already exists. The residual is a
+ * victim who is talked into clicking "verify" on an account they did not
+ * create — and that window no longer closes on its own.
+ *
+ * Re-export an onSchedule trigger here to turn it back on.
  */
-export const cleanupUnverifiedUsers = onSchedule(
-  { schedule: 'every 24 hours', timeoutSeconds: 300, memory: '256MiB' },
-  async () => {
-    await deleteExpiredUnverifiedUsers()
-  },
-)

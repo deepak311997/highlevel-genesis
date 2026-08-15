@@ -21,6 +21,11 @@ functions/lib/
 *.pem
 service-account*.json
 
+# Local values for secrets that live in Secret Manager when deployed. Not
+# matched by the .env.* glob above, so it needs its own line.
+.secret.local
+**/.secret.local
+
 # Test output
 playwright-report/
 test-results/
