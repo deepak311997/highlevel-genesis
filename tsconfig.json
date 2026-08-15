@@ -1,0 +1,26 @@
+{
+  // Covers the root `tests/` tree, which belongs to no package and was
+  // therefore typechecked by nothing. Vitest and Playwright transpile without
+  // checking types, so an error here would have surfaced as a confusing runtime
+  // failure or not at all.
+  //
+  // Same strictness as frontend/ and functions/, deliberately: test code that
+  // is allowed to be looser is test code that stops describing the real types.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "verbatimModuleSyntax": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["tests/**/*.ts", "tests/**/*.mts", "playwright.config.ts"]
+}

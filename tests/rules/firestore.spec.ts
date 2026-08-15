@@ -39,6 +39,15 @@ afterAll(async () => {
 })
 
 /**
+ * `@firebase/rules-unit-testing` hands back a v8-compat Firestore instance.
+ * The modular `doc()` and friends accept it at runtime but not at the type
+ * level, so the bridge is asserted once here rather than at every call site.
+ */
+function asModular(db: unknown): Firestore {
+  return db as Firestore
+}
+
+/**
  * A signed-in user who has confirmed their address.
  *
  * `email_verified` is a token claim, so the rules can enforce the verification
@@ -47,11 +56,11 @@ afterAll(async () => {
  * state a freshly signed-up attacker is in.
  */
 function verified(uid: string): Firestore {
-  return env.authenticatedContext(uid, { email_verified: true }).firestore()
+  return asModular(env.authenticatedContext(uid, { email_verified: true }).firestore())
 }
 
 function unverified(uid: string): Firestore {
-  return env.authenticatedContext(uid, { email_verified: false }).firestore()
+  return asModular(env.authenticatedContext(uid, { email_verified: false }).firestore())
 }
 
 /** A complete, valid profile document. */
@@ -67,7 +76,7 @@ function profile() {
 /** Seed a document past the rules, so update and delete have something to act on. */
 async function seedProfile(uid = 'alice'): Promise<void> {
   await env.withSecurityRulesDisabled(async (ctx) => {
-    await setDoc(doc(ctx.firestore(), `users/${uid}`), {
+    await setDoc(doc(asModular(ctx.firestore()), `users/${uid}`), {
       email: 'alice@example.test',
       displayName: null,
       createdAt: new Date(),
@@ -112,7 +121,7 @@ describe('users/{uid} — denials', () => {
 
   it('denies an unauthenticated caller', async () => {
     await seedProfile()
-    const anon = env.unauthenticatedContext().firestore()
+    const anon = asModular(env.unauthenticatedContext().firestore())
 
     await assertFails(getDoc(doc(anon, 'users/alice')))
     await assertFails(setDoc(doc(anon, 'users/alice'), profile()))
@@ -202,7 +211,7 @@ describe('server-only collections', () => {
 
   it('denies every client the throttle counters', async () => {
     const alice = verified('alice')
-    const anon = env.unauthenticatedContext().firestore()
+    const anon = asModular(env.unauthenticatedContext().firestore())
 
     await assertFails(getDoc(doc(alice, 'authThrottle/email:abc')))
     await assertFails(setDoc(doc(alice, 'authThrottle/email:abc'), { count: 0 }))
@@ -211,7 +220,7 @@ describe('server-only collections', () => {
 
   it('denies every client the recorded mail, which holds live action codes', async () => {
     const alice = verified('alice')
-    const anon = env.unauthenticatedContext().firestore()
+    const anon = asModular(env.unauthenticatedContext().firestore())
 
     await assertFails(getDoc(doc(alice, '_devMail/some-id')))
     await assertFails(setDoc(doc(alice, '_devMail/some-id'), { to: 'x@y.test' }))

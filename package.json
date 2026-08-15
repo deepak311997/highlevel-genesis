@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "npm --prefix frontend run dev",
     "build": "npm --prefix functions run build && npm --prefix frontend run build",
-    "typecheck": "npm --prefix functions run typecheck && npm --prefix frontend run typecheck",
+    "typecheck": "npm --prefix functions run typecheck && npm --prefix frontend run typecheck && tsc --noEmit",
     "lint": "npm --prefix functions run lint && npm --prefix frontend run lint",
     "test:unit": "npm --prefix functions run test && npm --prefix frontend run test",
     "test:rules": "firebase emulators:exec --project demo-genesis --only firestore \"vitest run --config tests/rules/vitest.config.mts\"",
