@@ -1,5 +1,7 @@
 import type { Request, RequestHandler, Response, NextFunction } from 'express'
 
+import { describeError } from './log'
+
 /** An error with an HTTP status that is safe to show a user. */
 export class HttpError extends Error {
   constructor(
@@ -46,6 +48,9 @@ export function errorHandler(
     return
   }
 
-  console.error('Unhandled error', err)
+  // Redacted, not serialised whole. Firebase errors carry the failing request
+  // on the error object, so `console.error(err)` on a rejected Admin SDK call
+  // is enough to put a plaintext password into Cloud Logging.
+  console.error('Unhandled error', describeError(err))
   res.status(500).json({ error: 'Internal error', code: 'internal' })
 }
