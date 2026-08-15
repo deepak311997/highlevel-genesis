@@ -1,0 +1,40 @@
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+functions/lib/
+
+# Secrets — never commit
+.env
+.env.local
+.env.*.local
+*.pem
+service-account*.json
+
+# Test output
+playwright-report/
+test-results/
+.nyc_output/
+
+# Editors / OS
+.DS_Store
+.idea/
+*.swp
+.vscode/*
+!.vscode/extensions.json
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# Assignment brief — kept local, not published to the public repo
+GENESIS_ASSIGNMENT_V2.pdf

@@ -1,0 +1,634 @@
+<title>Genesis System Design</title>
+<style>
+  :root {
+    --page:   #F1F3F7;
+    --panel:  #FFFFFF;
+    --sunken: #E7EAF2;
+    --ink:    #10131A;
+    --muted:  #61677A;
+    --rule:   #D8DCE7;
+    --cobalt: #2B4BF2;
+    --ember:  #FF6A2B;
+    --blocked:#B4243F;
+
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, ui-serif, serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --page:   #0A0C11;
+      --panel:  #13161F;
+      --sunken: #0E1119;
+      --ink:    #E8EAF1;
+      --muted:  #888FA3;
+      --rule:   #232838;
+      --cobalt: #6B82FF;
+      --ember:  #FF8351;
+      --blocked:#FF5C7A;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page:   #0A0C11;
+    --panel:  #13161F;
+    --sunken: #0E1119;
+    --ink:    #E8EAF1;
+    --muted:  #888FA3;
+    --rule:   #232838;
+    --cobalt: #6B82FF;
+    --ember:  #FF8351;
+    --blocked:#FF5C7A;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: clamp(28px, 5vw, 68px) clamp(18px, 4vw, 40px) 96px;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(44px, 6vw, 72px);
+  }
+
+  /* ---------- type ---------- */
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0;
+  }
+  h1 {
+    font-size: clamp(34px, 5.5vw, 52px);
+    line-height: 1.04;
+    letter-spacing: -0.035em;
+    font-weight: 700;
+    margin: 0;
+    text-wrap: balance;
+  }
+  h2 {
+    font-size: clamp(22px, 2.8vw, 28px);
+    line-height: 1.15;
+    letter-spacing: -0.024em;
+    font-weight: 700;
+    margin: 0;
+    text-wrap: balance;
+  }
+  h3 {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 500;
+    color: var(--muted);
+    margin: 0;
+  }
+  .prose {
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.62;
+    max-width: 66ch;
+    margin: 0;
+  }
+  .prose.dim { color: var(--muted); }
+  .prose + .prose { margin-top: 14px; }
+  code, .m { font-family: var(--mono); font-size: 0.88em; }
+
+  section { display: flex; flex-direction: column; gap: 18px; }
+  section > .head { display: flex; flex-direction: column; gap: 10px; }
+
+  hr.divider { height: 1px; background: var(--rule); border: 0; margin: 0; }
+
+  /* ---------- figures ---------- */
+  figure {
+    margin: 0;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .scroller { overflow-x: auto; padding: clamp(14px, 2.5vw, 26px); }
+  .dgm { display: block; width: 100%; height: auto; min-width: 660px; }
+  .dgm text { font-family: var(--mono); font-size: 11px; fill: var(--ink); }
+  .dgm .t-title { font-family: var(--sans); font-size: 13px; font-weight: 700; letter-spacing: -0.01em; }
+  .dgm .t-sub { font-size: 10.5px; fill: var(--muted); }
+  .dgm .t-tiny { font-size: 9.5px; fill: var(--muted); }
+  .dgm .t-zone { font-size: 9.5px; fill: var(--muted); letter-spacing: 0.14em; }
+  .dgm .t-live { fill: var(--ember); }
+  .dgm .t-block { fill: var(--blocked); }
+  figcaption {
+    font-family: var(--serif);
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--muted);
+    padding: 0 clamp(14px, 2.5vw, 26px) clamp(16px, 2.5vw, 22px);
+    max-width: 76ch;
+  }
+  figcaption b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- data model tree ---------- */
+  .tree {
+    background: var(--sunken);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 20px 22px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.85;
+    overflow-x: auto;
+  }
+  .tree .path { color: var(--cobalt); }
+  .tree .note { color: var(--muted); }
+  .tree .lock { color: var(--ember); }
+
+  /* ---------- tables ---------- */
+  .tbl {
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    background: var(--panel);
+    overflow-x: auto;
+  }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; }
+  th, td {
+    text-align: left;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  th {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  td { font-size: 14px; }
+  td.k { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
+  td.d { font-family: var(--serif); font-size: 14.5px; color: var(--muted); }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    padding: 12px clamp(14px, 2.5vw, 26px);
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--muted);
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 18px; height: 2px; display: inline-block; border-radius: 2px; }
+  .legend i.solid { background: var(--cobalt); }
+  .legend i.live { background: var(--ember); }
+  .legend i.block { background: var(--blocked); }
+  .legend i.dash {
+    background: none;
+    border-top: 2px dashed var(--muted);
+    height: 0;
+  }
+
+  @media (max-width: 620px) {
+    .prose { font-size: 16px; }
+  }
+</style>
+
+<!-- shared arrowheads: fragment ids are document-wide, so every figure reuses these -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--cobalt)"/>
+    </marker>
+    <marker id="ar-live" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--ember)"/>
+    </marker>
+    <marker id="ar-block" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--blocked)"/>
+    </marker>
+    <marker id="ar-mut" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--muted)"/>
+    </marker>
+  </defs>
+</svg>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">System design &nbsp;·&nbsp; Genesis</p>
+    <h1 style="margin-top:14px">Four diagrams, one invariant: no credential ever reaches the browser.</h1>
+    <p class="prose dim" style="margin-top:18px">Genesis turns a sentence into a working HighLevel app. That means three things run at
+    once — an LLM streaming code, a sandboxed page executing that code, and a CRM holding
+    somebody's real customer data. Nearly every architectural decision below exists to keep
+    those three apart while still making the preview show live data.</p>
+  </header>
+
+  <hr class="divider">
+
+  <!-- ================= 1. SYSTEM MAP ================= -->
+  <section>
+    <div class="head">
+      <h3>01 — The map</h3>
+      <h2>What talks to what</h2>
+      <p class="prose">Two Cloud Functions, one database, two outbound integrations. The browser reads
+      Firestore directly — security rules, not a REST layer, are what make that safe — and calls a
+      function only where a rule cannot express the logic: exchanging an OAuth code, streaming an
+      LLM, or attaching a token to an outbound request.</p>
+    </div>
+
+    <figure>
+      <div class="scroller">
+        <svg class="dgm" viewBox="0 0 900 620" role="img"
+             aria-label="System map. The Vue SPA and a sandboxed preview iframe sit in the browser. The SPA reads Firestore directly via onSnapshot and posts prompts to the generate function, which streams SSE frames back and calls the Claude API. The generated app inside the sandbox calls the api function, which attaches a HighLevel token and calls the HighLevel API. Firestore is read and written by both functions.">
+
+          <!-- Firestore -->
+          <rect x="40" y="60" width="150" height="440" rx="4" fill="var(--sunken)" stroke="var(--cobalt)" stroke-width="1.5"/>
+          <text class="t-title" x="115" y="96" text-anchor="middle">Firestore</text>
+          <text x="115" y="128" text-anchor="middle">projects</text>
+          <text x="115" y="150" text-anchor="middle">files</text>
+          <text x="115" y="172" text-anchor="middle">snapshots</text>
+          <text x="115" y="194" text-anchor="middle">messages</text>
+          <text class="t-live" x="115" y="222" text-anchor="middle">hlConnections</text>
+          <text class="t-tiny" x="115" y="240" text-anchor="middle">tokens — server only</text>
+          <text class="t-tiny" x="115" y="470" text-anchor="middle">owner-scoped rules</text>
+
+          <!-- Browser zone -->
+          <rect x="270" y="40" width="590" height="182" rx="4" fill="none" stroke="var(--rule)" stroke-width="1"/>
+          <text class="t-zone" x="286" y="60">BROWSER</text>
+
+          <rect x="295" y="78" width="255" height="124" rx="3" fill="var(--panel)" stroke="var(--cobalt)" stroke-width="1.5"/>
+          <text class="t-title" x="422" y="108" text-anchor="middle">Vue 3 SPA</text>
+          <text class="t-sub" x="422" y="132" text-anchor="middle">chat · Monaco · file tree</text>
+          <text class="t-sub" x="422" y="152" text-anchor="middle">SSE client</text>
+          <text class="t-sub" x="422" y="172" text-anchor="middle">Pinia · VueFire</text>
+
+          <rect x="580" y="78" width="255" height="124" rx="3" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="5 4"/>
+          <text class="t-title" x="707" y="104" text-anchor="middle">Preview iframe</text>
+          <rect x="600" y="118" width="215" height="50" rx="3" fill="var(--panel)" stroke="var(--cobalt)" stroke-width="1.5"/>
+          <text x="707" y="140" text-anchor="middle">Generated app</text>
+          <text class="t-tiny" x="707" y="157" text-anchor="middle">HTML · JS</text>
+          <text class="t-tiny" x="707" y="188" text-anchor="middle">sandboxed — holds no credential</text>
+
+          <!-- Functions zone -->
+          <rect x="270" y="282" width="590" height="140" rx="4" fill="none" stroke="var(--rule)" stroke-width="1"/>
+          <text class="t-zone" x="286" y="302">CLOUD FUNCTIONS v2</text>
+
+          <rect x="295" y="314" width="255" height="90" rx="3" fill="var(--panel)" stroke="var(--cobalt)" stroke-width="1.5"/>
+          <text class="t-title" x="422" y="342" text-anchor="middle">generate</text>
+          <text class="t-sub" x="422" y="364" text-anchor="middle">onRequest · SSE</text>
+          <text class="t-sub" x="422" y="384" text-anchor="middle">long timeout · minInstances 1</text>
+
+          <rect x="580" y="314" width="255" height="90" rx="3" fill="var(--panel)" stroke="var(--cobalt)" stroke-width="1.5"/>
+          <text class="t-title" x="707" y="342" text-anchor="middle">api</text>
+          <text class="t-sub" x="707" y="364" text-anchor="middle">oauth callback · HL proxy</text>
+          <text class="t-sub" x="707" y="384" text-anchor="middle">express · short timeout</text>
+
+          <!-- External -->
+          <rect x="295" y="482" width="255" height="70" rx="3" fill="var(--panel)" stroke="var(--muted)" stroke-width="1.5"/>
+          <text class="t-title" x="422" y="510" text-anchor="middle">Claude API</text>
+          <text class="t-sub" x="422" y="532" text-anchor="middle">claude-opus-5</text>
+
+          <rect x="580" y="482" width="255" height="70" rx="3" fill="var(--panel)" stroke="var(--muted)" stroke-width="1.5"/>
+          <text class="t-title" x="707" y="510" text-anchor="middle">HighLevel</text>
+          <text class="t-sub" x="707" y="532" text-anchor="middle">services.leadconnectorhq.com</text>
+
+          <!-- edges -->
+          <line x1="190" y1="140" x2="288" y2="140" stroke="var(--cobalt)" stroke-width="1.5" marker-start="url(#ar)" marker-end="url(#ar)"/>
+          <text class="t-tiny" x="239" y="130" text-anchor="middle">onSnapshot</text>
+
+          <line x1="190" y1="352" x2="288" y2="352" stroke="var(--cobalt)" stroke-width="1.5" marker-start="url(#ar)" marker-end="url(#ar)"/>
+          <text class="t-tiny" x="239" y="342" text-anchor="middle">read · write</text>
+
+          <line x1="330" y1="202" x2="330" y2="308" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="340" y="232">POST /generate</text>
+          <text class="t-sub" x="340" y="248">+ Firebase ID token</text>
+
+          <line x1="515" y1="308" x2="515" y2="202" stroke="var(--ember)" stroke-width="1.5" marker-end="url(#ar-live)"/>
+          <text class="t-live" x="507" y="272" text-anchor="end">SSE: token · file_start</text>
+          <text class="t-sub" x="507" y="288" text-anchor="end">file_end · done · error</text>
+
+          <line x1="422" y1="406" x2="422" y2="476" stroke="var(--ember)" stroke-width="1.5" marker-end="url(#ar-live)"/>
+          <text class="t-live" x="432" y="434">messages.stream()</text>
+          <text class="t-sub" x="432" y="450">system prompt cached</text>
+
+          <line x1="707" y1="202" x2="707" y2="308" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="699" y="234" text-anchor="end">fetch /api/hl/*</text>
+          <text class="t-sub" x="699" y="250" text-anchor="end">no token attached</text>
+
+          <line x1="707" y1="406" x2="707" y2="476" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="717" y="434">+ Bearer location</text>
+          <text class="t-sub" x="717" y="450">token · auto-refresh</text>
+        </svg>
+      </div>
+      <div class="legend">
+        <span><i class="solid"></i> control flow</span>
+        <span><i class="live"></i> live stream / secret material</span>
+        <span><i class="dash"></i> sandbox boundary</span>
+      </div>
+      <figcaption>Every arrow crossing into the browser carries data the user is already entitled to see.
+      <b>The two arrows that carry credentials — the HighLevel token and the Anthropic key — both start and
+      end server-side.</b></figcaption>
+    </figure>
+  </section>
+
+  <hr class="divider">
+
+  <!-- ================= 2. TRUST BOUNDARY ================= -->
+  <section>
+    <div class="head">
+      <h3>02 — The decision that shapes everything</h3>
+      <h2>Why a proxy exists at all</h2>
+      <p class="prose">The preview runs LLM-authored code in a sandboxed iframe. That code has to reach real
+      HighLevel data or the whole demo is theatre — but the obvious way to do that would require putting an
+      OAuth token where the page can read it. The proxy is the answer, and it's the one architecture
+      decision worth spending the Loom minute on.</p>
+    </div>
+
+    <figure>
+      <div class="scroller">
+        <svg class="dgm" viewBox="0 0 900 320" role="img"
+             aria-label="Comparison. On the left, the generated app calling HighLevel directly is blocked because the OAuth token would be readable in client JavaScript and CORS rejects the request. On the right, the generated app calls the api proxy, which reads the token from Firestore and calls HighLevel server-side.">
+
+          <text class="t-zone" x="40" y="24">WHAT CANNOT WORK</text>
+          <text class="t-zone" x="500" y="24">WHAT WE BUILD</text>
+          <line x1="450" y1="10" x2="450" y2="310" stroke="var(--rule)" stroke-width="1"/>
+
+          <!-- left -->
+          <rect x="40" y="40" width="320" height="56" rx="3" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="5 4"/>
+          <text x="200" y="66" text-anchor="middle">Generated app</text>
+          <text class="t-tiny" x="200" y="84" text-anchor="middle">sandboxed iframe</text>
+
+          <line x1="200" y1="100" x2="200" y2="234" stroke="var(--blocked)" stroke-width="1.5" stroke-dasharray="6 5" marker-end="url(#ar-block)"/>
+          <path d="M186 155 L214 183 M214 155 L186 183" stroke="var(--blocked)" stroke-width="2.5" stroke-linecap="round"/>
+          <text class="t-block" x="228" y="134">token in client JS</text>
+          <text class="t-tiny" x="228" y="152">readable in page source</text>
+          <text class="t-tiny" x="228" y="196">CORS rejects it anyway</text>
+          <text class="t-tiny" x="228" y="214">— and it leaks every</text>
+          <text class="t-tiny" x="228" y="230">tenant's CRM on a copy-paste</text>
+
+          <rect x="40" y="240" width="320" height="56" rx="3" fill="var(--panel)" stroke="var(--muted)" stroke-width="1.5"/>
+          <text x="200" y="266" text-anchor="middle">HighLevel API</text>
+          <text class="t-tiny" x="200" y="284" text-anchor="middle">requires Bearer token</text>
+
+          <!-- right -->
+          <rect x="500" y="40" width="320" height="56" rx="3" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="5 4"/>
+          <text x="660" y="66" text-anchor="middle">Generated app</text>
+          <text class="t-tiny" x="660" y="84" text-anchor="middle">sandboxed iframe</text>
+
+          <line x1="660" y1="100" x2="660" y2="134" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text class="t-tiny" x="672" y="122">fetch /api/hl/contacts</text>
+
+          <rect x="500" y="140" width="320" height="56" rx="3" fill="var(--panel)" stroke="var(--cobalt)" stroke-width="1.5"/>
+          <text x="660" y="166" text-anchor="middle">api — HighLevel proxy</text>
+          <text class="t-tiny" x="660" y="184" text-anchor="middle">verify session · allowlist route · attach token</text>
+
+          <line x1="660" y1="200" x2="660" y2="234" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text class="t-tiny" x="672" y="222">+ Bearer token</text>
+
+          <rect x="500" y="240" width="320" height="56" rx="3" fill="var(--panel)" stroke="var(--muted)" stroke-width="1.5"/>
+          <text x="660" y="266" text-anchor="middle">HighLevel API</text>
+          <text class="t-tiny" x="660" y="284" text-anchor="middle">sees one authenticated caller</text>
+        </svg>
+      </div>
+      <figcaption>The proxy is not a convenience wrapper. It is the only component that ever holds a
+      HighLevel token, which makes it <b>the one place a mistake leaks another tenant's CRM</b> — so it gets
+      route allowlisting, per-user scoping, and adversarial tests before it ships.</figcaption>
+    </figure>
+  </section>
+
+  <hr class="divider">
+
+  <!-- ================= 3. GENERATION STREAM ================= -->
+  <section>
+    <div class="head">
+      <h3>03 — The core loop</h3>
+      <h2>One generation, end to end</h2>
+      <p class="prose">The product is this sequence. A prompt goes in, bounded context is assembled, Claude
+      streams, and the same byte stream drives three things at once: text appearing in the editor, file
+      boundaries opening and closing, and a snapshot written when it completes.</p>
+    </div>
+
+    <figure>
+      <div class="scroller">
+        <svg class="dgm" viewBox="0 0 900 560" role="img"
+             aria-label="Sequence diagram of one generation. The browser posts a prompt with an ID token to the generate function. Generate reads project files and chat history from Firestore, calls the Claude streaming API, and relays each text delta to the browser as an SSE token event. This repeats per delta. When the stream ends, generate parses file operations, writes files and a snapshot to Firestore, and emits a done event.">
+
+          <!-- lifelines -->
+          <rect x="30" y="20" width="170" height="42" rx="3" fill="var(--panel)" stroke="var(--cobalt)" stroke-width="1.5"/>
+          <text class="t-title" x="115" y="46" text-anchor="middle">Browser</text>
+          <line x1="115" y1="62" x2="115" y2="530" stroke="var(--rule)" stroke-width="1.5" stroke-dasharray="4 5"/>
+
+          <rect x="255" y="20" width="170" height="42" rx="3" fill="var(--panel)" stroke="var(--cobalt)" stroke-width="1.5"/>
+          <text class="t-title" x="340" y="46" text-anchor="middle">generate</text>
+          <line x1="340" y1="62" x2="340" y2="530" stroke="var(--rule)" stroke-width="1.5" stroke-dasharray="4 5"/>
+
+          <rect x="480" y="20" width="170" height="42" rx="3" fill="var(--panel)" stroke="var(--cobalt)" stroke-width="1.5"/>
+          <text class="t-title" x="565" y="46" text-anchor="middle">Firestore</text>
+          <line x1="565" y1="62" x2="565" y2="530" stroke="var(--rule)" stroke-width="1.5" stroke-dasharray="4 5"/>
+
+          <rect x="705" y="20" width="170" height="42" rx="3" fill="var(--panel)" stroke="var(--muted)" stroke-width="1.5"/>
+          <text class="t-title" x="790" y="46" text-anchor="middle">Claude</text>
+          <line x1="790" y1="62" x2="790" y2="530" stroke="var(--rule)" stroke-width="1.5" stroke-dasharray="4 5"/>
+
+          <!-- 1 -->
+          <line x1="115" y1="106" x2="334" y2="106" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="124" y="98">POST /generate · {projectId, prompt} · ID token</text>
+
+          <!-- 2 -->
+          <line x1="340" y1="150" x2="559" y2="150" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="349" y="142">read files + chat history</text>
+
+          <!-- 3 -->
+          <line x1="565" y1="188" x2="346" y2="188" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#ar-mut)"/>
+          <text class="t-sub" x="556" y="180" text-anchor="end">context, truncated to budget</text>
+
+          <!-- 4 -->
+          <line x1="340" y1="232" x2="784" y2="232" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="349" y="224">messages.stream() · system: HL cheat-sheet (cache_control)</text>
+
+          <!-- loop -->
+          <rect x="88" y="252" width="730" height="86" rx="4" fill="none" stroke="var(--ember)" stroke-width="1" stroke-dasharray="4 4"/>
+          <text class="t-live" x="100" y="268">repeats per delta</text>
+
+          <line x1="790" y1="292" x2="346" y2="292" stroke="var(--ember)" stroke-width="1.5" marker-end="url(#ar-live)"/>
+          <text class="t-live" x="781" y="284" text-anchor="end">text delta</text>
+
+          <line x1="340" y1="324" x2="121" y2="324" stroke="var(--ember)" stroke-width="1.5" marker-end="url(#ar-live)"/>
+          <text class="t-live" x="331" y="316" text-anchor="end">event: token → Monaco (read-only while streaming)</text>
+
+          <!-- 5 -->
+          <line x1="340" y1="378" x2="121" y2="378" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="331" y="370" text-anchor="end">event: file_start / file_end</text>
+
+          <!-- 6 -->
+          <line x1="340" y1="424" x2="559" y2="424" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="349" y="416">parse + Zod-validate file ops → write files, snapshot</text>
+
+          <!-- 7 -->
+          <line x1="340" y1="468" x2="121" y2="468" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="331" y="460" text-anchor="end">event: done → refresh preview</text>
+
+          <text class="t-tiny" x="115" y="508" text-anchor="middle">disconnect at any point → partial files kept, retry offered</text>
+        </svg>
+      </div>
+      <figcaption>The parse step is deliberately <b>after</b> the stream, not during it: tokens render live for
+      feel, but nothing is written to Firestore until the whole response validates — so a malformed
+      generation cannot leave a project half-written.</figcaption>
+    </figure>
+  </section>
+
+  <hr class="divider">
+
+  <!-- ================= 4. OAUTH ================= -->
+  <section>
+    <div class="head">
+      <h3>04 — The risky one</h3>
+      <h2>Getting a HighLevel token</h2>
+      <p class="prose">Slice 2, day one. Because the app registers <span class="m">Target User = Sub-account</span>,
+      the install returns a Location token directly and the agency-to-location exchange never happens — one
+      fewer moving part in the flow most likely to burn a day.</p>
+    </div>
+
+    <figure>
+      <div class="scroller">
+        <svg class="dgm" viewBox="0 0 900 380" role="img"
+             aria-label="OAuth sequence. The browser is redirected to the HighLevel authorize URL with a state parameter. HighLevel redirects back to the callback function with a code. The callback verifies the state, posts the code and client secret to HighLevel's token endpoint, receives access and refresh tokens plus a location id, writes them to Firestore where the client cannot read them, and redirects the browser back to the app.">
+
+          <rect x="30" y="20" width="170" height="42" rx="3" fill="var(--panel)" stroke="var(--cobalt)" stroke-width="1.5"/>
+          <text class="t-title" x="115" y="46" text-anchor="middle">Browser</text>
+          <line x1="115" y1="62" x2="115" y2="350" stroke="var(--rule)" stroke-width="1.5" stroke-dasharray="4 5"/>
+
+          <rect x="270" y="20" width="180" height="42" rx="3" fill="var(--panel)" stroke="var(--muted)" stroke-width="1.5"/>
+          <text class="t-title" x="360" y="46" text-anchor="middle">HighLevel</text>
+          <line x1="360" y1="62" x2="360" y2="350" stroke="var(--rule)" stroke-width="1.5" stroke-dasharray="4 5"/>
+
+          <rect x="520" y="20" width="180" height="42" rx="3" fill="var(--panel)" stroke="var(--cobalt)" stroke-width="1.5"/>
+          <text class="t-title" x="610" y="46" text-anchor="middle">api · callback</text>
+          <line x1="610" y1="62" x2="610" y2="350" stroke="var(--rule)" stroke-width="1.5" stroke-dasharray="4 5"/>
+
+          <rect x="750" y="20" width="130" height="42" rx="3" fill="var(--panel)" stroke="var(--cobalt)" stroke-width="1.5"/>
+          <text class="t-title" x="815" y="46" text-anchor="middle">Firestore</text>
+          <line x1="815" y1="62" x2="815" y2="350" stroke="var(--rule)" stroke-width="1.5" stroke-dasharray="4 5"/>
+
+          <line x1="115" y1="106" x2="354" y2="106" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="124" y="98">/oauth/chooselocation · client_id · redirect_uri · scope · state</text>
+
+          <line x1="360" y1="150" x2="604" y2="150" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="369" y="142">302 → ?code=… &amp;state=…</text>
+
+          <path d="M610 178 H660 V202 H616" fill="none" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="670" y="196">verify state — CSRF gate</text>
+
+          <line x1="610" y1="238" x2="366" y2="238" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="601" y="230" text-anchor="end">POST /oauth/token · code + client_secret</text>
+
+          <line x1="360" y1="276" x2="604" y2="276" stroke="var(--ember)" stroke-width="1.5" marker-end="url(#ar-live)"/>
+          <text class="t-live" x="369" y="268">access · refresh · locationId · expires_in</text>
+
+          <line x1="610" y1="312" x2="809" y2="312" stroke="var(--ember)" stroke-width="1.5" marker-end="url(#ar-live)"/>
+          <text class="t-live" x="619" y="304">write hlConnections/{uid} — no client read rule</text>
+
+          <line x1="610" y1="344" x2="121" y2="344" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="601" y="336" text-anchor="end">302 → /projects · connection shows location name</text>
+        </svg>
+      </div>
+      <figcaption>The <span class="m">state</span> parameter is the only thing standing between this flow and CSRF, and the
+      redirect URL must match the registered value byte for byte. <b>Adding a scope later forces every existing
+      install to re-authorize</b> — so the full scope list gets chosen on day zero, not discovered on day four.</figcaption>
+    </figure>
+  </section>
+
+  <hr class="divider">
+
+  <!-- ================= 5. DATA MODEL ================= -->
+  <section>
+    <div class="head">
+      <h3>05 — Storage</h3>
+      <h2>Everything is a document</h2>
+      <p class="prose">Files live in Firestore rather than Cloud Storage. They're small text blobs, and keeping
+      them as documents makes snapshot-and-restore a copy operation instead of a bucket-manifest problem —
+      which is most of feature F5 for free.</p>
+    </div>
+
+    <div class="tree">
+<span class="path">users/{uid}</span>                          <span class="note">— profile; owner read/write</span>
+<span class="path">hlConnections/{uid}</span>                  <span class="lock">— tokens. NO client read rule at all</span>
+  <span class="note">accessToken · refreshToken · expiresAt · locationId · locationName</span>
+
+<span class="path">projects/{projectId}</span>                 <span class="note">— ownerUid, name, description, deletedAt</span>
+  <span class="path">files/{fileId}</span>                     <span class="note">— path, content, updatedAt</span>
+  <span class="path">messages/{messageId}</span>               <span class="note">— role, content, generationId, createdAt</span>
+  <span class="path">snapshots/{snapshotId}</span>             <span class="note">— createdAt, files[] (point-in-time copy)</span>
+    </div>
+
+    <p class="prose dim">Every rule is <span class="m">request.auth.uid == resource.data.ownerUid</span>, and every collection
+    gets a test proving a non-owner is <em>denied</em> — the assertion people skip. <span class="m">hlConnections</span> is
+    the exception that proves the pattern: it has no read rule for anyone, because only the Admin SDK
+    inside a function should ever touch it.</p>
+  </section>
+
+  <hr class="divider">
+
+  <!-- ================= 6. RUNTIME ================= -->
+  <section>
+    <div class="head">
+      <h3>06 — Runtime shape</h3>
+      <h2>Two functions, two very different profiles</h2>
+      <p class="prose">This split is the real backend decision. Streaming needs a long timeout, a warm
+      instance, and headroom; CRUD needs none of that and shouldn't pay for it on every call.</p>
+    </div>
+
+    <div class="tbl">
+      <table>
+        <thead>
+          <tr><th>Concern</th><th>generate</th><th>api</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="k">shape</td><td class="d">bare <span class="m">onRequest</span>, no framework</td><td class="d">Express app, routed</td></tr>
+          <tr><td class="k">timeout</td><td class="d">long — a generation can run minutes</td><td class="d">short — fail fast</td></tr>
+          <tr><td class="k">minInstances</td><td class="d">1, so the demo never opens cold</td><td class="d">0</td></tr>
+          <tr><td class="k">middleware</td><td class="d">none — <span class="m">compression()</span> would buffer the stream dead</td><td class="d">auth, CORS, error mapping</td></tr>
+          <tr><td class="k">secrets</td><td class="d"><span class="m">ANTHROPIC_API_KEY</span> via <span class="m">defineSecret</span></td><td class="d"><span class="m">HL_CLIENT_SECRET</span> via <span class="m">defineSecret</span></td></tr>
+          <tr><td class="k">transport</td><td class="d">SSE over <span class="m">fetch()</span> — <span class="m">EventSource</span> can't send an auth header</td><td class="d">plain JSON</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- ================= 7. FAILURE ================= -->
+  <section>
+    <div class="head">
+      <h3>07 — When it breaks</h3>
+      <h2>Four failure modes, four visible behaviours</h2>
+      <p class="prose dim">Spec section F8 is cross-cutting and mandatory. Each of these is an acceptance
+      criterion with a test, not a nice-to-have.</p>
+    </div>
+
+    <div class="tbl">
+      <table>
+        <thead>
+          <tr><th>What fails</th><th>What the user sees</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="k">malformed LLM output</td><td class="d">Generation marked failed, project untouched, retry offered. Nothing half-written reaches Firestore.</td></tr>
+          <tr><td class="k">stream interrupted</td><td class="d">Files completed before the break are kept; the editor shows what arrived; retry resumes from the prompt.</td></tr>
+          <tr><td class="k">HighLevel token expired</td><td class="d">Proxy refreshes silently. If refresh fails, the preview surfaces "reconnect HighLevel" rather than an empty list.</td></tr>
+          <tr><td class="k">HighLevel API error</td><td class="d">Mapped to a readable message inside the preview — never a silent empty state that looks like real data.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
