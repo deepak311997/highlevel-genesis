@@ -137,6 +137,98 @@ link no longer verifies" — now provably false on this platform.
 
 ---
 
+## Phase 3 — functions (continued)
+
+### T13 — Validation and transport failure → AC-4, AC-9
+**Tests:** 6 more L4 in `auth-register.spec.ts`.
+**Finding:** a body the Functions runtime cannot parse is refused **by the runtime**, with an
+HTML error page, before this Express app runs. An error handler mounted after
+`express.json()` never sees it. A handler for that case was written, measured unreachable,
+and removed — dead defensive code reads as protection that is not there. Where the request
+does reach us (wrong content type), the JSON contract holds; both are pinned.
+**Seam:** the fake transport refuses a designated address, so "the provider is down" is
+exercised per-test without an environment flag.
+
+### T14 — Resend and password reset → AC-32, AC-33
+**Tests:** `tests/integration/auth-reset.spec.ts` (9, L4).
+**Note:** `findUser()` turns "no such account" into `null` rather than a rejection. Letting
+that reject propagate is exactly how a 500 on one branch and a 200 on the other becomes the
+leak these endpoints exist to close.
+
+### T15 — Throttle middleware → AC-46, AC-47, AC-48
+**Tests:** `tests/integration/auth-throttle.spec.ts` (7, L4).
+**Deviation:** implementation preceded its spec, inverting the cycle. Verified afterwards by
+disabling the middleware — 5 of the 7 fail without it.
+**Note:** attached per route, not via `router.use`. This router is mounted at both `/` and
+`/api`, and prefix-matched middleware would count every attempt twice.
+
+### T16 — CORS allowlist → AC-56 (proposed; still not in the PRD)
+**Tests:** `tests/integration/auth-cors.spec.ts` (7, L4).
+**Finding:** an allowlist inside the Express app was not enough. `firebase-functions` wraps
+the handler in its own CORS layer *outside* the app, and left unset it reflects whatever
+Origin it is given. `onRequest` now passes `cors: false`.
+
+---
+
+## Phase 4 — frontend infrastructure
+
+### T17 — Emulator wiring by build mode → AC-54, AC-55
+**Tests:** `frontend/src/lib/firebase.spec.ts` (2, L1), plus a build-artifact check.
+**Verified against the real artifact:** the production bundle contains neither the emulator
+port nor `connectAuthEmulator`.
+**Deviation:** emulator config is substituted via Vite `define` rather than a `.env.emulator`
+file, because `.env.*` is broadly gitignored. Mode is `emulator`, not `test`, so Vitest (which
+runs as `test`) never opens a socket.
+
+### T18/T20 — Auth store and profile write → AC-17, AC-24, AC-30, AC-35, AC-36, AC-45
+**Tests:** `frontend/src/stores/auth.spec.ts` (15, L2).
+
+### T19 — Three-state guard → AC-11, 12, 13, 16, 25, 28, 29, 31
+**Tests:** `frontend/src/router/guard.spec.ts` (17, L2).
+
+---
+
+## Phase 5 — UI
+
+### T21–T27 — Primitives, six views, router wiring, header
+**Tests:** 63 L2 across `SignUpView`, `SignInView`, `VerifyEmailView`, `AuthActionView`,
+`ForgotPasswordView`, `DashboardView`, plus `authApi.spec.ts`.
+**Deviation:** the views were written implementation-first, with specs following, rather than
+red-green per view.
+**AC-6** is enforced two ways: an ESLint `no-restricted-imports` rule banning
+`createUserWithEmailAndPassword`, `fetchSignInMethodsForEmail` and the two client-side email
+senders, and a test that greps `src` for them — a lint rule can be disabled inline.
+
+---
+
+## Phase 6 — end to end
+
+### T28 — Demo path → AC-13, AC-14, AC-21, AC-23, AC-55
+**Tests:** `tests/e2e/auth.spec.ts` (2, L5).
+**Snag:** the first run failed all four e2e tests because a stale dev server held port 5173
+and `reuseExistingServer` let Playwright use it — so the tests ran against a non-emulator
+build. Worth knowing: that failure mode looks like a broken app, not a broken harness.
+
+---
+
+## Phase 7 — hardening
+
+### T30 — Expire unverified accounts → AC-52, AC-19
+**Tests:** `tests/integration/auth-cleanup.spec.ts` (5, L4).
+**Note:** the emulator has no scheduler, so the sweep is reachable through a route that exists
+only under `FUNCTIONS_EMULATOR`. It takes `now` as input, which is precisely why it must not
+exist in a deployed build.
+
+### T32/T33 — CI, README, dependency removal
+Integration and e2e now run on every PR — resolving open risk 11, since the L5 test is the
+only one that exercises the D27 deadlock. `vuefire` removed (Slice 0 finding 5).
+
+### T29, T31 — **Not done. Blocked on Firebase console access.**
+App Check needs reCAPTCHA Enterprise registration; enumeration protection and the password
+policy are console settings. See "Not covered" below.
+
+---
+
 ## Deferred
 
 - **AC-56 (CORS)** — proposed in the plan's coverage gaps, not yet added to the PRD. T16
