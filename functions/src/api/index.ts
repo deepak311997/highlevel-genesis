@@ -1,6 +1,7 @@
 import cors from 'cors'
 import express, { type Express } from 'express'
 
+import { authRouter } from '../auth'
 import { errorHandler } from '../lib/errors'
 import { healthRouter } from './health'
 
@@ -15,6 +16,8 @@ export function createApiApp(): Express {
   // forwards the original path, so the app sees `/api/health`.
   app.use('/', healthRouter)
   app.use('/api', healthRouter)
+  app.use('/', authRouter)
+  app.use('/api', authRouter)
 
   app.use((_req, res) => {
     res.status(404).json({ error: 'Not found', code: 'not_found' })

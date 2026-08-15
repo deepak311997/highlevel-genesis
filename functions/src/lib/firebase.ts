@@ -1,4 +1,5 @@
 import { getApps, initializeApp } from 'firebase-admin/app'
+import { getAuth, type Auth } from 'firebase-admin/auth'
 import { getFirestore, type Firestore } from 'firebase-admin/firestore'
 
 /**
@@ -27,6 +28,18 @@ let cached: Firestore | undefined
  *    throw fails the deploy rather than the request. Resolving on first use
  *    also keeps it off the cold-start path until something needs Firestore.
  */
+/**
+ * Admin Auth handle.
+ *
+ * Unlike Firestore there is nothing to configure — but it still goes through
+ * this module so that importing it is what guarantees `initializeApp()` above
+ * has run. A bare `getAuth()` at a call site works only by accident of import
+ * order.
+ */
+export function getAdminAuth(): Auth {
+  return getAuth()
+}
+
 export function getDb(): Firestore {
   if (cached) return cached
 
