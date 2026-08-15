@@ -59,7 +59,7 @@ const showChecklist = computed(() => props.showRules && props.modelValue.length 
       :autocomplete="props.autocomplete"
       :autofocus="props.autofocus"
       :invalid="props.invalid"
-      @update:model-value="emit('update:modelValue', $event)"
+      @update:model-value="emit('update:modelValue', String($event))"
     />
 
     <ul v-if="showChecklist" data-testid="password-rules" class="mt-0.5 flex flex-col gap-0.5">

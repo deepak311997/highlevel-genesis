@@ -160,11 +160,11 @@ onScopeDispose(stop)
           </p>
         </div>
 
-        <Alert v-if="state.kind === 'failed'" tone="error" data-testid="verify-error">
+        <Alert v-if="state.kind === 'failed'" variant="destructive" data-testid="verify-error">
           {{ state.message }}
         </Alert>
 
-        <Alert v-else-if="state.kind === 'resent'" tone="success" data-testid="verify-resent">
+        <Alert v-else-if="state.kind === 'resent'" variant="success" data-testid="verify-resent">
           Sent again — check your inbox.
         </Alert>
 
@@ -184,7 +184,7 @@ onScopeDispose(stop)
           <span>Waiting for you to open it — this page continues on its own.</span>
         </div>
 
-        <Alert v-if="stillUnverified" tone="info" data-testid="verify-still-waiting">
+        <Alert v-if="stillUnverified" data-testid="verify-still-waiting">
           We can't see a verification yet — check your inbox, or resend the link.
         </Alert>
 

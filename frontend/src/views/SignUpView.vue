@@ -76,14 +76,14 @@ async function submit(): Promise<void> {
 
       <CardContent class="flex flex-col gap-4">
         <div v-if="state.kind === 'sent'" data-testid="signup-sent" class="flex flex-col gap-4">
-          <Alert tone="success">
+          <Alert variant="success">
             You can sign in now. We'll confirm your email address next.
           </Alert>
           <Button as-child><RouterLink to="/signin">Sign in</RouterLink></Button>
         </div>
 
         <form v-else class="flex flex-col gap-4" novalidate @submit.prevent="submit">
-          <Alert v-if="state.kind === 'failed'" tone="error" data-testid="signup-error">
+          <Alert v-if="state.kind === 'failed'" variant="destructive" data-testid="signup-error">
             {{ state.message }}
           </Alert>
 

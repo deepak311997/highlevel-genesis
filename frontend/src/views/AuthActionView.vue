@@ -159,7 +159,7 @@ onMounted(run)
           data-testid="action-verified"
           class="flex flex-col gap-4"
         >
-          <Alert tone="success">Your email is verified.</Alert>
+          <Alert variant="success">Your email is verified.</Alert>
           <Button @click="goOn">Continue</Button>
         </div>
 
@@ -168,7 +168,7 @@ onMounted(run)
           data-testid="action-password-set"
           class="flex flex-col gap-4"
         >
-          <Alert tone="success">Your password is set.</Alert>
+          <Alert variant="success">Your password is set.</Alert>
           <Button as-child><RouterLink to="/signin">Sign in</RouterLink></Button>
         </div>
 
@@ -206,7 +206,7 @@ onMounted(run)
           data-testid="action-invalid"
           class="flex flex-col gap-4"
         >
-          <Alert tone="error">{{ state.message }}</Alert>
+          <Alert variant="destructive">{{ state.message }}</Alert>
           <Button as-child variant="outline">
             <RouterLink :to="state.canResend ? '/verify-email' : '/signup'">
               {{ state.canResend ? 'Get a new link' : 'Start again' }}

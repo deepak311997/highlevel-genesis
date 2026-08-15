@@ -1,27 +1,40 @@
 <script setup lang="ts">
+import { useVModel } from '@vueuse/core'
+import type { HTMLAttributes } from 'vue'
+
 import { cn } from '@/lib/utils'
 
-const props = withDefaults(
-  defineProps<{
-    modelValue?: string
-    type?: string
-    invalid?: boolean
-    class?: string
-  }>(),
-  { modelValue: '', type: 'text', invalid: false, class: '' },
-)
+/**
+ * shadcn-vue's Input, with this project's sizing and an `invalid` state.
+ *
+ * Upstream has no invalid styling, so a field that failed validation looks
+ * exactly like one that did not — the error text below it is the only signal,
+ * and on a form with several fields that is not enough to say *which* one.
+ * `aria-invalid` carries the same information to assistive technology.
+ */
+const props = defineProps<{
+  defaultValue?: string | number
+  modelValue?: string | number
+  invalid?: boolean
+  class?: HTMLAttributes['class']
+}>()
 
-const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
+const emits = defineEmits<{
+  'update:modelValue': [payload: string | number]
+}>()
 
-function onInput(event: Event): void {
-  emit('update:modelValue', (event.target as HTMLInputElement).value)
-}
+// The option object is built conditionally: under exactOptionalPropertyTypes,
+// passing `defaultValue: undefined` is not the same as omitting it, and
+// useVModel's overloads reject the former. Same pattern as lib/firebase.ts.
+const modelValue = useVModel(props, 'modelValue', emits, {
+  passive: true,
+  ...(props.defaultValue === undefined ? {} : { defaultValue: props.defaultValue }),
+})
 </script>
 
 <template>
   <input
-    :type="props.type"
-    :value="props.modelValue"
+    v-model="modelValue"
     :aria-invalid="props.invalid || undefined"
     :class="
       cn(
@@ -34,6 +47,5 @@ function onInput(event: Event): void {
         props.class,
       )
     "
-    @input="onInput"
   />
 </template>

@@ -78,7 +78,7 @@ async function submit(): Promise<void> {
 
       <CardContent class="flex flex-col gap-4">
         <form class="flex flex-col gap-4" novalidate @submit.prevent="submit">
-          <Alert v-if="state.kind === 'failed'" tone="error" data-testid="signin-error">
+          <Alert v-if="state.kind === 'failed'" variant="destructive" data-testid="signin-error">
             {{ state.message }}
           </Alert>
 

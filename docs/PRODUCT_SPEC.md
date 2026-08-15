@@ -1,7 +1,8 @@
 # Genesis — AI-Powered HighLevel App Builder
 
-**Product Spec v1** · Source: HighLevel Senior Engineer take-home (GENESIS_ASSIGNMENT_V2)
+**Product Spec v2** · Source: HighLevel Senior Engineer take-home (GENESIS_ASSIGNMENT_V2)
 **Time limit:** 5 days · **Stack (mandated):** Vue 3 + TypeScript + shadcn-vue + Firebase (Auth, Firestore, Cloud Functions, Hosting) + Claude/OpenAI (streaming mandatory)
+**Re-reviewed against the brief:** 2026-08-16 — §3 rewritten as-built, §7 (exact packages) added.
 
 ---
 
@@ -25,21 +26,46 @@ HighLevel agency/marketplace users who want custom mini-apps over their CRM data
 7. Manually edit a file; preview updates
 8. Open snapshot history; restore a previous version
 
-## 3. System Architecture (high level)
+## 3. System Architecture
+
+Not a sketch — the region, database id and rewrites below are pinned in `firebase.json`,
+`functions/src/index.ts` and `frontend/vite.config.ts`, and drifting from them breaks the
+build. Slices marked ✅ have shipped.
 
 ```
-Vue 3 SPA (shadcn-vue, Monaco, iframe preview)
-   │  Firebase Auth session, Firestore reads (rules-scoped)
-   │  SSE ── HTTP Cloud Function (LLM streaming)
+Browser — Vue 3 SPA (shadcn-vue · Monaco · sandboxed iframe preview)
+   │
+   │  Firebase Auth ID token, browserLocalPersistence
+   │  Firestore reads/writes authorised by SECURITY RULES, never by client code
+   │
+   ├── same-origin fetch, resolved by Firebase Hosting rewrites:
+   │        /api/**    →  function `api`       (asia-south1)  Express router
+   │        /generate  →  function `generate`  (asia-south1)  SSE, unbuffered
    ▼
-Firebase Cloud Functions
-   ├─ OAuth callback (HL authorize → tokens → Firestore)
-   ├─ Generation endpoint (prompt → context → LLM stream → file ops → snapshot)
-   ├─ HighLevel API proxy (token refresh, called by generated apps in preview)
-   └─ Project/file/snapshot operations (where rules aren't enough)
+Cloud Functions v2 · Node 22 · region asia-south1
+   ├─ api/health          round-trip diagnostic                              ✅ Slice 0
+   ├─ api/auth/*          register · throttle · unverified-account cleanup   ✅ Slice 1
+   ├─ api/oauth/callback  HL authorize → code-for-token → Firestore             Slice 2
+   ├─ generate            prompt → bounded context → Claude stream →
+   │                      SSE events → validated file ops → snapshot          Slices 5, 6, 9, 11
+   └─ api/hl/*            HighLevel proxy: route allowlist, transactional
+                          token refresh, error normalisation                   Slice 8
    ▼
-Firestore: users, hlConnections (tokens), projects, files, snapshots, chat messages
+Firestore — NAMED database `highlevel-genesis` (not `(default)`)
+   users · authThrottle · hlConnections · projects · files · snapshots · messages
 ```
+
+**Three architecture facts that are easy to get wrong and are already settled:**
+
+1. **Region is `asia-south1`** everywhere — `setGlobalOptions()` in functions, the Hosting
+   rewrite targets, and the dev-server proxy in `vite.config.ts` all name it. Slice 0
+   proved Cloud Functions v2 streams unbuffered from this region through a Hosting rewrite,
+   which was §6.3's open risk.
+2. **Firestore is a named database.** `getFirestore(app)` silently connects to `(default)`,
+   which is empty. The id is passed explicitly on both sides and mirrored by
+   `FIRESTORE_DATABASE_ID` / `VITE_FIREBASE_DATABASE_ID`.
+3. **Functions are reached same-origin through Hosting rewrites**, not via
+   `cloudfunctions.net`. CORS is defence in depth (an origin allowlist), not the mechanism.
 
 **Why a HighLevel proxy function matters:** generated apps run in a sandboxed iframe and can't hold OAuth tokens or call HL APIs directly (CORS + secret exposure). The generated code calls our proxy endpoint; the proxy attaches the user's token, handles refresh, and forwards to HighLevel. This is also what makes "real data in the preview" achievable safely.
 
@@ -108,7 +134,12 @@ Firestore: users, hlConnections (tokens), projects, files, snapshots, chat messa
 - Streaming is mandatory (no request/response-only LLM calls)
 - No secrets in source, ever
 - All data access scoped to the authenticated user by security rules
-- Runs locally on Firebase emulators (`firebase emulators:start`)
+- Runs locally on Firebase emulators (`firebase emulators:start`) — **the brief names this
+  command explicitly in the README deliverable, so it must work from a fresh clone.** Note
+  the deliberate split we now run: `npm run dev` points the SPA at **real** Firebase (so the
+  development path is the production path), while the emulators back the rules, integration
+  and e2e suites and the `--mode emulator` build. Slice 13 owes the README a documented
+  end-to-end emulator run, not just an emulator-backed test run.
 
 ## 6. Key Design Decisions to Make (input for phasing)
 1. **Preview runtime:** iframe `srcdoc` (simplest, full control) vs Sandpack vs WebContainers — recommend `srcdoc` with a small runtime shim that injects the proxy base URL + auth
@@ -117,3 +148,81 @@ Firestore: users, hlConnections (tokens), projects, files, snapshots, chat messa
 4. **LLM provider:** Claude (`@anthropic-ai/sdk`) with streaming; structured file-ops format (e.g., fenced blocks with file-path headers or tool-use JSON)
 5. **File storage:** Firestore documents (files are small text) vs Cloud Storage — Firestore keeps snapshots/restore trivial
 6. **HL knowledge injection:** curated endpoint cheat-sheet in the system prompt vs tool-calling — cheat-sheet is simpler and deterministic
+
+Items 1–6 above were leanings when this spec was written. Their current state — decided,
+proven, or still open — lives in `IMPLEMENTATION_PLAN.md` §8, which is the one place that
+tracks them.
+
+---
+
+## 7. Mandated stack — the exact packages
+
+The brief names specific packages, not categories. A reviewer will `cat package.json`
+before they read a line of our code, so this table is the contract: **left column is what
+the assignment says, middle is exactly what we install, right is where it lands.** Nothing
+substitutes for a named package without a recorded decision.
+
+### 7.1 Named by the brief
+
+| Brief says | Exact package | Where | Status |
+|---|---|---|---|
+| Vue 3 | `vue` ^3.5 | frontend | ✅ installed |
+| TypeScript | `typescript` ^6, `vue-tsc` | both | ✅ `strict` + four extra flags (see CLAUDE.md) |
+| **ShadCN for Vue (`shadcn-vue`)** | `shadcn-vue` CLI + vendored components | frontend | ✅ see §7.2 — *this one needs reading* |
+| **Monaco (`@guolao/vue-monaco-editor`)** | `@guolao/vue-monaco-editor`, `monaco-editor` | frontend | ⏳ Slice 7 — use the exact package, not `monaco-editor-vue3` |
+| **Claude (`@anthropic-ai/sdk`)** | `@anthropic-ai/sdk` | functions | ⏳ Slice 5 — model `claude-opus-5`, `client.messages.stream()` only |
+| Firebase Auth / Firestore / Functions / Hosting | `firebase` (web), `firebase-admin`, `firebase-functions` v7 (v2 API), `firebase-tools` | all | ✅ installed |
+| Live preview: Sandpack / WebContainers / **srcdoc** | none — `srcdoc` + a hand-written runtime shim | frontend | ⏳ Slice 10 (decision: §6.1) |
+
+### 7.2 shadcn-vue is a registry, not a dependency — read this before doubting conformance
+
+`shadcn-vue` will never appear in `dependencies`, and that is correct, not a shortcut. It
+is a **copy-in registry**: `npx shadcn-vue@latest add button` writes the component source
+into `src/components/ui/` and it becomes ours to own. What shows up in `package.json` is
+what those components import:
+
+| Package | Why it is there |
+|---|---|
+| `reka-ui` | shadcn-vue's headless primitive layer (the Radix equivalent). Every shadcn-vue component is built on it. **This is the marker of a real shadcn-vue install, not a departure from one.** |
+| `class-variance-authority` | `buttonVariants`, `alertVariants` — the variant API shadcn generates |
+| `clsx` + `tailwind-merge` | the `cn()` helper in `src/lib/utils.ts` |
+| `lucide-vue-next` | the icon library declared in `components.json` |
+| `tailwindcss` v4 | the styling layer; CSS-variable theming, `components.json` → `cssVariables: true` |
+
+`frontend/components.json` is the shadcn-vue config and is committed. **Rule from here on:
+new primitives are added with `npx shadcn-vue@latest add <name>` and then edited, never
+hand-written from scratch** — provenance has to be checkable by diffing against upstream.
+Where we deviate from upstream (the `Alert` role-follows-variant change, `Button`'s
+`as-child`), the component carries a comment saying so.
+
+**Component inventory.** The brief calls out "inputs, buttons, dialogs, tabs, badges, and
+layout primitives", plus "a ShadCN sheet or dialog" for snapshot history:
+
+| Component | Brief calls for it | Slice |
+|---|---|---|
+| `button`, `input`, `label`, `card`, `alert` | ✅ | ✅ Slices 0–1 |
+| `dialog`, `tabs`, `badge` | ✅ named explicitly | Slice 3 (dialog), 4 (tabs, badge) |
+| `sheet` | ✅ snapshot history | Slice 11 |
+| `resizable`, `scroll-area`, `separator` | layout primitives, three-panel workspace | Slice 4 |
+| `sonner` or `toast`, `skeleton` | error + loading states (F8, DoD) | Slice 12 |
+
+### 7.3 Ours, not mandated — recorded so the choice is visible
+
+| Package | Role | Why this one |
+|---|---|---|
+| `zod` v4 | every boundary: request bodies, LLM file-ops output, HL responses | Parse-don't-validate. F3.3's "validated file operations" is a Zod schema, not hand-rolled checks. |
+| `pinia` | auth, project, generation stores | The Vue 3 default |
+| `vue-router` | routing + the three-state auth guard | — |
+| `express` + `cors` | one `api` function multiplexing routes | Keeps cold starts to one function instead of a dozen |
+| `vitest`, `@vue/test-utils`, `@firebase/rules-unit-testing`, `@playwright/test` | test levels L1–L5 | See IMPLEMENTATION_PLAN §2 |
+| `@gohighlevel/api-client` | **types only, devDependency** | Its `.d.ts` is the most reliable parameter reference for the HL APIs. Production calls go through our own `fetch` proxy — the SDK's auto-refresh would reintroduce the token-rotation race (HIGHLEVEL_PLATFORM §3). |
+
+### 7.4 Explicitly rejected
+
+| Not using | Instead | Because |
+|---|---|---|
+| `openai` | `@anthropic-ai/sdk` | Brief allows either; CLAUDE.md pins Claude |
+| Sandpack / WebContainers | iframe `srcdoc` + shim | Full control of the shim that injects the proxy base URL and auth; no bundler in the browser |
+| `vuefire` | plain `firebase` SDK in Pinia stores | Removed in Slice 1 — an extra reactivity layer over Firestore we did not need |
+| a mail provider (SMTP2GO et al.) | Firebase Auth's own sender | Slice 1 D31 — one fewer secret, one fewer domain to verify |
+| `@gohighlevel/api-client` at runtime | our own `fetch` proxy | See §7.3 |

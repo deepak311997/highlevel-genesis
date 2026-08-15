@@ -1,27 +1,24 @@
 <script setup lang="ts">
+import type { HTMLAttributes } from 'vue'
+
 import { cn } from '@/lib/utils'
+import { alertVariants, type AlertVariants } from '.'
 
-/**
- * Somewhere to put a failure that is not attached to one field — a network
- * error, a throttle refusal, an expired link. The role follows the tone, so a
- * screen reader interrupts for an error but not for a confirmation.
- */
-const props = withDefaults(defineProps<{ tone?: 'error' | 'info' | 'success'; class?: string }>(), {
-  tone: 'info',
-  class: '',
-})
-
-const TONES = {
-  error: 'border-destructive/40 bg-destructive/10 text-destructive',
-  info: 'border-border-strong bg-secondary text-muted-foreground',
-  success: 'border-accent/40 bg-accent/10 text-accent',
-} as const
+const props = defineProps<{
+  class?: HTMLAttributes['class']
+  variant?: AlertVariants['variant']
+}>()
 </script>
 
 <template>
+  <!--
+    The role follows the variant. Upstream hardcodes role="alert", which makes a
+    screen reader interrupt for a success message the same way it does for a
+    failure — `status` is the polite equivalent and is what a confirmation wants.
+  -->
   <div
-    :role="props.tone === 'error' ? 'alert' : 'status'"
-    :class="cn('rounded-md border px-3 py-2 text-sm', TONES[props.tone], props.class)"
+    :role="props.variant === 'destructive' ? 'alert' : 'status'"
+    :class="cn(alertVariants({ variant: props.variant }), props.class)"
   >
     <slot />
   </div>

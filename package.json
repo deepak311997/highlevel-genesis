@@ -2,7 +2,7 @@
   "name": "genesis",
   "version": "0.1.0",
   "private": true,
-  "description": "Genesis \u2014 AI-powered HighLevel app builder",
+  "description": "Genesis — AI-powered HighLevel app builder",
   "scripts": {
     "dev": "npm --prefix frontend run dev",
     "build": "npm --prefix functions run build && npm --prefix frontend run build",
@@ -20,7 +20,6 @@
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.1",
     "@playwright/test": "^1.62.1",
-    "concurrently": "^10.0.4",
     "firebase": "^12.17.1",
     "firebase-admin": "^14.2.0",
     "firebase-tools": "^14.23.0",

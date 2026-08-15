@@ -72,13 +72,13 @@ async function submit(): Promise<void> {
 
       <CardContent class="flex flex-col gap-4">
         <div v-if="state.kind === 'sent'" data-testid="forgot-sent">
-          <Alert tone="success">
+          <Alert variant="success">
             If an account exists for that address, we've sent a reset link.
           </Alert>
         </div>
 
         <form v-else class="flex flex-col gap-4" novalidate @submit.prevent="submit">
-          <Alert v-if="state.kind === 'failed'" tone="error" data-testid="forgot-error">
+          <Alert v-if="state.kind === 'failed'" variant="destructive" data-testid="forgot-error">
             {{ state.message }}
           </Alert>
 
