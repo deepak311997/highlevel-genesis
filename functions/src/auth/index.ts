@@ -1,6 +1,8 @@
 import { Router } from 'express'
 
 import { asyncHandler } from '../lib/errors'
+import { deleteExpiredUnverifiedUsers } from './cleanup'
+import { isEmulator } from '../lib/email'
 import { handleRegister } from './register'
 import { handlePasswordReset, handleResend } from './resend'
 import { throttleAuthRequest } from './throttleGuard'
@@ -25,3 +27,29 @@ const throttled = asyncHandler(throttleAuthRequest)
 authRouter.post('/auth/register', throttled, asyncHandler(handleRegister))
 authRouter.post('/auth/resend', throttled, asyncHandler(handleResend))
 authRouter.post('/auth/password-reset', throttled, asyncHandler(handlePasswordReset))
+
+/**
+ * Test-only door onto the scheduled sweep.
+ *
+ * The emulator has no scheduler, so the integration suite has no other way to
+ * exercise the cleanup end to end. Gated on emulator detection — the same
+ * signal that selects the fake mail transport, and the one an operator cannot
+ * set — so this route does not exist in a deployed build. It also takes `now`
+ * as input, which is exactly why it must never be reachable in production.
+ */
+if (isEmulator()) {
+  authRouter.post(
+    '/auth/__test/cleanup',
+    asyncHandler(async (req, res) => {
+      const body: unknown = req.body
+      const now =
+        typeof body === 'object' &&
+        body !== null &&
+        typeof (body as { now?: unknown }).now === 'number'
+          ? (body as { now: number }).now
+          : Date.now()
+
+      res.json({ deleted: await deleteExpiredUnverifiedUsers(now) })
+    }),
+  )
+}

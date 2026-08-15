@@ -1,7 +1,9 @@
 import { setGlobalOptions } from 'firebase-functions/v2'
 import { onRequest } from 'firebase-functions/v2/https'
+import { onSchedule } from 'firebase-functions/v2/scheduler'
 
 import { createApiApp } from './api'
+import { deleteExpiredUnverifiedUsers } from './auth/cleanup'
 
 setGlobalOptions({ region: 'asia-south1', maxInstances: 10 })
 
@@ -27,3 +29,18 @@ export const api = onRequest(
  * timeout and a warm instance without the CRUD endpoints paying for either.
  */
 export { generate } from './generate'
+
+/**
+ * Daily sweep of accounts that were never verified.
+ *
+ * The last of the account pre-hijacking mitigations: an attacker can register
+ * someone else's address, and although that account can reach nothing, leaving
+ * it in place leaves the victim available to be talked into verifying it. This
+ * bounds that window to a day and frees the address for its real owner.
+ */
+export const cleanupUnverifiedUsers = onSchedule(
+  { schedule: 'every 24 hours', timeoutSeconds: 300, memory: '256MiB' },
+  async () => {
+    await deleteExpiredUnverifiedUsers()
+  },
+)
