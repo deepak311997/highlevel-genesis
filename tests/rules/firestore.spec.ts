@@ -64,6 +64,21 @@ describe('hlConnections/{uid}', () => {
   })
 })
 
+describe('_devMail/{id}', () => {
+  // Deny-by-default already covers this, so the test is green before the rule
+  // block exists. It is here as a regression pin: these documents hold live
+  // action codes, and the day someone adds a broad `match /{doc=**}` this is
+  // what fails.
+  it('denies every client — recorded mail holds live action codes', async () => {
+    const alice = env.authenticatedContext('alice').firestore()
+    const anon = env.unauthenticatedContext().firestore()
+
+    await assertFails(getDoc(doc(alice, '_devMail/some-id')))
+    await assertFails(setDoc(doc(alice, '_devMail/some-id'), { to: 'x@y.test' }))
+    await assertFails(getDoc(doc(anon, '_devMail/some-id')))
+  })
+})
+
 describe('unknown collections', () => {
   it('denies anything without an explicit rule', async () => {
     const alice = env.authenticatedContext('alice').firestore()
