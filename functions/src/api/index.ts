@@ -21,7 +21,7 @@ const DEFAULT_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173']
  * and `https://localhost:5173.evil.test` both contain the real origin and
  * neither is it.
  */
-function originAllowlist(
+export function originAllowlist(
   origin: string | undefined,
   callback: (err: Error | null, allow?: boolean) => void,
 ): void {

@@ -1,6 +1,18 @@
+import cors from 'cors'
 import { onRequest } from 'firebase-functions/v2/https'
 
+import { originAllowlist } from './api'
 import { encodeSse } from './lib/sse'
+
+/**
+ * The same allowlist `api` uses, applied by hand.
+ *
+ * `onRequest`'s own `cors` option was set to `true` here, which reflects
+ * whatever Origin it is given — the exact permissiveness that was removed from
+ * `api`, left behind on this function because the two configure CORS in
+ * different places. Sharing one allowlist is what stops them drifting again.
+ */
+const applyCors = cors({ origin: originAllowlist, credentials: false })
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -23,9 +35,17 @@ export const generate = onRequest(
     // that makes it safe to grant.
     timeoutSeconds: 60,
     memory: '256MiB',
-    cors: true,
+    // Not `cors: true` — see applyCors above.
+    cors: false,
   },
-  async (_req, res) => {
+  async (req, res) => {
+    await new Promise<void>((resolve) => {
+      applyCors(req, res, () => {
+        resolve()
+      })
+    })
+    if (res.writableEnded) return
+
     res.set('Content-Type', 'text/event-stream; charset=utf-8')
     res.set('Cache-Control', 'no-cache, no-transform')
     res.set('Connection', 'keep-alive')
