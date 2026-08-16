@@ -71,6 +71,24 @@ describe('POST /api/hl/connect', () => {
     expect(stateOf(a)).not.toBe(stateOf(b))
   })
 
+
+  /*
+   * Regression. The functions emulator loads `functions/.env`, whose values
+   * *override* anything the shell exported — so the local flow silently
+   * inherited the production redirect URI and completed on the deployed site,
+   * where no callback exists. It looked like a broken app and was a
+   * configuration bug. `functions/.env.local` now owns the emulator's values,
+   * and this asserts they took.
+   */
+  it('sends the callback back to this app, never to the deployed site', async () => {
+    const res = await postJson('/api/hl/connect', {}, auth(verifiedToken))
+    const { authorizeUrl } = res.body as { authorizeUrl: string }
+
+    const redirect = new URL(authorizeUrl).searchParams.get('redirect_uri') ?? ''
+    expect(new URL(redirect).origin).toBe('http://localhost:5173')
+    expect(redirect).not.toContain('web.app')
+  })
+
   it('refuses a caller with no token', async () => {
     const res = await postJson('/api/hl/connect', {})
 

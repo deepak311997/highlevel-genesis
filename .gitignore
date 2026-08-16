@@ -18,6 +18,14 @@ functions/lib/
 .env
 .env.*
 !.env.example
+
+# Emulator-only, and committed deliberately. Firebase reads `.env.local` for the
+# local emulator suite alone and never deploys it, so it is the one place a
+# fake credential belongs. Committing it is what makes `npm run dev` and the
+# test suites work from a fresh clone — without it the local OAuth flow inherits
+# `.env`'s production redirect URI and completes on the deployed site.
+# It holds nothing secret; anything that is belongs in .env or Secret Manager.
+!functions/.env.local
 *.pem
 service-account*.json
 

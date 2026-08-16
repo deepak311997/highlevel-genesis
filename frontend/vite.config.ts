@@ -88,6 +88,23 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5173,
+      /*
+       * Tunnel hostnames, for checking the integration against live HighLevel.
+       *
+       * HighLevel requires an HTTPS redirect URI, so the only way to run the
+       * real OAuth flow against a local build is through a tunnel — and Vite
+       * rejects requests whose Host header it does not recognise, answering
+       * "Blocked request" before the app is even reached. Listing the common
+       * tunnel suffixes here means that failure never happens; the tunnel is
+       * still opt-in, selected in functions/.env.local.
+       */
+      allowedHosts: [
+        '.ngrok-free.dev',
+        '.ngrok-free.app',
+        '.ngrok.io',
+        '.trycloudflare.com',
+        '.loca.lt',
+      ],
       // Mirror the production Hosting rewrites locally, so the SPA calls
       // same-origin relative paths in both environments. Without this, a
       // request to /api/health falls through to Vite's SPA handler and comes
