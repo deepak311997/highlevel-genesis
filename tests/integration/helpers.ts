@@ -106,6 +106,23 @@ export async function seedUser(
   return user.uid
 }
 
+/**
+ * A real Firebase ID token for a seeded user.
+ *
+ * The authenticated endpoints verify the token with the Admin SDK and read
+ * `email_verified` off it, so a hand-made JWT would not do — the emulator has
+ * to mint it. Signing in through the client SDK is the only way to get one.
+ */
+export async function idTokenFor(email: string, password: string): Promise<string> {
+  const auth = clientAuth()
+  try {
+    const credential = await signInWithEmailAndPassword(auth, email, password)
+    return await credential.user.getIdToken(true)
+  } finally {
+    await signOut(auth).catch(() => undefined)
+  }
+}
+
 /** Wipe both emulators so each test starts from a known, empty state. */
 export async function resetEmulators(): Promise<void> {
   const auth = emulatorHost('FIREBASE_AUTH_EMULATOR_HOST')
@@ -191,4 +208,43 @@ export async function applyPasswordReset(oobCode: string, newPassword: string): 
   } catch {
     return false
   }
+}
+
+export async function getJson(
+  path: string,
+  headers: Record<string, string> = {},
+): Promise<JsonResponse> {
+  const res = await fetch(`${API_BASE}${path}`, { headers })
+  return toJsonResponse(res)
+}
+
+export async function deleteJson(
+  path: string,
+  headers: Record<string, string> = {},
+): Promise<JsonResponse> {
+  const res = await fetch(`${API_BASE}${path}`, { method: 'DELETE', headers })
+  return toJsonResponse(res)
+}
+
+/**
+ * Follow no redirects, so a 302 is observable.
+ *
+ * The OAuth callback answers only in `Location` headers — every outcome, success
+ * and failure alike — so a test that followed the redirect would assert against
+ * the SPA's HTML instead of the thing under test.
+ */
+export async function fetchNoRedirect(path: string): Promise<{ status: number; location: string }> {
+  const res = await fetch(`${API_BASE}${path}`, { redirect: 'manual' })
+  return { status: res.status, location: res.headers.get('location') ?? '' }
+}
+
+async function toJsonResponse(res: Response): Promise<JsonResponse> {
+  const raw = await res.text()
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    parsed = raw
+  }
+  return { status: res.status, body: parsed, raw }
 }
