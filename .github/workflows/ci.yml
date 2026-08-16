@@ -53,5 +53,22 @@ jobs:
       - name: Firestore rules tests
         run: npm run test:rules
 
+      # L4. Cloud Functions end to end against the auth, firestore and
+      # functions emulators. Needs no secrets: config is passed inline by the
+      # npm script, and SMTP2GO is never called — the emulator selects a
+      # transport that records mail into Firestore instead.
+      - name: Integration tests
+        run: npm run test:integration
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      # L5. Worth the minutes: this is the only test that exercises
+      # /auth/action in the signed-in-and-unverified state, which is the one
+      # combination whose misclassification makes verification unreachable.
+      # Left out of CI it would only ever run on someone's laptop.
+      - name: End-to-end tests
+        run: npm run test:e2e
+
       - name: Build
         run: npm run build

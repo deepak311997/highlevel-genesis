@@ -10,10 +10,10 @@ rendering real CRM data.
 
 ## The one rule
 
-Work happens **one vertical slice at a time**, through the six-stage loop in
-`docs/IMPLEMENTATION_PLAN.md` §1: discovery → PRD → tech plan → build → review → ship.
-Each stage is a skill (`/feature-discovery`, `/feature-prd`, `/feature-plan`,
-`/feature-build`, `/feature-review`, `/feature-ship`) and each ends in a hard stop.
+Work happens **one vertical slice at a time**, through the five-stage loop in
+`docs/IMPLEMENTATION_PLAN.md` §1: discovery + PRD → tech plan → build → review → ship.
+Each stage is a skill (`/feature-prd`, `/feature-plan`, `/feature-build`,
+`/feature-review`, `/feature-ship`) and each ends in a hard stop.
 
 Never start a slice's implementation before its PRD and tech plan are approved. Never
 merge — that is the human's call, always.

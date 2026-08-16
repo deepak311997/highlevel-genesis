@@ -1,13 +1,50 @@
 import cors from 'cors'
 import express, { type Express } from 'express'
 
+import { authRouter } from '../auth'
 import { errorHandler } from '../lib/errors'
 import { healthRouter } from './health'
+
+/** Origins permitted when no ALLOWED_ORIGINS is configured — local dev only. */
+const DEFAULT_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173']
+
+/**
+ * Decide per request, rather than resolving a list once at module scope.
+ *
+ * `createApiApp()` is called while the module is being loaded, and
+ * `firebase deploy` loads and analyses the module *before* injecting
+ * functions/.env — the same reason `getDb()` reads its config lazily. Resolving
+ * the allowlist here would bake in whatever the environment looked like at
+ * analysis time, which is nothing.
+ *
+ * Exact string match, no prefix or suffix logic: `https://evil-localhost:5173`
+ * and `https://localhost:5173.evil.test` both contain the real origin and
+ * neither is it.
+ */
+export function originAllowlist(
+  origin: string | undefined,
+  callback: (err: Error | null, allow?: boolean) => void,
+): void {
+  // No Origin header at all — a same-origin request, curl, or a server-to-
+  // server call. CORS has nothing to say about these.
+  if (origin === undefined) {
+    callback(null, true)
+    return
+  }
+
+  const configured = (process.env['ALLOWED_ORIGINS'] ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value !== '')
+
+  const allowed = configured.length > 0 ? configured : DEFAULT_ORIGINS
+  callback(null, allowed.includes(origin))
+}
 
 export function createApiApp(): Express {
   const app = express()
 
-  app.use(cors({ origin: true }))
+  app.use(cors({ origin: originAllowlist, credentials: false }))
   app.use(express.json({ limit: '1mb' }))
 
   // Mounted at both prefixes on purpose. The functions emulator strips the
@@ -15,6 +52,8 @@ export function createApiApp(): Express {
   // forwards the original path, so the app sees `/api/health`.
   app.use('/', healthRouter)
   app.use('/api', healthRouter)
+  app.use('/', authRouter)
+  app.use('/api', authRouter)
 
   app.use((_req, res) => {
     res.status(404).json({ error: 'Not found', code: 'not_found' })

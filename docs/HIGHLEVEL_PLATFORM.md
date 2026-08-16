@@ -98,6 +98,8 @@ https://<your-project>.web.app/api/oauth/callback
 
 Rationale: it's stable across function redeploys, it's the same origin as the SPA (no CORS on the callback), and it's what you'll want in the README. Register the emulator URL as a *second* redirect entry if HighLevel allows multiple; otherwise develop against the deployed callback and tunnel locally.
 
+✅ **This route already exists.** `firebase.json` rewrites `/api/**` to the `api` function in **`asia-south1`**, so the callback lands at `/api/oauth/callback` with no new plumbing — Slice 2 adds a handler to the existing Express router. The same string must appear byte-for-byte in three places: the marketplace app's Redirect URL field, `HL_REDIRECT_URI` in `functions/.env`, and the `redirect_uri` on both the authorize URL and the token exchange. A trailing slash in one of the three is the classic day-one hour.
+
 ### Step 3 — Sandbox / App Test account ✅
 
 This is your demo environment and it solves the "reviewer connects an empty location" problem.
@@ -367,7 +369,7 @@ Base: `https://services.leadconnectorhq.com`
 
 `npm install @gohighlevel/api-client` — Node ≥18, written in TypeScript with full type definitions, auto-refreshes on 401, `ghl.setApiVersion('2021-07-28')`.
 
-**Recommendation: don't route production calls through it, but install it anyway.** Its `.d.ts` files are the most reliable parameter reference available — better than the docs portal for exactly the ⚠️ items above. Your proxy should be a thin `fetch` wrapper you fully control (you need pass-through of arbitrary paths, custom error mapping, and your own token transaction from §3). Using the SDK's auto-refresh would reintroduce the rotation race.
+**Recommendation: install it as a `devDependency`, and never call it at runtime.** Its `.d.ts` files are the most reliable parameter reference available — better than the docs portal for exactly the ⚠️ items above. Your proxy should be a thin `fetch` wrapper you fully control (you need pass-through of arbitrary paths, custom error mapping, and your own token transaction from §3). Using the SDK's auto-refresh would reintroduce the rotation race. Recorded in `PRODUCT_SPEC.md` §7.3 so nobody later mistakes it for a shipped dependency.
 
 ---
 

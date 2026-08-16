@@ -70,6 +70,35 @@ export default tseslint.config(
       ],
       'vue/no-unused-refs': 'error',
       'vue/prefer-true-attribute-shorthand': 'warn',
+
+      /**
+       * Firebase Auth calls the client must never make.
+       *
+       * `createUserWithEmailAndPassword` reports EMAIL_EXISTS on the wire, so
+       * calling it from the browser reintroduces the account-existence oracle
+       * that `/api/auth/register` exists to close — no amount of careful error
+       * copy hides what the network tab shows.
+       *
+       * `fetchSignInMethodsForEmail` answers the same question outright.
+       *
+       * `sendEmailVerification` and `sendPasswordResetEmail` were banned here
+       * too, back when we sent mail ourselves and two senders would have meant
+       * two differently-branded emails for one action. Firebase is now the only
+       * sender, so they are the intended path and the ban is lifted.
+       */
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'firebase/auth',
+              importNames: ['createUserWithEmailAndPassword', 'fetchSignInMethodsForEmail'],
+              message:
+                'Account creation is server-side — it is the only way the response can avoid disclosing whether an address is registered. Use @/lib/authApi; see functions/src/auth/register.ts.',
+            },
+          ],
+        },
+      ],
     },
   },
 

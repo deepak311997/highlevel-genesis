@@ -62,9 +62,19 @@
     ]
   },
   "emulators": {
-    "_comment": "Test-only. The app talks to real Firebase; the Firestore emulator exists so `npm run test:rules` can exercise firestore.rules hermetically, offline, against a throwaway project id \u2014 never the live database.",
+    "_comment": "Test-only. Dev and production talk to real Firebase; these exist so the rules, integration and e2e suites run hermetically, offline, against a throwaway project id \u2014 never the live project. The frontend only ever connects to them under `vite --mode test`, so a production bundle cannot reach them.",
+    "auth": {
+      "port": 9099
+    },
+    "functions": {
+      "port": 5001
+    },
     "firestore": {
       "port": 8080
+    },
+    "ui": {
+      "enabled": true,
+      "port": 4000
     },
     "singleProjectMode": true
   }

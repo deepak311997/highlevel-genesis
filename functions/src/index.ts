@@ -1,7 +1,9 @@
 import { setGlobalOptions } from 'firebase-functions/v2'
 import { onRequest } from 'firebase-functions/v2/https'
+import { onSchedule } from 'firebase-functions/v2/scheduler'
 
 import { createApiApp } from './api'
+import { deleteExpiredUnverifiedUsers } from './auth/cleanup'
 
 setGlobalOptions({ region: 'asia-south1', maxInstances: 10 })
 
@@ -9,10 +11,48 @@ setGlobalOptions({ region: 'asia-south1', maxInstances: 10 })
  * Short-lived request/response endpoints: OAuth callback, HighLevel proxy,
  * anything security rules cannot express. Fast cold start, small memory.
  */
-export const api = onRequest({ timeoutSeconds: 60, memory: '256MiB' }, createApiApp())
+export const api = onRequest(
+  {
+    timeoutSeconds: 60,
+    memory: '256MiB',
+    // firebase-functions wraps the handler in its own CORS layer, and left
+    // unset it reflects whatever Origin it is given — outside the Express app,
+    // so an allowlist inside it never gets a say. Turned off here so the
+    // allowlist in ./api is the only thing answering.
+    cors: false,
+  },
+  createApiApp(),
+)
 
 /**
  * The streaming endpoint lives in its own function so it can carry a long
  * timeout and a warm instance without the CRUD endpoints paying for either.
  */
 export { generate } from './generate'
+
+/**
+ * The daily sweep of never-verified accounts — D18's fourth mitigation.
+ *
+ * An attacker can register someone else's address. Rules already make that
+ * account inert, and a registration request can never alter an account it does
+ * not control, so the account can reach nothing. What remains is that it *sits
+ * there*: the real owner could be socially engineered into clicking "verify" on
+ * it weeks later, and until then they cannot register the address themselves.
+ * Expiring it closes that window instead of leaving it open indefinitely.
+ *
+ * This trigger was dropped once already, in an unrelated commit, and nothing
+ * caught it — every test called the handler directly, so a sweep that no longer
+ * ran still looked fully covered. `index.spec.ts` now asserts the export
+ * exists, because the deployment surface is the one thing the other test levels
+ * cannot see.
+ *
+ * Timezone is pinned rather than left to the deploy environment: "every 24
+ * hours" against a floating zone makes the deletion window drift, and a
+ * 24h-age check whose boundary moves is hard to reason about after the fact.
+ */
+export const cleanupUnverifiedUsers = onSchedule(
+  { schedule: 'every 24 hours', timeZone: 'Etc/UTC', memory: '256MiB', timeoutSeconds: 540 },
+  async () => {
+    await deleteExpiredUnverifiedUsers()
+  },
+)

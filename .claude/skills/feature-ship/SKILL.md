@@ -1,9 +1,9 @@
 ---
 name: feature-ship
-description: Stage 6 of the vertical-slice workflow — push the slice branch and open a pull request with demo evidence, then stop for human review. Use after /feature-review. Never merges; the merge is always the human's decision.
+description: Stage 5 of the vertical-slice workflow — push the slice branch and open a pull request with demo evidence, then stop for human review. Use after /feature-review. Never merges; the merge is always the human's decision.
 ---
 
-# Stage 6 — Ship
+# Stage 5 — Ship
 
 Purpose: hand a reviewable pull request to a human, then get out of the way.
 
@@ -63,7 +63,7 @@ Post the PR URL and **stop completely**. Specifically, do not:
 
 Close by telling the user what to review, in priority order — the risky call first, the
 mechanical parts last — and remind them that once they merge, the next slice starts with
-`/feature-discovery <nn+1>`.
+`/feature-prd <nn+1>`.
 
 If the user comes back with review comments: fix them on the same branch, test-first,
 re-run the suite, push, and stop again. The gate does not move.

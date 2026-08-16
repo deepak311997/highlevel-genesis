@@ -5,33 +5,65 @@
 This document is the spine of the project. It defines (1) the workflow we run for every
 feature, (2) the slices the work is cut into, and (3) the rules that decide when a slice
 is done. Source of truth for *what* we build is `PRODUCT_SPEC.md`; source of truth for
-*how HighLevel works* is `HIGHLEVEL_PLATFORM.md`.
+*how HighLevel works* is `HIGHLEVEL_PLATFORM.md`; source of truth for *which exact
+packages the brief mandates* is `PRODUCT_SPEC.md` §7.
+
+---
+
+## 0. Where we are — 2026-08-16
+
+| Slice | State |
+|---|---|
+| 0 — Rails | ✅ merged to `main` |
+| 1 — Account & session | 🔵 on `slice/01-account-session`, **reviewed** (`05-review.md`), not yet pushed — three fixes applied, one decision open |
+| 2 — HighLevel connection | ⏭ next, and the highest-risk slice in the build |
+| 3–13 | not started |
+
+**Suite, measured after the review's fixes:** typecheck 0 · lint 0 · **275 unit** ·
+16 rules · 34 integration · **2 e2e**.
+
+**Scope grew in Slice 1 and it was the right call**, but it needs saying out loud: what the
+brief specifies as "email + password sign up/sign in" shipped as a non-disclosing
+registration endpoint, a blocking email-verification gate enforced in Firestore rules, a
+two-key rate limiter, App Check on the registration endpoint, and a daily sweep of
+never-verified accounts. That is well above the line the brief draws.
+
+**Every review finding is closed.** AC-53's console controls were confirmed on 2026-08-16 —
+email-enumeration protection enabled, and the password policy on *Require enforcement* with
+all four composition classes, min 8, max 50, matching the code field for field. Slice 1 is
+ready to ship; `05-review.md` carries the evidence.
+
+**Slices 2–13 do not get the same latitude** — the brief's own words are the ceiling from
+here, because F7 (the proxy) and F10 (the differentiator) are what this assignment is
+actually judged on, and there are four days of clock left.
 
 ---
 
 ## 1. The working agreement
 
-Every slice runs the same six stages. Each stage is a skill you invoke; each ends with a
+Every slice runs the same five stages. Each stage is a skill you invoke; each ends with a
 **hard stop** so you stay in control.
 
 | # | Stage | Skill | Produces | Who acts next |
 |---|---|---|---|---|
-| 1 | Discovery | `/feature-discovery <id>` | `docs/slices/<id>/01-discovery.md` | You answer questions |
-| 2 | PRD | `/feature-prd <id>` | `02-prd.md` — acceptance criteria, test matrix | You approve scope |
-| 3 | Tech plan | `/feature-plan <id>` | `03-plan.md` — file map, ordered TDD tasks | You approve approach |
-| 4 | Build | `/feature-build <id>` | Code on `slice/<id>-<slug>`, `04-build-log.md` | — |
-| 5 | Review | `/feature-review <id>` | `05-review.md`, fixes applied | — |
-| 6 | Ship | `/feature-ship <id>` | Pull request, then **STOP** | You review + merge |
+| 1 | Discovery + PRD | `/feature-prd <id>` | `docs/slices/<id>/02-prd.md` — decisions, acceptance criteria, test matrix | You answer questions, then approve scope |
+| 2 | Tech plan | `/feature-plan <id>` | `03-plan.md` — file map, ordered TDD tasks | You approve approach |
+| 3 | Build | `/feature-build <id>` | Code on `slice/<id>-<slug>`, `04-build-log.md` | — |
+| 4 | Review | `/feature-review <id>` | `05-review.md`, fixes applied | — |
+| 5 | Ship | `/feature-ship <id>` | Pull request, then **STOP** | You review + merge |
 
-After you merge, we start the next slice from `main`. Nothing in stage 4 begins before
-stages 1–3 are approved, and nothing merges without you.
+Stage 1 interviews you first and writes the PRD from your answers — the decisions table in
+`02-prd.md` is the record that `01-discovery.md` used to be. Doc filenames keep their
+original prefixes so slices 0–1 stay readable.
+
+After you merge, we start the next slice from `main`. Nothing in stage 3 begins before
+stages 1–2 are approved, and nothing merges without you.
 
 ### Two speeds
 
-The full six-stage loop is right for slices with real unknowns. For slices where
+The full five-stage loop is right for slices with real unknowns. For slices where
 `PRODUCT_SPEC.md` already answers the questions, run **fast mode** — pass `--fast` to
-stage 1 and it collapses discovery and PRD into a single short doc with acceptance
-criteria only. This matters because the clock is five days; ceremony that isn't buying
+stage 1 and it skips the interview, writing acceptance criteria straight from the spec. This matters because the clock is five days; ceremony that isn't buying
 you clarity is just cost. Recommended mode is marked on each slice below.
 
 ### What "vertical" means here
@@ -86,35 +118,60 @@ Fourteen slices. Slice 0 is the only non-user-facing one and exists so that Slic
 a 60-file pull request. Dependencies are strict — a slice cannot start before its
 dependencies have merged.
 
-### Slice 0 — Rails
+Each slice below carries a **Libraries** line naming the exact packages it introduces.
+Those names come from the brief (`PRODUCT_SPEC.md` §7) — a slice that substitutes an
+equivalent has to record why in its PRD decisions table, not decide it at the keyboard.
+
+### Slice 0 — Rails ✅ merged
 **Spec:** F9.4 · **Depends on:** — · **Mode:** fast · **Day 1**
 
 The walking skeleton. Monorepo layout (`/frontend`, `/functions`, `firebase.json`,
-`.firebaserc`), Vue 3 + TS + Vite + Tailwind + shadcn-vue, Firebase project with emulators
-for auth/firestore/functions/hosting, the five test harnesses wired and running, and a
+`.firebaserc`), Vue 3 + TS + Vite + Tailwind v4 + shadcn-vue, Firebase project with
+emulators for auth/firestore/functions, the five test harnesses wired and running, and a
 GitHub Actions workflow running typecheck + lint + unit + rules on every PR.
 
-Vertical proof: a `/health` page that calls a `ping` Cloud Function that writes and reads
-one Firestore doc — with a test at every level, so the harness itself is proven.
+Vertical proof: a `/health` page that calls a Cloud Function that writes and reads one
+Firestore doc — with a test at every level, so the harness itself is proven.
 
-**Demo:** `firebase emulators:start`, open `/health`, see `ok` with a round-trip timestamp.
-**Risk:** low, but do not skip the CI wiring — it is what keeps every later slice honest.
+**Also settled here, and worth naming because later slices depend on all three:** region
+`asia-south1`, the named Firestore database `highlevel-genesis`, and a `generate` stub that
+streams SSE through a Hosting rewrite — which is what retired §8's "does Functions v2
+stream in this region" risk before Slice 5 could be blocked by it.
+
+**Libraries:** `vue`, `vue-router`, `pinia`, `tailwindcss` v4, `reka-ui` + `cva` + `clsx` +
+`tailwind-merge` (the shadcn-vue substrate), `firebase`, `firebase-admin`,
+`firebase-functions` v7, `express`, `cors`, `zod`, plus the L1–L5 harnesses.
+**Demo:** open `/health`, see `ok` with a round-trip timestamp.
 
 ---
 
-### Slice 1 — Account & session
-**Spec:** F1.1 · **Depends on:** 0 · **Mode:** fast · **Day 1**
+### Slice 1 — Account & session 🔵 in review
+**Spec:** F1.1 · **Depends on:** 0 · **Mode:** fast (ran long — see below) · **Day 1**
 
 Email + password sign up, sign in, sign out. Session persists across refresh. Route guards
 redirect unauthenticated users. A `users/{uid}` document is created on first sign-in.
 Firestore rules deny all cross-user access.
 
-**Open question for discovery:** Google SSO is roughly an hour on top of this with Firebase
-Auth and it demos well — in or out?
+**What actually shipped, beyond the line above.** Discovery turned up an account-enumeration
+oracle in the naive flow and the fix cascaded: registration moved server-side to a Cloud
+Function (the client SDK leaks `EMAIL_EXISTS` on the wire), every registration returns an
+identical response, and email verification became a **blocking gate enforced in Firestore
+rules** rather than a client-side courtesy — which is what makes an unverified account
+genuinely inert. Around that: a two-key rate limiter (per-email authoritative, per-IP
+best-effort), App Check on `/api/auth/*`, scheduled deletion of unverified accounts, and a
+`/auth/action` route owning both `verifyEmail` and `resetPassword`. Thirty-one numbered
+decisions in `docs/slices/01-account-session/01-discovery.md`; D29, D30 and D31 reverse
+earlier ones after the platform was measured.
 
-**Key tests:** L3 rules (owner reads own doc, stranger gets denied), L2 form validation and
-error rendering, L5 sign up → dashboard → refresh → still signed in → sign out.
-**Demo:** create an account, refresh, sign out.
+**Open question — resolved.** Google SSO is **out** (D1). Email + password only; the brief
+mandates nothing more, and popup flows are awkward to e2e-test.
+
+**Libraries:** no new mandated packages. `vuefire` was evaluated and **removed** — plain
+`firebase` inside Pinia stores. shadcn-vue `alert` and `card` vendored here.
+**Key tests:** L3 rules (owner reads own doc, stranger denied, unverified token denied
+everything), L2 form validation and error rendering, L5 sign up → verify → dashboard →
+refresh → sign out.
+**Demo:** create an account, get held at the gate, verify, refresh, sign out.
 
 ---
 
@@ -126,11 +183,19 @@ The riskiest slice, so it goes early. Connect button → HighLevel authorize URL
 scoped to the Firebase uid → connection status UI showing the location name → disconnect.
 Refresh-on-expiry with the ~24h token lifetime from `HIGHLEVEL_PLATFORM.md` §2.
 
+**Libraries:** no new runtime package — the proxy and the token exchange are plain `fetch`.
+Add `@gohighlevel/api-client` as a **devDependency for its type definitions only**
+(`PRODUCT_SPEC.md` §7.3); its auto-refresh would reintroduce the rotation race.
+**Inherited contract from Slice 1 (D26):** every authenticated Cloud Function checks
+`email_verified` on the decoded ID token, not merely that a token is present. The OAuth
+callback is the first endpoint that would otherwise inherit that gap.
 **Key tests:** L1 expiry math and refresh triggering, L4 callback happy path plus denied /
 bad-state / exchange-failure paths, L3 client cannot read the token document at all, L5
 connect against a stubbed HighLevel.
 **Demo:** connect the sandbox account, see the location name appear, disconnect.
-**Risk:** high — redirect URL must match exactly, and scope changes force re-authorization.
+**Risk:** high — redirect URL must match exactly (`HL_REDIRECT_URI` and the marketplace app
+setting, byte for byte, pointing at the `/api/**` Hosting rewrite), and scope changes force
+re-authorization. Run `HIGHLEVEL_PLATFORM.md` §9's checklist before writing code.
 
 ---
 
@@ -140,6 +205,8 @@ connect against a stubbed HighLevel.
 Project create, read, update, soft-delete. Dashboard list with empty state. Strict
 per-user rules scoping.
 
+**Libraries:** first slice to need shadcn-vue's **`dialog`** (create/rename/confirm-delete)
+— a component the brief names explicitly. Add it with `npx shadcn-vue@latest add dialog`.
 **Key tests:** L3 rules per operation, L2 list and empty state, L5 create → appears →
 rename → soft-delete → gone.
 **Demo:** create a project, rename it, delete it.
@@ -154,6 +221,11 @@ decided here. Chat panel with message history, input, and persistence to Firesto
 assistant is a **stub** that echoes — no LLM yet. This exists so the layout and the
 persistence model get reviewed without streaming complexity on top.
 
+**Libraries:** the layout slice, so it carries most of the remaining shadcn-vue surface the
+brief names — **`tabs`** and **`badge`** (both named explicitly), plus the layout primitives
+**`resizable`**, **`scroll-area`** and **`separator`**. All via the CLI. After this slice the
+"inputs, buttons, dialogs, tabs, badges, and layout primitives" list from the brief is
+complete except `sheet`, which Slice 11 needs.
 **Key tests:** L2 panel layout and message rendering, L3 messages scoped to project owner,
 L5 send a message, reload, history is still there.
 **Demo:** open a project, send a message, reload, history persists.
@@ -167,10 +239,22 @@ The SSE Cloud Function: prompt in, real LLM call, `token` / `done` / `error` eve
 tokens accumulating live in the chat panel. Disconnect and interruption handling with
 partial results preserved. Still no file operations — this slice proves the transport.
 
+**Libraries:** **`@anthropic-ai/sdk`** — the exact package the brief names. Non-negotiable
+call shape, from `CLAUDE.md`: model **`claude-opus-5`**, **always** `client.messages.stream()`
+(never `messages.create`; request/response is a brief violation, not a style choice),
+`max_tokens: 64000`, and the HighLevel cheat-sheet pinned at the front of the system prompt
+behind a `cache_control` breakpoint so it is a cache read rather than a re-send on every
+generation. `ANTHROPIC_API_KEY` is already declared in `functions/.env.example` and belongs
+in Secret Manager (`firebase functions:secrets:set`), with `functions/.secret.local` for
+emulator runs. The `generate` endpoint also picks up the ID-token check and the long
+timeout the Slice 0 stub deliberately withheld.
 **Key tests:** L1 SSE event encoder and client-side parser, L1 accumulator, L4 stream with
 a stubbed LLM including mid-stream abort, L5 prompt → tokens visibly appear → done.
 **Demo:** type a prompt, watch text stream in token by token.
-**Risk:** high — verify Cloud Functions v2 streaming in your region early (spec §6.3).
+**Risk:** downgraded. Slice 0's `generate` stub already proved Functions v2 streams
+unbuffered from `asia-south1` through a Hosting rewrite, which was §8's open item. What
+remains is the SDK's stream shape and the accumulation trap in
+`.claude/skills/feature-review/references/typescript-vue.md`.
 
 ---
 
@@ -181,6 +265,9 @@ Parse the LLM's final output into validated file operations, reject or repair ma
 output without corrupting project state, persist files to Firestore, render a file tree,
 read a file, save a manual edit. Plain textarea for now — Monaco is the next slice.
 
+**Libraries:** `zod` only. The brief's "validated file operations" is a Zod schema at the
+boundary — parse, don't validate — and the parse failure is what F8.1's user-facing error
+is built from.
 **Key tests:** L1 parser against a fixture corpus including malformed cases, L1 validation
 rejects path traversal and oversized files, L3 file rules, L5 generate → tree populates →
 edit → save → reload.
@@ -194,6 +281,13 @@ edit → save → reload.
 Swap the textarea for `@guolao/vue-monaco-editor`. Tabbed editing, clickable file tree,
 tokens appear live in the editor during generation, read-only while streaming.
 
+**Libraries:** **`@guolao/vue-monaco-editor`** — the exact package the brief names — plus
+its `monaco-editor` peer. The brief permits "or equivalent"; we are not taking it, because
+matching the named package removes a question a reviewer would otherwise have to ask. Watch
+the Monaco instance trap in
+`.claude/skills/feature-review/references/typescript-vue.md`: the editor instance must never
+be made reactive (`ref`/`reactive` over it deep-proxies a large third-party object and will
+wreck performance) — hold it in `shallowRef` or a plain closure variable.
 **Key tests:** L2 read-only during stream, tab switching preserves unsaved state, L5
 golden path in the real editor.
 **Demo:** watch code stream into Monaco, switch tabs, edit after the stream ends.
@@ -207,6 +301,11 @@ The authenticated proxy generated apps call. Attaches and refreshes the user's t
 server-side, allowlists routes across Contacts, Conversations, and Calendars, maps
 HighLevel errors to clear client errors (401 → prompt to reconnect).
 
+**Libraries:** none — a hand-written `fetch` wrapper, deliberately. The route allowlist is
+one table with three consumers (the proxy, the system prompt in Slice 9, and the README),
+per `HIGHLEVEL_PLATFORM.md` §8. Token refresh must be the Firestore transaction from
+`HIGHLEVEL_PLATFORM.md` §3 — rotation-on-use means two parallel preview fetches hitting an
+expired token will both try to refresh, and the loser bricks the connection.
 **Key tests:** L4 one test per API surface with recorded fixtures, unauthenticated request
 rejected, expired-token refresh path, error mapping, L1 route allowlist rejects anything
 not on it.
@@ -236,6 +335,14 @@ Sandboxed iframe (`srcdoc`) with a runtime shim injecting the proxy base URL and
 auth. Refreshes after generation completes. HighLevel failures surface visibly in the
 preview rather than failing silently.
 
+**Libraries:** none. The brief offers "Sandpack, WebContainers, or srcdoc" and we take
+`srcdoc` — no in-browser bundler, and full control of the shim that injects the proxy base
+URL and the session credential. Record the choice in the README's architecture bullets.
+**The open problem this slice must solve:** a `srcdoc` iframe has an **opaque origin**, so
+it cannot read our cookies or Firebase session and its `fetch` to the proxy is
+cross-origin-ish by default. Decide the credential-passing mechanism in discovery
+(`postMessage` handshake vs. a short-lived scoped token baked into the shim) — this is one
+of the two hardest unknowns in the build and it is *not* a HighLevel problem.
 **Key tests:** L2 shim injection and sandbox attributes, L4 preview fetches proxied data,
 L5 the full golden path ending in real data on screen.
 **Demo:** the money shot — generated dashboard rendering real sandbox contacts.
@@ -248,6 +355,8 @@ L5 the full golden path ending in real data on screen.
 Snapshot every project file on each generation, list snapshots by timestamp in a shadcn
 Sheet, restore any previous one.
 
+**Libraries:** shadcn-vue **`sheet`** — the brief says "a ShadCN sheet or dialog", and a
+sheet reads better against a three-panel workspace than a modal that covers it.
 **Key tests:** L1 snapshot diffing, L4 restore round-trip fidelity, L3 rules, L5 generate
 twice → restore first → files match.
 **Demo:** generate, generate again, restore version one.
@@ -261,6 +370,9 @@ A cross-cutting audit rather than new features. Every screen gets loading, empty
 error states; every failure mode from F8 gets a user-facing message and a test. Malformed
 LLM output, interrupted streams, expired connections.
 
+**Libraries:** shadcn-vue **`skeleton`** (loading) and **`sonner`** (transient errors) —
+the last two primitives, and only if the audit shows the screens actually need them. Do not
+add components speculatively.
 **Demo:** deliberately break each dependency, show the app degrades legibly.
 
 ---
@@ -268,10 +380,35 @@ LLM output, interrupted streams, expired connections.
 ### Slice 13 — Deliverables
 **Spec:** F9.1–F9.5 · **Depends on:** 12 · **Mode:** fast · **Day 5**
 
-Deploy frontend and functions, register the deployed callback URL, write the root README
-(HighLevel setup, emulator setup, ≤10 architecture decisions, ≤5 improvements, deployment
-notes), `.env.example`, the sandbox seed script (`scripts/seed-sandbox.ts`, ~20 contacts and
-5–10 appointments), and the Loom script.
+Deploy frontend and functions, register the deployed callback URL, write the root README,
+the sandbox seed script (`scripts/seed-sandbox.ts`, ~20 contacts and 5–10 appointments),
+and the Loom script.
+
+**This slice is graded on a literal checklist, so it gets one.** Every line below is a
+sentence from the brief's Deliverables section:
+
+- [ ] Public GitHub repository — `/functions`, `/frontend`, `firebase.json`, `.firebaserc` at root ✅ *(layout already conforms)*
+- [ ] **`.env.example` at the repo root.** We currently ship `frontend/.env.example` and
+      `functions/.env.example`, which are better documentation but are *not* what the brief's
+      layout lists. Add a root `.env.example` that carries every variable and points at the
+      two — cheap, and it removes a "where is it?" moment for the reviewer.
+- [ ] README — **Live URLs** (Hosting frontend + Functions base URL)
+- [ ] README — **HighLevel setup**: marketplace app config, OAuth redirect URI, sandbox account
+- [ ] README — **Local setup with `firebase emulators:start`**, verified from a fresh clone.
+      See `PRODUCT_SPEC.md` §5: `npm run dev` points at real Firebase, so the emulator path
+      (`npm run emulators` + `npm run dev:emulator`) has to be written down and actually walked,
+      not assumed. The README today claims `npm run dev` starts emulators — it does not. Fix it.
+- [ ] README — **architecture decisions, ≤10 bullets.** Strong candidates: srcdoc + shim over
+      Sandpack · Firestore-for-files making snapshots trivial · the proxy as confused-deputy
+      fix · transactional token refresh against rotation-on-use · date-pinned HL API versions
+      with v3 as a known follow-up · rules-as-enforcement (the unverified-account gate) ·
+      one `api` function over many · cheat-sheet in a `cache_control` block over tool-calling
+- [ ] README — **what you'd improve, ≤5 bullets**
+- [ ] README — **deployment notes**: Firebase project setup, CI, manual steps
+- [ ] Secrets in Secret Manager only; verify nothing is a plain env var on the Cloud Run service
+- [ ] **Loom ≤5 min** walking the exact path the brief scripts: sign up → connect HighLevel →
+      create project → prompt → watch the stream → real HL data in preview → edit a file →
+      restore a snapshot → one architecture decision. Link it in the README *and* the email.
 
 **Demo:** the Loom video itself.
 
@@ -290,6 +427,8 @@ notes), `.env.example`, the sandbox seed script (`scripts/seed-sandbox.ts`, ~20 
 
 ## 5. Day map
 
+**Original plan:**
+
 | Day | Slices | The bet |
 |---|---|---|
 | 1 | 0, 1, 2 | Rails plus the riskiest integration first — if OAuth is going to hurt, find out now |
@@ -298,8 +437,32 @@ notes), `.env.example`, the sandbox seed script (`scripts/seed-sandbox.ts`, ~20 
 | 4 | 9, 10, 11 | The differentiator and the money shot |
 | 5 | 12, 13 | Harden, deploy, document, record |
 
-If you fall behind, cut from the stretch list first, then Slice 7 (textarea ships), then
-Slice 11. Never cut Slice 8's tests.
+**Reality, as of 2026-08-16.** Day 1 delivered 0 and 1; Slice 2 did not start, because
+Slice 1's enumeration work consumed the day. One slice behind, with a day's worth of
+buffer already spent. The recovered plan:
+
+| Day | Slices | Note |
+|---|---|---|
+| 2 (today) | **2, 3, 4** | Slice 2 first, and early — it is still the riskiest thing in the build and it has now been deferred once |
+| 3 | 5, 6, 7 | Streaming, file ops, Monaco |
+| 4 | 8, 9, 10 | Proxy → knowledge injection → preview. **This is the chain the assignment is actually judged on** |
+| 5 | 11, 12, 13 | Snapshots, hardening, deploy, README, Loom |
+
+**Cut order if you fall behind again — decide by this list, not in the moment:**
+
+1. Stretch slices S1–S4 (all of them, no debate)
+2. Slice 7 — the textarea ships instead of Monaco. *Costs a named brief requirement, so
+   this is the first genuinely painful cut; take it before anything below.*
+3. Slice 11 (snapshots) down to snapshot-and-list without restore
+4. Slice 12 down to the error states the golden path actually crosses
+
+**Never cut:** Slice 8's tests (a mistake there leaks another tenant's data), Slice 9 (the
+differentiator — "generates apps that talk to HighLevel" is the whole assignment), or the
+Loom. A working demo with a textarea beats a Monaco editor with no preview.
+
+**The clock is the real constraint now.** Slice 1's decision log is excellent work and
+also the reason we are behind. Slices 2–13 ship the brief's line, not a hardened version
+of it.
 
 ---
 
@@ -313,30 +476,91 @@ Slice 11. Never cut Slice 8's tests.
 
 ---
 
-## 7. Repo setup
+## 7. Repo setup — as built
 
-Not a git repository yet, and `gh` is not authenticated. Run:
+The repository exists and CI runs. `main` carries Slice 0; `slice/01-account-session` is
+open and awaiting merge.
+
+| | |
+|---|---|
+| Remote | `origin` — public GitHub repository, one branch per slice |
+| CI | GitHub Actions: typecheck · lint · unit · rules · integration · e2e on every PR |
+| Firestore | named database `highlevel-genesis`, rules in `firestore.rules` |
+| Functions region | `asia-south1` — pinned in `setGlobalOptions()` and both Hosting rewrites |
+| Local secrets | `frontend/.env`, `functions/.env`, `functions/.secret.local` — all gitignored |
+| Deployed secrets | Secret Manager (`firebase functions:secrets:set`), never plain env vars |
+
+`scripts/bootstrap-github.sh` did its job and is now historical; leave it or delete it in
+Slice 13's cleanup.
+
+**Running it:**
 
 ```bash
-gh auth login                 # interactive — run this yourself
-./scripts/bootstrap-github.sh # creates the repo, pushes main, opens an issue per slice
+npm run install:all      # root + frontend + functions
+npm run dev              # SPA against REAL Firebase — the production path
+npm run emulators        # auth + firestore + functions, project id demo-genesis
+npm run dev:emulator     # SPA wired to the emulators (vite --mode emulator)
+npm test                 # typecheck + lint + unit + rules + integration
 ```
 
-The script is checked in and does nothing until you run it. Read it first — it creates a
-repository under your account.
+The emulator/real split is deliberate and is explained in `PRODUCT_SPEC.md` §5. Slice 13
+owes the README a walked-through emulator path, because the brief names
+`firebase emulators:start` explicitly.
 
 ---
 
 ## 8. Open decisions
 
-These are called out in `PRODUCT_SPEC.md` §6 and get settled in the discovery stage of the
-slice that first needs them, not before:
+`PRODUCT_SPEC.md` §6 lists these; this table is where their state is tracked. Anything
+still open gets settled in the discovery interview of the slice that first needs it, not before.
 
-| Decision | Needed by | Leaning |
+| Decision | Needed by | State |
 |---|---|---|
-| Preview runtime: `srcdoc` vs Sandpack | Slice 10 | `srcdoc` with a shim — simplest, full control |
-| Generated app format: single-file vs multi-file | Slice 6 | Multi-file plain HTML/JS/CSS — reliable LLM output, trivial preview |
-| SSE transport on Functions v2 | Slice 5 | Verify in Slice 0 so there's time for the chunked-fetch fallback |
-| LLM provider and file-op format | Slice 5 | Claude with streaming; fenced blocks with path headers |
-| File storage: Firestore vs Cloud Storage | Slice 6 | Firestore — keeps snapshot and restore trivial |
-| Google SSO in addition to email + password | Slice 1 | Ask — cheap, demos well, not required |
+| SSE transport on Functions v2 | Slice 5 | ✅ **Settled in Slice 0.** Streams unbuffered from `asia-south1` through the Hosting rewrite; no chunked-fetch fallback needed |
+| LLM provider | Slice 5 | ✅ **Settled.** `@anthropic-ai/sdk`, `claude-opus-5`, `messages.stream()`, `max_tokens: 64000`, cheat-sheet behind `cache_control` |
+| Google SSO alongside email + password | Slice 1 | ✅ **Settled: out** (Slice 1, D1). Not required by the brief |
+| Preview runtime: `srcdoc` vs Sandpack | Slice 10 | ✅ **Settled: `srcdoc` + shim.** The *credential-passing mechanism* into an opaque-origin iframe is still open — decide it in Slice 10 discovery |
+| File storage: Firestore vs Cloud Storage | Slice 6 | ✅ **Settled: Firestore.** Snapshots and restore stay trivial; the brief also says snapshots live in Firestore |
+| Generated app format: single-file vs multi-file | Slice 6 | 🟡 Open. Leaning multi-file plain HTML/JS/CSS — reliable LLM output, trivial preview |
+| File-op wire format from the LLM | Slice 6 | 🟡 Open. Leaning fenced blocks with path headers over tool-use JSON; whichever wins, it is parsed by a Zod schema |
+| HL knowledge: cheat-sheet vs tool-calling | Slice 9 | 🟡 Open, leaning cheat-sheet — simpler, deterministic, and cacheable |
+| HL API version: date-pinned vs `v3` | Slice 2 | ✅ **Settled: date-pinned** (`2021-07-28` / `2021-04-15`). v3 migration is a named README follow-up |
+
+---
+
+## 9. Brief conformance ledger
+
+One row per requirement the assignment states, so nothing is graded on a line we never
+read. `PRODUCT_SPEC.md` §7 holds the package-level version of this.
+
+| Brief requirement | Spec | Slice | State |
+|---|---|---|---|
+| Email + password auth, session persists | F1.1 | 1 | ✅ shipped (plus a verification gate) |
+| HighLevel OAuth 2.0, full flow via Cloud Function callback | F1.2 | 2 | ⏭ next |
+| Tokens in Firestore scoped to the Firebase user, refresh on expiry | F1.3 | 2 | ⏭ |
+| One HighLevel location per user | F1.3 | 2 | ⏭ — falls out of Target User = Sub-account |
+| Project CRUD incl. soft-delete, scoped by security rules | F2.1–2.3 | 3 | ⏭ |
+| Server-side generation: bounded context → stream → validated file ops → persist | F3.1–3.4 | 5, 6, 9 | ⏭ |
+| SSE endpoint; protocol covers tokens, file boundaries, completion, errors | F4.1–4.3 | 5, 6 | 🟡 transport proven in Slice 0 |
+| File tree, read file, save manual edits | F5.1 | 6 | ⏭ |
+| Snapshot per generation; list and restore | F5.2–5.3 | 11 | ⏭ |
+| shadcn-vue as the primary component library | F6.1 | 0–12 | 🟡 `button`/`input`/`label`/`card`/`alert` in; `dialog`/`tabs`/`badge`/`sheet` owed |
+| Three-panel workspace: chat · editor · preview | F6.1 | 4 | ⏭ |
+| Chat panel with history and input | F6.2 | 4 | ⏭ |
+| Monaco via `@guolao/vue-monaco-editor`, tabs, live tokens, read-only while streaming | F6.3 | 7 | ⏭ |
+| iframe preview showing **real** HL data, refreshes after generation | F6.4 | 10 | ⏭ — the money shot |
+| SSE client handles all event types, survives disconnects | F6.5 | 5 | ⏭ |
+| Snapshot history in a sheet/dialog with Restore | F6.6 | 11 | ⏭ |
+| Contacts · Conversations · Calendars exposed to generated apps | F7.1 | 8 | ⏭ |
+| Authenticated proxy attaching/refreshing tokens server-side | F7.2 | 8 | ⏭ |
+| Sandbox HL account | F7.3 | 2, 13 | ⏭ — create it before Slice 2, seed it before the Loom |
+| Malformed LLM output handled without corrupting state | F8.1 | 6, 12 | ⏭ |
+| Interrupted streams: partial results preserved | F8.2 | 5, 12 | ⏭ |
+| Failed HL calls surfaced clearly | F8.3 | 8, 10, 12 | ⏭ |
+| Hosting + Functions deployed, live URLs in README | F9.1 | 13 | ⏭ |
+| Secrets via env/Secret Manager, `.env.example` | F9.2 | 13 | 🟡 per-package examples exist; **root `.env.example` owed** |
+| Deployed callback registered as the HL redirect URI | F9.3 | 2, 13 | ⏭ |
+| Repo layout + README (setup, ≤10 decisions, ≤5 improvements, deploy notes) | F9.4 | 13 | 🟡 layout ✅, README sections owed |
+| Loom ≤5 min walking the golden path | F9.5 | 13 | ⏭ |
+| Emulators: `firebase emulators:start` documented and working | NFR | 13 | 🟡 emulators back the test suites; the documented dev path is owed |
+| Streaming mandatory — never request/response | NFR | 5 | ⏭ enforced by `CLAUDE.md` |

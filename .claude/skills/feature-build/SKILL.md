@@ -1,9 +1,9 @@
 ---
 name: feature-build
-description: Stage 4 of the vertical-slice workflow — implement an approved technical plan strictly test-first, one red-green-refactor commit per task. Use after /feature-plan, or when the user says to start building or implementing a slice. Ends when every acceptance criterion has a passing test.
+description: Stage 3 of the vertical-slice workflow — implement an approved technical plan strictly test-first, one red-green-refactor commit per task. Use after /feature-plan, or when the user says to start building or implementing a slice. Ends when every acceptance criterion has a passing test.
 ---
 
-# Stage 4 — Build (test-driven)
+# Stage 3 — Build (test-driven)
 
 Purpose: execute the approved plan. No design decisions here — if the plan is wrong, stop
 and say so rather than improvising around it.
