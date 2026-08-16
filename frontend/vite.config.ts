@@ -41,7 +41,7 @@ const EMULATOR_ENV: Record<string, string> = {
 const EMULATOR_FUNCTIONS_PORT = process.env['FUNCTIONS_EMULATOR_PORT'] ?? '5001'
 const EMULATOR_FUNCTIONS_TARGET = `http://127.0.0.1:${EMULATOR_FUNCTIONS_PORT}/demo-genesis/asia-south1`
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   // .env sits next to this file, which is where Vite looks by default.
   const env = mode === 'emulator' ? EMULATOR_ENV : loadEnv(mode, HERE, '')
 
@@ -58,22 +58,31 @@ export default defineConfig(({ mode }) => {
   const override = env['VITE_FUNCTIONS_BASE_URL']?.trim()
   const projectId = env['VITE_FIREBASE_PROJECT_ID']?.trim()
 
-  if (
-    (override === undefined || override === '') &&
-    (projectId === undefined || projectId === '')
-  ) {
-    throw new Error(
-      'Cannot resolve the functions URL: set VITE_FIREBASE_PROJECT_ID (or ' +
-        'VITE_FUNCTIONS_BASE_URL) in frontend/.env — see frontend/.env.example.',
-    )
-  }
+  /*
+   * Only the dev server proxies anywhere, so only the dev server needs this
+   * value. `vite build` emits no proxy, and Vitest boots a server it never
+   * routes /api through — failing either one because a clone has no
+   * `frontend/.env` is what kept CI red, since CI is exactly that clone.
+   * Vitest sets VITEST before loading this file; both it and `build` arrive
+   * here with command === 'serve' otherwise indistinguishable.
+   */
+  const proxyIsUsed = command === 'serve' && process.env['VITEST'] === undefined
 
   const functionsTarget =
     mode === 'emulator'
       ? EMULATOR_FUNCTIONS_TARGET
       : override !== undefined && override !== ''
         ? override
-        : `https://${FUNCTIONS_REGION}-${projectId ?? ''}.cloudfunctions.net`
+        : projectId !== undefined && projectId !== ''
+          ? `https://${FUNCTIONS_REGION}-${projectId}.cloudfunctions.net`
+          : ''
+
+  if (proxyIsUsed && functionsTarget === '') {
+    throw new Error(
+      'Cannot resolve the functions URL: set VITE_FIREBASE_PROJECT_ID (or ' +
+        'VITE_FUNCTIONS_BASE_URL) in frontend/.env — see frontend/.env.example.',
+    )
+  }
 
   // In emulator mode the values above have to reach the *app*, not just this
   // config. Vite only injects import.meta.env from .env files it loads itself,
@@ -120,14 +129,33 @@ export default defineConfig(({ mode }) => {
       // same-origin relative paths in both environments. Without this, a
       // request to /api/health falls through to Vite's SPA handler and comes
       // back as index.html — which surfaces as "Unexpected token '<'".
-      proxy: {
-        '/api': { target: functionsTarget, changeOrigin: true },
-        '/generate': { target: functionsTarget, changeOrigin: true },
-      },
+      // Omitted entirely when there is no target — an empty one would be a
+      // proxy rule pointing nowhere. Unreachable while serving: the throw
+      // above guarantees a target in the only case that routes through here.
+      ...(functionsTarget === ''
+        ? {}
+        : {
+            proxy: {
+              '/api': { target: functionsTarget, changeOrigin: true },
+              '/generate': { target: functionsTarget, changeOrigin: true },
+            },
+          }),
     },
     test: {
       environment: 'jsdom',
       globals: true,
+      /*
+       * The same throwaway config the emulator build gets.
+       *
+       * src/lib/firebase.ts requires the Firebase variables at module load, so
+       * every test that transitively imports it needed a `frontend/.env` to
+       * exist — which meant the suite ran against whatever project the
+       * developer happened to have configured, and did not run at all on a
+       * clean checkout like CI's. Supplying them here makes the run
+       * deterministic and self-contained; nothing is dialled, since the
+       * emulator connectors are mocked.
+       */
+      env: EMULATOR_ENV,
       include: ['src/**/*.spec.ts'],
       coverage: {
         provider: 'v8',
