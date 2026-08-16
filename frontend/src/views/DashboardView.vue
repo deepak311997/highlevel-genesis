@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 
+import ConnectionPanel from '@/components/ConnectionPanel.vue'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth'
 
@@ -28,6 +29,8 @@ onMounted(() => {
         >.
       </p>
     </div>
+
+    <ConnectionPanel />
 
     <Card>
       <CardHeader>

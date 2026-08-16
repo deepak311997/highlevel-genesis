@@ -202,11 +202,46 @@ describe('users/{uid} — denials', () => {
 })
 
 describe('server-only collections', () => {
-  it('denies even a verified owner reading their OAuth tokens', async () => {
+  /*
+   * Re-asserted in Slice 2, because this is the slice where the document stops
+   * being hypothetical: it now holds a live HighLevel access token and a
+   * refresh token, scoped to a whole CRM location.
+   *
+   * The owner case is the one that matters and the one people skip. It is
+   * tempting to let a user read their own connection — but a token readable by
+   * the browser is a token readable by anyone who opens devtools, and this
+   * denial is what makes `GET /api/hl/connection` the only window onto it.
+   */
+  it('denies even a verified owner reading their own HighLevel tokens', async () => {
     const alice = verified('alice')
 
     await assertFails(getDoc(doc(alice, 'hlConnections/alice')))
-    await assertFails(setDoc(doc(alice, 'hlConnections/alice'), { accessToken: 'x' }))
+  })
+
+  it('denies a verified owner writing their own connection', async () => {
+    const alice = verified('alice')
+
+    await assertFails(
+      setDoc(doc(alice, 'hlConnections/alice'), {
+        accessToken: 'live-access-token',
+        refreshToken: 'live-refresh-token',
+        locationId: 'lUanVn0CtZJTlymH8ySo',
+        needsReconnect: false,
+      }),
+    )
+  })
+
+  it('denies a stranger and an anonymous client alike', async () => {
+    const bob = verified('bob')
+    const anon = asModular(env.unauthenticatedContext().firestore())
+
+    await assertFails(getDoc(doc(bob, 'hlConnections/alice')))
+    await assertFails(setDoc(doc(bob, 'hlConnections/alice'), { accessToken: 'x' }))
+    await assertFails(getDoc(doc(anon, 'hlConnections/alice')))
+  })
+
+  it('denies deleting a connection — disconnect goes through the endpoint', async () => {
+    await assertFails(deleteDoc(doc(verified('alice'), 'hlConnections/alice')))
   })
 
   it('denies every client the throttle counters', async () => {
