@@ -19,13 +19,25 @@ import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest'
 
 let env: RulesTestEnvironment
 
+/**
+ * The suite's own emulator, not the development one.
+ *
+ * `npm run test:rules` starts Firestore on firebase.test.json's port; this has
+ * to follow it there. The default is that same test port rather than the dev
+ * default of 8080, because the failure mode is asymmetric: pointed at a dev
+ * emulator this file loads its rules over that session's and then calls
+ * `clearFirestore()` on it, wiping the data. Refusing to connect is a far
+ * better outcome, and that is what the wrong port now gets you.
+ */
+const FIRESTORE_PORT = Number(process.env['FIRESTORE_EMULATOR_PORT_CLIENT'] ?? '8180')
+
 beforeAll(async () => {
   env = await initializeTestEnvironment({
     projectId: 'demo-genesis',
     firestore: {
       rules: readFileSync('firestore.rules', 'utf8'),
       host: '127.0.0.1',
-      port: 8080,
+      port: FIRESTORE_PORT,
     },
   })
 })
