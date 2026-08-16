@@ -20,7 +20,8 @@ export const REDACTED = '[redacted]'
  * Substring matching, case-insensitive, so `newPassword`, `X-Api-Key` and
  * `refreshToken` are all caught without enumerating every spelling.
  */
-const SENSITIVE_KEY = /pass|token|secret|oobcode|api[-_]?key|authorization|cookie|credential/i
+const SENSITIVE_KEY =
+  /pass|token|secret|oobcode|api[-_]?key|authorization|cookie|credential|^state$/i
 
 /** A URL carrying an out-of-band action code. The whole link is the secret. */
 const ACTION_LINK = /https?:\/\/\S*oobcode=/i
@@ -28,12 +29,30 @@ const ACTION_LINK = /https?:\/\/\S*oobcode=/i
 /** `password=hunter2` or `oobCode: ABC` embedded in prose, as errors often do. */
 const INLINE_SECRET = /\b(pass\w*|[\w-]*token|oobcode|api[-_]?key|secret)\s*[=:]\s*\S+/gi
 
+/**
+ * The OAuth callback's two bearer credentials, matched in **query-string
+ * position only**.
+ *
+ * `?code=…` is the authorization code and `?state=…` is the sealed token
+ * carrying a uid; a logged callback URL hands over both. The position anchor is
+ * what makes this safe to add: `code` is also the property every Firebase error
+ * reports its error code on, and this slice's callback logs which outcome it
+ * redirected with, so a rule matching `code` anywhere would redact precisely
+ * the lines written to diagnose a failing OAuth flow.
+ *
+ * The parameter name is kept and only the value replaced, so the line still
+ * says *which* credential was present.
+ */
+const SENSITIVE_QUERY = /([?&](?:code|state)=)[^&\s]+/gi
+
 function scrubString(value: string): string {
   if (ACTION_LINK.test(value)) return REDACTED
-  return value.replace(INLINE_SECRET, (match) => {
-    const [name] = match.split(/[=:]/)
-    return `${name ?? ''}=${REDACTED}`
-  })
+  return value
+    .replace(SENSITIVE_QUERY, (_match, prefix: string) => `${prefix}${REDACTED}`)
+    .replace(INLINE_SECRET, (match) => {
+      const [name] = match.split(/[=:]/)
+      return `${name ?? ''}=${REDACTED}`
+    })
 }
 
 /**
