@@ -23,7 +23,14 @@ export const alertVariants = cva(
       variant: {
         default: 'border-border-strong bg-secondary text-muted-foreground',
         destructive: 'border-destructive/40 bg-destructive/10 text-destructive',
-        success: 'border-accent/40 bg-accent/10 text-accent',
+        // `good`, not `accent`. style.css reserves the ember accent for the one
+        // element per view that is *live* — a streaming token, a running
+        // generation — and says so explicitly: "never success, never a
+        // decorative highlight". Five auth screens render a success alert, so
+        // using the accent here would spend the loudest colour in the palette
+        // on the calmest state and leave nothing to mark the live one with when
+        // Slice 5 starts streaming.
+        success: 'border-good/40 bg-good/10 text-good',
       },
     },
     defaultVariants: { variant: 'default' },
