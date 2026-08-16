@@ -34,13 +34,28 @@ streamed token-by-token into an editor, with a live preview rendering real CRM d
 **Run it**
 
 ```bash
-cp .env.example .env          # then fill in the values
-npm run install:all           # root + frontend + functions
+cp frontend/.env.example  frontend/.env    # then fill in the values
+cp functions/.env.example functions/.env   # see .env.example at the root for the map
+npm run install:all                        # root + frontend + functions
 
-npm run dev                   # emulators + Vite dev server together
+npm run dev                                # Vite, against REAL Firebase
 ```
 
 Then open **http://localhost:5173/health**. A green round trip means every layer is wired.
+
+**Two ways to run, and they are genuinely different.** `npm run dev` points the app at your
+real Firebase project, so development exercises the same path production does — there is no
+emulator in that loop. The emulators exist for the test suites and for offline work:
+
+```bash
+npm run emulators        # auth + firestore + functions, under the throwaway id demo-genesis
+npm run dev:emulator     # in a second terminal — Vite wired to those emulators
+```
+
+The emulator wiring is selected by Vite **build mode**, not by a runtime flag, so a
+production bundle cannot reach an emulator even if something asked it to. That is also why
+`npm run dev` and `npm run dev:emulator` are separate commands rather than one with a
+switch.
 
 | Surface                | URL                                                |
 | ---------------------- | -------------------------------------------------- |

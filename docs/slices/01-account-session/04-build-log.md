@@ -272,7 +272,7 @@ Suite at close: **321 tests** — 252 unit (108 functions, 144 frontend), 17 rul
 | 37–44 | `firestore.spec.ts` — 17 rules tests, denials first |
 | 46, 47, 48 | `throttle.spec.ts` + `auth-throttle.spec.ts` |
 | 49 | `log.spec.ts` + `errors.spec.ts` |
-| 52 | `auth-cleanup.spec.ts` |
+| ~~52~~ | ~~`auth-cleanup.spec.ts`~~ — **moved to Not covered; see the review.** The function is tested, but no trigger is deployed |
 | 54 | `firebase.spec.ts` + production build artifact grep |
 | 55 | e2e runs under `emulators:exec` with no credentials |
 | 56 | `auth-cors.spec.ts` — proposed in the plan, still not in the PRD |
@@ -281,10 +281,19 @@ Suite at close: **321 tests** — 252 unit (108 functions, 144 frontend), 17 rul
 
 | AC | Why |
 |---|---|
-| **50, 51** | App Check (T29). Needs reCAPTCHA Enterprise registration in the Firebase console. |
-| **53** | Enumeration protection and password policy (T31). Console settings; the emulator enforces neither, so this was never automatable — PRD R2 said so. |
+| ~~**50, 51**~~ | ✅ **Done during the review, 2026-08-16.** The console was never the whole blocker — there was simply no App Check code on either side. reCAPTCHA v3 is configured, the key is in `frontend/.env`, and enforcement now lives in `functions/src/auth/appCheck.ts` (middleware, ahead of the throttle) with the client half in `frontend/src/lib/appCheck.ts`. No Playwright debug token was needed: the emulator has no App Check service, so the middleware bypasses on `FUNCTIONS_EMULATOR` alone and e2e stays green without a second mechanism to keep in sync. See `05-review.md`. |
+| ~~**53**~~ | ✅ **Confirmed 2026-08-16.** Enumeration protection enabled; password policy on **Require enforcement** with all four composition classes, min 8, max 50 — matching `schema.ts` and `password.ts` exactly. Console settings, so never automatable (PRD R2); evidence recorded in `05-review.md`. |
+| **52, 19** | **Added by the review.** `deleteExpiredUnverifiedUsers` is written and unit- and integration-tested, but `518e86f` dropped the `onSchedule` export and nothing runs it in production. `auth-cleanup.spec.ts` reaches it through an emulator-only route, so a green suite proves the *function* works and says nothing about the *sweep* happening. AC-52 asserts the sweep; AC-19 depends on it having run. `functions/src/index.ts` documents the gap accurately — this table did not. |
 
-All three are PR-B and all three need console access.
+Four, not three: AC-50/51 were closed during the review; AC-19/52 were added to this table
+because the trigger they assert is not deployed. The rest need console or deploy access.
+
+**What the cleanup gap costs.** It unships one of D18's four pre-hijacking mitigations: an
+account an attacker registered at someone else's address no longer expires after 24h. What
+still holds — rules deny an unverified token every read and write, and a registration
+request can never alter an existing account — is the larger part of that defence, so this
+is a real weakening rather than a hole. The residual is a victim talked into verifying an
+account they did not create, and that window no longer closes on its own.
 
 ## Deviations from the plan, collected
 

@@ -1,7 +1,26 @@
 # Slice 01 — Account & session · PRD
 
 **Spec:** F1.1 (extended — see discovery D5) · **Branch:** `slice/01-account-session`
-**Discovery:** `01-discovery.md` (28 decisions, 11 open risks) · **Date:** 2026-08-15
+**Discovery:** `01-discovery.md` (31 decisions, 11 open risks) · **Date:** 2026-08-15
+**Revised:** 2026-08-16 by the Slice 1 review — see below.
+
+> ### Revision note — what this PRD got wrong
+>
+> The build reversed three of its own premises, and this document was not kept in step. It
+> is the contract the review audits against, so criteria that can never pass make the audit
+> unreliable. Corrected here rather than rewritten, because the decision trail only reads
+> correctly against the criteria it reversed.
+>
+> | What changed | Consequence for this PRD |
+> |---|---|
+> | **D31 — no mail provider.** Firebase Auth sends verification and reset mail itself; SMTP2GO, the `EmailTransport` seam, the fake transport, the templates and `_devMail` were all deleted in `9132424`. | AC-8 and AC-10 are dead; AC-9's transport half is dead and its logging half survives. `/api/auth/resend` and `/api/auth/password-reset` no longer exist. The `_devMail` collection no longer exists. |
+> | **D29 — Firebase retires no outstanding oob code.** Measured against the emulator. | AC-3 was rewritten during the build (already reflected below). **R4 is closed** — the supersession assumption it hedged proved false, and the design changed rather than the assumption holding. |
+> | **`518e86f` dropped the scheduled cleanup trigger.** The function is written and tested; nothing runs it. | **AC-52 is not met, and AC-19 depends on it.** Both moved to "not covered" in `04-build-log.md`. |
+> | **App Check was never written.** Deferred as "needs console registration"; reCAPTCHA v3 was configured on 2026-08-16 and the key added to `frontend/.env`. | AC-50 and AC-51 became buildable and are implemented by the review — see `05-review.md` Finding 9. |
+>
+> **Six test-matrix rows pointed at files that do not exist** (`auth/validate.spec.ts`,
+> `lib/auth.spec.ts`, `email/smtp2go.spec.ts`, `email/index.spec.ts`, `auth-reset.spec.ts`,
+> `auth-appcheck.spec.ts`). Corrected in the matrix.
 
 ## Problem
 
@@ -14,8 +33,10 @@ in terms of "the authenticated user", so until that user exists, nothing else ca
 
 - Sign up, sign in, sign out, session persisting across refresh
 - Server-side registration that does not disclose whether an address is already registered
-- Email verification, delivered via SMTP2GO, with a blocking gate before any application route
-- Password reset, through the same non-disclosing function
+- Email verification, ~~delivered via SMTP2GO~~ **sent by Firebase Auth (D31)**, with a
+  blocking gate before any application route
+- Password reset, ~~through the same non-disclosing function~~ **through the client SDK,
+  non-disclosing because enumeration protection is enabled (D31)**
 - A three-state route guard (unauthenticated / authenticated-unverified / verified)
 - A placeholder `/dashboard` proving the guard protects something real
 - `users/{uid}` written by the client under allowlist rules, plus `email_verified` enforced in rules
@@ -92,8 +113,11 @@ key: `email:<sha256>` (authoritative) and `ip:<sha256>` (best-effort). Shape
 `{ count: number; windowStart: Timestamp }`. A request increments both and is refused if
 either is over. Needs a TTL policy (D12, D20).
 
-**`_devMail/{id}`** — Admin SDK only, `allow read, write: if false`. Written **only** when
-`FUNCTIONS_EMULATOR` is set (D21). Shape `{ to, subject, textBody, htmlBody, createdAt }`.
+~~**`_devMail/{id}`**~~ — **deleted with the mail provider (D31).** The collection no longer
+exists and has no rule of its own; deny-by-default covers it, which is what AC-44 now
+verifies. The principle it carried — emulator-only behaviour is selected by
+`FUNCTIONS_EMULATOR` alone, never by a config value (D21) — is still live, and its surviving
+users are the test-only cleanup route and the App Check bypass.
 
 **`hlConnections/{uid}`** — unchanged, still `allow read, write: if false`. Regression-tested
 here because the rules file is being rewritten.
@@ -120,21 +144,24 @@ Behaviour by branch, all returning the same body:
 - **Existing, verified** → password untouched, `generatePasswordResetLink`, send "you already have an account" email
 - **Existing, unverified** → `updateUser({ password })`, fresh verification link, prior links superseded (D18)
 
-### `POST /api/auth/resend`
+### ~~`POST /api/auth/resend`~~ · ~~`POST /api/auth/password-reset`~~ — **both deleted (D31)**
 
-Request `{ email: string }` → `200 { ok: true }` always. Same error codes. Re-issues a
-verification link for an unverified account; sends nothing for an address that does not
-exist or is already verified — the response does not change either way.
+Both existed only to route mail through our own provider. Firebase Auth sends verification
+and reset mail itself, so the gate calls `sendEmailVerification` and the forgot-password
+screen calls `sendPasswordResetEmail`, both client-side. Reset stays non-disclosing because
+email-enumeration protection is enabled on the project (D13), not because we proxied it.
 
-### `POST /api/auth/password-reset`
-
-Request `{ email: string }` → `200 { ok: true }` always. Same error codes. Sends a reset
-link when the account exists; sends nothing otherwise.
-
-### Scheduled: `cleanupUnverifiedUsers` `[B]`
+### Scheduled: `cleanupUnverifiedUsers` `[B]` — **written, not deployed**
 
 `onSchedule`, daily. Deletes Auth users with `emailVerified === false` created more than 24h
 ago. No HTTP surface.
+
+> ⚠️ **`518e86f` dropped the trigger.** `deleteExpiredUnverifiedUsers` is implemented and
+> tested, but no `onSchedule` export exists, so the sweep never runs in production. AC-52
+> asserts the sweep and is therefore **not met**; AC-19 depends on it having run. The
+> integration test reaches the function through an emulator-only route, so a green suite
+> proves the function and says nothing about the schedule. `functions/src/index.ts` carries
+> the full note, including what the gap costs against D18.
 
 ### Client-SDK, not endpoints
 
@@ -179,15 +206,28 @@ Every authenticated Cloud Function from Slice 2 onward rejects a decoded token w
 
 ### Email transport
 
-- **AC-8** `[A]` Given a message, when the SMTP2GO transport sends it, then it POSTs to
+> **⚠️ Retired by D31 — AC-8, AC-9 and AC-10 below are dead criteria.** Genesis has no mail
+> provider: Firebase Authentication sends the verification and reset email itself. The
+> SMTP2GO transport, the `EmailTransport` seam, the fake transport and the `_devMail`
+> collection were all deleted in `9132424`, so nothing in this subsection can pass or fail.
+> They are left in place rather than deleted because the decision trail (D7 → D8 → D31) only
+> reads correctly against the criteria it reversed. **AC-9's surviving half** — a mail
+> failure must not turn registration into a non-`200` — is now vacuous for the same reason:
+> registration sends no email at all. Recorded by the Slice 1 review.
+
+- **AC-8** `[A]` ~~Given a message, when the SMTP2GO transport sends it, then it POSTs to
   `https://api.smtp2go.com/v3/email/send` with an `X-Smtp2go-Api-Key` header and a
   `{ sender, to, subject, text_body, html_body }` body, and reports success only when
-  `data.succeeded >= 1`.
-- **AC-9** `[A]` Given the transport throws or reports zero sends, when registration runs,
-  then the endpoint still returns `200 { ok: true }` and the failure is logged without the
-  request payload.
-- **AC-10** `[A]` The fake transport is selected when `FUNCTIONS_EMULATOR` is set and the
-  real one otherwise; no configuration value can select the fake transport in production.
+  `data.succeeded >= 1`.~~ **Dead — no transport exists.**
+- **AC-9** `[A]` ~~Given the transport throws or reports zero sends, when registration runs,
+  then the endpoint still returns `200 { ok: true }` and~~ the failure is logged without the
+  request payload. **The logging half survives and is covered by `log.spec.ts`; the
+  transport half is dead.**
+- **AC-10** `[A]` ~~The fake transport is selected when `FUNCTIONS_EMULATOR` is set and the
+  real one otherwise; no configuration value can select the fake transport in production.~~
+  **Dead — but the principle it protected is still live and still tested:** emulator-only
+  behaviour is selected by `FUNCTIONS_EMULATOR` alone, never by config. The surviving user
+  of that rule is the test-only cleanup route in `functions/src/auth/index.ts`.
 
 ### Verification gate
 
@@ -314,14 +354,14 @@ Every authenticated Cloud Function from Slice 2 onward rejects a decoded token w
 | AC | Level | Test file | Asserts |
 |---|---|---|---|
 | 1, 2, 3 | L4 | `tests/integration/auth-register.spec.ts` | Response identical across branches; Auth state per branch; email variant sent |
-| 4, 5 | L1 | `functions/src/auth/validate.spec.ts` | Zod schema rejects before any Auth call |
+| 4, 5 | L1 | `functions/src/auth/schema.spec.ts` *(was `validate.spec.ts`)* | Zod schema rejects before any Auth call |
 | 4 | L4 | `tests/integration/auth-register.spec.ts` | No Auth call, no email, for weak password on an existing address |
-| 6 | L1 | `frontend/src/lib/auth.spec.ts` | Client auth module exposes no password-signup call |
+| 6 | L1 | `frontend/src/lib/authApi.spec.ts` *(was `lib/auth.spec.ts`)* | `BANNED` list — client auth module exposes no password-signup call |
 | 7 | L2 | `frontend/src/views/SignUpView.spec.ts` | Submitting, field-error, failure, success states |
-| 8 | L1 | `functions/src/lib/email/smtp2go.spec.ts` | URL, header, payload shape, `succeeded` handling |
-| 9 | L4 | `tests/integration/auth-register.spec.ts` | Transport throws → still `200 { ok: true }` |
-| 9, 49 | L1 | `functions/src/lib/log.spec.ts` | Redaction of password, oobCode, links, bodies |
-| 10 | L1 | `functions/src/lib/email/index.spec.ts` | Transport selection keyed only on `FUNCTIONS_EMULATOR` |
+| ~~8~~ | — | — | **Dead (D31)** — no transport exists |
+| ~~9~~ | — | — | **Dead (D31)** — registration sends no email, so there is no send to fail |
+| 9, 49 | L1 | `functions/src/lib/log.spec.ts` | Redaction of password, oobCode, links, bodies; **and that no field names the registration branch** (review Finding 1) |
+| ~~10~~ | — | — | **Dead (D31).** The surviving principle is exercised by `appCheck.spec.ts` and the test-only cleanup route |
 | 11, 12, 16, 29 | L2 | `frontend/src/router/guard.spec.ts` | Three-state resolution per route class |
 | 13 | L2 | `frontend/src/router/guard.spec.ts` | `/auth/action` exempt in every auth state |
 | 13, 14 | L5 | `tests/e2e/auth.spec.ts` | Demo path: signup → gate → verify → dashboard |
@@ -336,14 +376,14 @@ Every authenticated Cloud Function from Slice 2 onward rejects a decoded token w
 | 25, 29 | L2 | `frontend/src/router/guard.spec.ts` | Capture and honour `?redirect=` |
 | 28 | L2 | `frontend/src/router/guard.spec.ts` | No route resolution before first auth-state emission |
 | 31 | L2 | `frontend/src/router/guard.spec.ts` | `/`, `/health` classed `public` |
-| 32 | L4 | `tests/integration/auth-reset.spec.ts` | Identical response for known and unknown address |
-| 33 | L4 | `tests/integration/auth-reset.spec.ts` | New password works, old fails |
+| 32 | L2 | `frontend/src/views/ForgotPasswordView.spec.ts` *(was `auth-reset.spec.ts`, L4)* | Identical screen for known and unknown address — the endpoint it tested no longer exists (D31); Firebase's own enumeration protection is what makes this hold |
+| 33 | L5/manual | — | **Not automated.** Reset now runs entirely through the client SDK against Identity Toolkit; the emulator's oob flow is covered by the e2e verification path, but "new password signs in, old one does not" is verified manually |
 | 34 | L2 | `frontend/src/views/ForgotPasswordView.spec.ts` | Submitting, success, failure states |
 | 35, 36, 45 | L2 | `frontend/src/stores/auth.spec.ts` | Create-vs-update branch; failure does not block |
 | 37–44 | L3 | `tests/rules/firestore.spec.ts` | Owner, stranger, anon, unverified, key allowlist, immutability, delete, sibling collections |
 | 46, 47, 48 | L4 | `tests/integration/auth-throttle.spec.ts` | Limit boundary; identical for unknown address; IP rotation ineffective |
-| 50, 51 | L4 | `tests/integration/auth-appcheck.spec.ts` | Missing token rejected; debug token accepted |
-| 52 | L4 | `tests/integration/auth-cleanup.spec.ts` | Age and verified-state selection |
+| 50, 51 | L1 | `functions/src/auth/appCheck.spec.ts` *(was L4 `auth-appcheck.spec.ts`)* | Missing / malformed / rejected token → 401 before any Auth call; verified token passes; emulator bypasses. **L4 is impossible — the emulator has no App Check service to reject against** (PRD R2 again) |
+| 52 | ⛔ | `tests/integration/auth-cleanup.spec.ts` | Tests the **function**, not the sweep. **AC-52 not met** — no trigger is deployed |
 | 53 | Manual | `05-review.md` | Console evidence — no automated coverage possible (R2) |
 | 54 | L1 | `frontend/src/lib/firebase.spec.ts` | Production build mode produces no emulator connect call |
 | 55 | L5 | `tests/e2e/auth.spec.ts` | Suite green with emulators only |
@@ -387,9 +427,12 @@ review must say plainly that a green suite does not demonstrate these hold.
 work. The bodies are identical; the response times are not. Mitigated by the throttle and
 App Check, not eliminated. The README states this rather than claiming uniformity.
 
-**R4 — oob-code supersession is assumed.** AC-3 depends on a new verification link
-invalidating the previous one. If Firebase does not guarantee it, a per-attempt nonce is
-needed and AC-3's implementation changes. Verify before building AC-3.
+**R4 — oob-code supersession is assumed.** ✅ **Closed, and the assumption was false.**
+Measured against the emulator: Firebase retires no outstanding code, and a code minted for a
+*deleted* uid still verified the replacement account — codes resolve by address, not by uid.
+AC-3 was rewritten to the stronger rule that a registration never alters an account that
+already exists, and a `platform behaviour` test pins it so a Firebase change fails loudly.
+See D29.
 
 **R5 — App Check can silently break e2e.** AC-51 exists precisely to catch it, and ships in
 the same commit as AC-50.
@@ -399,15 +442,19 @@ the same commit as AC-50.
 Discovery left five items that need your answer. None block starting PR-A's early tasks, but
 each blocks a specific criterion.
 
-- **B1 — SMTP2GO sender identity.** Which verified sender address should Genesis send from?
-  Reusing the VoiceSquad account's verified domain is the cheap path. Blocks AC-1.
-- **B2 — Identity Platform tier.** Is the Firebase project upgraded? If not, D23's password
-  policy cannot be enforced server-side and degrades to client-side validation only — a real
-  weakening, and AC-53 changes to "confirmed unavailable". Blocks AC-53.
+- **B1 — SMTP2GO sender identity.** ✅ **Moot (D31).** There is no provider and no sender
+  identity to choose; Firebase sends from `noreply@<project>.firebaseapp.com`.
+- **B2 — Identity Platform tier.** ✅ **Answered by D30 and confirmed 2026-08-16.** The
+  project is on Identity Platform, the policy is live and set to *Require enforcement* —
+  minimum 8, maximum 50, all four composition classes — and `functions/src/auth/schema.ts`
+  and `frontend/src/lib/password.ts` mirror it field for field. AC-53 closed; evidence in
+  `05-review.md`.
 - **B3 — What "runs clean from a fresh clone" means now.** Four controls live in the console,
   not the repo. Proposal: the emulator path stays fully runnable without any of them, and the
   README states which controls exist only in the deployed project. Blocks the DoD checkbox.
-- **B4 — E2E in CI.** `npm test` excludes `test:e2e`, so the L5 test covering the gate and
-  the D27 deadlock would never run on a PR. Add an emulator job to CI, or accept L5 as a
-  local-only gate and say so? Blocks AC-55's value.
-- **B5 — Approve the PR split.** One PR of ~40 files, or PR-A then PR-B?
+- **B4 — E2E in CI.** ✅ **Answered: added to CI** (`d789f96`), against this PRD's own
+  assumption. It is hermetic, and it is the only test covering the D27 deadlock.
+- **B5 — Approve the PR split.** ⛔ **Never answered, and the moment passed.** The branch
+  landed as one change of **107 files, +8,415 / −779** — six times the review skill's
+  ~1,000-line boundary, which is exactly what R1 predicted. Recorded so the same pressure is
+  visible before Slice 2 starts rather than after.

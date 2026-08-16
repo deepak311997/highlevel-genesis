@@ -15,45 +15,55 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 | Slice | State |
 |---|---|
 | 0 — Rails | ✅ merged to `main` |
-| 1 — Account & session | 🔵 on `slice/01-account-session`, review done, **awaiting merge** |
+| 1 — Account & session | 🔵 on `slice/01-account-session`, **reviewed** (`05-review.md`), not yet pushed — three fixes applied, one decision open |
 | 2 — HighLevel connection | ⏭ next, and the highest-risk slice in the build |
 | 3–13 | not started |
 
-**Suite at last run:** typecheck 0 · lint 0 · 235 unit · 16 rules · 34 integration · 4 e2e.
+**Suite, measured after the review's fixes:** typecheck 0 · lint 0 · **275 unit** ·
+16 rules · 34 integration · **2 e2e**.
 
 **Scope grew in Slice 1 and it was the right call**, but it needs saying out loud: what the
 brief specifies as "email + password sign up/sign in" shipped as a non-disclosing
 registration endpoint, a blocking email-verification gate enforced in Firestore rules, a
-two-key rate limiter, App Check, and scheduled cleanup of unverified accounts. That is
-above the line the brief draws. **Slices 2–13 do not get the same latitude** — the brief's
-own words are the ceiling from here, because F7 (the proxy) and F10 (the differentiator)
-are what this assignment is actually judged on, and there are four days of clock left.
+two-key rate limiter, App Check on the registration endpoint, and a daily sweep of
+never-verified accounts. That is well above the line the brief draws.
+
+**Every review finding is closed.** AC-53's console controls were confirmed on 2026-08-16 —
+email-enumeration protection enabled, and the password policy on *Require enforcement* with
+all four composition classes, min 8, max 50, matching the code field for field. Slice 1 is
+ready to ship; `05-review.md` carries the evidence.
+
+**Slices 2–13 do not get the same latitude** — the brief's own words are the ceiling from
+here, because F7 (the proxy) and F10 (the differentiator) are what this assignment is
+actually judged on, and there are four days of clock left.
 
 ---
 
 ## 1. The working agreement
 
-Every slice runs the same six stages. Each stage is a skill you invoke; each ends with a
+Every slice runs the same five stages. Each stage is a skill you invoke; each ends with a
 **hard stop** so you stay in control.
 
 | # | Stage | Skill | Produces | Who acts next |
 |---|---|---|---|---|
-| 1 | Discovery | `/feature-discovery <id>` | `docs/slices/<id>/01-discovery.md` | You answer questions |
-| 2 | PRD | `/feature-prd <id>` | `02-prd.md` — acceptance criteria, test matrix | You approve scope |
-| 3 | Tech plan | `/feature-plan <id>` | `03-plan.md` — file map, ordered TDD tasks | You approve approach |
-| 4 | Build | `/feature-build <id>` | Code on `slice/<id>-<slug>`, `04-build-log.md` | — |
-| 5 | Review | `/feature-review <id>` | `05-review.md`, fixes applied | — |
-| 6 | Ship | `/feature-ship <id>` | Pull request, then **STOP** | You review + merge |
+| 1 | Discovery + PRD | `/feature-prd <id>` | `docs/slices/<id>/02-prd.md` — decisions, acceptance criteria, test matrix | You answer questions, then approve scope |
+| 2 | Tech plan | `/feature-plan <id>` | `03-plan.md` — file map, ordered TDD tasks | You approve approach |
+| 3 | Build | `/feature-build <id>` | Code on `slice/<id>-<slug>`, `04-build-log.md` | — |
+| 4 | Review | `/feature-review <id>` | `05-review.md`, fixes applied | — |
+| 5 | Ship | `/feature-ship <id>` | Pull request, then **STOP** | You review + merge |
 
-After you merge, we start the next slice from `main`. Nothing in stage 4 begins before
-stages 1–3 are approved, and nothing merges without you.
+Stage 1 interviews you first and writes the PRD from your answers — the decisions table in
+`02-prd.md` is the record that `01-discovery.md` used to be. Doc filenames keep their
+original prefixes so slices 0–1 stay readable.
+
+After you merge, we start the next slice from `main`. Nothing in stage 3 begins before
+stages 1–2 are approved, and nothing merges without you.
 
 ### Two speeds
 
-The full six-stage loop is right for slices with real unknowns. For slices where
+The full five-stage loop is right for slices with real unknowns. For slices where
 `PRODUCT_SPEC.md` already answers the questions, run **fast mode** — pass `--fast` to
-stage 1 and it collapses discovery and PRD into a single short doc with acceptance
-criteria only. This matters because the clock is five days; ceremony that isn't buying
+stage 1 and it skips the interview, writing acceptance criteria straight from the spec. This matters because the clock is five days; ceremony that isn't buying
 you clarity is just cost. Recommended mode is marked on each slice below.
 
 ### What "vertical" means here
@@ -110,7 +120,7 @@ dependencies have merged.
 
 Each slice below carries a **Libraries** line naming the exact packages it introduces.
 Those names come from the brief (`PRODUCT_SPEC.md` §7) — a slice that substitutes an
-equivalent has to record why in its discovery doc, not decide it at the keyboard.
+equivalent has to record why in its PRD decisions table, not decide it at the keyboard.
 
 ### Slice 0 — Rails ✅ merged
 **Spec:** F9.4 · **Depends on:** — · **Mode:** fast · **Day 1**
@@ -502,7 +512,7 @@ owes the README a walked-through emulator path, because the brief names
 ## 8. Open decisions
 
 `PRODUCT_SPEC.md` §6 lists these; this table is where their state is tracked. Anything
-still open gets settled in the discovery stage of the slice that first needs it, not before.
+still open gets settled in the discovery interview of the slice that first needs it, not before.
 
 | Decision | Needed by | State |
 |---|---|---|
