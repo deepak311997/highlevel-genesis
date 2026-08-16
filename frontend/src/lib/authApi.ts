@@ -1,4 +1,5 @@
 import { ApiError, apiUrl } from './api'
+import { appCheckHeader } from './appCheck'
 
 /**
  * The one endpoint that must not answer differently for a known and an unknown
@@ -20,7 +21,10 @@ async function post(path: string, body: unknown): Promise<void> {
   try {
     res = await fetch(apiUrl(path), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // App Check proves the caller is our app. Resolved per request rather
+      // than once at module load, because the token expires and the SDK
+      // rotates it; a cached header would start failing after an hour open.
+      headers: { 'Content-Type': 'application/json', ...(await appCheckHeader()) },
       body: JSON.stringify(body),
     })
   } catch {

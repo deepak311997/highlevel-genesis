@@ -4,6 +4,7 @@ import { asyncHandler } from '../lib/errors'
 import { deleteExpiredUnverifiedUsers } from './cleanup'
 import { isEmulator } from '../lib/env'
 import { handleRegister } from './register'
+import { requireAppCheck } from './appCheck'
 import { throttleAuthRequest } from './throttleGuard'
 
 /**
@@ -25,9 +26,14 @@ import { throttleAuthRequest } from './throttleGuard'
  */
 export const authRouter: Router = Router()
 
+const attested = asyncHandler(requireAppCheck)
 const throttled = asyncHandler(throttleAuthRequest)
 
-authRouter.post('/auth/register', throttled, asyncHandler(handleRegister))
+// App Check first, then the throttle. An unattested request should cost us
+// nothing and, more importantly, should not be able to spend a real user's
+// throttle budget — otherwise a flood of forged requests locks the victim out
+// of registering, turning a control into a denial of service.
+authRouter.post('/auth/register', attested, throttled, asyncHandler(handleRegister))
 
 /**
  * Test-only door onto the scheduled sweep.

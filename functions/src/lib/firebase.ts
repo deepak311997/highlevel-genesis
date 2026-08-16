@@ -1,4 +1,5 @@
 import { getApps, initializeApp } from 'firebase-admin/app'
+import { getAppCheck, type AppCheck } from 'firebase-admin/app-check'
 import { getAuth, type Auth } from 'firebase-admin/auth'
 import { getFirestore, type Firestore } from 'firebase-admin/firestore'
 
@@ -38,6 +39,18 @@ let cached: Firestore | undefined
  */
 export function getAdminAuth(): Auth {
   return getAuth()
+}
+
+/**
+ * Admin App Check handle, for verifying tokens minted by the browser SDK.
+ *
+ * Routed through this module for the same reason as {@link getAdminAuth}, and
+ * named `getAppCheckService` rather than re-exporting `getAppCheck` so the
+ * middleware's test can substitute it without also stubbing the Admin SDK's
+ * app initialisation.
+ */
+export function getAppCheckService(): AppCheck {
+  return getAppCheck()
 }
 
 export function getDb(): Firestore {

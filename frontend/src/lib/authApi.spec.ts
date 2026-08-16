@@ -3,6 +3,13 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+// Stubbed rather than exercised: `./appCheck` reaches Firebase and reCAPTCHA,
+// neither of which belongs in a test about how this module shapes a request.
+// Its own behaviour — memoisation, and degrading to no header — is covered by
+// `appCheck.spec.ts`.
+const appCheckHeader = vi.fn(async () => ({ 'X-Firebase-AppCheck': 'test-attestation' }))
+vi.mock('./appCheck', () => ({ appCheckHeader: () => appCheckHeader() }))
+
 import { register } from './authApi'
 
 function stubFetch(impl: () => Promise<Response>) {
@@ -45,6 +52,21 @@ describe('authApi', () => {
     const { url, init } = firstCall(spy)
     expect(url).toContain('/api/auth/register')
     expect(init.method).toBe('POST')
+  })
+
+  it('attests the request with an App Check token', async () => {
+    const spy = stubFetch(async () => ok())
+
+    await register('a@b.test', 'A-Password-1')
+
+    // The backend refuses an unattested request with a 401, so a header that
+    // silently stopped being sent would break sign-up in production while
+    // every emulator-backed test stayed green — the emulator bypasses App
+    // Check. This assertion is the only thing standing between those two facts.
+    expect(firstCall(spy).init.headers).toMatchObject({
+      'Content-Type': 'application/json',
+      'X-Firebase-AppCheck': 'test-attestation',
+    })
   })
 
   it('resolves without inspecting the body, which is identical across branches', async () => {
