@@ -1,71 +1,40 @@
 rules_version = '2';
 
-// Genesis security rules.
+// Genesis security rules — the backstop, not the enforcement.
 //
-// Principle: deny by default. Every collection is owner-scoped, and the
-// OAuth token document is unreachable from any client — only the Admin SDK
-// inside a Cloud Function may touch it.
+// Data access is API-only. Every read and write goes through a Cloud Function
+// route that verifies the caller's ID token (including `email_verified`),
+// parses the payload with Zod, and scopes the query by the uid **from the
+// token, never from the request body**. The Admin SDK bypasses this file, so
+// that is where the access decisions actually live.
 //
-// Rules are additive (OR'd), so the absence of an `allow` is the denial.
+// What this file is for: making a mistake in one of those routes a bug rather
+// than a breach. Every match block below is a denial, and there is deliberately
+// no helper function left — nothing here grants anything, so there is nothing
+// to parameterise, and a reader can tell at a glance that no `allow` in this
+// file is load-bearing.
+//
+// Rules are additive (OR'd), so the absence of an `allow` is the denial. The
+// explicit `if false` blocks are documentation: they say a collection exists and
+// is deliberately unreachable, rather than leaving a reader to wonder whether it
+// was forgotten. Every one of them has an L3 test in tests/rules/firestore.spec.ts.
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function signedIn() {
-      return request.auth != null;
-    }
-
-    function isOwner(uid) {
-      return signedIn() && request.auth.uid == uid;
-    }
-
-    // Email verification, enforced here rather than only in the router.
-    //
-    // A route guard stops a browser; it does not stop anyone holding a valid
-    // token. Reading the claim here is what makes an unverified account inert
-    // — which matters most for a *pre-hijacked* account, one an attacker
-    // registered at someone else's address. Until the real owner verifies, it
-    // can reach nothing.
-    //
-    // The claim lives in the ID token and does not refresh on its own, so the
-    // client forces getIdToken(true) after verifying. Without that the first
-    // read after verification is denied by a stale claim.
-    function verified() {
-      return signedIn() && request.auth.token.email_verified == true;
-    }
-
     // --- user profile -------------------------------------------------
-    // Client-written, which is safe only because the document holds nothing
-    // privileged. Anything server-derived — connection status, plan, role —
-    // belongs in a collection the client cannot write, not here.
-    //
-    // The rules are an allowlist, not a gate: they pin the exact field set, so
-    // a future field cannot arrive without someone revisiting this block.
+    // Written only by PUT /api/users/me and read only by GET /api/users/me.
+    // Denied to its owner too: the owner has a route, and a client that can
+    // write this document can write fields the route would have refused.
     match /users/{uid} {
-      allow read: if isOwner(uid) && verified();
-
-      allow create: if isOwner(uid) && verified()
-        && request.resource.data.keys()
-             .hasOnly(['email', 'displayName', 'createdAt', 'updatedAt'])
-        // Server clock, not the client's — a backdated createdAt would let a
-        // user claim seniority the audit trail does not support.
-        && request.resource.data.createdAt == request.time;
-
-      allow update: if isOwner(uid) && verified()
-        // email and createdAt are immutable. The address is Firebase Auth's to
-        // own; this copy exists for display and must not drift from it.
-        && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['displayName', 'updatedAt'])
-        && request.resource.data.updatedAt == request.time;
-
-      // Account deletion is not a feature yet. When it is, it belongs in a
-      // Cloud Function that also revokes tokens and cascades — not here.
-      allow delete: if false;
+      allow read, write: if false;
     }
 
     // --- HighLevel OAuth tokens ---------------------------------------
-    // Deliberately has no allow rule of any kind. The Admin SDK bypasses
-    // rules; every client — including the owner — is denied.
+    // Holds a live access token and a refresh token, scoped to a whole CRM
+    // location. A token readable by the browser is a token readable by anyone
+    // who opens devtools, so GET /api/hl/connection returns a redacted
+    // projection and this document is reachable from no client at all.
     match /hlConnections/{uid} {
       allow read, write: if false;
     }
@@ -79,7 +48,7 @@ service cloud.firestore {
     }
 
     // --- everything else ----------------------------------------------
-    // Collections are added slice by slice, each with its own rules and
-    // its own denial test. Nothing is reachable until it is.
+    // Collections are added slice by slice, each with its own denial test.
+    // Nothing is reachable until it is.
   }
 }
