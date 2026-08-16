@@ -1,7 +1,9 @@
 import { setGlobalOptions } from 'firebase-functions/v2'
 import { onRequest } from 'firebase-functions/v2/https'
+import { onSchedule } from 'firebase-functions/v2/scheduler'
 
 import { createApiApp } from './api'
+import { deleteExpiredUnverifiedUsers } from './auth/cleanup'
 
 setGlobalOptions({ region: 'asia-south1', maxInstances: 10 })
 
@@ -29,18 +31,28 @@ export const api = onRequest(
 export { generate } from './generate'
 
 /**
- * The daily sweep of never-verified accounts is deliberately NOT deployed.
+ * The daily sweep of never-verified accounts — D18's fourth mitigation.
  *
- * `deleteExpiredUnverifiedUsers` in ./auth/cleanup is written and tested, but
- * no trigger is exported, so nothing runs it in production. That leaves one of
- * D18's mitigations unshipped: an account an attacker registered at someone
- * else's address now persists indefinitely rather than expiring after a day.
+ * An attacker can register someone else's address. Rules already make that
+ * account inert, and a registration request can never alter an account it does
+ * not control, so the account can reach nothing. What remains is that it *sits
+ * there*: the real owner could be socially engineered into clicking "verify" on
+ * it weeks later, and until then they cannot register the address themselves.
+ * Expiring it closes that window instead of leaving it open indefinitely.
  *
- * What still holds without it: Firestore rules deny an unverified token every
- * read and write, so such an account can reach nothing, and a registration
- * request can never alter an account that already exists. The residual is a
- * victim who is talked into clicking "verify" on an account they did not
- * create — and that window no longer closes on its own.
+ * This trigger was dropped once already, in an unrelated commit, and nothing
+ * caught it — every test called the handler directly, so a sweep that no longer
+ * ran still looked fully covered. `index.spec.ts` now asserts the export
+ * exists, because the deployment surface is the one thing the other test levels
+ * cannot see.
  *
- * Re-export an onSchedule trigger here to turn it back on.
+ * Timezone is pinned rather than left to the deploy environment: "every 24
+ * hours" against a floating zone makes the deletion window drift, and a
+ * 24h-age check whose boundary moves is hard to reason about after the fact.
  */
+export const cleanupUnverifiedUsers = onSchedule(
+  { schedule: 'every 24 hours', timeZone: 'Etc/UTC', memory: '256MiB', timeoutSeconds: 540 },
+  async () => {
+    await deleteExpiredUnverifiedUsers()
+  },
+)
