@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs'
 
 import {
   assertFails,
-  assertSucceeds,
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing'
@@ -16,6 +15,21 @@ import {
   type Firestore,
 } from 'firebase/firestore'
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest'
+
+/**
+ * The backstop, and nothing but the backstop.
+ *
+ * Data access is API-only: every read and write goes through a Cloud Function
+ * route that verifies the ID token, parses the payload with Zod, and scopes the
+ * query by the uid **from the token**. `firestore.rules` is what makes a mistake
+ * in one of those routes a bug rather than a breach — so after Slice 2b every
+ * match block in the file is a denial, and **every case in this suite is an
+ * `assertFails`**.
+ *
+ * That is why there is no `assertSucceeds` import. A suite with allow-cases in
+ * it would be describing an enforcement boundary that no longer exists here, and
+ * the next reader would have to work out which of the two files was in charge.
+ */
 
 let env: RulesTestEnvironment
 
@@ -60,181 +74,124 @@ function asModular(db: unknown): Firestore {
 }
 
 /**
- * A signed-in user who has confirmed their address.
- *
- * `email_verified` is a token claim, so the rules can enforce the verification
- * gate rather than trusting the router to. Note the default below: an
- * `authenticatedContext` with no claims is *unverified*, which is exactly the
- * state a freshly signed-up attacker is in.
+ * A signed-in user who has confirmed their address — the *most* privileged
+ * client there is. Everything below denies even them, which is the point: the
+ * claim buys access to the API, not to the database.
  */
 function verified(uid: string): Firestore {
   return asModular(env.authenticatedContext(uid, { email_verified: true }).firestore())
 }
 
-function unverified(uid: string): Firestore {
-  return asModular(env.authenticatedContext(uid, { email_verified: false }).firestore())
+function anonymous(): Firestore {
+  return asModular(env.unauthenticatedContext().firestore())
 }
 
-/** A complete, valid profile document. */
+/** A complete, valid profile document — as a payload for a write that must fail. */
 function profile() {
   return {
     email: 'alice@example.test',
     displayName: null,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
   }
 }
 
-/** Seed a document past the rules, so update and delete have something to act on. */
+/**
+ * Seed past the rules, so update and delete have something to be denied *on*.
+ *
+ * Still needed even though nothing succeeds: a denied update against a document
+ * that does not exist proves less than a denied update against one that does.
+ */
 async function seedProfile(uid = 'alice'): Promise<void> {
   await env.withSecurityRulesDisabled(async (ctx) => {
-    await setDoc(doc(asModular(ctx.firestore()), `users/${uid}`), {
-      email: 'alice@example.test',
-      displayName: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    })
+    await setDoc(doc(asModular(ctx.firestore()), `users/${uid}`), profile())
   })
 }
 
-describe('users/{uid} — the owner', () => {
-  it('lets a verified owner create their profile', async () => {
-    await assertSucceeds(setDoc(doc(verified('alice'), 'users/alice'), profile()))
-  })
-
-  it('lets a verified owner read their profile', async () => {
+describe('users/{uid} — denied to its own owner', () => {
+  /** AC-12. The owner reads their profile through `GET /api/users/me`. */
+  it('denies a verified owner reading their own profile', async () => {
     await seedProfile()
 
-    await assertSucceeds(getDoc(doc(verified('alice'), 'users/alice')))
+    await assertFails(getDoc(doc(verified('alice'), 'users/alice')))
   })
 
-  it('lets a verified owner change their display name', async () => {
-    await seedProfile()
-
-    await assertSucceeds(
-      updateDoc(doc(verified('alice'), 'users/alice'), {
-        displayName: 'Alice',
-        updatedAt: serverTimestamp(),
-      }),
-    )
-  })
-})
-
-// The denial cases are the ones that matter — an allow test passes even when
-// the rules are wide open.
-describe('users/{uid} — denials', () => {
-  it('denies a different signed-in user, however verified they are', async () => {
-    await seedProfile()
-    const mallory = verified('mallory')
-
-    await assertFails(getDoc(doc(mallory, 'users/alice')))
-    await assertFails(setDoc(doc(mallory, 'users/alice'), profile()))
-  })
-
-  it('denies an unauthenticated caller', async () => {
-    await seedProfile()
-    const anon = asModular(env.unauthenticatedContext().firestore())
-
-    await assertFails(getDoc(doc(anon, 'users/alice')))
-    await assertFails(setDoc(doc(anon, 'users/alice'), profile()))
-  })
-
-  /**
-   * The gate that makes the router's blocking screen more than a courtesy. A
-   * pre-hijacked account — one an attacker registered at someone else's address
-   * — sits in exactly this state, and it can reach nothing.
+  /*
+   * AC-13. Creating, changing and removing all belong to the API now.
+   *
+   * These two send exactly the payload the *old* owner-scoped rules accepted —
+   * a create stamped `serverTimestamp()`, and an update touching only
+   * `displayName` and `updatedAt`. Written any other way they would pass against
+   * the old rules too, for reasons that have nothing to do with this change, and
+   * would prove nothing about the deny-all that replaced them.
    */
-  it('denies the owner while their address is unverified', async () => {
-    await seedProfile()
-    const alice = unverified('alice')
-
-    await assertFails(getDoc(doc(alice, 'users/alice')))
-    await assertFails(setDoc(doc(alice, 'users/alice'), profile()))
-  })
-
-  it('denies a create carrying a key outside the allowlist', async () => {
-    await assertFails(
-      setDoc(doc(verified('alice'), 'users/alice'), { ...profile(), role: 'admin' }),
-    )
-  })
-
-  it('denies a create that backdates createdAt', async () => {
+  it('denies a verified owner creating their own profile', async () => {
     await assertFails(
       setDoc(doc(verified('alice'), 'users/alice'), {
-        ...profile(),
-        createdAt: new Date('2000-01-01'),
-      }),
-    )
-  })
-
-  it('denies an update that rewrites the email', async () => {
-    await seedProfile()
-
-    await assertFails(
-      updateDoc(doc(verified('alice'), 'users/alice'), {
-        email: 'attacker@example.test',
-        updatedAt: serverTimestamp(),
-      }),
-    )
-  })
-
-  it('denies an update that rewrites createdAt', async () => {
-    await seedProfile()
-
-    await assertFails(
-      updateDoc(doc(verified('alice'), 'users/alice'), {
+        email: 'alice@example.test',
+        displayName: null,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       }),
     )
   })
 
-  it('denies an update that adds an unknown key', async () => {
+  it('denies a verified owner updating their own profile', async () => {
     await seedProfile()
 
     await assertFails(
       updateDoc(doc(verified('alice'), 'users/alice'), {
-        plan: 'enterprise',
+        displayName: 'Alice',
         updatedAt: serverTimestamp(),
       }),
     )
   })
 
-  it('denies an update that skips updatedAt, so writes are always stamped', async () => {
-    await seedProfile()
-
-    await assertFails(updateDoc(doc(verified('alice'), 'users/alice'), { displayName: 'Alice' }))
-  })
-
-  it('denies the owner deleting their own profile', async () => {
+  it('denies a verified owner deleting their own profile', async () => {
     await seedProfile()
 
     await assertFails(deleteDoc(doc(verified('alice'), 'users/alice')))
   })
 })
 
+describe('users/{uid} — denied to everyone else', () => {
+  /** AC-14. */
+  it('denies a different signed-in user, however verified they are', async () => {
+    await seedProfile()
+    const mallory = verified('mallory')
+
+    await assertFails(getDoc(doc(mallory, 'users/alice')))
+    await assertFails(setDoc(doc(mallory, 'users/alice'), profile()))
+    await assertFails(deleteDoc(doc(mallory, 'users/alice')))
+  })
+
+  it('denies an unauthenticated client', async () => {
+    await seedProfile()
+    const anon = anonymous()
+
+    await assertFails(getDoc(doc(anon, 'users/alice')))
+    await assertFails(setDoc(doc(anon, 'users/alice'), profile()))
+  })
+})
+
 describe('server-only collections', () => {
   /*
-   * Re-asserted in Slice 2, because this is the slice where the document stops
-   * being hypothetical: it now holds a live HighLevel access token and a
-   * refresh token, scoped to a whole CRM location.
+   * AC-15 — re-asserted because the rules file was rewritten. These two were
+   * never client-reachable, and a rewrite is exactly the moment a collection
+   * quietly loses its denial along with the helper it shared with something
+   * else.
    *
    * The owner case is the one that matters and the one people skip. It is
    * tempting to let a user read their own connection — but a token readable by
-   * the browser is a token readable by anyone who opens devtools, and this
-   * denial is what makes `GET /api/hl/connection` the only window onto it.
+   * the browser is a token readable by anyone who opens devtools.
    */
   it('denies even a verified owner reading their own HighLevel tokens', async () => {
-    const alice = verified('alice')
-
-    await assertFails(getDoc(doc(alice, 'hlConnections/alice')))
+    await assertFails(getDoc(doc(verified('alice'), 'hlConnections/alice')))
   })
 
   it('denies a verified owner writing their own connection', async () => {
-    const alice = verified('alice')
-
     await assertFails(
-      setDoc(doc(alice, 'hlConnections/alice'), {
+      setDoc(doc(verified('alice'), 'hlConnections/alice'), {
         accessToken: 'live-access-token',
         refreshToken: 'live-refresh-token',
         locationId: 'lUanVn0CtZJTlymH8ySo',
@@ -245,7 +202,7 @@ describe('server-only collections', () => {
 
   it('denies a stranger and an anonymous client alike', async () => {
     const bob = verified('bob')
-    const anon = asModular(env.unauthenticatedContext().firestore())
+    const anon = anonymous()
 
     await assertFails(getDoc(doc(bob, 'hlConnections/alice')))
     await assertFails(setDoc(doc(bob, 'hlConnections/alice'), { accessToken: 'x' }))
@@ -256,9 +213,14 @@ describe('server-only collections', () => {
     await assertFails(deleteDoc(doc(verified('alice'), 'hlConnections/alice')))
   })
 
+  /*
+   * Readable by a client, these would answer "has anyone tried to register this
+   * address?" — the enumeration question the uniform registration response
+   * exists to refuse.
+   */
   it('denies every client the throttle counters', async () => {
     const alice = verified('alice')
-    const anon = asModular(env.unauthenticatedContext().firestore())
+    const anon = anonymous()
 
     await assertFails(getDoc(doc(alice, 'authThrottle/email:abc')))
     await assertFails(setDoc(doc(alice, 'authThrottle/email:abc'), { count: 0 }))
@@ -267,6 +229,7 @@ describe('server-only collections', () => {
 })
 
 describe('unknown collections', () => {
+  /** AC-16. Collections arrive slice by slice, each with its own denial test. */
   it('denies anything without an explicit rule', async () => {
     const alice = verified('alice')
 
