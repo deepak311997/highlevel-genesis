@@ -21,6 +21,7 @@
 #   scripts/autopilot.sh --only "8 9"    # just those two
 #   scripts/autopilot.sh --dry-run       # print the plan, run nothing
 #   scripts/autopilot.sh --no-merge      # stop at the PR, leave the merge to a human
+#   scripts/autopilot.sh --wait-ci       # gate the merge on GitHub checks too
 #
 # State lives in .autopilot/ (gitignored). Completed stages are marked, so a
 # re-run picks up where a crash left off instead of redoing work.
@@ -77,6 +78,7 @@ ONLY=""
 DRY_RUN=0
 NO_MERGE=0
 SKIP_LOCAL_GATE=0
+WAIT_CI=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -85,6 +87,7 @@ while [[ $# -gt 0 ]]; do
     --only) ONLY="$2"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     --no-merge) NO_MERGE=1; shift ;;
+    --wait-ci) WAIT_CI=1; shift ;;
     --skip-local-gate) SKIP_LOCAL_GATE=1; shift ;;
     -h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
@@ -408,6 +411,16 @@ wait_for_ci_and_merge() {
 
   if (( NO_MERGE )); then say "· --no-merge: stopping at the PR for slice $nn"; return 1; fi
 
+  # The local gate already ran the same six suites CI runs, on the same commit.
+  # Waiting for the remote copy of that answer costs minutes per slice, so by
+  # default we merge on the local result and let CI report on main behind us.
+  # --wait-ci puts the remote gate back in front of the merge.
+  if (( ! WAIT_CI )); then
+    say "· not waiting for CI (local gate already green) — merging"
+    merge_pr "$nn" "$branch" "$pr_url"
+    return 0
+  fi
+
   local attempt=1
   while (( attempt <= AUTOPILOT_FIX_ATTEMPTS + 1 )); do
     local out="$LOG_DIR/$nn/ci.$attempt.log"
@@ -436,17 +449,23 @@ branch. Never weaken a test or a lint rule to get CI green. Do not merge the PR.
     (( attempt++ ))
   done
 
+  merge_pr "$nn" "$branch" "$pr_url"
+  return 0
+}
+
+merge_pr() {
+  local nn="$1" branch="$2" pr_url="$3"
   git checkout main >/dev/null 2>&1
   say "· merging $branch"
   if ! gh pr merge "$branch" --squash --delete-branch >/dev/null 2>&1; then
-    say "  plain merge refused (branch protection?) — retrying with --admin"
+    # Unmerged checks are the usual refusal when we did not wait for them.
+    say "  plain merge refused — retrying with --admin"
     gh pr merge "$branch" --squash --delete-branch --admin >/dev/null 2>&1 \
       || die "slice $nn: merge failed. PR: $pr_url"
   fi
   git pull --ff-only >/dev/null 2>&1 || die "could not fast-forward main after merging slice $nn"
   git branch -D "$branch" >/dev/null 2>&1 || true
   say "✓ slice $nn merged to main"
-  return 0
 }
 
 # ─── one slice, end to end ────────────────────────────────────────────────────

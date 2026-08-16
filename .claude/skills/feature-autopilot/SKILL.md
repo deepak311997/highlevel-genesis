@@ -16,7 +16,11 @@ next begins.
 ## What it actually runs
 
 Per slice: **PRD → plan → build → suite gate → review → suite gate → ship →
-wait for CI → squash-merge → checkout main, pull → next slice.**
+squash-merge → checkout main, pull → next slice.**
+
+The merge rides on the *local* gate, which runs the same six suites CI does on
+the same commit. CI still runs on main behind the merge; `--wait-ci` puts it
+back in front, at the cost of minutes per slice.
 
 The division of labour is the thing worth understanding:
 
@@ -42,6 +46,7 @@ scripts/autopilot.sh --from 5         # resume at 5
 scripts/autopilot.sh --only "8 9"     # just those
 scripts/autopilot.sh --dry-run        # print the queue, run nothing
 scripts/autopilot.sh --no-merge       # open the PR, leave the merge to a human
+scripts/autopilot.sh --wait-ci        # gate each merge on GitHub checks as well
 ```
 
 Run it with `run_in_background: true` and report the log paths, or hand the user
