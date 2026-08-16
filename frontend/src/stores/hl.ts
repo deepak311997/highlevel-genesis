@@ -51,7 +51,12 @@ export const useHlStore = defineStore('hl', (): HlStore => {
   const lastError = ref<string | null>(null)
 
   const isConnected = computed(() => status.value?.connected === true)
-  const needsReconnect = computed(() => status.value?.needsReconnect === true)
+  // Narrowed rather than optional-chained: `needsReconnect` exists only on a
+  // connected status, and the union is what makes that a compile error instead
+  // of a silent `undefined`.
+  const needsReconnect = computed(
+    () => status.value?.connected === true && status.value.needsReconnect,
+  )
 
   /**
    * What to call the connected location.
@@ -61,8 +66,11 @@ export const useHlStore = defineStore('hl', (): HlStore => {
    * a broken one.
    */
   const label = computed(() => {
-    if (status.value?.connected !== true) return null
-    return status.value.locationName ?? status.value.locationId ?? null
+    const current = status.value
+    if (current?.connected !== true) return null
+    // No `?? null` tail: the union guarantees a connected status has a
+    // locationId, so there is no third case to invent a value for.
+    return current.locationName ?? current.locationId
   })
 
   async function refresh(): Promise<void> {

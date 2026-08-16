@@ -1,4 +1,4 @@
-import { ApiError, apiUrl } from './api'
+import { ApiError, apiUrl, messageForResponse } from './api'
 import { appCheckHeader } from './appCheck'
 import { auth } from './firebase'
 
@@ -12,14 +12,22 @@ import { auth } from './firebase'
  * is a redacted projection the server builds.
  */
 
-/** Exactly what the status endpoint returns — no tokens, ever. */
-export interface ConnectionStatus {
-  connected: boolean
-  locationId?: string
-  locationName?: string | null
-  connectedAt?: string
-  needsReconnect?: boolean
-}
+/**
+ * Exactly what the status endpoint returns — no tokens, ever.
+ *
+ * A discriminated union, mirroring the server's. `{ connected: true }` without
+ * a location is a state the panel cannot render, so it is not expressible here
+ * either; `hl.label` can then read `locationId` without a fallback.
+ */
+export type ConnectionStatus =
+  | { connected: false }
+  | {
+      connected: true
+      locationId: string
+      locationName: string | null
+      connectedAt: string | null
+      needsReconnect: boolean
+    }
 
 /**
  * The ID token for the current user.
@@ -47,21 +55,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError('Something went wrong. Check your connection and try again.', 0)
   }
 
-  if (!res.ok) throw new ApiError(await messageFor(res), res.status)
+  if (!res.ok) throw new ApiError(await messageForResponse(res), res.status)
   return (await res.json()) as T
-}
-
-async function messageFor(res: Response): Promise<string> {
-  try {
-    const body: unknown = await res.json()
-    if (typeof body === 'object' && body !== null) {
-      const { error } = body as { error?: unknown }
-      if (typeof error === 'string' && error !== '') return error
-    }
-  } catch {
-    // A non-JSON body means the request never reached a Cloud Function.
-  }
-  return 'Something went wrong. Please try again.'
 }
 
 export function getConnection(): Promise<ConnectionStatus> {

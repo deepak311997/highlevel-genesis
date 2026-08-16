@@ -106,6 +106,33 @@ describe('GET /api/hl/connection', () => {
     expect(res.raw).not.toContain('expiresAt')
   })
 
+/*
+   * A stored document that cannot describe a connection is treated as no
+   * connection, not as a connection with blanks in it.
+   *
+   * The earlier version filled the gaps with `?? ''` and reported
+   * `connected: true`, which rendered as "Connected to " with nothing after it
+   * — a broken screen that offers no way out, because the panel only shows
+   * Connect when it believes you are disconnected. Failing closed puts the
+   * recovery back in reach: reconnecting overwrites the document.
+   */
+  it('reports not connected when the stored document is unusable', async () => {
+    await adminDb().doc(`hlConnections/${aliceUid}`).set({ accessToken: 'orphaned' })
+
+    const res = await getJson('/api/hl/connection', auth(aliceToken))
+
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ connected: false })
+  })
+
+  it('never leaks a token from a document it could not parse', async () => {
+    await adminDb().doc(`hlConnections/${aliceUid}`).set({ accessToken: ACCESS_TOKEN })
+
+    const res = await getJson('/api/hl/connection', auth(aliceToken))
+
+    expect(res.raw).not.toContain(ACCESS_TOKEN)
+  })
+
   it('surfaces a connection that needs reconnecting', async () => {
     await seedConnection(aliceUid, { needsReconnect: true })
 

@@ -48,3 +48,33 @@ export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> 
 
   return (await res.json()) as T
 }
+
+/**
+ * The message to show for a failed response.
+ *
+ * Canonical, and shared by every caller: it was briefly duplicated per client
+ * and the copies had already diverged — one had lost the 429 case, so a
+ * throttled user on that path saw "Something went wrong" instead of being told
+ * to wait.
+ *
+ * Prefers the server's own message, since that carries the field error a form
+ * needs, and falls back to something a person can act on.
+ */
+export async function messageForResponse(res: Response): Promise<string> {
+  if (res.status === 429) {
+    return 'Too many attempts. Try again in a few minutes.'
+  }
+
+  try {
+    const body: unknown = await res.json()
+    if (typeof body === 'object' && body !== null) {
+      const { error } = body as { error?: unknown }
+      if (typeof error === 'string' && error !== '') return error
+    }
+  } catch {
+    // A non-JSON body means the request never reached a Cloud Function — the
+    // Hosting rewrite or the dev proxy sent it to the SPA fallback instead.
+  }
+
+  return 'Something went wrong. Please try again.'
+}

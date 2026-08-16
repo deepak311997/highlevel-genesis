@@ -9,7 +9,7 @@ import {
   listInstalledLocations,
 } from './exchange'
 import { getDb } from '../lib/firebase'
-import { logAuthEvent } from '../lib/log'
+import { describeError, logAuthEvent } from '../lib/log'
 import { openState } from './state'
 import type { TokenResponse } from './schema'
 
@@ -119,9 +119,25 @@ export async function handleCallback(req: Request, res: Response): Promise<void>
   let token: TokenResponse
   try {
     token = await exchangeCode(code)
-  } catch {
-    // Also the replay path: HighLevel consumes an authorization code on first
-    // use, so a re-sent callback URL fails here rather than at the state check.
+  } catch (err) {
+    /*
+     * Logged, not just redirected.
+     *
+     * The user gets one code — `exchange_failed` — because telling them which
+     * of a dozen upstream conditions occurred helps nobody and hands a prober a
+     * signal. But *we* need to know, and without this line a failing
+     * integration in production leaves only "it failed": no status, no
+     * upstream message, nothing to act on. `describeError` reduces the throw to
+     * a code and a message, and every value here goes through the redaction
+     * pass, so an authorization code cannot ride along.
+     *
+     * This is also the replay path: HighLevel consumes a code on first use, so
+     * a re-sent callback URL fails here rather than at the state check.
+     */
+    logAuthEvent('hl.callback.exchange_failed', {
+      outcome: 'invalid',
+      detail: describeError(err),
+    })
     redirectTo(res, 'exchange_failed')
     return
   }
@@ -129,7 +145,13 @@ export async function handleCallback(req: Request, res: Response): Promise<void>
   let located: TokenResponse | null
   try {
     located = await resolveLocationToken(token)
-  } catch {
+  } catch (err) {
+    // The bulk-install path: `installedLocations` or `locationToken` refused.
+    // Distinguished from the exchange in the log, though not to the user.
+    logAuthEvent('hl.callback.resolve_failed', {
+      outcome: 'invalid',
+      detail: describeError(err),
+    })
     redirectTo(res, 'exchange_failed')
     return
   }
