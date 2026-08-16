@@ -78,11 +78,25 @@ export function describeError(err: unknown): string {
   return `Non-error thrown (${typeof err})`
 }
 
-/** Context an auth log line may carry. Deliberately narrow — no free-form body. */
+/**
+ * Context an auth log line may carry. Deliberately narrow — no free-form body.
+ *
+ * **There is deliberately no `branch` field**, and adding one would undo the
+ * endpoint's central property. `emailHash` is an unsalted SHA-256 over a
+ * guessable space: email addresses are not high-entropy, so a wordlist reverses
+ * the hash offline in seconds. A line pairing that hash with "this address
+ * already existed" therefore hands anyone who can read Cloud Logging the exact
+ * account-existence oracle that the uniform response, the identical screens and
+ * the existence-blind throttle were all built to refuse. The log sink is a
+ * disclosure channel like any other.
+ *
+ * If registration-branch volume is ever wanted, it belongs in an aggregate
+ * counter with no per-request identifier attached — never on a line that also
+ * carries the subject.
+ */
 export interface AuthLogContext {
   /** SHA-256 of the normalised address. Never the address itself. */
   emailHash?: string
-  branch?: 'new' | 'existing'
   outcome?: 'ok' | 'throttled' | 'invalid'
   status?: number
   detail?: string

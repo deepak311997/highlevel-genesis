@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { describeError, logAuthEvent, redact, REDACTED } from './log'
+import { describeError, logAuthEvent, redact, REDACTED, type AuthLogContext } from './log'
 
 describe('redact', () => {
   it.each([
@@ -111,12 +111,28 @@ describe('logAuthEvent', () => {
   })
 
   it('writes one line carrying the event code and its safe context', () => {
-    logAuthEvent('register.sent', { emailHash: 'a1b2c3', branch: 'new' })
+    logAuthEvent('register.sent', { emailHash: 'a1b2c3', outcome: 'ok' })
 
     expect(info).toHaveBeenCalledTimes(1)
     const line = JSON.stringify(info.mock.calls[0])
     expect(line).toContain('register.sent')
     expect(line).toContain('a1b2c3')
+  })
+
+  // The context type is the enforcement point, so the test asserts on the type
+  // as well as the output: `branch` must not be assignable. Were it to come
+  // back, `emailHash` alongside it would turn Cloud Logging into the
+  // account-existence oracle the whole endpoint design exists to close — email
+  // hashes are unsalted SHA-256 over a guessable space, so they are reversible
+  // by anyone who can read the logs.
+  it('has no field naming which registration branch was taken', () => {
+    const context: AuthLogContext = { emailHash: 'a1b2c3', outcome: 'ok' }
+    // @ts-expect-error — `branch` is not part of AuthLogContext, deliberately.
+    context.branch = 'existing'
+
+    logAuthEvent('register.completed', { emailHash: 'a1b2c3', outcome: 'ok' })
+
+    expect(JSON.stringify(info.mock.calls[0])).not.toContain('existing')
   })
 
   it('redacts a secret that reaches it despite the typed context', () => {

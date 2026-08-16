@@ -45,7 +45,6 @@ export async function handleRegister(req: Request, res: Response): Promise<void>
   // then creating. The check-then-act version has a race — two simultaneous
   // registrations both see "absent" — and this way the atomicity is Firebase's
   // problem, not ours.
-  let branch: 'new' | 'existing' = 'new'
   try {
     await getAdminAuth().createUser({ email, password, emailVerified: false })
   } catch (err) {
@@ -55,10 +54,12 @@ export async function handleRegister(req: Request, res: Response): Promise<void>
     // else's address, and it must not be able to change, resend, or reveal
     // anything about an account it does not control. The legitimate user whose
     // address this is signs in as normal, or resets from the sign-in screen.
-    branch = 'existing'
   }
 
-  logAuthEvent('register.completed', { emailHash, branch, outcome: 'ok' })
+  // The branch taken is deliberately absent from this line — see AuthLogContext.
+  // Everything else about the two paths is already indistinguishable; a log line
+  // saying which one ran would be the one place the answer survived.
+  logAuthEvent('register.completed', { emailHash, outcome: 'ok' })
   res.json({ ok: true })
 }
 
