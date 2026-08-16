@@ -2,6 +2,7 @@ import { Router } from 'express'
 
 import { asyncHandler } from '../lib/errors'
 import { handleConnect } from './connect'
+import { handleDeleteConnection, handleGetConnection } from './connection'
 import { requireAppCheck } from '../auth/appCheck'
 import { withVerifiedUser } from '../auth/requireUser'
 
@@ -36,3 +37,10 @@ export const hlRouter: Router = Router()
 const attested = asyncHandler(requireAppCheck)
 
 hlRouter.post('/hl/connect', attested, asyncHandler(withVerifiedUser(handleConnect)))
+
+// Reading status is not attested: it is a plain authenticated read the
+// dashboard issues on every visit, and App Check buys nothing against a
+// caller who already holds a valid ID token. Deleting is attested, because
+// it is destructive.
+hlRouter.get('/hl/connection', asyncHandler(withVerifiedUser(handleGetConnection)))
+hlRouter.delete('/hl/connection', attested, asyncHandler(withVerifiedUser(handleDeleteConnection)))
