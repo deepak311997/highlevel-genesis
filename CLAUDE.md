@@ -67,6 +67,13 @@ project-specific traps (stream accumulation, the Monaco instance) — live in
 ## Non-negotiables
 
 - No secrets in source, ever. `.env` / Firebase Secret Manager only, `.env.example` kept current.
-- All data access scoped to the authenticated user by security rules, not by client code.
+- **Every read and write of Firestore goes through the API.** The frontend never uses the
+  Firestore client SDK — no `getDoc`, no `setDoc`, no `onSnapshot`. It calls Cloud Function
+  routes, which authenticate the caller, parse the payload with Zod, and scope every query
+  by the caller's uid using the Admin SDK. Security rules stay, denying clients outright:
+  they are the backstop that makes a mistake in a route a bug rather than a breach, and
+  every collection's L3 tests prove the denial.
+- Liveness comes from refetching after a mutation, or from an SSE stream where one already
+  exists. Not from `onSnapshot` — see above.
 - Streaming is mandatory for LLM calls — never request/response.
 - Every new screen ships with loading, empty, and error states.

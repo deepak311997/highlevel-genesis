@@ -10,14 +10,27 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 
 ---
 
-## 0. Where we are — 2026-08-16
+## 0. Where we are — 2026-08-17
 
 | Slice | State |
 |---|---|
 | 0 — Rails | ✅ merged to `main` |
-| 1 — Account & session | 🔵 on `slice/01-account-session`, **reviewed** (`05-review.md`), not yet pushed — three fixes applied, one decision open |
-| 2 — HighLevel connection | ⏭ next, and the highest-risk slice in the build |
+| 1 — Account & session | ✅ merged to `main` |
+| 2 — HighLevel connection | ✅ merged to `main` |
+| 2b — API-only data access | ⏭ next — a retroactive architecture change, and a prerequisite for 3 |
 | 3–13 | not started |
+
+**Slices from here run unattended.** `scripts/autopilot.sh` drives the five-stage loop
+one slice at a time — a fresh session per stage, the suite run by the orchestrator rather
+than reported by the model, and a squash-merge on green. The stage skills are unchanged;
+what changes is that a decision the PRD interview would have asked about gets made from
+these documents and recorded in the decisions table instead.
+
+**Two defects found on `main` on 2026-08-17, both fixed before the run started.** CI had
+been red since Slice 1: `vite.config.ts` threw at config load on any checkout without a
+`frontend/.env`, which is every CI checkout. Behind it, the rules suite connected to port
+8080 — the *development* emulator — so off CI it "passed" by finding a dev session, loading
+its rules over that session's and calling `clearFirestore()` on it.
 
 **Suite, measured after the review's fixes:** typecheck 0 · lint 0 · **275 unit** ·
 16 rules · 34 integration · **2 e2e**.
@@ -206,16 +219,45 @@ re-authorization. Run `HIGHLEVEL_PLATFORM.md` §9's checklist before writing cod
 
 ---
 
+### Slice 2b — API-only data access
+**Spec:** F9.4 (architecture) · **Depends on:** 2 · **Mode:** full · **Day 2**
+
+**An architectural decision taken on 2026-08-17, after Slice 2 merged: the frontend does
+not talk to Firestore.** Every read and write goes through a Cloud Function route that
+authenticates the caller, parses with Zod, and scopes by uid through the Admin SDK.
+Security rules stay and deny clients outright — the backstop that keeps a mistake in a
+route a bug rather than a breach.
+
+This slice exists because the decision is retroactive. Slice 1 left `users/{uid}` written
+by the client SDK under owner-scoped rules; that path moves behind the API here, so the
+codebase carries exactly one data-access pattern before Slice 3 adds a second collection
+to it. `hlConnections` was already server-only and is unaffected.
+
+The reusable half matters more than the migration: this slice establishes the route
+shape, the auth+Zod boundary helper, and the L3 denial-test pattern that every collection
+from Slice 3 on inherits.
+
+**Libraries:** none new — `zod` is already a functions dependency.
+**Key tests:** L4 the migrated routes end to end, including a caller reading another
+user's document; L3 every collection denies every client operation; L2 the profile
+surface against the new client; L1 the boundary helper.
+**Demo:** the app behaves exactly as before, with the Firestore client SDK gone from the
+bundle — grep `dist/` for `firestore` and find nothing.
+**Risk:** medium. The trap is a route that authenticates the caller and then trusts a
+`uid` from the request body instead of the token.
+
+---
+
 ### Slice 3 — Projects
-**Spec:** F2.1, F2.2, F2.3 · **Depends on:** 1 · **Mode:** fast · **Day 2**
+**Spec:** F2.1, F2.2, F2.3 · **Depends on:** 2b · **Mode:** fast · **Day 2**
 
 Project create, read, update, soft-delete. Dashboard list with empty state. Strict
-per-user rules scoping.
+per-user scoping — **enforced in the API routes**, with rules denying clients outright.
 
 **Libraries:** first slice to need shadcn-vue's **`dialog`** (create/rename/confirm-delete)
 — a component the brief names explicitly. Add it with `npx shadcn-vue@latest add dialog`.
-**Key tests:** L3 rules per operation, L2 list and empty state, L5 create → appears →
-rename → soft-delete → gone.
+**Key tests:** L4 routes per operation including cross-tenant denial, L3 client denial,
+L2 list and empty state, L5 create → appears → rename → soft-delete → gone.
 **Demo:** create a project, rename it, delete it.
 
 ---
@@ -529,6 +571,7 @@ still open gets settled in the discovery interview of the slice that first needs
 
 | Decision | Needed by | State |
 |---|---|---|
+| Client-direct Firestore vs API-only data access | Slice 2b | ✅ **Settled: API-only** (2026-08-17). The frontend uses no Firestore client SDK; every read and write goes through a Cloud Function route that authenticates, parses with Zod, and scopes by uid. Rules deny clients outright and are proven by L3 denial tests. Retroactive — Slice 2b migrates `users/{uid}`. Costs `onSnapshot`: liveness is refetch-after-mutation, or an existing SSE stream |
 | SSE transport on Functions v2 | Slice 5 | ✅ **Settled in Slice 0.** Streams unbuffered from `asia-south1` through the Hosting rewrite; no chunked-fetch fallback needed |
 | LLM provider | Slice 5 | ✅ **Settled.** `@anthropic-ai/sdk`, `claude-opus-5`, `messages.stream()`, `max_tokens: 64000`, cheat-sheet behind `cache_control` |
 | Google SSO alongside email + password | Slice 1 | ✅ **Settled: out** (Slice 1, D1). Not required by the brief |
@@ -552,7 +595,7 @@ read. `PRODUCT_SPEC.md` §7 holds the package-level version of this.
 | HighLevel OAuth 2.0, full flow via Cloud Function callback | F1.2 | 2 | ⏭ next |
 | Tokens in Firestore scoped to the Firebase user, refresh on expiry | F1.3 | 2 | ⏭ |
 | One HighLevel location per user | F1.3 | 2 | ⏭ — falls out of Target User = Sub-account |
-| Project CRUD incl. soft-delete, scoped by security rules | F2.1–2.3 | 3 | ⏭ |
+| Project CRUD incl. soft-delete, scoped per user by the API | F2.1–2.3 | 3 | ⏭ |
 | Server-side generation: bounded context → stream → validated file ops → persist | F3.1–3.4 | 5, 6, 9 | ⏭ |
 | SSE endpoint; protocol covers tokens, file boundaries, completion, errors | F4.1–4.3 | 5, 6 | 🟡 transport proven in Slice 0 |
 | File tree, read file, save manual edits | F5.1 | 6 | ⏭ |

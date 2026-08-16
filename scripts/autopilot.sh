@@ -59,6 +59,7 @@ mkdir -p "$STATE_DIR" "$LOG_DIR"
 # and PR titles are predictable enough for this script to verify them.
 
 SLICES=(
+  "02b|api-data-access|API-only data access|full"
   "03|projects|Projects|fast"
   "04|workspace-shell|Workspace shell & chat persistence|full"
   "05|streaming-generation|Streaming generation|full"
@@ -72,7 +73,7 @@ SLICES=(
   "13|deliverables|Deliverables|fast"
 )
 
-FROM=3
+FROM=0
 TO=13
 ONLY=""
 DRY_RUN=0
@@ -183,6 +184,19 @@ CLAUDE.md and docs/IMPLEMENTATION_PLAN.md are binding. Test-first is not negotia
 the failing test exists before the implementation. No secrets in source. Every new
 Firestore collection ships with rules and L3 rules tests in the same commit. Every new
 screen ships with loading, empty, and error states.
+
+**Data access is API-only, decided 2026-08-17 and binding on every slice from 2b on.**
+The frontend never uses the Firestore client SDK — no \`getDoc\`, no \`setDoc\`, no
+\`onSnapshot\`, no imports from \`firebase/firestore\` outside the emulator wiring. Every
+read and write goes through a Cloud Function route that verifies the ID token (including
+\`email_verified\`), parses the payload with Zod, and scopes the query by the uid **from the
+token, never from the request body**. Security rules stay and deny clients outright; each
+collection's L3 tests prove that denial. Liveness is a refetch after a mutation, or an SSE
+stream where one already exists.
+
+If a slice's own PRD or plan contradicts this — including one written before the decision —
+this rule wins, and you note the contradiction in the slice's docs rather than following
+the stale document.
 EOF
 }
 
@@ -278,8 +292,8 @@ docs/IMPLEMENTATION_PLAN.md so it reflects this slice landing, and refresh the s
 counts there from the run you just did. That keeps main's own record of where the build
 is accurate without anyone pushing to main by hand.
 
-Then stop, with the PR URL in your final message. The orchestrator waits for CI and
-merges. Do not merge, do not start slice $((10#$nn + 1)).
+Then stop, with the PR URL in your final message. The orchestrator merges. Do not merge
+it yourself, and do not start the next slice.
 EOF
       ;;
   esac
@@ -525,7 +539,9 @@ git rev-parse --git-dir >/dev/null 2>&1 || die "not a git repository"
 selected=()
 for entry in "${SLICES[@]}"; do
   IFS='|' read -r nn slug name mode <<<"$entry"
-  n=$((10#$nn))
+  # Slice ids are not all numeric — 02b is an architecture change inserted
+  # between two merged slices. Strip the suffix for range comparisons only.
+  n=$((10#${nn//[!0-9]/}))
   if [[ -n "$ONLY" ]]; then
     [[ " $ONLY " == *" $n "* ]] || continue
   else
