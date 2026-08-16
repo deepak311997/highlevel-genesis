@@ -62,8 +62,13 @@ export const db: Firestore = getFirestore(app, databaseId)
  * Vitest runs in mode `test`, so unit tests never open a socket.
  */
 if (import.meta.env.MODE === 'emulator') {
-  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true })
-  connectFirestoreEmulator(db, '127.0.0.1', 8080)
+  // Ports are injected at build time rather than hardcoded, because the test
+  // suites run the emulators on a second set so they need not stop a
+  // development session first. Defaults are the ordinary ports.
+  connectAuthEmulator(auth, `http://127.0.0.1:${import.meta.env.VITE_AUTH_EMULATOR_PORT}`, {
+    disableWarnings: true,
+  })
+  connectFirestoreEmulator(db, '127.0.0.1', Number(import.meta.env.VITE_FIRESTORE_EMULATOR_PORT))
 
   // A marker the e2e suite checks before it does anything. Playwright will
   // happily reuse whatever dev server is already on the port, and a

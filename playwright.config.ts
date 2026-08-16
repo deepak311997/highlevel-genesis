@@ -10,6 +10,9 @@ import { defineConfig, devices } from '@playwright/test'
  * Firestore; any other mode targets real Firebase, and that selection happens
  * at build time rather than at runtime so it cannot be flipped by accident.
  */
+/** Matches the port `npm run test:e2e` starts Vite on — see scripts/test-emulator-config.mjs. */
+const PORT = process.env['E2E_PORT'] ?? '5173'
+
 export default defineConfig({
   testDir: './tests/e2e',
   // One emulator, shared by every test, and each clears it before running —
@@ -22,13 +25,13 @@ export default defineConfig({
   retries: process.env['CI'] ? 1 : 0,
   reporter: process.env['CI'] ? 'github' : 'list',
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: `http://localhost:${PORT}`,
     trace: 'on-first-retry',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
     command: 'npm --prefix frontend run dev:emulator',
-    url: 'http://localhost:5173',
+    url: `http://localhost:${PORT}`,
     // Never reuse. A development-mode server on the same port talks to real
     // Firebase, and reusing it means the suite tests production while looking
     // like it tested the emulator. Failing to start is the better outcome.

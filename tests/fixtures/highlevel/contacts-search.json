@@ -1,0 +1,315 @@
+{
+  "contacts": [
+    {
+      "id": "JwwI60NJqfc8I4Ay2MiA",
+      "phoneLabel": null,
+      "country": "US",
+      "address": null,
+      "source": null,
+      "type": "lead",
+      "locationId": "lUanVn0CtZJTlymH8ySo",
+      "website": null,
+      "dnd": true,
+      "state": null,
+      "businessName": "(Example) Dunder Mifflin",
+      "customFields": [],
+      "tags": [
+        "high priority",
+        "follow-up"
+      ],
+      "dateAdded": "2026-08-16T09:58:16.388Z",
+      "additionalEmails": [],
+      "phone": "+16541234567",
+      "companyName": "(Example) Dunder Mifflin",
+      "additionalPhones": [],
+      "dateUpdated": "2026-08-16T10:00:33.143Z",
+      "city": null,
+      "dateOfBirth": null,
+      "firstNameLowerCase": "(example) casey",
+      "lastNameLowerCase": "morgan",
+      "firstName": "(Example) Casey",
+      "lastName": "Morgan",
+      "contactName": "(example) casey morgan",
+      "email": null,
+      "assignedTo": null,
+      "followers": [],
+      "validEmail": null,
+      "dndSettings": {
+        "Call": {
+          "status": "inactive",
+          "code": "103"
+        },
+        "Email": {
+          "status": "inactive",
+          "code": "103"
+        },
+        "SMS": {
+          "status": "inactive",
+          "code": "103"
+        }
+      },
+      "postalCode": null,
+      "businessId": "6a8189aff4df0852d7f52f5e",
+      "searchAfter": [
+        1786874296388,
+        "JwwI60NJqfc8I4Ay2MiA"
+      ],
+      "timezone": null,
+      "inboundDndSettings": {},
+      "attributionSource": {},
+      "lastAttributionSource": {}
+    },
+    {
+      "id": "fG4lv7zir6eka0pc0Hla",
+      "phoneLabel": null,
+      "country": "US",
+      "address": null,
+      "source": null,
+      "type": "lead",
+      "locationId": "lUanVn0CtZJTlymH8ySo",
+      "website": null,
+      "dnd": true,
+      "state": null,
+      "businessName": "(Example) MacLarens Pub",
+      "customFields": [],
+      "tags": [
+        "follow-up"
+      ],
+      "dateAdded": "2026-08-16T09:58:16.037Z",
+      "additionalEmails": [],
+      "phone": "+178655689546",
+      "companyName": "(Example) MacLaren's Pub",
+      "additionalPhones": [
+        {
+          "phone": "+19060001111"
+        },
+        {
+          "phone": "+1807654321"
+        }
+      ],
+      "dateUpdated": "2026-08-16T09:58:19.679Z",
+      "city": null,
+      "dateOfBirth": null,
+      "firstNameLowerCase": "(example) taylor",
+      "lastNameLowerCase": "reynolds",
+      "firstName": "(Example) Taylor",
+      "lastName": "Reynolds",
+      "contactName": "(example) taylor reynolds",
+      "email": null,
+      "assignedTo": null,
+      "followers": [],
+      "validEmail": null,
+      "dndSettings": {
+        "Call": {
+          "status": "inactive",
+          "code": "103"
+        },
+        "Email": {
+          "status": "inactive",
+          "code": "103"
+        },
+        "SMS": {
+          "status": "inactive",
+          "code": "103"
+        }
+      },
+      "postalCode": null,
+      "businessId": "6a8189af3a8e6d570dff5055",
+      "searchAfter": [
+        1786874296037,
+        "fG4lv7zir6eka0pc0Hla"
+      ],
+      "timezone": null,
+      "inboundDndSettings": {},
+      "attributionSource": {},
+      "lastAttributionSource": {}
+    },
+    {
+      "id": "D6id4dMzevwnm7yO25PS",
+      "phoneLabel": null,
+      "country": "US",
+      "address": null,
+      "source": null,
+      "type": "customer",
+      "locationId": "lUanVn0CtZJTlymH8ySo",
+      "website": null,
+      "dnd": true,
+      "state": null,
+      "businessName": "(Example) Goliath National Bank",
+      "customFields": [],
+      "tags": [
+        "follow-up"
+      ],
+      "dateAdded": "2026-08-16T09:58:15.574Z",
+      "additionalEmails": [
+        {
+          "email": "jordan.office@example.com"
+        },
+        {
+          "email": "jordan@corporate.net"
+        },
+        {
+          "email": "jsmith@email.com"
+        }
+      ],
+      "phone": null,
+      "companyName": "(Example) MacLaren's Pub",
+      "additionalPhones": [],
+      "dateUpdated": "2026-08-16T09:58:20.215Z",
+      "city": null,
+      "dateOfBirth": null,
+      "firstNameLowerCase": "(example) jordan",
+      "lastNameLowerCase": "smith",
+      "firstName": "(Example) Jordan",
+      "lastName": "Smith",
+      "contactName": "(example) jordan smith",
+      "email": "jordan.smith@example.com",
+      "assignedTo": null,
+      "followers": [],
+      "validEmail": null,
+      "dndSettings": {
+        "Call": {
+          "status": "inactive",
+          "code": "103"
+        },
+        "Email": {
+          "status": "inactive",
+          "code": "103"
+        },
+        "SMS": {
+          "status": "inactive",
+          "code": "103"
+        }
+      },
+      "postalCode": null,
+      "businessId": "6a8189af8a7ab5c927db805c",
+      "searchAfter": [
+        1786874295574,
+        "D6id4dMzevwnm7yO25PS"
+      ],
+      "timezone": null,
+      "inboundDndSettings": {},
+      "attributionSource": {},
+      "lastAttributionSource": {}
+    },
+    {
+      "id": "pzTPaMBuKEjmCTTTLV5D",
+      "phoneLabel": null,
+      "country": "US",
+      "address": null,
+      "source": null,
+      "type": "lead",
+      "locationId": "lUanVn0CtZJTlymH8ySo",
+      "website": null,
+      "dnd": true,
+      "state": null,
+      "businessName": "(Example) MacLarens Pub",
+      "customFields": [],
+      "tags": [
+        "follow-up"
+      ],
+      "dateAdded": "2026-08-16T09:58:10.776Z",
+      "additionalEmails": [],
+      "phone": null,
+      "companyName": "(Example) Goliath National Bank",
+      "additionalPhones": [],
+      "dateUpdated": "2026-08-16T09:59:50.292Z",
+      "city": null,
+      "dateOfBirth": null,
+      "firstNameLowerCase": "(example) alex",
+      "lastNameLowerCase": "doe carter",
+      "firstName": "(Example) Alex",
+      "lastName": "Doe Carter",
+      "contactName": "(example) alex doe carter",
+      "email": "alex.carter@businessmail.com",
+      "assignedTo": null,
+      "followers": [],
+      "validEmail": null,
+      "dndSettings": {
+        "Call": {
+          "status": "inactive",
+          "code": "103"
+        },
+        "Email": {
+          "status": "inactive",
+          "code": "103"
+        },
+        "SMS": {
+          "status": "inactive",
+          "code": "103"
+        }
+      },
+      "postalCode": null,
+      "businessId": "6a8189af3a8e6d570dff5055",
+      "searchAfter": [
+        1786874290776,
+        "pzTPaMBuKEjmCTTTLV5D"
+      ],
+      "timezone": null,
+      "inboundDndSettings": {},
+      "attributionSource": {},
+      "lastAttributionSource": {}
+    },
+    {
+      "id": "v3nR8NX7G3fHB8T5KHWB",
+      "phoneLabel": null,
+      "country": "US",
+      "address": null,
+      "source": null,
+      "type": "customer",
+      "locationId": "lUanVn0CtZJTlymH8ySo",
+      "website": null,
+      "dnd": true,
+      "state": null,
+      "businessName": "(Example) Goliath National Bank",
+      "customFields": [],
+      "tags": [
+        "high priority",
+        "warm lead"
+      ],
+      "dateAdded": "2026-08-16T09:58:08.222Z",
+      "additionalEmails": [],
+      "phone": "+13141236547",
+      "companyName": "(Example) Goliath National Bank",
+      "additionalPhones": [],
+      "dateUpdated": "2026-08-16T10:00:52.575Z",
+      "city": null,
+      "dateOfBirth": null,
+      "firstNameLowerCase": "(example) riley",
+      "lastNameLowerCase": "bennett",
+      "firstName": "(Example) Riley",
+      "lastName": "Bennett",
+      "contactName": "(example) riley bennett",
+      "email": "riley.bennett@corporate.net",
+      "assignedTo": null,
+      "followers": [],
+      "validEmail": null,
+      "dndSettings": {
+        "Call": {
+          "status": "inactive",
+          "code": "103"
+        },
+        "Email": {
+          "status": "inactive",
+          "code": "103"
+        },
+        "SMS": {
+          "status": "inactive",
+          "code": "103"
+        }
+      },
+      "postalCode": null,
+      "businessId": "6a8189af8a7ab5c927db805c",
+      "searchAfter": [
+        1786874288222,
+        "v3nR8NX7G3fHB8T5KHWB"
+      ],
+      "timezone": null,
+      "inboundDndSettings": {},
+      "attributionSource": {},
+      "lastAttributionSource": {}
+    }
+  ],
+  "total": 5,
+  "traceId": "af3432dd-b0af-4b30-9dc9-d36df6120c3b"
+}

@@ -1,0 +1,948 @@
+<title>The HighLevel Handshake</title>
+
+<style>
+  /* ---- tokens: complete light palette on bare :root ---------------- */
+  :root {
+    --paper:      #f5f6f7;
+    --surface:    #ffffff;
+    --surface-2:  #eceef0;
+    --ink:        #151a20;
+    --ink-soft:   #4a545f;
+    --ink-faint:  #78838f;
+    --rule:       #d5d9dd;
+    --rule-soft:  #e4e7ea;
+
+    --ours:       #2e4b7b;
+    --ours-wash:  #e8edf5;
+    --theirs:     #a05a1c;
+    --theirs-wash:#f6ecdf;
+    --deny:       #93262b;
+    --deny-wash:  #f7e8e8;
+    --good:       #2c6650;
+    --good-wash:  #e3efe9;
+
+    --font-display: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+    --measure: 70ch;
+    --gutter: clamp(1.25rem, 4vw, 3rem);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0e1216;
+      --surface:    #161c22;
+      --surface-2:  #1e262e;
+      --ink:        #e6e9ec;
+      --ink-soft:   #a8b3bd;
+      --ink-faint:  #78848f;
+      --rule:       #2b343d;
+      --rule-soft:  #222a32;
+
+      --ours:       #86a8dc;
+      --ours-wash:  #1a2433;
+      --theirs:     #dba060;
+      --theirs-wash:#2c2318;
+      --deny:       #e0777a;
+      --deny-wash:  #2e1c1e;
+      --good:       #6fbe9b;
+      --good-wash:  #14261f;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #0e1216;
+    --surface:    #161c22;
+    --surface-2:  #1e262e;
+    --ink:        #e6e9ec;
+    --ink-soft:   #a8b3bd;
+    --ink-faint:  #78848f;
+    --rule:       #2b343d;
+    --rule-soft:  #222a32;
+
+    --ours:       #86a8dc;
+    --ours-wash:  #1a2433;
+    --theirs:     #dba060;
+    --theirs-wash:#2c2318;
+    --deny:       #e0777a;
+    --deny-wash:  #2e1c1e;
+    --good:       #6fbe9b;
+    --good-wash:  #14261f;
+  }
+
+  /* ---- base -------------------------------------------------------- */
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    padding: 0 var(--gutter) 6rem;
+  }
+
+  .wrap { max-width: 1040px; margin: 0 auto; }
+
+  /* ---- masthead ---------------------------------------------------- */
+  .masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    padding: 3.5rem 0 2rem;
+    border-bottom: 2px solid var(--ink);
+  }
+  .eyebrow {
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .masthead h1 {
+    font-family: var(--font-body);
+    font-size: clamp(2.1rem, 5.5vw, 3.4rem);
+    line-height: 1.05;
+    letter-spacing: -0.025em;
+    font-weight: 700;
+    text-wrap: balance;
+    max-width: 18ch;
+  }
+  .standfirst {
+    font-size: 1.08rem;
+    color: var(--ink-soft);
+    max-width: 62ch;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.75rem;
+    font-family: var(--font-display);
+    font-size: 0.76rem;
+    color: var(--ink-faint);
+  }
+  .meta b { color: var(--ink-soft); font-weight: 500; }
+
+  /* ---- sections ---------------------------------------------------- */
+  section { padding-top: 3.25rem; }
+  section > * + * { margin-top: 1rem; }
+
+  h2 {
+    font-family: var(--font-display);
+    font-size: 0.78rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ours);
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--rule);
+    font-weight: 600;
+  }
+  h3 {
+    font-size: 1.18rem;
+    letter-spacing: -0.01em;
+    font-weight: 650;
+    text-wrap: balance;
+    margin-top: 1.75rem;
+  }
+  p { max-width: var(--measure); color: var(--ink-soft); }
+  p strong { color: var(--ink); font-weight: 620; }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    color: var(--ours);
+    background: var(--ours-wash);
+    padding: 0.08em 0.36em;
+    border-radius: 3px;
+    word-break: break-word;
+  }
+
+  /* ---- figures ----------------------------------------------------- */
+  figure {
+    margin-top: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+  .scroller { overflow-x: auto; padding-bottom: 0.25rem; }
+  figure svg {
+    display: block;
+    width: 100%;
+    min-width: 620px;
+    height: auto;
+    color: var(--ink-soft);
+  }
+  figcaption {
+    font-size: 0.88rem;
+    color: var(--ink-faint);
+    max-width: 66ch;
+    padding-left: 0.9rem;
+    border-left: 2px solid var(--rule);
+  }
+
+  /* svg primitives, themed through tokens */
+  .s-box   { fill: var(--surface); stroke: currentColor; stroke-width: 1.5; }
+  .s-ours  { fill: var(--ours-wash); stroke: var(--ours); stroke-width: 1.5; }
+  .s-them  { fill: var(--theirs-wash); stroke: var(--theirs); stroke-width: 1.5; }
+  .s-deny  { fill: var(--deny-wash); stroke: var(--deny); stroke-width: 1.5; }
+  .s-good  { fill: var(--good-wash); stroke: var(--good); stroke-width: 1.5; }
+  .s-band  { fill: none; stroke: var(--deny); stroke-width: 1.5; stroke-dasharray: 6 5; }
+  .s-line  { stroke: currentColor; stroke-width: 1.4; fill: none; }
+  .s-line-ours { stroke: var(--ours); stroke-width: 1.6; fill: none; }
+  .s-line-them { stroke: var(--theirs); stroke-width: 1.6; fill: none; }
+  .s-line-deny { stroke: var(--deny); stroke-width: 1.6; fill: none; }
+  .s-line-good { stroke: var(--good); stroke-width: 1.6; fill: none; }
+  .s-life  { stroke: currentColor; stroke-width: 1; stroke-dasharray: 3 4; opacity: 0.55; }
+  .s-t     { font-family: var(--font-body); font-size: 13px; fill: var(--ink); }
+  .s-tb    { font-family: var(--font-body); font-size: 13px; font-weight: 650; fill: var(--ink); }
+  .s-m     { font-family: var(--font-mono); font-size: 11.5px; fill: var(--ink-soft); }
+  .s-lbl   { font-family: var(--font-mono); font-size: 11px; fill: var(--ink-faint); letter-spacing: 0.04em; }
+  .s-num   { font-family: var(--font-mono); font-size: 11px; fill: var(--ink-faint); }
+  .ah-n { fill: var(--ink-soft); }
+  .ah-o { fill: var(--ours); }
+  .ah-t { fill: var(--theirs); }
+  .ah-d { fill: var(--deny); }
+  .ah-g { fill: var(--good); }
+  .s-deny-t{ fill: var(--deny); }
+  .s-good-t{ fill: var(--good); }
+  .s-them-t{ fill: var(--theirs); }
+  .s-ours-t{ fill: var(--ours); }
+
+  /* ---- tables ------------------------------------------------------ */
+  .tablewrap { overflow-x: auto; margin-top: 1.5rem; }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 0.92rem; }
+  th {
+    font-family: var(--font-display);
+    font-size: 0.68rem;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    text-align: left;
+    font-weight: 600;
+    padding: 0 0.9rem 0.55rem 0;
+    border-bottom: 1px solid var(--ink);
+  }
+  td {
+    padding: 0.7rem 0.9rem 0.7rem 0;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: top;
+    color: var(--ink-soft);
+  }
+  td:first-child { color: var(--ink); }
+  td.mono, th.mono { font-family: var(--font-mono); font-size: 0.84rem; }
+
+  /* ---- endpoint cards ---------------------------------------------- */
+  .cards { display: grid; gap: 1rem; margin-top: 1.5rem; }
+  @media (min-width: 760px) { .cards { grid-template-columns: 1fr 1fr; } }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 1.1rem 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+  .card .route {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--ink);
+    font-weight: 600;
+    word-break: break-all;
+  }
+  .verb {
+    display: inline-block;
+    font-family: var(--font-display);
+    font-size: 0.66rem;
+    letter-spacing: 0.1em;
+    padding: 0.15em 0.5em;
+    border-radius: 3px;
+    margin-right: 0.45rem;
+    background: var(--ours-wash);
+    color: var(--ours);
+    border: 1px solid var(--ours);
+  }
+  .verb.del { background: var(--deny-wash); color: var(--deny); border-color: var(--deny); }
+  .verb.pub { background: var(--theirs-wash); color: var(--theirs); border-color: var(--theirs); }
+  .verb.spa { background: var(--good-wash); color: var(--good); border-color: var(--good); }
+  .card dl { display: grid; grid-template-columns: auto 1fr; gap: 0.3rem 0.8rem; font-size: 0.86rem; }
+  .card dt {
+    font-family: var(--font-display);
+    font-size: 0.64rem;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    padding-top: 0.22em;
+  }
+  .card dd { color: var(--ink-soft); font-family: var(--font-mono); font-size: 0.8rem; }
+
+  /* ---- callouts ---------------------------------------------------- */
+  .note {
+    border-left: 3px solid var(--theirs);
+    background: var(--theirs-wash);
+    padding: 0.9rem 1.1rem;
+    border-radius: 0 4px 4px 0;
+    margin-top: 1.5rem;
+    max-width: var(--measure);
+  }
+  .note p { color: var(--ink); max-width: none; }
+  .note .eyebrow { color: var(--theirs); margin-bottom: 0.3rem; }
+  .note.reversal { border-left-color: var(--ours); background: var(--ours-wash); }
+  .note.reversal .eyebrow { color: var(--ours); }
+
+  /* ---- AC strip ---------------------------------------------------- */
+  .strip { display: grid; gap: 0.6rem; margin-top: 1.5rem; }
+  @media (min-width: 700px) { .strip { grid-template-columns: repeat(3, 1fr); } }
+  .chip {
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 0.75rem 0.9rem;
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+  .chip .n {
+    font-family: var(--font-mono);
+    font-size: 1.45rem;
+    font-weight: 600;
+    color: var(--ours);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .chip .k {
+    font-family: var(--font-display);
+    font-size: 0.64rem;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .chip .d { font-size: 0.82rem; color: var(--ink-soft); }
+
+  ul.plain { list-style: none; display: flex; flex-direction: column; gap: 0.6rem; max-width: var(--measure); }
+  ul.plain li { padding-left: 1.1rem; position: relative; color: var(--ink-soft); }
+  ul.plain li::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0.62em;
+    width: 5px; height: 5px;
+    background: var(--ours);
+    border-radius: 50%;
+  }
+
+  footer {
+    margin-top: 4.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--rule);
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    color: var(--ink-faint);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.5rem;
+  }
+
+  a { color: var(--ours); }
+  :focus-visible { outline: 2px solid var(--ours); outline-offset: 3px; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Slice 02 · Design companion to 02-prd.md</div>
+    <h1>The HighLevel Handshake</h1>
+    <p class="standfirst">
+      Four mechanisms this slice turns on, drawn rather than described: where the trust
+      boundary falls, what actually protects an unauthenticated callback, why the token
+      refresh has to be a transaction, and how five different failures all find their way
+      back to one screen the user can act on.
+    </p>
+    <div class="meta">
+      <span><b>Spec</b> F1.2 · F1.3</span>
+      <span><b>Branch</b> slice/02-highlevel-connection</span>
+      <span><b>Depends on</b> Slice 1</span>
+      <span><b>Date</b> 2026-08-16</span>
+    </div>
+  </header>
+
+  <!-- ============================================================= -->
+  <section>
+    <h2>The boundary</h2>
+    <p>
+      Every design choice in this slice falls out of one constraint: <strong>the browser
+      may never hold a HighLevel token.</strong> A token in the bundle is a token in the
+      hands of anyone who opens devtools, and it would be scoped to a whole CRM location.
+    </p>
+    <p>
+      So the tokens live in a Firestore document that has no <code>allow</code> rule of any
+      kind — denied to every client including its own owner — and the only code that reads
+      it is the Admin SDK inside a Cloud Function. The connection status the dashboard
+      renders is therefore not a Firestore read at all; it is an authenticated endpoint that
+      returns a redacted projection.
+    </p>
+
+    <figure>
+      <div class="scroller">
+        <svg viewBox="0 0 860 322" role="img" aria-label="Architecture diagram: the browser reads its own users document directly under security rules, but the hlConnections document holding OAuth tokens sits behind a deny-all rail reachable only by the api Cloud Function, which is also the only component that talks to HighLevel. The OAuth state is an encrypted token that is never stored.">
+          <defs>
+            <marker id="f1-n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-n"/></marker>
+            <marker id="f1-o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-o"/></marker>
+            <marker id="f1-t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-t"/></marker>
+          </defs>
+
+          <rect class="s-them" x="300" y="18" width="200" height="58" rx="4"/>
+          <text class="s-tb s-them-t" x="400" y="42" text-anchor="middle">HighLevel</text>
+          <text class="s-m" x="400" y="61" text-anchor="middle">marketplace · services</text>
+
+          <rect class="s-box" x="20" y="140" width="170" height="80" rx="4"/>
+          <text class="s-tb" x="105" y="172" text-anchor="middle">Browser</text>
+          <text class="s-m" x="105" y="192" text-anchor="middle">Vue SPA</text>
+
+          <rect class="s-ours" x="300" y="130" width="200" height="100" rx="4"/>
+          <text class="s-tb s-ours-t" x="400" y="158" text-anchor="middle">Cloud Function</text>
+          <text class="s-m" x="400" y="177" text-anchor="middle">api · asia-south1</text>
+          <text class="s-m" x="400" y="199" text-anchor="middle">verifies ID token</text>
+          <text class="s-m" x="400" y="215" text-anchor="middle">+ email_verified</text>
+
+          <text class="s-lbl" x="740" y="16" text-anchor="middle">FIRESTORE · hl-genesis</text>
+          <rect class="s-box" x="640" y="77" width="200" height="54" rx="4"/>
+          <text class="s-m" x="740" y="99" text-anchor="middle">users/{uid}</text>
+          <text class="s-lbl" x="740" y="117" text-anchor="middle">owner-readable</text>
+
+          <rect class="s-band" x="626" y="158" width="228" height="118" rx="5"/>
+          <text class="s-lbl s-deny-t" x="740" y="178" text-anchor="middle">ADMIN SDK ONLY</text>
+          <text class="s-lbl s-deny-t" x="740" y="193" text-anchor="middle">allow read, write: if false</text>
+
+          <rect class="s-deny" x="648" y="206" width="184" height="54" rx="4"/>
+          <text class="s-m" x="740" y="228" text-anchor="middle">hlConnections/{uid}</text>
+          <text class="s-lbl" x="740" y="246" text-anchor="middle">access + refresh token</text>
+
+          <polyline class="s-line" points="105,140 105,104 640,104" marker-end="url(#f1-n)"/>
+          <text class="s-lbl" x="360" y="97" text-anchor="middle">read/write · checked by rules</text>
+
+          <line class="s-line-ours" x1="190" y1="180" x2="298" y2="180" marker-end="url(#f1-o)"/>
+          <text class="s-lbl" x="244" y="171" text-anchor="middle">ID token</text>
+          <text class="s-lbl" x="244" y="199" text-anchor="middle">+ App Check</text>
+
+          <line class="s-line-them" x1="400" y1="130" x2="400" y2="78" marker-end="url(#f1-t)"/>
+          <text class="s-lbl s-them-t" x="412" y="108" text-anchor="start">authorize · token · locations</text>
+
+          <polyline class="s-line" points="500,190 570,190 570,233 646,233" marker-end="url(#f1-n)"/>
+          <text class="s-lbl" x="534" y="182" text-anchor="middle">Admin SDK</text>
+
+          <text class="s-lbl s-ours-t" x="400" y="252" text-anchor="middle">OAuth state: encrypted, never stored</text>
+          <text class="s-lbl" x="20" y="304">The browser never appears on the right of the dashed rail.</text>
+        </svg>
+      </div>
+      <figcaption>
+        The client reaches its own profile document directly, under rules. It has no path at
+        all to the document inside the rail — which is why connection status is served by an
+        endpoint rather than read from Firestore. Note there is only one collection here: the
+        OAuth state is not stored at all.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- ============================================================= -->
+  <section>
+    <h2>The sequence</h2>
+    <p>
+      The callback is a <strong>public, unauthenticated endpoint</strong> — HighLevel
+      redirects a browser to it and there is no session to read. So the question the whole
+      flow has to answer is: <em>whose</em> connection is this? The <code>state</code>
+      parameter is the only carrier, which makes it the one link back to a Firebase uid.
+    </p>
+    <p>
+      It is an <strong>encrypted</strong> token, not a stored one: <code>{ uid, exp }</code>
+      sealed with AES-256-GCM under a key derived from <code>OAUTH_STATE_SECRET</code>, valid
+      for five minutes. Encrypted rather than merely signed because a signed payload is
+      readable by whoever holds it — and this one travels in a URL to a third party, so the
+      Firebase uid would otherwise sit in plain base64 in the user's history, in HighLevel's
+      request logs, and in any <code>Referer</code> downstream. Decryption authenticates as
+      well, so the GCM tag replaces a separate HMAC and tampering is caught before the
+      plaintext is trusted.
+    </p>
+
+    <div class="note reversal">
+      <div class="eyebrow">This reverses an earlier decision — here's why</div>
+      <p>
+        The state was going to be a single-use Firestore document, justified as replay
+        protection. It doesn't buy that. A replayed callback carries an authorization code
+        HighLevel has <em>already consumed</em>, so the exchange fails on its own. And the
+        CSRF attack this parameter exists to stop — feeding a victim the attacker's code —
+        is defeated by binding the uid <em>into</em> the state, not by consuming it: the
+        connection simply lands on whichever uid the state names, which is the attacker's.
+        So the collection cost a write on the hot path, a rules block, an L3 test and
+        stale-document housekeeping, to provide protection two other mechanisms already gave.
+        The reversal's price is one new secret, <code>OAUTH_STATE_SECRET</code>, which the state is sealed under.
+      </p>
+    </div>
+
+    <figure>
+      <div class="scroller">
+        <svg viewBox="0 0 880 620" role="img" aria-label="Sequence diagram of the eleven-step OAuth flow between the browser, the api function, Firestore and HighLevel. The state is encrypted at step 2 and decrypted at step 6 without any storage; Firestore is touched only once, at step 9.">
+          <defs>
+            <marker id="f2-n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-n"/></marker>
+            <marker id="f2-o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-o"/></marker>
+            <marker id="f2-t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-t"/></marker>
+            <marker id="f2-d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-d"/></marker>
+            <marker id="f2-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-g"/></marker>
+          </defs>
+
+          <rect class="s-box" x="20" y="16" width="150" height="42" rx="4"/>
+          <text class="s-tb" x="95" y="42" text-anchor="middle">Browser</text>
+          <rect class="s-ours" x="238" y="16" width="150" height="42" rx="4"/>
+          <text class="s-tb s-ours-t" x="313" y="42" text-anchor="middle">api</text>
+          <rect class="s-box" x="456" y="16" width="150" height="42" rx="4"/>
+          <text class="s-tb" x="531" y="42" text-anchor="middle">Firestore</text>
+          <rect class="s-them" x="690" y="16" width="160" height="42" rx="4"/>
+          <text class="s-tb s-them-t" x="770" y="42" text-anchor="middle">HighLevel</text>
+
+          <line class="s-life" x1="95"  y1="58" x2="95"  y2="586"/>
+          <line class="s-life" x1="313" y1="58" x2="313" y2="586"/>
+          <line class="s-life" x1="531" y1="58" x2="531" y2="586"/>
+          <line class="s-life" x1="770" y1="58" x2="770" y2="586"/>
+
+          <text class="s-num" x="20" y="96">01</text>
+          <line class="s-line-ours" x1="95" y1="100" x2="311" y2="100" marker-end="url(#f2-o)"/>
+          <text class="s-m" x="203" y="92" text-anchor="middle">POST /api/hl/connect</text>
+
+          <text class="s-num" x="20" y="140">02</text>
+          <polyline class="s-line-ours" points="313,136 361,136 361,158 315,158" marker-end="url(#f2-o)"/>
+          <text class="s-m s-ours-t" x="373" y="142" text-anchor="start">seal state</text>
+          <text class="s-lbl" x="373" y="160" text-anchor="start">AES-256-GCM { uid, exp +5 min }</text>
+
+          <text class="s-num" x="20" y="196">03</text>
+          <line class="s-line-ours" x1="311" y1="200" x2="97" y2="200" marker-end="url(#f2-o)"/>
+          <text class="s-m" x="203" y="192" text-anchor="middle">{ authorizeUrl }</text>
+
+          <text class="s-num" x="20" y="240">04</text>
+          <line class="s-line-them" x1="95" y1="244" x2="768" y2="244" marker-end="url(#f2-t)"/>
+          <text class="s-m" x="430" y="236" text-anchor="middle">navigate → /oauth/chooselocation?state=…</text>
+
+          <text class="s-num" x="20" y="284">05</text>
+          <line class="s-line-them" x1="768" y1="288" x2="315" y2="288" marker-end="url(#f2-t)"/>
+          <text class="s-m" x="545" y="280" text-anchor="middle">302 → /api/oauth/callback?code&amp;state</text>
+
+          <text class="s-num" x="20" y="328">06</text>
+          <polyline class="s-line-deny" points="313,324 361,324 361,346 315,346" marker-end="url(#f2-d)"/>
+          <text class="s-m s-deny-t" x="373" y="330" text-anchor="start">decrypt, then check expiry</text>
+          <text class="s-lbl s-deny-t" x="373" y="348" text-anchor="start">GCM tag authenticates · no lookup</text>
+
+          <text class="s-num" x="20" y="384">07</text>
+          <line class="s-line-them" x1="313" y1="388" x2="768" y2="388" marker-end="url(#f2-t)"/>
+          <text class="s-m" x="540" y="380" text-anchor="middle">POST /oauth/token · form-urlencoded · no Version</text>
+
+          <text class="s-num" x="20" y="428">08</text>
+          <line class="s-line-them" x1="768" y1="432" x2="315" y2="432" marker-end="url(#f2-t)"/>
+          <text class="s-m" x="540" y="424" text-anchor="middle">access · refresh · locationId · userType</text>
+
+          <text class="s-num" x="20" y="472">09</text>
+          <line class="s-line" x1="313" y1="476" x2="529" y2="476" marker-end="url(#f2-n)"/>
+          <text class="s-m" x="421" y="468" text-anchor="middle">write hlConnections/{uid}</text>
+          <text class="s-lbl" x="421" y="491" text-anchor="middle">the only Firestore hop</text>
+
+          <text class="s-num" x="20" y="524">10</text>
+          <line class="s-line-good" x1="311" y1="528" x2="97" y2="528" marker-end="url(#f2-g)"/>
+          <text class="s-m s-good-t" x="203" y="520" text-anchor="middle">302 → /hl/callback?status=connected</text>
+
+          <text class="s-num" x="20" y="568">11</text>
+          <polyline class="s-line-good" points="95,564 143,564 143,586 97,586" marker-end="url(#f2-g)"/>
+          <text class="s-m s-good-t" x="155" y="570" text-anchor="start">refresh status, then replace → /dashboard</text>
+          <text class="s-lbl" x="155" y="588" text-anchor="start">history replaced, so Back cannot revisit the callback</text>
+        </svg>
+      </div>
+      <figcaption>
+        Eleven steps, and Firestore is touched exactly once. Steps 02 and 06 are the state's
+        entire life — sealed on the way out, opened on the way back, never persisted in
+        between and never readable by anyone who intercepts it.
+      </figcaption>
+    </figure>
+
+    <div class="note">
+      <div class="eyebrow">The exact-match trap</div>
+      <p>
+        <code>redirect_uri</code> must be one identical string in four places: the marketplace
+        app's Redirect URL field, <code>HL_REDIRECT_URI</code>, the authorize URL at step 04,
+        and the token exchange at step 07. A trailing slash in any one of them fails the
+        exchange with an unhelpful error. It is read from a single env var everywhere, and
+        AC-2 asserts it.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================= -->
+  <section>
+    <h2>The rotation race</h2>
+    <p>
+      HighLevel's refresh tokens rotate on use: <strong>every refresh issues a new refresh
+      token and invalidates the old one.</strong> Access tokens last about 24 hours, so this
+      looks harmless right up until two requests find an expired token at the same moment —
+      which is precisely what Slice 10's preview does when it fires several proxy calls on
+      first render.
+    </p>
+    <p>
+      Both callers present the same refresh token. One wins. The other presents a token that
+      has already been consumed and gets <code>invalid_grant</code> — and if that failure is
+      persisted, the connection is dead until the user reinstalls the app. The fix is not a
+      retry; it is making sure only one caller ever rotates.
+    </p>
+
+    <figure>
+      <div class="scroller">
+        <svg viewBox="0 0 880 400" role="img" aria-label="Comparison diagram. On the left, two concurrent callers each refresh with the same refresh token and the second receives invalid_grant, bricking the connection. On the right, the refresh happens inside a Firestore transaction so only one caller rotates and the second reads the winner's token.">
+          <defs>
+            <marker id="f3-n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-n"/></marker>
+            <marker id="f3-d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-d"/></marker>
+            <marker id="f3-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-g"/></marker>
+          </defs>
+
+          <line class="s-life" x1="440" y1="10" x2="440" y2="390"/>
+
+          <text class="s-lbl s-deny-t" x="20" y="26">WITHOUT THE TRANSACTION</text>
+
+          <rect class="s-box" x="20" y="48" width="120" height="44" rx="4"/>
+          <text class="s-t" x="80" y="76" text-anchor="middle">caller A</text>
+          <rect class="s-box" x="20" y="150" width="120" height="44" rx="4"/>
+          <text class="s-t" x="80" y="178" text-anchor="middle">caller B</text>
+
+          <rect class="s-them" x="250" y="92" width="150" height="58" rx="4"/>
+          <text class="s-t s-them-t" x="325" y="116" text-anchor="middle">HighLevel</text>
+          <text class="s-m" x="325" y="136" text-anchor="middle">/oauth/token</text>
+
+          <polyline class="s-line" points="140,70 195,70 195,108 248,108" marker-end="url(#f3-n)"/>
+          <text class="s-lbl" x="150" y="62">refresh(RT1)</text>
+
+          <polyline class="s-line-deny" points="140,172 195,172 195,134 248,134" marker-end="url(#f3-d)"/>
+          <text class="s-lbl s-deny-t" x="150" y="192">refresh(RT1) — already spent</text>
+
+          <line class="s-line" x1="325" y1="150" x2="325" y2="196" marker-end="url(#f3-n)"/>
+          <text class="s-lbl s-good-t" x="336" y="176" text-anchor="start">A → RT2 ✓</text>
+
+          <rect class="s-deny" x="230" y="200" width="190" height="76" rx="4"/>
+          <text class="s-tb s-deny-t" x="325" y="226" text-anchor="middle">invalid_grant</text>
+          <text class="s-m" x="325" y="246" text-anchor="middle">B holds a dead token</text>
+          <text class="s-lbl s-deny-t" x="325" y="264" text-anchor="middle">connection bricked</text>
+
+          <text class="s-lbl" x="20" y="316">Recovery requires the user to</text>
+          <text class="s-lbl" x="20" y="332">reinstall the app. There is no</text>
+          <text class="s-lbl" x="20" y="348">retry that fixes it.</text>
+
+          <text class="s-lbl s-good-t" x="470" y="26">WITH THE FIRESTORE TRANSACTION</text>
+
+          <rect class="s-box" x="470" y="48" width="120" height="44" rx="4"/>
+          <text class="s-t" x="530" y="76" text-anchor="middle">caller A</text>
+          <rect class="s-box" x="470" y="150" width="120" height="44" rx="4"/>
+          <text class="s-t" x="530" y="178" text-anchor="middle">caller B</text>
+
+          <rect class="s-good" x="640" y="42" width="210" height="150" rx="4"/>
+          <text class="s-lbl s-good-t" x="745" y="64" text-anchor="middle">runTransaction</text>
+          <text class="s-m" x="745" y="88" text-anchor="middle">re-read expiresAt</text>
+          <text class="s-m" x="745" y="110" text-anchor="middle">still expired? refresh</text>
+          <text class="s-m" x="745" y="132" text-anchor="middle">persist RT2 + expiresAt</text>
+          <text class="s-lbl" x="745" y="158" text-anchor="middle">fresh already? use theirs</text>
+          <text class="s-lbl s-good-t" x="745" y="180" text-anchor="middle">serialised — one rotation</text>
+
+          <line class="s-line-good" x1="590" y1="70" x2="638" y2="70" marker-end="url(#f3-g)"/>
+          <text class="s-lbl" x="596" y="62">enters</text>
+
+          <polyline class="s-line" points="590,172 614,172 614,120 638,120" marker-end="url(#f3-n)"/>
+          <text class="s-lbl" x="560" y="196">waits</text>
+
+          <rect class="s-good" x="640" y="212" width="210" height="64" rx="4"/>
+          <text class="s-tb s-good-t" x="745" y="238" text-anchor="middle">both served</text>
+          <text class="s-m" x="745" y="258" text-anchor="middle">same access token</text>
+
+          <line class="s-line-good" x1="745" y1="192" x2="745" y2="208" marker-end="url(#f3-g)"/>
+
+          <text class="s-lbl" x="470" y="316">A five-minute skew refreshes</text>
+          <text class="s-lbl" x="470" y="332">early, so the window where</text>
+          <text class="s-lbl" x="470" y="348">callers collide is narrow to</text>
+          <text class="s-lbl" x="470" y="364">begin with.</text>
+        </svg>
+      </div>
+      <figcaption>
+        The difference is one edge: on the right, caller B never reaches HighLevel. It blocks
+        on the transaction, re-reads, and finds the token A just wrote. AC-29 asserts exactly
+        one refresh request leaves the process.
+      </figcaption>
+    </figure>
+
+    <div class="note">
+      <div class="eyebrow">The rule that follows from it</div>
+      <p>
+        A failed refresh must never clear the stored refresh token. A network blip and a
+        genuinely revoked grant look similar at the call site and are not remotely the same
+        thing — so <code>needsReconnect</code> is set only on a definitive
+        <code>invalid_grant</code>, and everything else leaves the record untouched.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================= -->
+  <section>
+    <h2>Where failures land</h2>
+    <p>
+      The callback can end five ways and it renders none of them. It always answers with a
+      302 into the SPA, carrying an outcome — and every outcome converges on the same route,
+      which refreshes connection state and hands off to a clean dashboard URL. Error copy
+      then lives in exactly one place: the panel beside the button that retries it.
+    </p>
+
+    <figure>
+      <div class="scroller">
+        <svg viewBox="0 0 900 340" role="img" aria-label="Fan diagram: the callback endpoint has one success outcome and four failure outcomes, all of which redirect into the same /hl/callback route, which refreshes status, records any error, and replaces history with the dashboard.">
+          <defs>
+            <marker id="f4-n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-n"/></marker>
+            <marker id="f4-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-g"/></marker>
+            <marker id="f4-o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-o"/></marker>
+          </defs>
+
+          <rect class="s-ours" x="8" y="128" width="176" height="76" rx="4"/>
+          <text class="s-tb s-ours-t" x="96" y="154" text-anchor="middle">/api/oauth/callback</text>
+          <text class="s-lbl" x="96" y="173" text-anchor="middle">unauthenticated</text>
+          <text class="s-lbl" x="96" y="189" text-anchor="middle">always 302, never a body</text>
+
+          <polyline class="s-line-good" points="184,166 214,166 214,40 246,40" marker-end="url(#f4-g)"/>
+          <rect class="s-good" x="248" y="18" width="372" height="44" rx="4"/>
+          <text class="s-t" x="262" y="45" text-anchor="start">Location token stored</text>
+          <text class="s-m s-good-t" x="606" y="45" text-anchor="end">status=connected</text>
+
+          <polyline class="s-line" points="214,166 214,98 246,98" marker-end="url(#f4-n)"/>
+          <rect class="s-box" x="248" y="76" width="372" height="44" rx="4"/>
+          <text class="s-t" x="262" y="103" text-anchor="start">user pressed Deny</text>
+          <text class="s-m s-deny-t" x="606" y="103" text-anchor="end">code=denied</text>
+
+          <polyline class="s-line" points="214,166 246,166" marker-end="url(#f4-n)"/>
+          <rect class="s-box" x="248" y="144" width="372" height="44" rx="4"/>
+          <text class="s-t" x="262" y="171" text-anchor="start">state absent, tampered, or expired</text>
+          <text class="s-m s-deny-t" x="606" y="171" text-anchor="end">code=invalid_state</text>
+
+          <polyline class="s-line" points="214,166 214,234 246,234" marker-end="url(#f4-n)"/>
+          <rect class="s-box" x="248" y="212" width="372" height="44" rx="4"/>
+          <text class="s-t" x="262" y="239" text-anchor="start">exchange rejected, or code already spent</text>
+          <text class="s-m s-deny-t" x="606" y="239" text-anchor="end">code=exchange_failed</text>
+
+          <polyline class="s-line" points="214,166 214,302 246,302" marker-end="url(#f4-n)"/>
+          <rect class="s-box" x="248" y="280" width="372" height="44" rx="4"/>
+          <text class="s-t" x="262" y="307" text-anchor="start">agency token, or no locationId</text>
+          <text class="s-m s-deny-t" x="606" y="307" text-anchor="end">code=wrong_account_type</text>
+
+          <polyline class="s-line-ours" points="620,40 650,40 650,150 676,150" marker-end="url(#f4-o)"/>
+          <polyline class="s-line-ours" points="620,98 650,98" />
+          <polyline class="s-line-ours" points="620,166 650,166" />
+          <polyline class="s-line-ours" points="620,234 650,234" />
+          <polyline class="s-line-ours" points="620,302 650,302 650,182 676,182" marker-end="url(#f4-o)"/>
+          <line class="s-line-ours" x1="650" y1="40" x2="650" y2="302"/>
+
+          <rect class="s-ours" x="678" y="112" width="214" height="108" rx="4"/>
+          <text class="s-tb s-ours-t" x="785" y="136" text-anchor="middle">/hl/callback</text>
+          <text class="s-m" x="785" y="157" text-anchor="middle">“Finishing connection…”</text>
+          <text class="s-m" x="785" y="176" text-anchor="middle">refresh status</text>
+          <text class="s-m" x="785" y="195" text-anchor="middle">lastError ← code</text>
+          <text class="s-lbl s-ours-t" x="785" y="213" text-anchor="middle">replace → /dashboard</text>
+
+          <text class="s-lbl" x="785" y="248" text-anchor="middle">one landing place for all five</text>
+        </svg>
+      </div>
+      <figcaption>
+        Five outcomes fan out of the function and fan straight back into one SPA route. The
+        dashboard URL stays clean because the error travels in the store, not the query
+        string — so nothing about OAuth is left behind on a screen that has nothing to do
+        with it.
+      </figcaption>
+    </figure>
+
+    <h3>What the connection panel shows</h3>
+    <p>
+      Five states on the panel, plus the transient one on the callback route. The slice ships
+      all of them — the definition of done requires loading, empty and error states for every
+      new screen, and this slice adds two screens' worth.
+    </p>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>State</th><th>Trigger</th><th>What the user sees</th><th>AC</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Loading</td><td class="mono">status request in flight</td><td>Skeleton in the panel; no controls</td><td class="mono">34</td></tr>
+          <tr><td>Not connected</td><td class="mono">{ connected: false }</td><td>“Not connected” + Connect button</td><td class="mono">35</td></tr>
+          <tr><td>Connected</td><td class="mono">{ connected: true }</td><td>Location name, or the id if the name lookup failed, + Disconnect</td><td class="mono">36, 37</td></tr>
+          <tr><td>Reconnect required</td><td class="mono">needsReconnect: true</td><td>Prompt + Connect button</td><td class="mono">38</td></tr>
+          <tr><td>Error</td><td class="mono">status request failed</td><td>Message + Retry, which re-issues</td><td class="mono">39</td></tr>
+          <tr><td>Finishing</td><td class="mono">/hl/callback mounting</td><td>“Finishing connection…”, then it navigates itself</td><td class="mono">40, 41</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================= -->
+  <section>
+    <h2>The surface</h2>
+    <p>
+      Four endpoints and one new route. Three endpoints are authenticated and check
+      <strong>both</strong> that an ID token is present and that <code>email_verified</code>
+      is true — Slice 1's D26, which exists because a router guard stops a browser and stops
+      nobody calling the API directly. The callback is the exception: it cannot be
+      authenticated, and its protection is the encrypted state instead.
+    </p>
+
+    <div class="cards">
+      <div class="card">
+        <div class="route"><span class="verb">POST</span>/api/hl/connect</div>
+        <dl>
+          <dt>Auth</dt><dd>ID token · email_verified · App Check</dd>
+          <dt>200</dt><dd>{ authorizeUrl }</dd>
+          <dt>Errors</dt><dd>401 unauthenticated · 401 app_check_failed · 403 email_unverified</dd>
+        </dl>
+      </div>
+
+      <div class="card">
+        <div class="route"><span class="verb pub">GET</span>/api/oauth/callback</div>
+        <dl>
+          <dt>Auth</dt><dd>none — the encrypted state is the authorisation</dd>
+          <dt>Always</dt><dd>302 to /hl/callback, never a body</dd>
+          <dt>Codes</dt><dd>connected · denied · invalid_state · exchange_failed · wrong_account_type</dd>
+        </dl>
+      </div>
+
+      <div class="card">
+        <div class="route"><span class="verb">GET</span>/api/hl/connection</div>
+        <dl>
+          <dt>Auth</dt><dd>ID token · email_verified</dd>
+          <dt>200</dt><dd>{ connected, locationId?, locationName?, connectedAt?, needsReconnect? }</dd>
+          <dt>Never</dt><dd>accessToken · refreshToken · expiresAt</dd>
+        </dl>
+      </div>
+
+      <div class="card">
+        <div class="route"><span class="verb del">DELETE</span>/api/hl/connection</div>
+        <dl>
+          <dt>Auth</dt><dd>ID token · email_verified · App Check</dd>
+          <dt>200</dt><dd>{ ok: true } — idempotent</dd>
+          <dt>Effect</dt><dd>deletes our record; the HighLevel install stays</dd>
+        </dl>
+      </div>
+
+      <div class="card">
+        <div class="route"><span class="verb spa">ROUTE</span>/hl/callback</div>
+        <dl>
+          <dt>Access</dt><dd>protected — signed in and verified</dd>
+          <dt>Does</dt><dd>refresh status · record lastError · replace → /dashboard</dd>
+          <dt>Lapsed</dt><dd>guard round-trips through /signin and returns here</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="note">
+      <div class="eyebrow">Reserved for Slice 8</div>
+      <p>
+        The proxy will forward arbitrary HighLevel paths under <code>/api/hl/*</code>, which
+        would eventually collide with these management routes. <code>/api/hl/proxy/**</code>
+        is reserved for it now — free to decide today, expensive once generated code depends
+        on the shape.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================= -->
+  <section>
+    <h2>What gets tested</h2>
+    <p>
+      Forty-three acceptance criteria, every one of them observable. The distribution is
+      worth reading as a design statement: the bulk sits at L4 because this slice is mostly
+      Cloud Function behaviour against a stubbed HighLevel, and there is exactly one L5,
+      covering the demo line. Dropping the state collection moved several assertions from L4
+      down to L1, where a decrypt-and-reject check belongs.
+    </p>
+
+    <div class="strip">
+      <div class="chip"><span class="n">15</span><span class="k">L1 unit</span><span class="d">URL composition, state seal/open, exchange shape, skew arithmetic, log redaction</span></div>
+      <div class="chip"><span class="n">9</span><span class="k">L2 component</span><span class="d">Every panel state, the callback route, per-code copy, double-click guard</span></div>
+      <div class="chip"><span class="n">1</span><span class="k">L3 rules</span><span class="d">hlConnections denied to owner and stranger alike</span></div>
+      <div class="chip"><span class="n">21</span><span class="k">L4 integration</span><span class="d">Connect, callback, status, disconnect, refresh — against a fake HighLevel</span></div>
+      <div class="chip"><span class="n">1</span><span class="k">L5 end to end</span><span class="d">Connect → authorize → callback → name on screen → disconnect</span></div>
+      <div class="chip"><span class="n">0</span><span class="k">live HL calls</span><span class="d">Fixtures are recorded once, then replayed; the sandbox is for manual checks</span></div>
+    </div>
+
+    <p>
+      A few criteria are asserted twice on purpose — state rejection is unit-tested on the
+      opener and integration-tested on the redirect it produces, because a correct opener
+      wired to the wrong error code still ships a broken screen.
+    </p>
+
+    <h3>Before any code is written</h3>
+    <p>
+      The build's first task is walking the day-0 checklist against the sandbox and saving
+      every response body into <code>tests/fixtures/highlevel/</code>. Hand-written fixtures
+      encode our assumption about a response shape, so tests built on them pass while the
+      real integration fails — and the checklist is also what proves the redirect URI matches
+      and that the refresh token really does rotate.
+    </p>
+    <ul class="plain">
+      <li>Install into the sandbox location and confirm <code>userType: "Location"</code> with a <code>locationId</code> present.</li>
+      <li>Exchange a code — form-urlencoded, no <code>Version</code> header — and save the body.</li>
+      <li>Refresh once, confirm the new refresh token differs, then re-send the old one and confirm it now fails.</li>
+      <li>Read <code>GET /locations/{id}</code> for the name the connected state renders.</li>
+    </ul>
+  </section>
+
+  <!-- ============================================================= -->
+  <section>
+    <h2>What could go wrong</h2>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Risk</th><th>Why it bites</th><th>What we do about it</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Redirect URI mismatch</td>
+            <td>Four places must agree byte for byte; a trailing slash fails the exchange with an unhelpful error</td>
+            <td>One env var read everywhere, asserted by AC-2</td>
+          </tr>
+          <tr>
+            <td>Scope changes force re-auth</td>
+            <td>Adding a scope later makes every existing install reconnect</td>
+            <td>Full list taken up front, as a code constant beside the marketplace app’s</td>
+          </tr>
+          <tr>
+            <td>Rotation race</td>
+            <td>Two parallel refreshes brick the connection permanently</td>
+            <td>Transactional refresh with a five-minute skew; AC-29 is the test that matters</td>
+          </tr>
+          <tr>
+            <td>Rotating the state secret</td>
+            <td>Changes the HKDF output entirely, so every state minted in the previous five minutes fails to decrypt</td>
+            <td>Accepted — a five-minute blast radius. Worth knowing before someone rotates a secret on demo day</td>
+          </tr>
+          <tr>
+            <td>The fake HighLevel server</td>
+            <td>Largest piece of new scaffolding in the slice</td>
+            <td>If it outgrows its value, e2e falls back to hitting the callback directly and Connect is covered at L2</td>
+          </tr>
+          <tr>
+            <td>Slice size</td>
+            <td>Four endpoints, two modules, two front-end surfaces and a fake server</td>
+            <td>Stays one PR as a coherent vertical; the named cut line is the refresh machinery moving to Slice 8</td>
+          </tr>
+          <tr>
+            <td>Sandbox has no data</td>
+            <td>Not blocking here — the location name needs no contacts — but Slice 8 onward is unusable without it</td>
+            <td>Seed script is Slice 13; seed by hand before then</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <span>Genesis · Slice 02</span>
+    <span>Companion to docs/slices/02-highlevel-connection/02-prd.md</span>
+    <span>Acceptance criteria and the full test matrix live in the PRD</span>
+  </footer>
+
+</div>

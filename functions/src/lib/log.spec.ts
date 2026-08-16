@@ -64,6 +64,62 @@ describe('redact', () => {
   })
 })
 
+/*
+ * OAuth adds two bearer credentials that the original patterns do not catch:
+ * the authorization `code` and the `state` token. Both arrive on the callback
+ * URL, and a URL is exactly the sort of thing that gets logged whole when
+ * something goes wrong.
+ *
+ * They are matched in *query-string position only*, and that restraint is the
+ * point. `code` is also the name of the field every Firebase error carries its
+ * error code in — `auth/email-already-exists` — so a blanket rule would redact
+ * the single most useful token in every error line we emit.
+ */
+describe('redact — OAuth callback credentials', () => {
+  it('scrubs the authorization code and the state from a URL', () => {
+    const url = 'https://app.test/api/oauth/callback?code=SUPERSECRETCODE&state=SEALEDSTATE'
+    const scrubbed = String(redact(url))
+
+    expect(scrubbed).not.toContain('SUPERSECRETCODE')
+    expect(scrubbed).not.toContain('SEALEDSTATE')
+    // Still recognisable as the callback, which is what makes the line useful.
+    expect(scrubbed).toContain('/api/oauth/callback')
+  })
+
+  it('scrubs them whichever order they appear in', () => {
+    const scrubbed = String(redact('/cb?state=AAA&code=BBB&other=keepme'))
+
+    expect(scrubbed).not.toContain('AAA')
+    expect(scrubbed).not.toContain('BBB')
+    expect(scrubbed).toContain('keepme')
+  })
+
+  it('leaves a Firebase error code intact — the reason this is position-scoped', () => {
+    expect(String(redact("code: 'auth/email-already-exists'"))).toContain(
+      'auth/email-already-exists',
+    )
+  })
+
+  it('scrubs a value under a `state` key', () => {
+    expect(JSON.stringify(redact({ state: 'SEALEDSTATE' }))).not.toContain('SEALEDSTATE')
+  })
+
+  /*
+   * `code` is deliberately NOT a redacted key name, and the asymmetry with
+   * `state` above is the decision worth recording.
+   *
+   * Every Firebase error carries its error code on a `code` property, and this
+   * slice's own callback logs which outcome it redirected with — `denied`,
+   * `invalid_state`, `exchange_failed`. Redacting the key would blind exactly
+   * the lines written to diagnose a failing OAuth flow, in exchange for
+   * covering a case we never produce: the authorization code is only ever a URL
+   * parameter, which the position-scoped rule already handles.
+   */
+  it('keeps a `code` field, because ours name outcomes rather than credentials', () => {
+    expect(JSON.stringify(redact({ code: 'invalid_state' }))).toContain('invalid_state')
+  })
+})
+
 describe('describeError', () => {
   it('reports a Firebase error code without its payload', () => {
     const err = Object.assign(new Error('Request failed'), {

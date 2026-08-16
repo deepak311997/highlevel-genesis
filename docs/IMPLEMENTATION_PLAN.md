@@ -46,7 +46,7 @@ Every slice runs the same five stages. Each stage is a skill you invoke; each en
 
 | # | Stage | Skill | Produces | Who acts next |
 |---|---|---|---|---|
-| 1 | Discovery + PRD | `/feature-prd <id>` | `docs/slices/<id>/02-prd.md` — decisions, acceptance criteria, test matrix | You answer questions, then approve scope |
+| 1 | Discovery + PRD | `/feature-prd <id>` | `02-prd.md` — decisions, acceptance criteria, test matrix · `02-prd.html` — published design companion | You answer questions, then approve scope |
 | 2 | Tech plan | `/feature-plan <id>` | `03-plan.md` — file map, ordered TDD tasks | You approve approach |
 | 3 | Build | `/feature-build <id>` | Code on `slice/<id>-<slug>`, `04-build-log.md` | — |
 | 4 | Review | `/feature-review <id>` | `05-review.md`, fixes applied | — |
@@ -55,6 +55,13 @@ Every slice runs the same five stages. Each stage is a skill you invoke; each en
 Stage 1 interviews you first and writes the PRD from your answers — the decisions table in
 `02-prd.md` is the record that `01-discovery.md` used to be. Doc filenames keep their
 original prefixes so slices 0–1 stay readable.
+
+Stage 1 also produces `02-prd.html`, a published design companion that **draws** what the
+PRD can only describe: the trust boundary, the flow with its steps numbered, the one
+concurrency or ordering hazard the slice exists to get right, and where every failure path
+lands. It is not a restyled PRD — the acceptance criteria and the test matrix stay in the
+markdown, which remains the contract the build is graded against. Slices 0 and 1 predate it
+and do not have one.
 
 After you merge, we start the next slice from `main`. Nothing in stage 3 begins before
 stages 1–2 are approved, and nothing merges without you.
@@ -497,15 +504,21 @@ Slice 13's cleanup.
 
 ```bash
 npm run install:all      # root + frontend + functions
-npm run dev              # SPA against REAL Firebase — the production path
-npm run emulators        # auth + firestore + functions, project id demo-genesis
-npm run dev:emulator     # SPA wired to the emulators (vite --mode emulator)
+npm run dev              # emulators + SPA against them, in ONE command — the local path
+npm run dev:cloud        # SPA against REAL Firebase, for checking a deploy
+npm run emulators        # the emulators alone, without a SPA
 npm test                 # typecheck + lint + unit + rules + integration
 ```
 
-The emulator/real split is deliberate and is explained in `PRODUCT_SPEC.md` §5. Slice 13
-owes the README a walked-through emulator path, because the brief names
-`firebase emulators:start` explicitly.
+`npm run dev` is emulator-backed **as of Slice 2**, reversing the Slice 0–1 arrangement where
+it pointed at real Firebase. The reason is in `PRODUCT_SPEC.md` §5: with the old default, an
+endpoint that existed only on a branch answered 404 on the developer's own machine, because
+the SPA proxied `/api` to the deployed functions. Nothing could be tried before it shipped.
+
+It starts auth, firestore and functions, imports and re-exports `.emulator-data` so a local
+account survives a restart, and wires a stubbed HighLevel so the whole OAuth loop runs
+offline. Slice 13 still owes the README a walked-through version of this, because the brief
+names `firebase emulators:start` explicitly.
 
 ---
 

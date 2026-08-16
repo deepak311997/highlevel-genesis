@@ -120,13 +120,33 @@ Constraints:
 The install URL — this is the "authorize URL" your **Connect HighLevel** button points at:
 
 ```
-https://marketplace.gohighlevel.com/oauth/chooselocation
+https://marketplace.gohighlevel.com/v2/oauth/chooselocation
   ?response_type=code
   &redirect_uri=https://<your-project>.web.app/api/oauth/callback
   &client_id=<CLIENT_ID>
+  &version_id=<APP_ID>
   &scope=<space-separated scopes, URL-encoded>
 ```
-✅ Verified format.
+✅ **Corrected 2026-08-16, measured against a live app.** This section previously
+documented `/oauth/chooselocation` with no `version_id`. That form is v1, and against a
+current app it fails with:
+
+```
+HttpException: No integration found with the id: <app id>
+```
+
+**That message is misleading and cost an hour.** It names the *app id*, so it reads as a bad
+or stale `client_id` — the natural response is to regenerate the client keys, which changes
+nothing, because the client id was never the problem. The app is real; the v1 path simply
+cannot resolve it.
+
+`version_id` is the app **version** id. Today it equals the segment of `client_id` before
+the hyphen, but treat that as a coincidence rather than a contract and configure it
+separately (`HL_VERSION_ID`).
+
+**The authoritative source is the developer portal's own generated install link** — My Apps
+→ your app → the share/install URL. When the portal and this document disagree, the portal
+is right and this document is stale. Copy that link before hand-assembling anything.
 
 Notes:
 - White-label variant: `https://marketplace.leadconnectorhq.com/oauth/chooselocation` (same params).
@@ -189,7 +209,27 @@ Same endpoint, `grant_type=refresh_token`, plus `refresh_token`, `client_id`, `c
 
 ### ⚠️⚠️ Token lifecycle — the trap
 
-✅ **Verified:** access token ≈ **24 hours** (`expires_in: 86399`). Refresh token valid **1 year _or until used_** — **every refresh issues a new refresh token and invalidates the old one.**
+✅ **Verified:** access token ≈ **24 hours** (`expires_in: 86399`).
+
+⚠️ **Corrected 2026-08-16, measured against the sandbox.** This section previously said a
+refresh **invalidates the old token immediately**. It does not. Measured, in order:
+
+| Attempt | Result |
+|---|---|
+| Refresh with RT₁ | `200` — rotates, issues RT₂ |
+| **Reuse RT₁ immediately** | **`200` — still works** |
+| Reuse RT₁ a third time | `400 invalid_grant`, "This refresh token is invalid" |
+| RT₂ afterwards | `200` — unaffected |
+
+So HighLevel runs a **grace window** rather than strict rotation-on-use. That matters
+because the scare below — two concurrent refreshes, one wins, the loser bricks the
+connection — is what the transactional refresh was designed against, and **it does not
+reproduce**: a double refresh is survivable. Treat the transaction as preventing wasted
+calls and inconsistent stored state, not as the only thing standing between you and an
+unrecoverable connection.
+
+Do not read the grace window as a licence to refresh carelessly. Its size is undocumented,
+we measured exactly one reuse, and nothing says it is stable.
 
 This is rotation-on-use, and it means:
 
@@ -357,7 +397,14 @@ Base: `https://services.leadconnectorhq.com`
 | GET | `/calendars/events/appointments/{eventId}` | `calendars/events.readonly` |
 | POST | `/calendars/events/appointments` | `calendars/events.write` |
 
-⚠️ `/calendars/events` params (expected: `locationId` + `startTime`/`endTime`, plus one of `calendarId` / `userId` / `groupId`) need verification — in particular **whether times are epoch-milliseconds or ISO 8601**. Community reports point at epoch ms. Get this wrong and you get an empty array with a 200, which is the worst kind of bug to debug live. **Verify this specific thing first.**
+✅ **Settled 2026-08-16, measured against the sandbox: `/calendars/events` takes epoch
+milliseconds.** Params are `locationId` + `startTime`/`endTime`, plus one of `calendarId` /
+`userId` / `groupId`.
+
+**ISO 8601 does not error. It returns `{"events":[]}` with HTTP 200.** Over the same window
+where epoch-ms returned three events, ISO returned none — so the wrong format is
+indistinguishable from an empty calendar, exactly as this section warned. Recorded in
+`tests/fixtures/highlevel/calendar-events.json`.
 
 ### 6.4 Locations — `Version: 2021-07-28`
 
@@ -439,11 +486,12 @@ Do all of this **before writing any Genesis code.** Every item is something that
 
 ```bash
 # 0. Set these once
-export CID='...' CSEC='...' REDIRECT='https://<project>.web.app/api/oauth/callback'
+export CID='...' CSEC='...' VID='...' REDIRECT='https://<project>.web.app/api/oauth/callback'
 
 # 1. Build the install URL, open it, install into the SANDBOX location.
-#    (scopes space-separated, URL-encoded)
-echo "https://marketplace.gohighlevel.com/oauth/chooselocation?response_type=code&redirect_uri=${REDIRECT}&client_id=${CID}&scope=locations.readonly%20contacts.readonly%20contacts.write%20conversations.readonly%20conversations%2Fmessage.readonly%20calendars.readonly%20calendars%2Fevents.readonly&loginWindowOpenMode=self"
+#    NOTE the /v2/ path and version_id — the v1 form fails with
+#    "No integration found with the id: <app id>". See Step 4.
+echo "https://marketplace.gohighlevel.com/v2/oauth/chooselocation?response_type=code&redirect_uri=${REDIRECT}&client_id=${CID}&version_id=${VID}&scope=locations.readonly%20contacts.readonly%20contacts.write%20conversations.readonly%20conversations%2Fmessage.readonly%20calendars.readonly%20calendars%2Fevents.readonly&loginWindowOpenMode=self"
 
 # 2. Exchange the code  → NOTE: form-urlencoded, no Version header
 curl -sS -X POST https://services.leadconnectorhq.com/oauth/token \
@@ -508,9 +556,9 @@ curl -sSD- -o/dev/null "https://services.leadconnectorhq.com/locations/${LOC}" \
 |---|---|---|
 | 1 | Marketplace approval blocking day 1 | ✅ **Resolved** — Private app needs no approval |
 | 2 | No demo data for the reviewer | ✅ **Resolved** — Sandbox account + seed script |
-| 3 | `/calendars/events` time format (epoch ms vs ISO) | ⚠️ **Verify first.** Silent empty-200 failure mode |
+| 3 | `/calendars/events` time format (epoch ms vs ISO) | ✅ **Settled: epoch ms.** ISO returns an empty 200 — see §6.3 |
 | 4 | `/contacts/search` filter DSL grammar | ⚠️ Verify; cross-check against `@gohighlevel/api-client` types |
-| 5 | Refresh-token rotation race | ⚠️ **Design for it now** (§3). Bricks the connection if ignored |
+| 5 | Refresh-token rotation race | 🟡 **Softer than feared.** Rotation is real but the old token survives at least one reuse, so a double refresh does not brick the connection (§3) |
 | 6 | Sending real SMS/email from a demo | ⚠️ Allowlist-gate the send endpoint; keep out of the Loom |
 | 7 | v3 vs date-based versions | ⚠️ Decision made (pin date-based); document it in the README |
 | 8 | Sandbox 6-month expiry / fair-use | ℹ️ Irrelevant at this timescale |

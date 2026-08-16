@@ -106,3 +106,33 @@ describe('the matrix as a whole', () => {
     expect(resolveNavigation('auth-flow', UNVERIFIED, SIGN_IN_PATH)).not.toBe(SIGN_IN_PATH)
   })
 })
+
+/*
+ * AC-43. A user can be away at HighLevel for minutes; if the session lapses
+ * while they are gone, the callback must not strand them. Classing the route
+ * `protected` means the guard round-trips them through sign-in and returns
+ * them here, so the outcome survives.
+ */
+describe('/hl/callback', () => {
+  it('sends a signed-out visitor to sign in, and back again afterwards', () => {
+    const target = resolveNavigation(
+      'protected',
+      { isSignedIn: false, isVerified: false },
+      '/hl/callback?status=connected',
+    )
+
+    expect(target).toBe(`/signin?redirect=${encodeURIComponent('/hl/callback?status=connected')}`)
+  })
+
+  it('holds an unverified visitor at the gate', () => {
+    expect(
+      resolveNavigation('protected', { isSignedIn: true, isVerified: false }, '/hl/callback'),
+    ).toBe(GATE_PATH)
+  })
+
+  it('lets a verified visitor through', () => {
+    expect(
+      resolveNavigation('protected', { isSignedIn: true, isVerified: true }, '/hl/callback'),
+    ).toBeNull()
+  })
+})

@@ -50,6 +50,17 @@ const router = createRouter({
       meta: { access: 'gate' },
     },
     {
+      /*
+       * Where HighLevel's callback lands. `protected` like the dashboard: a
+       * session that lapsed while the user was away at HighLevel round-trips
+       * through sign-in and comes back here, rather than losing the outcome.
+       */
+      path: '/hl/callback',
+      name: 'hl-callback',
+      component: () => import('@/views/HlCallbackView.vue'),
+      meta: { access: 'protected' },
+    },
+    {
       path: '/dashboard',
       name: 'dashboard',
       component: () => import('@/views/DashboardView.vue'),

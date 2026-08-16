@@ -1,0 +1,68 @@
+{
+  "events": [
+    {
+      "appointmentStatus": "confirmed",
+      "appoinmentStatus": "confirmed",
+      "address": "",
+      "calendarId": "j02qMVwUOyDFNMUwWGTL",
+      "contactId": "pzTPaMBuKEjmCTTTLV5D",
+      "dateAdded": "2026-08-16T09:59:49.000Z",
+      "dateUpdated": "2026-08-16T09:59:49.000Z",
+      "endTime": "2026-08-17T08:30:00-04:00",
+      "id": "sWUUpNfU7obtpdYjy1QI",
+      "locationId": "lUanVn0CtZJTlymH8ySo",
+      "startTime": "2026-08-17T08:00:00-04:00",
+      "title": "(Example) Alex Doe Carter",
+      "assignedResources": [],
+      "isRecurring": false,
+      "createdBy": {
+        "source": "calendar_page",
+        "userId": "REDACTED-USER-ID"
+      },
+      "deleted": false
+    },
+    {
+      "appointmentStatus": "confirmed",
+      "appoinmentStatus": "confirmed",
+      "address": "",
+      "calendarId": "j02qMVwUOyDFNMUwWGTL",
+      "contactId": "JwwI60NJqfc8I4Ay2MiA",
+      "dateAdded": "2026-08-16T10:00:32.000Z",
+      "dateUpdated": "2026-08-16T10:00:32.000Z",
+      "endTime": "2026-08-17T09:00:00-04:00",
+      "id": "DmmGCQTkF3WojxOVJvdB",
+      "locationId": "lUanVn0CtZJTlymH8ySo",
+      "startTime": "2026-08-17T08:30:00-04:00",
+      "title": "(Example) Casey Morgan",
+      "assignedResources": [],
+      "isRecurring": false,
+      "createdBy": {
+        "source": "calendar_page",
+        "userId": "REDACTED-USER-ID"
+      },
+      "deleted": false
+    },
+    {
+      "appointmentStatus": "confirmed",
+      "appoinmentStatus": "confirmed",
+      "address": "",
+      "calendarId": "j02qMVwUOyDFNMUwWGTL",
+      "contactId": "v3nR8NX7G3fHB8T5KHWB",
+      "dateAdded": "2026-08-16T10:00:52.000Z",
+      "dateUpdated": "2026-08-16T10:00:52.000Z",
+      "endTime": "2026-08-17T16:00:00-04:00",
+      "id": "ZwHcMiut1mqdqKgbOA8t",
+      "locationId": "lUanVn0CtZJTlymH8ySo",
+      "startTime": "2026-08-17T15:30:00-04:00",
+      "title": "(Example) Riley Bennett",
+      "assignedResources": [],
+      "isRecurring": false,
+      "createdBy": {
+        "source": "calendar_page",
+        "userId": "REDACTED-USER-ID"
+      },
+      "deleted": false
+    }
+  ],
+  "traceId": "d87c2fdd-4f2c-4c83-9b3a-4cbf2bdb857c"
+}

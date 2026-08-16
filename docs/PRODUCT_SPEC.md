@@ -134,12 +134,17 @@ Firestore — NAMED database `hl-genesis` (not `(default)`)
 - Streaming is mandatory (no request/response-only LLM calls)
 - No secrets in source, ever
 - All data access scoped to the authenticated user by security rules
-- Runs locally on Firebase emulators (`firebase emulators:start`) — **the brief names this
-  command explicitly in the README deliverable, so it must work from a fresh clone.** Note
-  the deliberate split we now run: `npm run dev` points the SPA at **real** Firebase (so the
-  development path is the production path), while the emulators back the rules, integration
-  and e2e suites and the `--mode emulator` build. Slice 13 owes the README a documented
-  end-to-end emulator run, not just an emulator-backed test run.
+- Runs locally on Firebase emulators — **the brief names this explicitly in the README
+  deliverable, so it must work from a fresh clone.**
+
+  **`npm run dev` is the emulator path, and that reverses an earlier decision.** Slices 0–1
+  pointed `npm run dev` at *real* Firebase on the reasoning that the development path should
+  be the production path. In practice that meant local changes could not be exercised at all
+  before deploying — the SPA proxied `/api` to the deployed functions, so any endpoint not
+  yet shipped answered 404 on a developer's own machine. Reversed in Slice 2: `npm run dev`
+  now starts the emulators *and* the SPA against them in one command, with state persisted
+  between runs, and a stubbed HighLevel so the OAuth loop works offline. The real-Firebase
+  path is still there as `npm run dev:cloud`.
 
 ## 6. Key Design Decisions to Make (input for phasing)
 1. **Preview runtime:** iframe `srcdoc` (simplest, full control) vs Sandpack vs WebContainers — recommend `srcdoc` with a small runtime shim that injects the proxy base URL + auth

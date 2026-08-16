@@ -1,0 +1,14 @@
+{
+  "access_token": "REDACTED-ACCESS-TOKEN",
+  "token_type": "Bearer",
+  "expires_in": 86400,
+  "refresh_token": "REDACTED-REFRESH-TOKEN",
+  "scope": "contacts.readonly contacts.write conversations.readonly conversations/message.readonly conversations/message.write calendars.readonly calendars/events.readonly calendars/events.write oauth.write oauth.readonly",
+  "userType": "Location",
+  "companyId": "swdGTJYeSOLEHFfgZgPf",
+  "locationId": "lUanVn0CtZJTlymH8ySo",
+  "userId": "REDACTED-USER-ID",
+  "appId": "6a7eafb703672cba975e2d1d",
+  "versionId": "6a7eafb703672cba975e2d1d",
+  "traceId": "128fa178-1d21-4bfd-b812-6b76daa33d53"
+}

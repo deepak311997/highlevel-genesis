@@ -1,0 +1,76 @@
+{
+  "location": {
+    "id": "lUanVn0CtZJTlymH8ySo",
+    "brandId": "CFVfUOpjH6uBv8yF65uB",
+    "companyId": "swdGTJYeSOLEHFfgZgPf",
+    "name": "India Square",
+    "address": "800 Newark Ave",
+    "city": "Jersey City",
+    "state": "New Jersey",
+    "country": "US",
+    "postalCode": "07306",
+    "website": "http://indiasquare.org/",
+    "timezone": "America/New_York",
+    "firstName": "Deepak",
+    "lastName": "V",
+    "email": "deepakdummy3197@gmail.com",
+    "phone": "(201) 659-8844",
+    "logoUrl": "",
+    "business": {
+      "name": "India Square",
+      "address": "800 Newark Ave",
+      "city": "Jersey City",
+      "state": "New Jersey",
+      "country": "US",
+      "postalCode": "07306",
+      "website": "http://indiasquare.org/",
+      "timezone": "America/New_York",
+      "email": ""
+    },
+    "social": {
+      "facebookUrl": "",
+      "googlePlus": "",
+      "linkedIn": "",
+      "foursquare": "",
+      "twitter": "",
+      "yelp": "",
+      "instagram": "",
+      "youtube": "",
+      "pinterest": "",
+      "blogRss": "",
+      "googlePlacesId": ""
+    },
+    "settings": {
+      "allowDuplicateContact": false,
+      "allowDuplicateOpportunity": false,
+      "allowFacebookNameMerge": false,
+      "disableContactTimezone": false,
+      "contactUniqueIdentifiers": [
+        "email",
+        "phone"
+      ],
+      "crmSettings": {
+        "deSyncOwners": true,
+        "syncFollowers": {
+          "contact": true,
+          "opportunity": true
+        }
+      },
+      "saasSettings": {
+        "saasMode": "not_activated",
+        "twilioRebilling": {
+          "markup": 10,
+          "enabled": false
+        }
+      }
+    },
+    "dateAdded": "2026-08-16T09:57:56.701Z",
+    "domain": "",
+    "currency": "",
+    "isAgencySubAccount": false,
+    "defaultEmailService": "",
+    "permissions": {},
+    "snapshotId": "6746b69fc91f444b5852504a"
+  },
+  "traceId": "bf09e2bb-8a68-4a6d-bacc-55945ffb7844"
+}

@@ -26,10 +26,20 @@ const EMULATOR_ENV: Record<string, string> = {
   // Blank: requests stay same-origin and go through the proxy below, exactly
   // as the Hosting rewrite does in production.
   VITE_FUNCTIONS_BASE_URL: '',
+  // The suites move the emulators to a second port set so they do not have to
+  // stop a development session; the SPA has to follow them there.
+  VITE_AUTH_EMULATOR_PORT: process.env['AUTH_EMULATOR_PORT'] ?? '9099',
+  VITE_FIRESTORE_EMULATOR_PORT: process.env['FIRESTORE_EMULATOR_PORT_CLIENT'] ?? '8080',
 }
 
-/** Where the emulated `api` function lives. */
-const EMULATOR_FUNCTIONS_TARGET = 'http://127.0.0.1:5001/demo-genesis/asia-south1'
+/**
+ * Where the emulated `api` function lives.
+ *
+ * The port is configurable because the test suites run the emulators on a
+ * second set, so they do not have to stop a development session first.
+ */
+const EMULATOR_FUNCTIONS_PORT = process.env['FUNCTIONS_EMULATOR_PORT'] ?? '5001'
+const EMULATOR_FUNCTIONS_TARGET = `http://127.0.0.1:${EMULATOR_FUNCTIONS_PORT}/demo-genesis/asia-south1`
 
 export default defineConfig(({ mode }) => {
   // .env sits next to this file, which is where Vite looks by default.
@@ -87,7 +97,25 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
-      port: 5173,
+      // Also configurable, so a Playwright run and `npm run dev` can coexist.
+      port: Number(process.env['E2E_PORT'] ?? '5173'),
+      /*
+       * Tunnel hostnames, for checking the integration against live HighLevel.
+       *
+       * HighLevel requires an HTTPS redirect URI, so the only way to run the
+       * real OAuth flow against a local build is through a tunnel — and Vite
+       * rejects requests whose Host header it does not recognise, answering
+       * "Blocked request" before the app is even reached. Listing the common
+       * tunnel suffixes here means that failure never happens; the tunnel is
+       * still opt-in, selected in functions/.env.local.
+       */
+      allowedHosts: [
+        '.ngrok-free.dev',
+        '.ngrok-free.app',
+        '.ngrok.io',
+        '.trycloudflare.com',
+        '.loca.lt',
+      ],
       // Mirror the production Hosting rewrites locally, so the SPA calls
       // same-origin relative paths in both environments. Without this, a
       // request to /api/health falls through to Vite's SPA handler and comes
