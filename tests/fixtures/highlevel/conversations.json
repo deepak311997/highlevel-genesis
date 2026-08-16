@@ -1,0 +1,168 @@
+{
+  "conversations": [
+    {
+      "id": "2TZBqxrjGObOAeuLRRqS",
+      "locationId": "lUanVn0CtZJTlymH8ySo",
+      "dateAdded": 1786874296920,
+      "dateUpdated": 1786874296920,
+      "lastMessageDate": 1786874296920,
+      "lastMessageType": "TYPE_NO_SHOW",
+      "unreadCount": 0,
+      "followers": [],
+      "mentions": [],
+      "isLastMessageInternalComment": false,
+      "contactId": "JwwI60NJqfc8I4Ay2MiA",
+      "fullName": "(example) Casey Morgan",
+      "contactName": "(Example) Casey Morgan",
+      "companyName": "(Example) Dunder Mifflin",
+      "phone": "+16541234567",
+      "tags": [
+        "high priority",
+        "follow-up"
+      ],
+      "type": "TYPE_PHONE",
+      "opportunities": [],
+      "scoring": [],
+      "messageTypes": [
+        100
+      ],
+      "profilePhoto": null,
+      "attributed": true,
+      "email": null,
+      "sort": [
+        1786874296920
+      ]
+    },
+    {
+      "id": "BUVAoC7qLhNvV6nILuvd",
+      "locationId": "lUanVn0CtZJTlymH8ySo",
+      "dateAdded": 1786874296638,
+      "dateUpdated": 1786874296638,
+      "lastMessageDate": 1786874296638,
+      "lastMessageType": "TYPE_NO_SHOW",
+      "unreadCount": 0,
+      "followers": [],
+      "mentions": [],
+      "isLastMessageInternalComment": false,
+      "contactId": "fG4lv7zir6eka0pc0Hla",
+      "fullName": "(example) Taylor Reynolds",
+      "contactName": "(Example) Taylor Reynolds",
+      "companyName": "(Example) MacLaren's Pub",
+      "phone": "+178655689546",
+      "tags": [
+        "follow-up"
+      ],
+      "type": "TYPE_PHONE",
+      "opportunities": [],
+      "scoring": [],
+      "messageTypes": [
+        100
+      ],
+      "profilePhoto": null,
+      "attributed": null,
+      "email": null,
+      "sort": [
+        1786874296638
+      ]
+    },
+    {
+      "id": "ZK41PMvZ6QIF7JSIi29R",
+      "locationId": "lUanVn0CtZJTlymH8ySo",
+      "dateAdded": 1786874296312,
+      "dateUpdated": 1786874296312,
+      "lastMessageDate": 1786874296312,
+      "lastMessageType": "TYPE_NO_SHOW",
+      "unreadCount": 0,
+      "followers": [],
+      "mentions": [],
+      "isLastMessageInternalComment": false,
+      "contactId": "D6id4dMzevwnm7yO25PS",
+      "fullName": "(example) Jordan Smith",
+      "contactName": "(Example) Jordan Smith",
+      "companyName": "(Example) MacLaren's Pub",
+      "email": "jordan.smith@example.com",
+      "tags": [
+        "follow-up"
+      ],
+      "type": "TYPE_PHONE",
+      "opportunities": [],
+      "scoring": [],
+      "messageTypes": [
+        100
+      ],
+      "profilePhoto": null,
+      "phone": null,
+      "attributed": null,
+      "sort": [
+        1786874296312
+      ]
+    },
+    {
+      "id": "GImFPMe1NBbUs3GX0z5W",
+      "locationId": "lUanVn0CtZJTlymH8ySo",
+      "dateAdded": 1786874291325,
+      "dateUpdated": 1786874291325,
+      "lastMessageDate": 1786874291325,
+      "lastMessageType": "TYPE_NO_SHOW",
+      "unreadCount": 0,
+      "followers": [],
+      "mentions": [],
+      "isLastMessageInternalComment": false,
+      "contactId": "pzTPaMBuKEjmCTTTLV5D",
+      "fullName": "(example) Alex Doe Carter",
+      "contactName": "(Example) Alex Doe Carter",
+      "companyName": "(Example) Goliath National Bank",
+      "email": "alex.carter@businessmail.com",
+      "tags": [
+        "follow-up"
+      ],
+      "type": "TYPE_PHONE",
+      "opportunities": [],
+      "scoring": [],
+      "messageTypes": [
+        100
+      ],
+      "profilePhoto": null,
+      "phone": null,
+      "attributed": true,
+      "sort": [
+        1786874291325
+      ]
+    },
+    {
+      "id": "CBxurk4mPzgomCNuU8xm",
+      "locationId": "lUanVn0CtZJTlymH8ySo",
+      "dateAdded": 1786874288844,
+      "dateUpdated": 1786874288844,
+      "lastMessageDate": 1786874288844,
+      "lastMessageType": "TYPE_NO_SHOW",
+      "unreadCount": 0,
+      "followers": [],
+      "mentions": [],
+      "isLastMessageInternalComment": false,
+      "contactId": "v3nR8NX7G3fHB8T5KHWB",
+      "fullName": "(example) Riley Bennett",
+      "contactName": "(Example) Riley Bennett",
+      "companyName": "(Example) Goliath National Bank",
+      "email": "riley.bennett@corporate.net",
+      "phone": "+13141236547",
+      "tags": [
+        "high priority",
+        "warm lead"
+      ],
+      "type": "TYPE_PHONE",
+      "opportunities": [],
+      "scoring": [],
+      "messageTypes": [
+        100
+      ],
+      "profilePhoto": null,
+      "attributed": true,
+      "sort": [
+        1786874288844
+      ]
+    }
+  ],
+  "total": 5,
+  "traceId": "42314549-2c6b-4159-9240-946674a0c364"
+}

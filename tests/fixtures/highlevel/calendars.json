@@ -1,0 +1,721 @@
+{
+  "calendars": [
+    {
+      "id": "2oKn7but6Q2WaHIu7pqC",
+      "notifications": [
+        {
+          "shouldSendToContact": false,
+          "shouldSendToSelectedUsers": false,
+          "selectedUsers": "",
+          "shouldSendToUser": false,
+          "templateId": "default",
+          "type": "email",
+          "shouldSendToGuest": false
+        }
+      ],
+      "locationId": "lUanVn0CtZJTlymH8ySo",
+      "teamMembers": [],
+      "eventType": "RoundRobin_OptimizeForEqualDistribution",
+      "name": "Specialty Bread Baking",
+      "description": "",
+      "widgetSlug": "specialtybreadbaking-96b19c80-a59e-4396-bf8e-9e3a676761e4",
+      "calendarType": "service_booking",
+      "widgetType": "default",
+      "eventTitle": "{{contact.name}}",
+      "eventColor": "#039BE5",
+      "slotDuration": 60,
+      "slotDurationUnit": "mins",
+      "slotInterval": 15,
+      "slotIntervalUnit": "mins",
+      "slotBuffer": 0,
+      "slotBufferUnit": "mins",
+      "appoinmentPerSlot": 1,
+      "appoinmentPerDay": 9007199254740991,
+      "appointmentPerSlot": 1,
+      "appointmentPerDay": 9007199254740991,
+      "openHours": [
+        {
+          "daysOfTheWeek": [
+            1
+          ],
+          "hours": [
+            {
+              "openHour": 9,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            2
+          ],
+          "hours": [
+            {
+              "openHour": 9,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            3
+          ],
+          "hours": [
+            {
+              "openHour": 9,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            4
+          ],
+          "hours": [
+            {
+              "openHour": 9,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            5
+          ],
+          "hours": [
+            {
+              "openHour": 9,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            6
+          ],
+          "hours": [
+            {
+              "openHour": 9,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        }
+      ],
+      "enableRecurring": false,
+      "recurring": {
+        "monthDays": [],
+        "weekDays": [],
+        "bookingOption": "skip",
+        "count": 1,
+        "freq": "DAILY",
+        "bookingOverlapDefaultStatus": "",
+        "interval": null
+      },
+      "formId": "",
+      "stickyContact": false,
+      "autoConfirm": true,
+      "googleInvitationEmails": false,
+      "allowReschedule": true,
+      "allowCancellation": true,
+      "shouldAssignContactToTeamMember": false,
+      "shouldSkipAssigningContactForExisting": false,
+      "notes": "Phone:- {{contact.phone}}\nEmail:- {{contact.email}}\n\nNeed to make a change to this event?\nReschedule:-\n{{reschedule_link}}\n\nCancel:-\n{{cancellation_link}}",
+      "pixelId": "",
+      "formSubmitType": "ThankYouMessage",
+      "formSubmitThanksMessage": "Thank you for your appointment request. We will contact you shortly to confirm your request. Please call our office at {{location.phone}} if you have any questions.",
+      "availabilityType": 0,
+      "availabilities": [],
+      "guestType": "collect_detail",
+      "consentLabel": "I confirm that I want to receive messages from this company using any contact information I provide.",
+      "allowBookingAfterUnit": "days",
+      "allowBookingForUnit": "days",
+      "preBuffer": 0,
+      "preBufferUnit": "mins",
+      "isActive": false,
+      "enableClientPortalBooking": false
+    },
+    {
+      "id": "HaM9s0l12B4vwqHCeQvb",
+      "notifications": [
+        {
+          "shouldSendToContact": false,
+          "shouldSendToSelectedUsers": false,
+          "selectedUsers": "",
+          "shouldSendToUser": false,
+          "templateId": "default",
+          "type": "email",
+          "shouldSendToGuest": false
+        }
+      ],
+      "locationId": "lUanVn0CtZJTlymH8ySo",
+      "teamMembers": [],
+      "eventType": "RoundRobin_OptimizeForEqualDistribution",
+      "name": "Custom Cake Design",
+      "description": "",
+      "widgetSlug": "customcakedesign-89941393-1103-4a4c-965b-69882d5b93fb",
+      "calendarType": "service_booking",
+      "widgetType": "default",
+      "eventTitle": "{{contact.name}}",
+      "eventColor": "#039BE5",
+      "slotDuration": 60,
+      "slotDurationUnit": "mins",
+      "slotInterval": 15,
+      "slotIntervalUnit": "mins",
+      "slotBuffer": 0,
+      "slotBufferUnit": "mins",
+      "appoinmentPerSlot": 1,
+      "appoinmentPerDay": 9007199254740991,
+      "appointmentPerSlot": 1,
+      "appointmentPerDay": 9007199254740991,
+      "openHours": [
+        {
+          "daysOfTheWeek": [
+            1
+          ],
+          "hours": [
+            {
+              "openHour": 0,
+              "openMinute": 0,
+              "closeHour": 0,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            2
+          ],
+          "hours": [
+            {
+              "openHour": 0,
+              "openMinute": 0,
+              "closeHour": 0,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            3
+          ],
+          "hours": [
+            {
+              "openHour": 0,
+              "openMinute": 0,
+              "closeHour": 0,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            4
+          ],
+          "hours": [
+            {
+              "openHour": 0,
+              "openMinute": 0,
+              "closeHour": 0,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            5
+          ],
+          "hours": [
+            {
+              "openHour": 0,
+              "openMinute": 0,
+              "closeHour": 0,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            6
+          ],
+          "hours": [
+            {
+              "openHour": 0,
+              "openMinute": 0,
+              "closeHour": 0,
+              "closeMinute": 0
+            }
+          ]
+        }
+      ],
+      "enableRecurring": false,
+      "recurring": {
+        "monthDays": [],
+        "weekDays": [],
+        "bookingOption": "skip",
+        "count": 1,
+        "freq": "DAILY",
+        "bookingOverlapDefaultStatus": "",
+        "interval": null
+      },
+      "formId": "",
+      "stickyContact": false,
+      "autoConfirm": true,
+      "googleInvitationEmails": false,
+      "allowReschedule": true,
+      "allowCancellation": true,
+      "shouldAssignContactToTeamMember": false,
+      "shouldSkipAssigningContactForExisting": false,
+      "notes": "Phone:- {{contact.phone}}\nEmail:- {{contact.email}}\n\nNeed to make a change to this event?\nReschedule:-\n{{reschedule_link}}\n\nCancel:-\n{{cancellation_link}}",
+      "pixelId": "",
+      "formSubmitType": "ThankYouMessage",
+      "formSubmitThanksMessage": "Thank you for your appointment request. We will contact you shortly to confirm your request. Please call our office at {{location.phone}} if you have any questions.",
+      "availabilityType": 0,
+      "availabilities": [],
+      "guestType": "collect_detail",
+      "consentLabel": "I confirm that I want to receive messages from this company using any contact information I provide.",
+      "allowBookingAfterUnit": "days",
+      "allowBookingForUnit": "days",
+      "preBuffer": 0,
+      "preBufferUnit": "mins",
+      "isActive": false,
+      "enableClientPortalBooking": false
+    },
+    {
+      "id": "eeMUvpJBklZclLVlV7dZ",
+      "notifications": [
+        {
+          "shouldSendToContact": false,
+          "shouldSendToSelectedUsers": false,
+          "selectedUsers": "",
+          "shouldSendToUser": false,
+          "templateId": "default",
+          "type": "email",
+          "shouldSendToGuest": false
+        }
+      ],
+      "locationId": "lUanVn0CtZJTlymH8ySo",
+      "teamMembers": [],
+      "eventType": "RoundRobin_OptimizeForEqualDistribution",
+      "name": "Daily Fresh Pastries",
+      "description": "",
+      "widgetSlug": "dailyfreshpastries-5f51ecf4-d7cb-4d5a-904e-1c486d557027",
+      "calendarType": "service_booking",
+      "widgetType": "default",
+      "eventTitle": "{{contact.name}}",
+      "eventColor": "#039BE5",
+      "slotDuration": 60,
+      "slotDurationUnit": "mins",
+      "slotInterval": 15,
+      "slotIntervalUnit": "mins",
+      "slotBuffer": 0,
+      "slotBufferUnit": "mins",
+      "appoinmentPerSlot": 1,
+      "appoinmentPerDay": 9007199254740991,
+      "appointmentPerSlot": 1,
+      "appointmentPerDay": 9007199254740991,
+      "openHours": [
+        {
+          "daysOfTheWeek": [
+            1
+          ],
+          "hours": [
+            {
+              "openHour": 9,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            2
+          ],
+          "hours": [
+            {
+              "openHour": 9,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            3
+          ],
+          "hours": [
+            {
+              "openHour": 9,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            4
+          ],
+          "hours": [
+            {
+              "openHour": 9,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            5
+          ],
+          "hours": [
+            {
+              "openHour": 9,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            6
+          ],
+          "hours": [
+            {
+              "openHour": 9,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        }
+      ],
+      "enableRecurring": false,
+      "recurring": {
+        "monthDays": [],
+        "weekDays": [],
+        "bookingOption": "skip",
+        "count": 1,
+        "freq": "DAILY",
+        "bookingOverlapDefaultStatus": "",
+        "interval": null
+      },
+      "formId": "",
+      "stickyContact": false,
+      "autoConfirm": true,
+      "googleInvitationEmails": false,
+      "allowReschedule": true,
+      "allowCancellation": true,
+      "shouldAssignContactToTeamMember": false,
+      "shouldSkipAssigningContactForExisting": false,
+      "notes": "Phone:- {{contact.phone}}\nEmail:- {{contact.email}}\n\nNeed to make a change to this event?\nReschedule:-\n{{reschedule_link}}\n\nCancel:-\n{{cancellation_link}}",
+      "pixelId": "",
+      "formSubmitType": "ThankYouMessage",
+      "formSubmitThanksMessage": "Thank you for your appointment request. We will contact you shortly to confirm your request. Please call our office at {{location.phone}} if you have any questions.",
+      "availabilityType": 0,
+      "availabilities": [],
+      "guestType": "collect_detail",
+      "consentLabel": "I confirm that I want to receive messages from this company using any contact information I provide.",
+      "allowBookingAfterUnit": "days",
+      "allowBookingForUnit": "days",
+      "preBuffer": 0,
+      "preBufferUnit": "mins",
+      "isActive": false,
+      "enableClientPortalBooking": false
+    },
+    {
+      "id": "j02qMVwUOyDFNMUwWGTL",
+      "notifications": [
+        {
+          "shouldSendToContact": false,
+          "shouldSendToSelectedUsers": false,
+          "selectedUsers": "",
+          "shouldSendToUser": false,
+          "templateId": "default",
+          "type": "email",
+          "shouldSendToGuest": false
+        }
+      ],
+      "locationId": "lUanVn0CtZJTlymH8ySo",
+      "name": "Schedule an Appointment",
+      "description": "",
+      "widgetSlug": "scheduleanappointmentcallwithus-230ad544-8f6f-4125-9d14-f1b202f0becc-b34ebe24-3129-45c7-9f77-1846cbf18855",
+      "calendarType": "event",
+      "widgetType": "default",
+      "eventTitle": "{{contact.name}}",
+      "eventColor": "#039BE5",
+      "meetingLocation": "",
+      "slotDuration": 30,
+      "slotDurationUnit": "mins",
+      "slotInterval": 30,
+      "slotIntervalUnit": "mins",
+      "slotBuffer": 0,
+      "slotBufferUnit": "mins",
+      "appoinmentPerSlot": 1,
+      "appoinmentPerDay": "",
+      "appointmentPerSlot": 1,
+      "appointmentPerDay": "",
+      "openHours": [
+        {
+          "daysOfTheWeek": [
+            1
+          ],
+          "hours": [
+            {
+              "openHour": 8,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            2
+          ],
+          "hours": [
+            {
+              "openHour": 8,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            3
+          ],
+          "hours": [
+            {
+              "openHour": 8,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            4
+          ],
+          "hours": [
+            {
+              "openHour": 8,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            5
+          ],
+          "hours": [
+            {
+              "openHour": 8,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        }
+      ],
+      "enableRecurring": false,
+      "recurring": {
+        "monthDays": [],
+        "weekDays": [],
+        "bookingOption": "skip",
+        "count": 1,
+        "freq": "DAILY",
+        "bookingOverlapDefaultStatus": "",
+        "interval": null
+      },
+      "formId": "",
+      "stickyContact": false,
+      "autoConfirm": true,
+      "googleInvitationEmails": false,
+      "allowReschedule": true,
+      "allowCancellation": true,
+      "shouldAssignContactToTeamMember": false,
+      "shouldSkipAssigningContactForExisting": false,
+      "notes": "Phone:- {{contact.phone}}\nEmail:- {{contact.email}}\n\nNeed to make a change to this event?\nReschedule:-\n{{reschedule_link}}\n\nCancel:-\n{{cancellation_link}}",
+      "pixelId": "",
+      "formSubmitType": "ThankYouMessage",
+      "formSubmitThanksMessage": "Thank you for your appointment request. We will contact you shortly to confirm your request. Please call our office at {{location.phone}} if you have any questions.",
+      "availabilityType": 0,
+      "availabilities": [],
+      "guestType": "collect_detail",
+      "consentLabel": "I confirm that I want to receive messages from this company using any contact information I provide.",
+      "allowBookingAfterUnit": "days",
+      "allowBookingForUnit": "days",
+      "preBuffer": 0,
+      "preBufferUnit": "mins",
+      "isActive": true,
+      "enableClientPortalBooking": false
+    },
+    {
+      "id": "qIpamSPmtLkedf33oyKU",
+      "notifications": [
+        {
+          "shouldSendToContact": false,
+          "shouldSendToSelectedUsers": false,
+          "selectedUsers": "",
+          "shouldSendToUser": false,
+          "templateId": "default",
+          "type": "email",
+          "shouldSendToGuest": false
+        }
+      ],
+      "locationId": "lUanVn0CtZJTlymH8ySo",
+      "teamMembers": [],
+      "eventType": "RoundRobin_OptimizeForEqualDistribution",
+      "name": "Bakery Catering Services",
+      "description": "",
+      "widgetSlug": "bakerycateringservices-ab596f35-018b-4320-b9b7-215a03fcaf01",
+      "calendarType": "service_booking",
+      "widgetType": "default",
+      "eventTitle": "{{contact.name}}",
+      "eventColor": "#039BE5",
+      "slotDuration": 60,
+      "slotDurationUnit": "mins",
+      "slotInterval": 15,
+      "slotIntervalUnit": "mins",
+      "slotBuffer": 0,
+      "slotBufferUnit": "mins",
+      "appoinmentPerSlot": 1,
+      "appoinmentPerDay": 9007199254740991,
+      "appointmentPerSlot": 1,
+      "appointmentPerDay": 9007199254740991,
+      "openHours": [
+        {
+          "daysOfTheWeek": [
+            1
+          ],
+          "hours": [
+            {
+              "openHour": 9,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            2
+          ],
+          "hours": [
+            {
+              "openHour": 9,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            3
+          ],
+          "hours": [
+            {
+              "openHour": 9,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            4
+          ],
+          "hours": [
+            {
+              "openHour": 9,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            5
+          ],
+          "hours": [
+            {
+              "openHour": 9,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        },
+        {
+          "daysOfTheWeek": [
+            6
+          ],
+          "hours": [
+            {
+              "openHour": 9,
+              "openMinute": 0,
+              "closeHour": 17,
+              "closeMinute": 0
+            }
+          ]
+        }
+      ],
+      "enableRecurring": false,
+      "recurring": {
+        "monthDays": [],
+        "weekDays": [],
+        "bookingOption": "skip",
+        "count": 1,
+        "freq": "DAILY",
+        "bookingOverlapDefaultStatus": "",
+        "interval": null
+      },
+      "formId": "",
+      "stickyContact": false,
+      "autoConfirm": true,
+      "googleInvitationEmails": false,
+      "allowReschedule": true,
+      "allowCancellation": true,
+      "shouldAssignContactToTeamMember": false,
+      "shouldSkipAssigningContactForExisting": false,
+      "notes": "Phone:- {{contact.phone}}\nEmail:- {{contact.email}}\n\nNeed to make a change to this event?\nReschedule:-\n{{reschedule_link}}\n\nCancel:-\n{{cancellation_link}}",
+      "pixelId": "",
+      "formSubmitType": "ThankYouMessage",
+      "formSubmitThanksMessage": "Thank you for your appointment request. We will contact you shortly to confirm your request. Please call our office at {{location.phone}} if you have any questions.",
+      "availabilityType": 0,
+      "availabilities": [],
+      "guestType": "collect_detail",
+      "consentLabel": "I confirm that I want to receive messages from this company using any contact information I provide.",
+      "allowBookingAfterUnit": "days",
+      "allowBookingForUnit": "days",
+      "preBuffer": 0,
+      "preBufferUnit": "mins",
+      "isActive": false,
+      "enableClientPortalBooking": false
+    }
+  ],
+  "traceId": "923d2b40-23dc-447a-8287-c6e2fe3d49f9"
+}
