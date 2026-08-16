@@ -1,7 +1,7 @@
 import { Timestamp } from 'firebase-admin/firestore'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
-import { adminDb, getJson, idTokenFor, resetEmulators, seedUser } from './helpers'
+import { adminDb, getJson, idTokenFor, putJson, resetEmulators, seedUser } from './helpers'
 
 /**
  * `GET` and `PUT /api/users/me` — the whole of the browser's access to its own
@@ -27,6 +27,7 @@ const UNVERIFIED = 'profile-unverified@example.test'
 let aliceUid: string
 let bobUid: string
 let aliceToken: string
+let bobToken: string
 let unverifiedToken: string
 
 function auth(token: string): Record<string, string> {
@@ -56,6 +57,7 @@ beforeAll(async () => {
   bobUid = await seedUser(BOB, PASSWORD, true)
   await seedUser(UNVERIFIED, PASSWORD, false)
   aliceToken = await idTokenFor(ALICE, PASSWORD)
+  bobToken = await idTokenFor(BOB, PASSWORD)
   unverifiedToken = await idTokenFor(UNVERIFIED, PASSWORD)
 })
 
@@ -125,5 +127,141 @@ describe('GET /api/users/me', () => {
 
     expect(res.status).toBe(200)
     expect(res.body).toEqual({ profile: null })
+  })
+
+  /* D18's second half: the corruption is repaired by the next ensure. */
+  it('is repaired by a following PUT', async () => {
+    await adminDb().doc(`users/${aliceUid}`).set({ displayName: 'Alice' })
+
+    await putJson('/api/users/me', {}, auth(aliceToken))
+    const profile = profileOf((await getJson('/api/users/me', auth(aliceToken))).body)
+
+    expect(profile?.['email']).toBe(ALICE)
+  })
+})
+
+describe('PUT /api/users/me', () => {
+  /** AC-1. */
+  it('creates the document and returns it, with the email from the Auth record', async () => {
+    const res = await putJson('/api/users/me', {}, auth(aliceToken))
+    const profile = profileOf(res.body)
+
+    expect(res.status).toBe(200)
+    expect(profile?.['email']).toBe(ALICE)
+    expect(profile?.['displayName']).toBeNull()
+    expect(typeof profile?.['createdAt']).toBe('string')
+    expect((await adminDb().doc(`users/${aliceUid}`).get()).exists).toBe(true)
+  })
+
+  /*
+   * AC-2. The verb is `PUT` because the operation is an ensure — create if
+   * absent, touch if present, same result however many times it is called. A
+   * refresh, a second tab and a retry after a timeout all land here.
+   *
+   * The sleep is not padding: the wire format is millisecond-precision ISO, and
+   * two back-to-back writes can land inside a single millisecond, which would
+   * make "strictly later" a flake rather than a bug.
+   */
+  it('preserves createdAt and advances updatedAt on a second call', async () => {
+    const first = profileOf((await putJson('/api/users/me', {}, auth(aliceToken))).body)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const second = profileOf((await putJson('/api/users/me', {}, auth(aliceToken))).body)
+
+    expect(second?.['createdAt']).toBe(first?.['createdAt'])
+    expect(String(second?.['updatedAt']) > String(first?.['updatedAt'])).toBe(true)
+  })
+
+  /** AC-5. Absent leaves the name alone; an explicit null clears it. */
+  it('sets and then clears displayName', async () => {
+    const set = profileOf(
+      (await putJson('/api/users/me', { displayName: 'Alice' }, auth(aliceToken))).body,
+    )
+    expect(set?.['displayName']).toBe('Alice')
+
+    const untouched = profileOf((await putJson('/api/users/me', {}, auth(aliceToken))).body)
+    expect(untouched?.['displayName']).toBe('Alice')
+
+    const cleared = profileOf(
+      (await putJson('/api/users/me', { displayName: null }, auth(aliceToken))).body,
+    )
+    expect(cleared?.['displayName']).toBeNull()
+  })
+
+  /*
+   * AC-8, and R1's whole defence. `/me` means another user's id cannot be named
+   * in the path; `.strict()` means it cannot be smuggled in the body either. The
+   * assertion that matters is the second half — nothing was written, the
+   * caller's own document included, because the body is parsed before anything
+   * touches Firestore.
+   */
+  it("rejects a body carrying another user's uid, writing nothing", async () => {
+    await seedProfile(bobUid, { email: BOB })
+
+    const res = await putJson('/api/users/me', { uid: bobUid }, auth(aliceToken))
+
+    expect(res.status).toBe(400)
+    expect((res.body as { code?: string }).code).toBe('invalid_body')
+    expect((await adminDb().doc(`users/${aliceUid}`).get()).exists).toBe(false)
+    expect((await adminDb().doc(`users/${bobUid}`).get()).get('email')).toBe(BOB)
+  })
+
+  it('rejects a body carrying an email, writing nothing', async () => {
+    const res = await putJson('/api/users/me', { email: 'attacker@example.test' }, auth(aliceToken))
+
+    expect(res.status).toBe(400)
+    expect((res.body as { code?: string }).code).toBe('invalid_body')
+    expect((await adminDb().doc(`users/${aliceUid}`).get()).exists).toBe(false)
+  })
+
+  /** AC-9. */
+  it.each([
+    ['an over-length display name', { displayName: 'a'.repeat(81) }],
+    ['a non-string display name', { displayName: 42 }],
+  ])('rejects %s', async (_label, body) => {
+    const res = await putJson('/api/users/me', body, auth(aliceToken))
+
+    expect(res.status).toBe(400)
+    expect((res.body as { code?: string }).code).toBe('invalid_body')
+  })
+
+  /** AC-6. */
+  it('refuses an unauthenticated caller with 401 and creates nothing', async () => {
+    const res = await putJson('/api/users/me', {})
+
+    expect(res.status).toBe(401)
+    expect((res.body as { code?: string }).code).toBe('unauthenticated')
+    expect((await adminDb().doc(`users/${aliceUid}`).get()).exists).toBe(false)
+  })
+
+  /** AC-7. */
+  it('refuses an unverified caller with 403 and creates nothing', async () => {
+    const res = await putJson('/api/users/me', {}, auth(unverifiedToken))
+
+    expect(res.status).toBe(403)
+    expect((res.body as { code?: string }).code).toBe('email_unverified')
+  })
+
+  /*
+   * AC-10. The uid comes from the token and from nowhere else, so two users
+   * holding valid tokens reach two documents — asserted rather than assumed,
+   * because this is the property the whole route shape exists to guarantee.
+   */
+  it("returns alice's profile to alice and never touches bob's", async () => {
+    await putJson('/api/users/me', {}, auth(bobToken))
+    const bobBefore = (await adminDb().doc(`users/${bobUid}`).get()).get('updatedAt') as {
+      toMillis: () => number
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const put = profileOf((await putJson('/api/users/me', {}, auth(aliceToken))).body)
+    const got = profileOf((await getJson('/api/users/me', auth(aliceToken))).body)
+
+    expect(put?.['email']).toBe(ALICE)
+    expect(got?.['email']).toBe(ALICE)
+
+    const bobAfter = (await adminDb().doc(`users/${bobUid}`).get()).get('updatedAt') as {
+      toMillis: () => number
+    }
+    expect(bobAfter.toMillis()).toBe(bobBefore.toMillis())
   })
 })
