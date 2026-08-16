@@ -21,24 +21,27 @@ const DEFAULT_API_BASE = 'https://services.leadconnectorhq.com'
  * scope here without adding it there yields an authorisation page that grants
  * less than the code expects; adding it there without here is harmless but
  * misleading. Adding one *after* installs exist forces every user to
- * re-authorise, which is why the full list — the four "worth adding cheaply"
- * entries included — was taken up front (PRD D18).
+ * re-authorise, which is why the list is taken in full up front (PRD D18).
+ *
+ * **Five scopes were requested and refused**, with `invalid_scope` naming each:
+ * `conversations.write`, `users.readonly`, `opportunities.readonly`,
+ * `locations/customFields.readonly` and `locations/tags.readonly`. None is
+ * required by the spec — F7.1 asks for Contacts, Conversations and Calendars,
+ * and all three surfaces are covered here. In particular `conversations.write`
+ * governs conversation *records*; F7.1's "send" is `conversations/message.write`,
+ * which is present. The rest were the "worth adding cheaply" extras from
+ * HIGHLEVEL_PLATFORM.md §4, and they cost us nothing.
  */
 export const HL_SCOPES = [
   'locations.readonly',
   'contacts.readonly',
   'contacts.write',
   'conversations.readonly',
-  'conversations.write',
   'conversations/message.readonly',
   'conversations/message.write',
   'calendars.readonly',
   'calendars/events.readonly',
   'calendars/events.write',
-  'users.readonly',
-  'opportunities.readonly',
-  'locations/customFields.readonly',
-  'locations/tags.readonly',
 ] as const
 
 function required(name: string): string {

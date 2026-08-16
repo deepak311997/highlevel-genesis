@@ -125,22 +125,43 @@ describe('HL_SCOPES', () => {
    * fails if someone edits the constant, which is the moment to also update the
    * marketplace app — the other half of a contract this repo cannot see.
    */
-  it('is the full list agreed with the marketplace app', () => {
+  it('is the list the marketplace app actually grants', () => {
     expect([...HL_SCOPES]).toEqual([
       'locations.readonly',
       'contacts.readonly',
       'contacts.write',
       'conversations.readonly',
-      'conversations.write',
       'conversations/message.readonly',
       'conversations/message.write',
       'calendars.readonly',
       'calendars/events.readonly',
       'calendars/events.write',
+    ])
+  })
+
+  /*
+   * Five scopes were dropped after the app rejected them with `invalid_scope`:
+   * conversations.write, users.readonly, opportunities.readonly,
+   * locations/customFields.readonly and locations/tags.readonly.
+   *
+   * None is required by the spec. F7.1 asks for Contacts, Conversations and
+   * Calendars, and every one of those surfaces is covered above —
+   * conversations.write governs conversation *records*, while F7.1's "send" is
+   * conversations/message.write, which is present. The rest were the
+   * "worth adding cheaply" extras from HIGHLEVEL_PLATFORM.md §4.
+   *
+   * This test names them so a future reader knows they were considered and
+   * excluded, rather than forgotten.
+   */
+  it('excludes the scopes the app refused, none of which the spec needs', () => {
+    for (const refused of [
+      'conversations.write',
       'users.readonly',
       'opportunities.readonly',
       'locations/customFields.readonly',
       'locations/tags.readonly',
-    ])
+    ]) {
+      expect([...HL_SCOPES]).not.toContain(refused)
+    }
   })
 })
