@@ -22,14 +22,12 @@ const EMULATOR_ENV: Record<string, string> = {
   VITE_FIREBASE_API_KEY: 'fake-api-key',
   VITE_FIREBASE_AUTH_DOMAIN: 'demo-genesis.firebaseapp.com',
   VITE_FIREBASE_PROJECT_ID: 'demo-genesis',
-  VITE_FIREBASE_DATABASE_ID: 'hl-genesis',
   // Blank: requests stay same-origin and go through the proxy below, exactly
   // as the Hosting rewrite does in production.
   VITE_FUNCTIONS_BASE_URL: '',
   // The suites move the emulators to a second port set so they do not have to
   // stop a development session; the SPA has to follow them there.
   VITE_AUTH_EMULATOR_PORT: process.env['AUTH_EMULATOR_PORT'] ?? '9099',
-  VITE_FIRESTORE_EMULATOR_PORT: process.env['FIRESTORE_EMULATOR_PORT_CLIENT'] ?? '8080',
 }
 
 /**
