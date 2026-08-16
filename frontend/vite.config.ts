@@ -22,7 +22,7 @@ const EMULATOR_ENV: Record<string, string> = {
   VITE_FIREBASE_API_KEY: 'fake-api-key',
   VITE_FIREBASE_AUTH_DOMAIN: 'demo-genesis.firebaseapp.com',
   VITE_FIREBASE_PROJECT_ID: 'demo-genesis',
-  VITE_FIREBASE_DATABASE_ID: 'highlevel-genesis',
+  VITE_FIREBASE_DATABASE_ID: 'hl-genesis',
   // Blank: requests stay same-origin and go through the proxy below, exactly
   // as the Hosting rewrite does in production.
   VITE_FUNCTIONS_BASE_URL: '',

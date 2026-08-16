@@ -23,7 +23,7 @@ import { getFirestore, type Firestore } from 'firebase-admin/firestore'
 
 export const PROJECT_ID = 'demo-genesis'
 export const REGION = 'asia-south1'
-export const DATABASE_ID = 'highlevel-genesis'
+export const DATABASE_ID = 'hl-genesis'
 
 /**
  * The emulator strips the function name from the path, so the Express app sees

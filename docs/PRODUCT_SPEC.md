@@ -51,7 +51,7 @@ Cloud Functions v2 · Node 22 · region asia-south1
    └─ api/hl/*            HighLevel proxy: route allowlist, transactional
                           token refresh, error normalisation                   Slice 8
    ▼
-Firestore — NAMED database `highlevel-genesis` (not `(default)`)
+Firestore — NAMED database `hl-genesis` (not `(default)`)
    users · authThrottle · hlConnections · projects · files · snapshots · messages
 ```
 

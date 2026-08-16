@@ -1,6 +1,6 @@
 {
   "firestore": {
-    "database": "highlevel-genesis",
+    "database": "hl-genesis",
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },

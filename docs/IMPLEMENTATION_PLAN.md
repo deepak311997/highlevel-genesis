@@ -134,7 +134,7 @@ Vertical proof: a `/health` page that calls a Cloud Function that writes and rea
 Firestore doc — with a test at every level, so the harness itself is proven.
 
 **Also settled here, and worth naming because later slices depend on all three:** region
-`asia-south1`, the named Firestore database `highlevel-genesis`, and a `generate` stub that
+`asia-south1`, the named Firestore database `hl-genesis`, and a `generate` stub that
 streams SSE through a Hosting rewrite — which is what retired §8's "does Functions v2
 stream in this region" risk before Slice 5 could be blocked by it.
 
@@ -485,7 +485,7 @@ open and awaiting merge.
 |---|---|
 | Remote | `origin` — public GitHub repository, one branch per slice |
 | CI | GitHub Actions: typecheck · lint · unit · rules · integration · e2e on every PR |
-| Firestore | named database `highlevel-genesis`, rules in `firestore.rules` |
+| Firestore | named database `hl-genesis`, rules in `firestore.rules` |
 | Functions region | `asia-south1` — pinned in `setGlobalOptions()` and both Hosting rewrites |
 | Local secrets | `frontend/.env`, `functions/.env`, `functions/.secret.local` — all gitignored |
 | Deployed secrets | Secret Manager (`firebase functions:secrets:set`), never plain env vars |
