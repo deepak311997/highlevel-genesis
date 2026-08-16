@@ -1,6 +1,6 @@
 ---
 name: feature-review
-description: Stage 5 of the vertical-slice workflow, and the general code-review skill. Conducts a multi-axis review — correctness, readability, architecture, security, performance — audits a slice against its PRD, runs the full suite, fixes what it finds, and writes a review record. Use before merging any change, whether written by you, another agent, or a human.
+description: Stage 4 of the vertical-slice workflow, and the general code-review skill. Conducts a multi-axis review — correctness, readability, architecture, security, performance — audits a slice against its PRD, runs the full suite, fixes what it finds, and writes a review record. Use before merging any change, whether written by you, another agent, or a human.
 ---
 
 # Review

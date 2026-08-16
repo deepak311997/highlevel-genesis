@@ -1,9 +1,9 @@
 ---
 name: feature-plan
-description: Stage 3 of the vertical-slice workflow — turn an approved PRD into a file-by-file technical plan and an ordered red-green-refactor task list. Use after /feature-prd, or when the user asks how a slice will be implemented. Ends by stopping for approach approval.
+description: Stage 2 of the vertical-slice workflow — turn an approved PRD into a file-by-file technical plan and an ordered red-green-refactor task list. Use after /feature-prd, or when the user asks how a slice will be implemented. Ends by stopping for approach approval.
 ---
 
-# Stage 3 — Technical plan
+# Stage 2 — Technical plan
 
 Purpose: decide *how*, so the build stage is execution rather than invention. The output
 is an ordered task list where every task starts with a failing test.
