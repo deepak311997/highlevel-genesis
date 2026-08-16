@@ -11,6 +11,14 @@ import { defineConfig } from 'vitest/config'
  *
  * `.mjs`, and outside the root tsconfig's `include`, matching how
  * `scripts/test-emulator-config.mjs` is already treated.
+ *
+ * **Named so it is not auto-discovered, and passed with `--config`.** Vitest
+ * resolves its config by walking *up* from the working directory, so a plain
+ * `vitest.config.mts` at the repo root becomes the config for every package
+ * below that has none of its own — which silently redirected `functions`' suite
+ * at this file's `include` and left it reporting "no test files found". A config
+ * only reachable by name cannot leak downward at all, and no future package has
+ * to remember to declare one to defend itself.
  */
 export default defineConfig({
   test: {
