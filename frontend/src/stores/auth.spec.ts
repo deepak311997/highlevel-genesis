@@ -5,24 +5,13 @@ import type { User } from 'firebase/auth'
 const onAuthStateChanged = vi.hoisted(() => vi.fn())
 const signInWithEmailAndPassword = vi.hoisted(() => vi.fn())
 const signOut = vi.hoisted(() => vi.fn())
-const getDoc = vi.hoisted(() => vi.fn())
-const setDoc = vi.hoisted(() => vi.fn())
-const updateDoc = vi.hoisted(() => vi.fn())
 
-vi.mock('@/lib/firebase', () => ({ auth: { name: 'auth' }, db: { name: 'db' } }))
+vi.mock('@/lib/firebase', () => ({ auth: { name: 'auth' } }))
 
 vi.mock('firebase/auth', () => ({
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
-}))
-
-vi.mock('firebase/firestore', () => ({
-  doc: (_db: unknown, ...path: string[]) => ({ path: path.join('/') }),
-  getDoc,
-  setDoc,
-  updateDoc,
-  serverTimestamp: () => 'SERVER_TIMESTAMP',
 }))
 
 const { useAuthStore } = await import('./auth')
@@ -48,9 +37,6 @@ function fakeUser(overrides: Partial<User> = {}): Partial<User> {
 beforeEach(() => {
   setActivePinia(createPinia())
   vi.clearAllMocks()
-  getDoc.mockResolvedValue({ exists: () => false })
-  setDoc.mockResolvedValue(undefined)
-  updateDoc.mockResolvedValue(undefined)
 })
 
 afterEach(() => {
@@ -167,71 +153,5 @@ describe('refreshVerification', () => {
     emit(null)
 
     await expect(store.refreshVerification()).resolves.toBe(false)
-  })
-})
-
-describe('ensureProfile', () => {
-  it('creates the document with exactly the allowlisted fields', async () => {
-    const store = useAuthStore()
-    emit(fakeUser())
-
-    await store.ensureProfile()
-
-    expect(setDoc).toHaveBeenCalledWith(
-      { path: 'users/alice' },
-      {
-        email: 'alice@example.test',
-        displayName: null,
-        createdAt: 'SERVER_TIMESTAMP',
-        updatedAt: 'SERVER_TIMESTAMP',
-      },
-    )
-  })
-
-  it('touches only updatedAt when the document already exists', async () => {
-    getDoc.mockResolvedValue({ exists: () => true })
-    const store = useAuthStore()
-    emit(fakeUser())
-
-    await store.ensureProfile()
-
-    expect(setDoc).not.toHaveBeenCalled()
-    expect(updateDoc).toHaveBeenCalledWith(
-      { path: 'users/alice' },
-      { updatedAt: 'SERVER_TIMESTAMP' },
-    )
-  })
-
-  /**
-   * The rules require the email_verified claim on create, so an early write
-   * could only ever be denied — and the gate has not released the user yet.
-   */
-  it('does not write while the address is unverified', async () => {
-    const store = useAuthStore()
-    emit(fakeUser({ emailVerified: false }))
-
-    await store.ensureProfile()
-
-    expect(getDoc).not.toHaveBeenCalled()
-    expect(setDoc).not.toHaveBeenCalled()
-  })
-
-  it('does not write without a session', async () => {
-    const store = useAuthStore()
-    emit(null)
-
-    await store.ensureProfile()
-
-    expect(setDoc).not.toHaveBeenCalled()
-  })
-
-  // AC-45: the profile is a convenience, not a precondition for a session.
-  it('never throws when the write fails', async () => {
-    setDoc.mockRejectedValue(new Error('permission-denied'))
-    const store = useAuthStore()
-    emit(fakeUser())
-
-    await expect(store.ensureProfile()).resolves.toBeUndefined()
-    expect(store.isSignedIn).toBe(true)
   })
 })
