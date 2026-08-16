@@ -1,8 +1,11 @@
 import { Router } from 'express'
 
 import { asyncHandler } from '../lib/errors'
+import { handleCallback } from './callback'
 import { handleConnect } from './connect'
 import { handleDeleteConnection, handleGetConnection } from './connection'
+import { buildFakeHlRouter } from './fake'
+import { isEmulator } from '../lib/env'
 import { requireAppCheck } from '../auth/appCheck'
 import { withVerifiedUser } from '../auth/requireUser'
 
@@ -36,6 +39,12 @@ export const hlRouter: Router = Router()
 
 const attested = asyncHandler(requireAppCheck)
 
+// Unauthenticated by necessity: HighLevel redirects a browser here and
+// there is no session on the request. The encrypted state is the
+// authorisation, and App Check has nothing to attest on a top-level
+// navigation initiated by another company's server.
+hlRouter.get('/oauth/callback', asyncHandler(handleCallback))
+
 hlRouter.post('/hl/connect', attested, asyncHandler(withVerifiedUser(handleConnect)))
 
 // Reading status is not attested: it is a plain authenticated read the
@@ -44,3 +53,10 @@ hlRouter.post('/hl/connect', attested, asyncHandler(withVerifiedUser(handleConne
 // it is destructive.
 hlRouter.get('/hl/connection', asyncHandler(withVerifiedUser(handleGetConnection)))
 hlRouter.delete('/hl/connection', attested, asyncHandler(withVerifiedUser(handleDeleteConnection)))
+
+/**
+ * The stand-in for HighLevel, mounted last and only under the emulator.
+ * `buildFakeHlRouter` returns an empty router otherwise, so there is nothing to
+ * reach in a deployed build even if this line is read out of context.
+ */
+hlRouter.use(buildFakeHlRouter(isEmulator()))
