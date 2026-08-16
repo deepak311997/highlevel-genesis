@@ -1,7 +1,8 @@
 import { Router } from 'express'
 
 import { asyncHandler } from '../lib/errors'
-import { handleGetProfile } from './profile'
+import { handleGetProfile, handlePutProfile } from './profile'
+import { requireAppCheck } from '../auth/appCheck'
 import { withVerifiedUser } from '../auth/requireUser'
 
 /**
@@ -23,7 +24,14 @@ import { withVerifiedUser } from '../auth/requireUser'
  */
 export const usersRouter: Router = Router()
 
+const attested = asyncHandler(requireAppCheck)
+
 // Reading is not attested: it is a plain authenticated read, and App Check buys
 // nothing against a caller who already holds a valid ID token. Mutations are —
 // one rule for the whole API, matching `GET` and `DELETE /hl/connection`.
+//
+// `PUT` rather than `POST /users/ensure`: create-if-absent, touch-if-present is
+// idempotent, which is exactly what the verb means, and a procedure wearing a
+// URL is not.
 usersRouter.get('/users/me', asyncHandler(withVerifiedUser(handleGetProfile)))
+usersRouter.put('/users/me', attested, asyncHandler(withVerifiedUser(handlePutProfile)))

@@ -40,7 +40,7 @@ export const profileBodySchema = z
 export type ProfileBody = z.infer<typeof profileBodySchema>
 
 /** A Firestore Timestamp, recognised structurally rather than by instanceof. */
-const timestamp = z.custom<Timestamp>(
+export const firestoreTimestamp = z.custom<Timestamp>(
   (value) => typeof (value as Timestamp | undefined)?.toMillis === 'function',
 )
 
@@ -60,8 +60,8 @@ const timestamp = z.custom<Timestamp>(
 export const storedProfileSchema = z.object({
   email: z.string().min(1),
   displayName: z.string().nullable().catch(null),
-  createdAt: timestamp,
-  updatedAt: timestamp,
+  createdAt: firestoreTimestamp,
+  updatedAt: firestoreTimestamp,
 })
 
 export type StoredProfile = z.infer<typeof storedProfileSchema>
