@@ -46,7 +46,7 @@ Every slice runs the same five stages. Each stage is a skill you invoke; each en
 
 | # | Stage | Skill | Produces | Who acts next |
 |---|---|---|---|---|
-| 1 | Discovery + PRD | `/feature-prd <id>` | `docs/slices/<id>/02-prd.md` — decisions, acceptance criteria, test matrix | You answer questions, then approve scope |
+| 1 | Discovery + PRD | `/feature-prd <id>` | `02-prd.md` — decisions, acceptance criteria, test matrix · `02-prd.html` — published design companion | You answer questions, then approve scope |
 | 2 | Tech plan | `/feature-plan <id>` | `03-plan.md` — file map, ordered TDD tasks | You approve approach |
 | 3 | Build | `/feature-build <id>` | Code on `slice/<id>-<slug>`, `04-build-log.md` | — |
 | 4 | Review | `/feature-review <id>` | `05-review.md`, fixes applied | — |
@@ -55,6 +55,13 @@ Every slice runs the same five stages. Each stage is a skill you invoke; each en
 Stage 1 interviews you first and writes the PRD from your answers — the decisions table in
 `02-prd.md` is the record that `01-discovery.md` used to be. Doc filenames keep their
 original prefixes so slices 0–1 stay readable.
+
+Stage 1 also produces `02-prd.html`, a published design companion that **draws** what the
+PRD can only describe: the trust boundary, the flow with its steps numbered, the one
+concurrency or ordering hazard the slice exists to get right, and where every failure path
+lands. It is not a restyled PRD — the acceptance criteria and the test matrix stay in the
+markdown, which remains the contract the build is graded against. Slices 0 and 1 predate it
+and do not have one.
 
 After you merge, we start the next slice from `main`. Nothing in stage 3 begins before
 stages 1–2 are approved, and nothing merges without you.
