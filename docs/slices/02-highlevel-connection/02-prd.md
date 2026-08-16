@@ -36,7 +36,7 @@ standing contracts, recorded so the build can be re-derived from this document a
 | D11 | What does `/hl/callback` render? | **A brief "Finishing connection…" status, then it navigates automatically.** No button on the happy path. | A terminal screen with a Continue button adds a click to the demo and tells the user nothing they did not already know. |
 | D12 | What does the user see when the callback fails? | **The dashboard panel renders an Alert** from `lastError`. Codes: `denied`, `invalid_state`, `exchange_failed`, `wrong_account_type`. | Error copy lives in one place, beside the Connect button that retries it. |
 | D13 | How much refresh machinery lands here? | **All of it.** `getAccessToken()` with the 5-minute skew and the Firestore transaction from `HIGHLEVEL_PLATFORM.md` §3, tested at L1 and L4. No runtime consumer until Slice 8. | Rotation-on-use bricks a connection when two callers refresh at once, and Slice 10's preview fires parallel proxy calls into exactly that. Designing it under day-4 time pressure is how it gets written wrong — and a bricked connection is unrecoverable without a reinstall. |
-| D14 | How does e2e drive the flow? | **`HL_AUTHORIZE_BASE` and `HL_TOKEN_BASE`** default to the real hosts and point at a local fake under the emulator. Playwright walks the whole loop. | Hitting the callback directly would skip the Connect button and the authorize redirect — the two things most likely to be misconfigured. |
+| D14 | How does e2e drive the flow? | **`HL_AUTHORIZE_BASE` and `HL_API_BASE`** default to the real hosts and point at a local fake under the emulator. Playwright walks the whole loop. | Hitting the callback directly would skip the Connect button and the authorize redirect — the two things most likely to be misconfigured. |
 | D15 | What does Disconnect do? | **Deletes `hlConnections/{uid}` only.** The install stays on HighLevel's side. | No revoke endpoint is documented in `HIGHLEVEL_PLATFORM.md`, and a revoke that fails leaves a half-disconnected state to design around. Reconnecting re-runs OAuth and replaces the record, so switching location falls out for free. |
 | D16 | Agency or sub-account install? | **Target User = Sub-account,** so the install returns a Location token directly. `/oauth/locationToken` is never called. | `HIGHLEVEL_PLATFORM.md` §1. It is also what makes F1.3's "one HL location per user" a design decision rather than a limitation. |
 | D17 | API versions | **Date-pinned:** `2021-07-28` for locations, `2021-04-15` for calendars/conversations. `v3` migration is a named README follow-up. | Already settled in `IMPLEMENTATION_PLAN.md` §8. |
@@ -58,7 +58,7 @@ standing contracts, recorded so the build can be re-derived from this document a
 - `getAccessToken(uid)` — transactional refresh with a 5-minute skew (no runtime consumer yet)
 - `/hl/callback` — a new SPA route that resolves the outcome and navigates on
 - A connection panel on the dashboard with loading, not-connected, connected, reconnect-required and error states
-- A fake HighLevel server for the emulator, selected by `HL_AUTHORIZE_BASE` / `HL_TOKEN_BASE`
+- A fake HighLevel server for the emulator, selected by `HL_AUTHORIZE_BASE` / `HL_API_BASE`
 - Recorded fixtures in `tests/fixtures/highlevel/` from the §9 walk
 
 ## Out of scope
@@ -291,7 +291,7 @@ Access class: `protected` — signed in and verified. A lapsed session bounces t
 - [ ] No new Firestore collection this slice; the `hlConnections` denial test is re-asserted
 - [ ] F8 error paths handled for this surface: every failure mode above renders user-facing copy
 - [ ] Loading, empty and error states exist for the connection panel and `/hl/callback`
-- [ ] No secrets in source; `functions/.env.example` gains `OAUTH_STATE_SECRET`, `HL_AUTHORIZE_BASE`, `HL_TOKEN_BASE`
+- [ ] No secrets in source; `functions/.env.example` gains `OAUTH_STATE_SECRET`, `HL_AUTHORIZE_BASE`, `HL_API_BASE`
 - [ ] Runs clean on `firebase emulators:start` from a fresh clone, with the fake HL server
 - [ ] README delta if setup steps changed
 - [ ] PR opened with demo evidence; **human approves before merge**
