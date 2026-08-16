@@ -10,6 +10,7 @@ import PasswordField from '@/components/PasswordField.vue'
 import { auth } from '@/lib/firebase'
 import { passwordProblem } from '@/lib/password'
 import { useAuthStore } from '@/stores/auth'
+import { useProfileStore } from '@/stores/profile'
 
 /**
  * Handler for emailed links — `verifyEmail` and `resetPassword`.
@@ -41,6 +42,7 @@ const passwordError = ref('')
 const route = useRoute()
 const router = useRouter()
 const store = useAuthStore()
+const profile = useProfileStore()
 
 function isMode(value: unknown): value is Mode {
   return typeof value === 'string' && (MODES as readonly string[]).includes(value)
@@ -88,10 +90,10 @@ async function run(): Promise<void> {
   try {
     if (mode === 'verifyEmail') {
       await applyActionCode(auth, oobCode)
-      // The claim inside the ID token is what Firestore rules read, and it does
-      // not update on its own.
+      // The claim inside the ID token is what `withVerifiedUser` reads on every
+      // API route, and it does not update on its own.
       await store.refreshVerification()
-      await store.ensureProfile()
+      await profile.ensure()
       state.value = { kind: 'verified' }
       return
     }
