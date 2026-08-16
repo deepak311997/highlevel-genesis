@@ -30,7 +30,14 @@ export const DATABASE_ID = 'hl-genesis'
  * `/auth/register` and matches its `/` mount — the same router the Hosting
  * rewrite reaches at `/api/auth/register`.
  */
-export const API_BASE = `http://127.0.0.1:5001/${PROJECT_ID}/${REGION}/api`
+/**
+ * The suite runs the emulators on a second set of ports, so it does not fight a
+ * development session for 5001. `npm run test:*` sets this; the default is the
+ * ordinary port, for anyone driving vitest by hand.
+ */
+const FUNCTIONS_PORT = process.env['FUNCTIONS_EMULATOR_PORT'] ?? '5001'
+
+export const API_BASE = `http://127.0.0.1:${FUNCTIONS_PORT}/${PROJECT_ID}/${REGION}/api`
 
 function emulatorHost(name: 'FIREBASE_AUTH_EMULATOR_HOST' | 'FIRESTORE_EMULATOR_HOST'): string {
   const value = process.env[name]

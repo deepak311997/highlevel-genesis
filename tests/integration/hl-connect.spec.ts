@@ -85,7 +85,10 @@ describe('POST /api/hl/connect', () => {
     const { authorizeUrl } = res.body as { authorizeUrl: string }
 
     const redirect = new URL(authorizeUrl).searchParams.get('redirect_uri') ?? ''
-    expect(new URL(redirect).origin).toBe('http://localhost:5173')
+    // Derived from the same variable the test script sets, so moving the suite
+    // to a second port set cannot make this assertion stale.
+    const appPort = process.env['E2E_PORT'] ?? '5173'
+    expect(new URL(redirect).origin).toBe(`http://localhost:${appPort}`)
     expect(redirect).not.toContain('web.app')
   })
 

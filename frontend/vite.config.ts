@@ -26,10 +26,20 @@ const EMULATOR_ENV: Record<string, string> = {
   // Blank: requests stay same-origin and go through the proxy below, exactly
   // as the Hosting rewrite does in production.
   VITE_FUNCTIONS_BASE_URL: '',
+  // The suites move the emulators to a second port set so they do not have to
+  // stop a development session; the SPA has to follow them there.
+  VITE_AUTH_EMULATOR_PORT: process.env['AUTH_EMULATOR_PORT'] ?? '9099',
+  VITE_FIRESTORE_EMULATOR_PORT: process.env['FIRESTORE_EMULATOR_PORT_CLIENT'] ?? '8080',
 }
 
-/** Where the emulated `api` function lives. */
-const EMULATOR_FUNCTIONS_TARGET = 'http://127.0.0.1:5001/demo-genesis/asia-south1'
+/**
+ * Where the emulated `api` function lives.
+ *
+ * The port is configurable because the test suites run the emulators on a
+ * second set, so they do not have to stop a development session first.
+ */
+const EMULATOR_FUNCTIONS_PORT = process.env['FUNCTIONS_EMULATOR_PORT'] ?? '5001'
+const EMULATOR_FUNCTIONS_TARGET = `http://127.0.0.1:${EMULATOR_FUNCTIONS_PORT}/demo-genesis/asia-south1`
 
 export default defineConfig(({ mode }) => {
   // .env sits next to this file, which is where Vite looks by default.
@@ -87,7 +97,8 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
-      port: 5173,
+      // Also configurable, so a Playwright run and `npm run dev` can coexist.
+      port: Number(process.env['E2E_PORT'] ?? '5173'),
       /*
        * Tunnel hostnames, for checking the integration against live HighLevel.
        *
