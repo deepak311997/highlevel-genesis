@@ -60,7 +60,9 @@ describe('tokenResponseSchema', () => {
     'rejects a response missing %s',
     (field) => {
       const broken: Record<string, unknown> = { ...(fixture('token-response-location') as object) }
-      delete broken[field]
+      // Reflect, because the lint rule against dynamically computed deletes is
+      // on and `field` comes from the it.each table.
+      Reflect.deleteProperty(broken, field)
 
       expect(() => tokenResponseSchema.parse(broken)).toThrow()
     },
