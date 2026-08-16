@@ -17,14 +17,16 @@ import { HL_SCOPES } from './config'
 
 const REDIRECT = 'https://hl-genesis-app.web.app/api/oauth/callback'
 const CLIENT_ID = 'test-client-id-1234'
+const VERSION_ID = 'test-version-id-5678'
 const STATE = 'sealed-state-token'
 
 const saved: Record<string, string | undefined> = {}
-const KEYS = ['HL_CLIENT_ID', 'HL_REDIRECT_URI', 'HL_AUTHORIZE_BASE'] as const
+const KEYS = ['HL_CLIENT_ID', 'HL_VERSION_ID', 'HL_REDIRECT_URI', 'HL_AUTHORIZE_BASE'] as const
 
 beforeEach(() => {
   for (const key of KEYS) saved[key] = process.env[key]
   process.env['HL_CLIENT_ID'] = CLIENT_ID
+  process.env['HL_VERSION_ID'] = VERSION_ID
   process.env['HL_REDIRECT_URI'] = REDIRECT
   delete process.env['HL_AUTHORIZE_BASE']
 })
@@ -41,16 +43,25 @@ afterEach(() => {
 })
 
 describe('buildAuthorizeUrl', () => {
-  it('targets the marketplace chooselocation endpoint', () => {
+  /*
+   * The **v2** path, and this is not cosmetic. HIGHLEVEL_PLATFORM.md §2 Step 4
+   * documented `/oauth/chooselocation`, which is what this file originally
+   * asserted — and against a live app that path answers
+   * `No integration found with the id: …`, naming the app id it could not
+   * resolve. The developer portal's own generated install link uses
+   * `/v2/oauth/chooselocation` with a `version_id`. The doc is stale; the
+   * portal is authoritative, and this test is the record of that.
+   */
+  it('targets the v2 chooselocation endpoint', () => {
     expect(buildAuthorizeUrl(STATE)).toMatch(
-      /^https:\/\/marketplace\.gohighlevel\.com\/oauth\/chooselocation\?/,
+      /^https:\/\/marketplace\.gohighlevel\.com\/v2\/oauth\/chooselocation\?/,
     )
   })
 
   it('honours HL_AUTHORIZE_BASE, which is how the emulator reaches the fake', () => {
     process.env['HL_AUTHORIZE_BASE'] = 'http://127.0.0.1:5001/demo/asia-south1/api/__fake-hl'
     expect(buildAuthorizeUrl(STATE)).toMatch(
-      /^http:\/\/127\.0\.0\.1:5001\/demo\/asia-south1\/api\/__fake-hl\/oauth\/chooselocation\?/,
+      /^http:\/\/127\.0\.0\.1:5001\/demo\/asia-south1\/api\/__fake-hl\/v2\/oauth\/chooselocation\?/,
     )
   })
 
@@ -61,6 +72,21 @@ describe('buildAuthorizeUrl', () => {
     expect(params.get('state')).toBe(STATE)
     // Same tab rather than a new one — the default popup is confusing in a demo.
     expect(params.get('loginWindowOpenMode')).toBe('self')
+  })
+
+  /*
+   * `version_id` identifies the app version whose scope list and redirect URL
+   * the consent screen should honour. Without it the v2 endpoint cannot resolve
+   * the app at all — this is the parameter whose absence produced the
+   * "No integration found" failure.
+   */
+  it('identifies the app version, without which v2 cannot resolve the app', () => {
+    expect(new URL(buildAuthorizeUrl(STATE)).searchParams.get('version_id')).toBe(VERSION_ID)
+  })
+
+  it('fails loudly when the version id is not configured', () => {
+    Reflect.deleteProperty(process.env, 'HL_VERSION_ID')
+    expect(() => buildAuthorizeUrl(STATE)).toThrow(/HL_VERSION_ID/)
   })
 
   it('sends redirect_uri byte for byte, since HighLevel matches it exactly', () => {

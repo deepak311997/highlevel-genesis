@@ -120,13 +120,33 @@ Constraints:
 The install URL — this is the "authorize URL" your **Connect HighLevel** button points at:
 
 ```
-https://marketplace.gohighlevel.com/oauth/chooselocation
+https://marketplace.gohighlevel.com/v2/oauth/chooselocation
   ?response_type=code
   &redirect_uri=https://<your-project>.web.app/api/oauth/callback
   &client_id=<CLIENT_ID>
+  &version_id=<APP_ID>
   &scope=<space-separated scopes, URL-encoded>
 ```
-✅ Verified format.
+✅ **Corrected 2026-08-16, measured against a live app.** This section previously
+documented `/oauth/chooselocation` with no `version_id`. That form is v1, and against a
+current app it fails with:
+
+```
+HttpException: No integration found with the id: <app id>
+```
+
+**That message is misleading and cost an hour.** It names the *app id*, so it reads as a bad
+or stale `client_id` — the natural response is to regenerate the client keys, which changes
+nothing, because the client id was never the problem. The app is real; the v1 path simply
+cannot resolve it.
+
+`version_id` is the app **version** id. Today it equals the segment of `client_id` before
+the hyphen, but treat that as a coincidence rather than a contract and configure it
+separately (`HL_VERSION_ID`).
+
+**The authoritative source is the developer portal's own generated install link** — My Apps
+→ your app → the share/install URL. When the portal and this document disagree, the portal
+is right and this document is stale. Copy that link before hand-assembling anything.
 
 Notes:
 - White-label variant: `https://marketplace.leadconnectorhq.com/oauth/chooselocation` (same params).
@@ -439,11 +459,12 @@ Do all of this **before writing any Genesis code.** Every item is something that
 
 ```bash
 # 0. Set these once
-export CID='...' CSEC='...' REDIRECT='https://<project>.web.app/api/oauth/callback'
+export CID='...' CSEC='...' VID='...' REDIRECT='https://<project>.web.app/api/oauth/callback'
 
 # 1. Build the install URL, open it, install into the SANDBOX location.
-#    (scopes space-separated, URL-encoded)
-echo "https://marketplace.gohighlevel.com/oauth/chooselocation?response_type=code&redirect_uri=${REDIRECT}&client_id=${CID}&scope=locations.readonly%20contacts.readonly%20contacts.write%20conversations.readonly%20conversations%2Fmessage.readonly%20calendars.readonly%20calendars%2Fevents.readonly&loginWindowOpenMode=self"
+#    NOTE the /v2/ path and version_id — the v1 form fails with
+#    "No integration found with the id: <app id>". See Step 4.
+echo "https://marketplace.gohighlevel.com/v2/oauth/chooselocation?response_type=code&redirect_uri=${REDIRECT}&client_id=${CID}&version_id=${VID}&scope=locations.readonly%20contacts.readonly%20contacts.write%20conversations.readonly%20conversations%2Fmessage.readonly%20calendars.readonly%20calendars%2Fevents.readonly&loginWindowOpenMode=self"
 
 # 2. Exchange the code  → NOTE: form-urlencoded, no Version header
 curl -sS -X POST https://services.leadconnectorhq.com/oauth/token \
