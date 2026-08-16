@@ -2,9 +2,10 @@
   "name": "genesis",
   "version": "0.1.0",
   "private": true,
-  "description": "Genesis — AI-powered HighLevel app builder",
+  "description": "Genesis \u2014 AI-powered HighLevel app builder",
   "scripts": {
-    "dev": "npm --prefix frontend run dev",
+    "dev": "npm --prefix functions run build && FIRESTORE_DATABASE_ID=hl-genesis OAUTH_STATE_SECRET=emulator-only-state-secret-do-not-reuse HL_CLIENT_ID=fake-client-id HL_CLIENT_SECRET=fake-client-secret HL_VERSION_ID=fake-version-id HL_REDIRECT_URI=http://localhost:5173/api/oauth/callback HL_AUTHORIZE_BASE=http://127.0.0.1:5001/demo-genesis/asia-south1/api/__fake-hl HL_API_BASE=http://127.0.0.1:5001/demo-genesis/asia-south1/api/__fake-hl firebase emulators:exec --project demo-genesis --only auth,firestore,functions --import=./.emulator-data --export-on-exit=./.emulator-data \"npm --prefix frontend run dev:emulator\"",
+    "dev:cloud": "npm --prefix frontend run dev",
     "build": "npm --prefix functions run build && npm --prefix frontend run build",
     "typecheck": "npm --prefix functions run typecheck && npm --prefix frontend run typecheck && tsc --noEmit",
     "lint": "npm --prefix functions run lint && npm --prefix frontend run lint",

@@ -46,3 +46,7 @@ yarn-error.log*
 
 # Assignment brief — kept local, not published to the public repo
 GENESIS_ASSIGNMENT_V2.pdf
+
+# Emulator state, persisted between `npm run dev` runs so a local session
+# survives a restart. Throwaway by definition — never commit it.
+.emulator-data/

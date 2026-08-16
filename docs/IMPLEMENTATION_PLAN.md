@@ -504,15 +504,21 @@ Slice 13's cleanup.
 
 ```bash
 npm run install:all      # root + frontend + functions
-npm run dev              # SPA against REAL Firebase — the production path
-npm run emulators        # auth + firestore + functions, project id demo-genesis
-npm run dev:emulator     # SPA wired to the emulators (vite --mode emulator)
+npm run dev              # emulators + SPA against them, in ONE command — the local path
+npm run dev:cloud        # SPA against REAL Firebase, for checking a deploy
+npm run emulators        # the emulators alone, without a SPA
 npm test                 # typecheck + lint + unit + rules + integration
 ```
 
-The emulator/real split is deliberate and is explained in `PRODUCT_SPEC.md` §5. Slice 13
-owes the README a walked-through emulator path, because the brief names
-`firebase emulators:start` explicitly.
+`npm run dev` is emulator-backed **as of Slice 2**, reversing the Slice 0–1 arrangement where
+it pointed at real Firebase. The reason is in `PRODUCT_SPEC.md` §5: with the old default, an
+endpoint that existed only on a branch answered 404 on the developer's own machine, because
+the SPA proxied `/api` to the deployed functions. Nothing could be tried before it shipped.
+
+It starts auth, firestore and functions, imports and re-exports `.emulator-data` so a local
+account survives a restart, and wires a stubbed HighLevel so the whole OAuth loop runs
+offline. Slice 13 still owes the README a walked-through version of this, because the brief
+names `firebase emulators:start` explicitly.
 
 ---
 
