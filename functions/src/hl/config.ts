@@ -1,3 +1,5 @@
+import { isEmulator } from '../lib/env'
+
 /**
  * HighLevel configuration, resolved per call rather than at module scope.
  *
@@ -44,6 +46,26 @@ export const HL_SCOPES = [
   'calendars/events.write',
 ] as const
 
+/**
+ * A value the *test scripts* can force, which `.env` cannot overrule.
+ *
+ * The functions emulator loads `.env` and `.env.local` into the runtime and
+ * those values **beat anything the shell exported** — which is the precedence
+ * that once sent the local OAuth flow to the deployed site. It has a sharper
+ * consequence for the suite: `.env.local` can be switched to the real
+ * HighLevel for manual checks, and if tests inherited that they would exchange
+ * real authorization codes against the live API with real credentials.
+ *
+ * These names appear in neither `.env` nor `.env.local`, so a shell value
+ * survives, and they are honoured only under the emulator. That makes the suite
+ * independent of whatever mode a developer happens to be in.
+ */
+function emulatorOverride(name: string): string | undefined {
+  if (!isEmulator()) return undefined
+  const value = process.env[name]?.trim()
+  return value === undefined || value === '' ? undefined : value
+}
+
 function required(name: string): string {
   const value = process.env[name]?.trim()
   if (value === undefined || value === '') {
@@ -88,13 +110,13 @@ export function hlClientSecret(): string {
  * exchange. Read from here everywhere so those three cannot drift.
  */
 export function hlRedirectUri(): string {
-  return required('HL_REDIRECT_URI')
+  return emulatorOverride('HL_TEST_REDIRECT_URI') ?? required('HL_REDIRECT_URI')
 }
 
 export function hlAuthorizeBase(): string {
-  return baseUrl('HL_AUTHORIZE_BASE', DEFAULT_AUTHORIZE_BASE)
+  return emulatorOverride('HL_TEST_AUTHORIZE_BASE') ?? baseUrl('HL_AUTHORIZE_BASE', DEFAULT_AUTHORIZE_BASE)
 }
 
 export function hlApiBase(): string {
-  return baseUrl('HL_API_BASE', DEFAULT_API_BASE)
+  return emulatorOverride('HL_TEST_API_BASE') ?? baseUrl('HL_API_BASE', DEFAULT_API_BASE)
 }
