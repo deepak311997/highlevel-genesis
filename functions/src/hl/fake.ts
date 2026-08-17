@@ -57,7 +57,6 @@ function q(req: Request, name: string, fallback = ''): string {
   return typeof value === 'string' ? value : fallback
 }
 
-
 function tokenBase(): Record<string, unknown> {
   return {
     access_token: `fake-access-${String(Math.random()).slice(2, 10)}`,
@@ -114,13 +113,15 @@ export function buildFakeHlRouter(enabled: boolean): Router {
     const approve = `${redirectUri}?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`
     const deny = `${redirectUri}?error=access_denied&state=${encodeURIComponent(state)}`
 
-    res.type('html').send(
-      `<!doctype html><meta charset="utf-8"><title>Fake HighLevel</title>` +
-        `<h1>Fake HighLevel</h1>` +
-        `<p>Standing in for the marketplace. Not reachable outside the emulator.</p>` +
-        `<a id="approve" href="${approve}">Approve</a>` +
-        `<a id="deny" href="${deny}">Deny</a>`,
-    )
+    res
+      .type('html')
+      .send(
+        `<!doctype html><meta charset="utf-8"><title>Fake HighLevel</title>` +
+          `<h1>Fake HighLevel</h1>` +
+          `<p>Standing in for the marketplace. Not reachable outside the emulator.</p>` +
+          `<a id="approve" href="${approve}">Approve</a>` +
+          `<a id="deny" href="${deny}">Deny</a>`,
+      )
   })
 
   router.post('/__fake-hl/oauth/token', (req, res) => {
@@ -129,7 +130,9 @@ export function buildFakeHlRouter(enabled: boolean): Router {
     if (body['grant_type'] === 'refresh_token') {
       const token = body['refresh_token'] ?? ''
       if (token.startsWith('dead-')) {
-        res.status(400).json({ error: 'invalid_grant', error_description: 'This refresh token is invalid' })
+        res
+          .status(400)
+          .json({ error: 'invalid_grant', error_description: 'This refresh token is invalid' })
         return
       }
       if (token.startsWith('boom-')) {
@@ -142,7 +145,9 @@ export function buildFakeHlRouter(enabled: boolean): Router {
 
     const code = body['code'] ?? ''
     if (code.startsWith('bad-') || consumedCodes.has(code)) {
-      res.status(400).json({ error: 'invalid_grant', error_description: 'Invalid authorization code' })
+      res
+        .status(400)
+        .json({ error: 'invalid_grant', error_description: 'Invalid authorization code' })
       return
     }
     consumedCodes.add(code)
@@ -176,7 +181,6 @@ export function buildFakeHlRouter(enabled: boolean): Router {
     }
     res.json({ location: { id: req.params.id, name: LOCATION_NAME }, traceId: 'fake-trace' })
   })
-
 
   return router
 }

@@ -7,6 +7,7 @@ const readProject = vi.hoisted(() => vi.fn())
 const readTranscript = vi.hoisted(() => vi.fn())
 const appendAssistantMessage = vi.hoisted(() => vi.fn())
 const openStream = vi.hoisted(() => vi.fn())
+const getDb = vi.hoisted(() => vi.fn())
 
 /*
  * The originals are spread back in, because these modules are also reached
@@ -27,6 +28,13 @@ vi.mock('./llm', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   openStream,
 }))
+/*
+ * The database itself, rather than `files/handlers`: `planFileWrites` calls
+ * `readFilePaths` directly inside its own module, so a module mock would not be
+ * seen. `planFileWrites` and `validateFileOps` are therefore the real ones —
+ * what this file is about is which of them the handler reaches, and with what.
+ */
+vi.mock('./lib/firebase', () => ({ getDb }))
 
 import { handleGenerate, keepAliveMs, logGeneration } from './generate'
 import { HttpError } from './lib/errors'
@@ -316,6 +324,12 @@ describe('handleGenerate — the client goes away', () => {
     vi.clearAllMocks()
     vi.spyOn(console, 'info').mockImplementation(() => undefined)
     readProject.mockResolvedValue({ id: 'proj-1' })
+    // The project holds no files yet, so every write is a creation.
+    getDb.mockReturnValue({
+      collection: () => ({
+        limit: () => ({ select: () => ({ get: () => Promise.resolve({ docs: [] }) }) }),
+      }),
+    })
     readTranscript.mockResolvedValue([
       {
         id: 'm1',
@@ -352,7 +366,13 @@ describe('handleGenerate — the client goes away', () => {
 
     expect(stream.aborted).toBe(true)
     expect(appendAssistantMessage).toHaveBeenCalledTimes(1)
-    expect(appendAssistantMessage.mock.calls[0]?.[2]).toBe('one two ')
+    /*
+     * `'one two'` and not `'one two '`: from Slice 6 the collector is the single
+     * producer of the chat text, and D16 trims it at both ends **in the emitted
+     * stream**. The persisted content is still byte-identical to the token frames
+     * the client received, which is the invariant that actually matters (D7).
+     */
+    expect(appendAssistantMessage.mock.calls[0]?.[2]).toBe('one two')
     expect(appendAssistantMessage.mock.calls[0]?.[3]).toBe(true)
     // Nobody is listening, so nothing is written to the dead socket.
     expect(res.frames.filter((frame) => frame.startsWith('event: done'))).toHaveLength(0)
@@ -370,6 +390,38 @@ describe('handleGenerate — the client goes away', () => {
 
     expect(stream.aborted).toBe(true)
     expect(appendAssistantMessage).not.toHaveBeenCalled()
+  })
+
+  /**
+   * D10, and the one case where the message's flag and the file decision differ.
+   *
+   * The client left, so the message is marked `truncated`. But the stream itself
+   * ended cleanly — the fake stops producing when aborted rather than throwing —
+   * so the model's completed blocks are a complete app, and **the files are still
+   * written**. They belong to the project, not to the connection.
+   *
+   * This is only assertable at L1: the functions emulator never propagates a
+   * client disconnect to the function runtime (see the note above).
+   */
+  it('still writes the files of a turn whose blocks closed before the client left', async () => {
+    const stream = scriptedStream([
+      'Here it is.\n\n<genesis:file path="app.js">\nconst a = 1\n</genesis:file>\n',
+      'more prose ',
+      'and more ',
+    ])
+    openStream.mockResolvedValue(stream)
+    const res = fakeResponse()
+    res.disconnectAfterTokens(1)
+
+    await handleGenerate(fakeRequest(), res.express, 'alice')
+
+    expect(stream.aborted).toBe(true)
+    const call = appendAssistantMessage.mock.calls[0] ?? []
+    expect(call[2]).toBe('Here it is.\n\n[file: app.js]')
+    expect(call[3]).toBe(true)
+    expect(call[4]).toEqual([{ path: 'app.js', content: 'const a = 1\n', size: 12, exists: false }])
+    // And still nothing on the dead socket.
+    expect(res.frames.filter((frame) => frame.startsWith('event: done'))).toHaveLength(0)
   })
 
   /*

@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { exchangeCode, exchangeForLocationToken, fetchLocationName, refreshTokens } from './exchange'
+import {
+  exchangeCode,
+  exchangeForLocationToken,
+  fetchLocationName,
+  refreshTokens,
+} from './exchange'
 
 /**
  * The wire shape of our calls to HighLevel.

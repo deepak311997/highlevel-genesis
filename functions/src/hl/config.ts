@@ -114,7 +114,10 @@ export function hlRedirectUri(): string {
 }
 
 export function hlAuthorizeBase(): string {
-  return emulatorOverride('HL_TEST_AUTHORIZE_BASE') ?? baseUrl('HL_AUTHORIZE_BASE', DEFAULT_AUTHORIZE_BASE)
+  return (
+    emulatorOverride('HL_TEST_AUTHORIZE_BASE') ??
+    baseUrl('HL_AUTHORIZE_BASE', DEFAULT_AUTHORIZE_BASE)
+  )
 }
 
 export function hlApiBase(): string {

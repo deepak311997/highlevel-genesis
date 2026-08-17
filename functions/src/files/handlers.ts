@@ -5,11 +5,14 @@ import { FieldValue } from 'firebase-admin/firestore'
 import { HttpError } from '../lib/errors'
 import { getDb } from '../lib/firebase'
 import { logAuthEvent } from '../lib/log'
+import type { CollectResult } from '../llm/fileops'
 import {
   filePathSchema,
   FILE_LIMIT,
   filesPath,
   storedFileSchema,
+  validateFileOps,
+  type FileRejection,
   type FileWrite,
   type StoredFile,
 } from './schema'
@@ -159,5 +162,64 @@ export function stageFileWrites(
     }
 
     batch.set(collection.doc(write.path), { ...document, createdAt: FieldValue.serverTimestamp() })
+  }
+}
+
+/** What a turn's files came to: what to write, and what to tell the user. */
+export interface FileWriteOutcome {
+  writes: FileWritePlan[]
+  error: FileRejection | null
+}
+
+/**
+ * Turn a finished collection into the writes a turn should commit (D9, D10).
+ *
+ * **Nothing is committed here and nothing is read unless there is something to
+ * write.** The order of the three refusals is the order the user needs them in:
+ *
+ * 1. **The turn did not complete.** A cut-off turn's last block is unterminated
+ *    by construction, and its earlier blocks describe an app whose remaining
+ *    parts were never written. One rule — *completed, or nothing* — is impossible
+ *    to get subtly wrong, where "keep the blocks that closed" is a half-app that
+ *    looks fine in the tree. A turn that attempted **no** file at all is silent
+ *    here (P6): a prose-only reply is a legitimate turn, and a truncated
+ *    prose-only reply is still one.
+ * 2. **A block was left open**, on a turn that otherwise completed.
+ * 3. **The set failed validation** — path, duplicate, byte cap or file cap.
+ *
+ * `completed` is the caller's to decide, and it is read from the **mapper's own**
+ * `truncated` rather than from the flag the message carries. The two differ in
+ * exactly one case, and D10 names it: a client that disconnects *after* a clean
+ * `end`. The message is marked truncated because the client left mid-stream, and
+ * the files are still written — they belong to the project, not to the
+ * connection, and a model that finished cleanly produced a complete app whether
+ * or not anyone was still listening.
+ */
+export async function planFileWrites(
+  uid: string,
+  projectId: string,
+  collected: CollectResult,
+  completed: boolean,
+): Promise<FileWriteOutcome> {
+  const attempted = collected.ops.length > 0 || collected.unterminated !== null
+
+  if (!completed) {
+    return { writes: [], error: attempted ? { reason: 'incomplete' } : null }
+  }
+
+  if (collected.unterminated !== null) {
+    return { writes: [], error: { reason: 'unterminated', path: collected.unterminated } }
+  }
+
+  // A prose-only reply reads nothing at all: no cap to check, nothing to write.
+  if (collected.ops.length === 0) return { writes: [], error: null }
+
+  const existing = await readFilePaths(uid, projectId)
+  const validated = validateFileOps(collected.ops, [...existing])
+  if (!validated.ok) return { writes: [], error: validated.error }
+
+  return {
+    writes: validated.writes.map((write) => ({ ...write, exists: existing.has(write.path) })),
+    error: null,
   }
 }

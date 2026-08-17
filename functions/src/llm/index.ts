@@ -11,9 +11,26 @@
  */
 export { ANTHROPIC_API_KEY, openStream } from './client'
 export { buildContext } from './context'
+export {
+  createFileCollector,
+  createFileSplitter,
+  CLOSE_TAG,
+  MAX_INDENT,
+  OPEN_HEAD,
+  OPEN_TAIL,
+} from './fileops'
+export type { CollectorFrame, CollectResult, FileCollector } from './fileops'
 export { buildParams, EFFORT, MAX_TOKENS, MODEL } from './params'
 export { SYSTEM_PROMPT } from './prompt'
 export { generateBodySchema } from './schema'
-export type { DonePayload, ErrorPayload, GenerateErrorCode, TokenPayload } from './schema'
+export type {
+  DonePayload,
+  ErrorPayload,
+  FileChunkPayload,
+  FileEndPayload,
+  FileStartPayload,
+  GenerateErrorCode,
+  TokenPayload,
+} from './schema'
 export { mapStream, MAX_OUTPUT_BYTES } from './stream'
 export type { LlmEvent, LlmStream, LlmUsage } from './stream'

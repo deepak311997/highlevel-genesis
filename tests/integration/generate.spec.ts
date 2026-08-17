@@ -32,6 +32,12 @@ import {
  *
  * The LLM is the emulator-only fake (D20), driven by markers in the prompt. No
  * automated test in this project ever calls Anthropic.
+ *
+ * **From Slice 6 `reply.json` also streams three file blocks** (D26, R8). Its
+ * prose is byte-identical, and every assertion below is about that prose or about
+ * the frame protocol, so none of them changed — but the cases here now exercise
+ * the file path too, which is the point. What the files themselves do is
+ * `generate-files.spec.ts`.
  */
 
 const PASSWORD = 'Correct-Horse-9'

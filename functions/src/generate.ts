@@ -13,12 +13,17 @@ import {
   ANTHROPIC_API_KEY,
   buildContext,
   buildParams,
+  createFileCollector,
   generateBodySchema,
   mapStream,
   openStream,
+  type CollectorFrame,
+  type FileCollector,
   type GenerateErrorCode,
   type LlmEvent,
 } from './llm'
+import { planFileWrites } from './files/handlers'
+import { fileErrorCopy } from './files/schema'
 import { appendAssistantMessage, readTranscript } from './messages/handlers'
 import { MESSAGE_LIMIT } from './messages/schema'
 import { notFound, readProject } from './projects/handlers'
@@ -75,6 +80,26 @@ export function keepAliveMs(): number {
 
   const raw = Number(process.env['GENERATE_TEST_KEEPALIVE_MS'] ?? '')
   return Number.isFinite(raw) && raw > 0 ? raw : KEEP_ALIVE_MS
+}
+
+/**
+ * One collector frame as one SSE frame.
+ *
+ * Exhaustive over `CollectorFrame` rather than a lookup, so adding a frame kind
+ * without deciding how it goes on the wire is a type error rather than a silently
+ * dropped frame.
+ */
+function encodeFrame(frame: CollectorFrame): string {
+  switch (frame.kind) {
+    case 'token':
+      return encodeSse('token', { text: frame.text })
+    case 'file_start':
+      return encodeSse('file_start', { path: frame.path })
+    case 'file_chunk':
+      return encodeSse('file_chunk', { path: frame.path, text: frame.text })
+    case 'file_end':
+      return encodeSse('file_end', { path: frame.path })
+  }
 }
 
 /** Write and end, unless the socket has already gone — Slice 0's check. */
@@ -323,9 +348,24 @@ export async function handleGenerate(req: Request, res: Response, uid: string): 
     res.write(encodeSseComment())
   }, keepAliveMs())
 
+  /*
+   * The splitter sits **between** the mapper and the framing (D3). Everything
+   * below it deals in chat text and file boundaries; nothing above it knows the
+   * tag grammar exists.
+   */
+  const collector = createFileCollector()
+
   try {
     for await (const event of mapStream(stream)) {
       if (event.kind === 'token') {
+        /*
+         * Pushed **before** the socket check, and unconditionally. The files are
+         * written on a completed turn whether or not anyone is still listening
+         * (D10), so a disconnected client must not stop the reply being parsed —
+         * only from being written to.
+         */
+        const frames = collector.push(event.text)
+
         /*
          * `res.destroyed` is the socket's own state, so there is no flag to keep
          * in sync — Slice 0's check. It guards the *write* rather than breaking
@@ -333,14 +373,14 @@ export async function handleGenerate(req: Request, res: Response, uid: string): 
          * that left mid-stream is exactly the case whose partial must be
          * persisted (D21).
          */
-        if (!res.destroyed) {
+        if (!res.destroyed && frames.length > 0) {
           wroteSinceTick = true
-          res.write(encodeSse('token', { text: event.text }))
+          for (const frame of frames) res.write(encodeFrame(frame))
         }
         continue
       }
 
-      await finishTurn(res, uid, projectId, event, clientGone, Date.now() - startedAt)
+      await finishTurn(res, uid, projectId, event, clientGone, Date.now() - startedAt, collector)
       return
     }
   } finally {
@@ -395,6 +435,7 @@ async function finishTurn(
   event: Extract<LlmEvent, { kind: 'end' | 'error' }>,
   clientGone: boolean,
   durationMs: number,
+  collector: FileCollector,
 ): Promise<void> {
   /*
    * `clientGone` forces the flag; otherwise an `end` carries the mapper's own
@@ -413,18 +454,51 @@ async function finishTurn(
     ...event.usage,
   })
 
-  const message =
-    event.text === ''
-      ? null
-      : // The file half arrives in T11; a turn writes no files until it does.
-        await appendAssistantMessage(uid, projectId, event.text, truncated, [])
+  /*
+   * The end-of-input flush, and its frames go out **before** the terminal one.
+   * A delimiter line may end at end of input as well as at a newline, so a reply
+   * whose last bytes are `</genesis:file>` resolves its close here — and that
+   * file's tail chunk and its `file_end` are owed to the client.
+   */
+  const collected = collector.finish()
+  if (!res.destroyed) {
+    for (const frame of collected.frames) res.write(encodeFrame(frame))
+  }
 
-  // Nobody is listening. The partial is already stored, which is the whole of
-  // what a returning user needs (F8.2).
+  /*
+   * **Read from the mapper's own flag, not from `truncated` above** (D10). The
+   * two differ in exactly one case: a client that disconnects after a clean
+   * `end`. The message is marked truncated because the client left mid-stream,
+   * and the files are still written — they belong to the project, not to the
+   * connection.
+   */
+  const completed = event.kind === 'end' && !event.truncated
+  const plan = await planFileWrites(uid, projectId, collected, completed)
+
+  /*
+   * The collector is the single producer of the chat text (D7), so the persisted
+   * content is `messageText` rather than the mapper's raw accumulation — which
+   * still carries the tags and the code.
+   */
+  const message =
+    collected.messageText === ''
+      ? null
+      : await appendAssistantMessage(uid, projectId, collected.messageText, truncated, plan.writes)
+
+  // Nobody is listening. The partial and its files are already committed, which
+  // is the whole of what a returning user needs (F8.2, D10).
   if (clientGone) return
 
   if (event.kind === 'end' && message !== null) {
-    writeTerminalFrame(res, encodeSse('done', { message }))
+    writeTerminalFrame(
+      res,
+      encodeSse('done', {
+        message,
+        // Sorted (P8), which matches the list route's `orderBy('path')`.
+        files: plan.writes.map((write) => write.path).sort(),
+        fileError: plan.error === null ? null : fileErrorCopy(plan.error),
+      }),
+    )
     return
   }
 

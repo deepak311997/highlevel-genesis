@@ -3,11 +3,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import {
-  installedLocationsSchema,
-  locationDetailSchema,
-  tokenResponseSchema,
-} from './schema'
+import { installedLocationsSchema, locationDetailSchema, tokenResponseSchema } from './schema'
 
 /**
  * Parsing what HighLevel actually sends.
