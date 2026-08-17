@@ -4,7 +4,8 @@ const request = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/apiClient', () => ({ request }))
 
-const { createProject, deleteProject, listProjects, patchProject } = await import('./projectsApi')
+const { createProject, deleteProject, getProject, listProjects, patchProject } =
+  await import('./projectsApi')
 
 /**
  * The typed client for the five project routes.
@@ -44,6 +45,31 @@ describe('listProjects', () => {
 
     await expect(listProjects()).resolves.toEqual([PROJECT])
     expect(request).toHaveBeenCalledWith('/api/projects')
+  })
+})
+
+/*
+ * The by-id read. The route has existed since Slice 3, but nothing in the browser
+ * called it until the workspace did: it opens on a deep link, a reload or a
+ * bookmark, so it fetches its own project rather than reading a store that is
+ * populated only when you arrived from the dashboard (Slice 4, D26).
+ */
+describe('getProject', () => {
+  it('GETs the project by id and unwraps the envelope', async () => {
+    await expect(getProject('proj-1')).resolves.toEqual(PROJECT)
+
+    expect(request).toHaveBeenCalledWith('/api/projects/proj-1')
+  })
+
+  /*
+   * The status has to survive, not just the message: the workspace renders a
+   * deleted project differently from a failure — a Back link rather than a Retry —
+   * and it tells them apart by the 404.
+   */
+  it("surfaces the server's rejection", async () => {
+    request.mockRejectedValue(new Error('That project no longer exists.'))
+
+    await expect(getProject('proj-1')).rejects.toThrow('That project no longer exists.')
   })
 })
 
@@ -114,6 +140,7 @@ describe('deleteProject', () => {
  */
 describe('path encoding', () => {
   it.each([
+    ['getProject', () => getProject('a/b')],
     ['patchProject', () => patchProject('a/b', { name: 'A' })],
     ['deleteProject', () => deleteProject('a/b')],
   ])('percent-encodes the id for %s', async (_label, call) => {

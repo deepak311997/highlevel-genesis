@@ -4,6 +4,7 @@ import express, { type Express } from 'express'
 import { authRouter } from '../auth'
 import { errorHandler } from '../lib/errors'
 import { hlRouter } from '../hl'
+import { messagesRouter } from '../messages'
 import { projectsRouter } from '../projects'
 import { usersRouter } from '../users'
 import { healthRouter } from './health'
@@ -63,6 +64,9 @@ export function createApiApp(): Express {
   app.use('/api', usersRouter)
   app.use('/', projectsRouter)
   app.use('/api', projectsRouter)
+  // After `projectsRouter`, which owns the shorter paths under the same prefix.
+  app.use('/', messagesRouter)
+  app.use('/api', messagesRouter)
 
   app.use((_req, res) => {
     res.status(404).json({ error: 'Not found', code: 'not_found' })

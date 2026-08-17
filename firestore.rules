@@ -60,6 +60,17 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // --- chat messages ------------------------------------------------
+    // A subcollection of a project, so both the owner's uid and the
+    // project id are part of the document path and the API scopes by the
+    // uid from the token alone. Written only by
+    // POST /api/projects/:projectId/messages, which assigns `role` itself
+    // — a client that could write here could author an assistant turn,
+    // which from Slice 5 on is the LLM's own context.
+    match /users/{uid}/projects/{projectId}/messages/{messageId} {
+      allow read, write: if false;
+    }
+
     // --- everything else ----------------------------------------------
     // Collections are added slice by slice, each with its own denial test.
     // Nothing is reachable until it is.

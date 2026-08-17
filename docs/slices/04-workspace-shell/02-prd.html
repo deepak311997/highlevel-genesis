@@ -1,0 +1,1279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Two Writes, One Clock — Slice 04 design companion</title>
+
+<style>
+  /* ---------------------------------------------------------------
+     Identity: a transcript with a gutter.
+
+     Slice 3's companion was a card index, because its idea was that a
+     document's *address* is its access control. This slice's idea is
+     different: it is about ORDER — two documents written in one commit,
+     sharing one clock reading, needing a second key to stay in the
+     order they happened. So the page is built as a transcript: a
+     narrow monospace gutter down the left of every section carrying
+     the step number, content ruled off to the right, and the ordering
+     key `seq` set in mono wherever it appears.
+
+     Cool slate ground. Ultramarine for what the browser supplies,
+     teal for what the server assigns, ochre for what is stored,
+     crimson for every refusal, violet reserved for the one hazard so
+     it is the only violet on the page. Every colour is a token, so
+     both themes come from one set of values.
+     ------------------------------------------------------------ */
+  :root {
+    --paper:       #eef1f5;
+    --surface:     #ffffff;
+    --surface-2:   #e3e8ef;
+    --ink:         #10151c;
+    --ink-soft:    #4a5666;
+    --ink-faint:   #77859a;
+    --rule:        #ccd4de;
+    --rule-soft:   #dee4ec;
+
+    /* what the browser supplies */
+    --client:      #2f4bd8;
+    --client-wash: #e4e8fd;
+    /* what the server assigns */
+    --server:      #0f6f66;
+    --server-wash: #d7efeb;
+    /* what is stored */
+    --store:       #92600a;
+    --store-wash:  #f7ecd4;
+    /* every refusal */
+    --deny:        #b32338;
+    --deny-wash:   #fbe3e7;
+    /* the ordering hazard, and nothing else */
+    --hazard:      #6c3bb5;
+    --hazard-wash: #ece2fa;
+
+    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+    --gutter: clamp(1rem, 4vw, 3rem);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:       #0d1117;
+      --surface:     #161c24;
+      --surface-2:   #1f2733;
+      --ink:         #e6ecf3;
+      --ink-soft:    #a6b3c4;
+      --ink-faint:   #74829a;
+      --rule:        #2c3644;
+      --rule-soft:   #222a36;
+
+      --client:      #8fa4ff;
+      --client-wash: #1a2144;
+      --server:      #52c7b8;
+      --server-wash: #0d2a28;
+      --store:       #dfae57;
+      --store-wash:  #2b2110;
+      --deny:        #f4808f;
+      --deny-wash:   #331419;
+      --hazard:      #b494ef;
+      --hazard-wash: #241a38;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:       #0d1117;
+    --surface:     #161c24;
+    --surface-2:   #1f2733;
+    --ink:         #e6ecf3;
+    --ink-soft:    #a6b3c4;
+    --ink-faint:   #74829a;
+    --rule:        #2c3644;
+    --rule-soft:   #222a36;
+
+    --client:      #8fa4ff;
+    --client-wash: #1a2144;
+    --server:      #52c7b8;
+    --server-wash: #0d2a28;
+    --store:       #dfae57;
+    --store-wash:  #2b2110;
+    --deny:        #f4808f;
+    --deny-wash:   #331419;
+    --hazard:      #b494ef;
+    --hazard-wash: #241a38;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 76rem;
+    margin: 0 auto;
+    padding: 0 var(--gutter) 5rem;
+  }
+
+  /* --- masthead ------------------------------------------------ */
+
+  header.masthead {
+    border-bottom: 1px solid var(--rule);
+    background:
+      linear-gradient(180deg, var(--surface) 0%, var(--paper) 100%);
+  }
+
+  .masthead .wrap { padding-top: 3.25rem; padding-bottom: 2.5rem; }
+
+  .kicker {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 0.9rem;
+  }
+
+  h1 {
+    font-size: clamp(2rem, 5.5vw, 3.1rem);
+    line-height: 1.06;
+    letter-spacing: -0.025em;
+    margin: 0 0 0.75rem;
+    font-weight: 800;
+  }
+
+  .standfirst {
+    max-width: 62ch;
+    font-size: 1.06rem;
+    color: var(--ink-soft);
+    margin: 0 0 1.75rem;
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem 0.55rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    border-radius: 999px;
+    padding: 0.2rem 0.65rem;
+    color: var(--ink-soft);
+  }
+  .chip b { color: var(--ink); font-weight: 600; }
+
+  /* --- transcript sections ------------------------------------- */
+
+  section { margin-top: 3.5rem; }
+
+  .sec-head {
+    display: grid;
+    grid-template-columns: 3.25rem 1fr;
+    gap: 0 1rem;
+    align-items: baseline;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 0.6rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .sec-num {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--ink-faint);
+    letter-spacing: 0.06em;
+  }
+
+  h2 {
+    font-size: clamp(1.25rem, 2.6vw, 1.6rem);
+    letter-spacing: -0.015em;
+    margin: 0;
+    font-weight: 700;
+  }
+
+  .sec-body { padding-left: 0; }
+  @media (min-width: 48rem) {
+    .sec-body { padding-left: 4.25rem; }
+  }
+
+  p { margin: 0 0 1rem; max-width: 72ch; }
+  .lede { font-size: 1.02rem; color: var(--ink-soft); }
+
+  code, .mono { font-family: var(--font-mono); font-size: 0.875em; }
+
+  code {
+    background: var(--surface-2);
+    border-radius: 4px;
+    padding: 0.08em 0.34em;
+  }
+
+  strong { font-weight: 650; }
+
+  /* --- figures -------------------------------------------------- */
+
+  figure {
+    margin: 2rem 0 2.25rem;
+    padding: 0;
+  }
+
+  .fig-scroll {
+    overflow-x: auto;
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    background: var(--surface);
+    padding: 1.1rem 1rem;
+  }
+
+  figure svg { display: block; margin: 0 auto; }
+
+  figcaption {
+    margin-top: 0.7rem;
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+    max-width: 74ch;
+  }
+  figcaption b { color: var(--ink); font-weight: 650; }
+
+  /* SVG theming — every stroke and fill comes from the tokens above. */
+  .s-box   { fill: var(--surface);   stroke: var(--rule);   stroke-width: 1.25; }
+  .s-box2  { fill: var(--surface-2); stroke: var(--rule);   stroke-width: 1.25; }
+
+  .s-client { fill: var(--client-wash); stroke: var(--client); stroke-width: 1.5; }
+  .s-server { fill: var(--server-wash); stroke: var(--server); stroke-width: 1.5; }
+  .s-store  { fill: var(--store-wash);  stroke: var(--store);  stroke-width: 1.5; }
+  .s-deny   { fill: var(--deny-wash);   stroke: var(--deny);   stroke-width: 1.5; }
+  .s-hazard { fill: var(--hazard-wash); stroke: var(--hazard); stroke-width: 1.5; }
+
+  .t        { fill: var(--ink);      font-family: var(--font-body); font-size: 12.5px; }
+  .t-mono   { fill: var(--ink);      font-family: var(--font-mono); font-size: 11.5px; }
+  .t-soft   { fill: var(--ink-soft); font-family: var(--font-body); font-size: 11.5px; }
+  .t-faint  { fill: var(--ink-faint);font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.06em; }
+  .t-title  { fill: var(--ink);      font-family: var(--font-body); font-size: 13px; font-weight: 700; }
+  .t-client { fill: var(--client);   font-family: var(--font-mono); font-size: 11px; }
+  .t-server { fill: var(--server);   font-family: var(--font-mono); font-size: 11px; }
+  .t-store  { fill: var(--store);    font-family: var(--font-mono); font-size: 11px; }
+  .t-deny   { fill: var(--deny);     font-family: var(--font-body); font-size: 11.5px; font-weight: 600; }
+  .t-hazard { fill: var(--hazard);   font-family: var(--font-body); font-size: 11.5px; font-weight: 600; }
+
+  .ln        { stroke: var(--ink-soft); stroke-width: 1.4; fill: none; }
+  .ln-client { stroke: var(--client);   stroke-width: 1.6; fill: none; }
+  .ln-server { stroke: var(--server);   stroke-width: 1.6; fill: none; }
+  .ln-store  { stroke: var(--store);    stroke-width: 1.6; fill: none; }
+  .ln-deny   { stroke: var(--deny);     stroke-width: 1.6; fill: none; }
+  .ln-hazard { stroke: var(--hazard);   stroke-width: 1.6; fill: none; }
+  .ln-dash   { stroke-dasharray: 5 4; }
+  .ln-life   { stroke: var(--rule); stroke-width: 1.2; stroke-dasharray: 3 4; fill: none; }
+
+  /* One marker per colour. `context-stroke` renders black where it is
+     unsupported, which is invisible on light ground and wrong on dark. */
+  .m-ink    { fill: var(--ink-soft); }
+  .m-client { fill: var(--client); }
+  .m-server { fill: var(--server); }
+  .m-store  { fill: var(--store); }
+  .m-deny   { fill: var(--deny); }
+  .m-hazard { fill: var(--hazard); }
+
+  .step {
+    fill: var(--surface);
+    stroke: var(--ink-soft);
+    stroke-width: 1.2;
+  }
+  .t-step {
+    fill: var(--ink);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+  }
+
+  /* --- endpoint cards ------------------------------------------- */
+
+  .cards {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+    margin: 1.5rem 0 1rem;
+  }
+
+  .card {
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+
+  .card-top {
+    display: flex;
+    align-items: baseline;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+    padding: 0.7rem 0.9rem;
+    border-bottom: 1px solid var(--rule-soft);
+    background: var(--surface-2);
+  }
+
+  .verb {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    border-radius: 4px;
+    padding: 0.12rem 0.42rem;
+    border: 1px solid currentColor;
+  }
+  .verb.get  { color: var(--server); }
+  .verb.post { color: var(--client); }
+
+  .path { font-family: var(--font-mono); font-size: 0.82rem; }
+
+  .card-body { padding: 0.8rem 0.9rem 0.95rem; }
+
+  .kv {
+    display: grid;
+    grid-template-columns: 6.5rem 1fr;
+    gap: 0.3rem 0.7rem;
+    font-size: 0.84rem;
+  }
+  .kv dt { color: var(--ink-faint); font-family: var(--font-mono); font-size: 0.76rem; letter-spacing: 0.04em; }
+  .kv dd { margin: 0; color: var(--ink-soft); }
+  .kv dd .mono { color: var(--ink); }
+
+  .codes {
+    margin-top: 0.75rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+  .code-pill {
+    font-family: var(--font-mono);
+    font-size: 0.71rem;
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+    border: 1px solid var(--rule);
+    color: var(--ink-soft);
+    background: var(--paper);
+  }
+  .code-pill.ok  { color: var(--server); border-color: var(--server); }
+  .code-pill.bad { color: var(--deny);   border-color: var(--deny); }
+
+  /* --- distribution bar ----------------------------------------- */
+
+  .dist { margin: 1.4rem 0 0.6rem; }
+  .dist-row {
+    display: grid;
+    grid-template-columns: 8.5rem 1fr 2.4rem;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.45rem;
+  }
+  .dist-label { font-family: var(--font-mono); font-size: 0.76rem; color: var(--ink-soft); }
+  .dist-track { background: var(--surface-2); border-radius: 3px; height: 0.85rem; overflow: hidden; }
+  .dist-fill { height: 100%; border-radius: 3px; }
+  .dist-n { font-family: var(--font-mono); font-size: 0.76rem; color: var(--ink); text-align: right; }
+
+  /* --- tables ---------------------------------------------------- */
+
+  .table-scroll { overflow-x: auto; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.87rem;
+    margin: 1rem 0 0.5rem;
+  }
+
+  th, td {
+    text-align: left;
+    vertical-align: top;
+    padding: 0.55rem 0.7rem;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+
+  thead th {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+
+  tbody tr:hover { background: var(--surface); }
+  td.rid { font-family: var(--font-mono); color: var(--ink-faint); white-space: nowrap; }
+
+  /* --- callout --------------------------------------------------- */
+
+  .note {
+    border-left: 3px solid var(--hazard);
+    background: var(--hazard-wash);
+    border-radius: 0 8px 8px 0;
+    padding: 0.85rem 1rem;
+    margin: 1.5rem 0;
+  }
+  .note p:last-child { margin-bottom: 0; }
+  .note .tag {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--hazard);
+    display: block;
+    margin-bottom: 0.3rem;
+    font-weight: 700;
+  }
+
+  .note.plain { border-left-color: var(--server); background: var(--server-wash); }
+  .note.plain .tag { color: var(--server); }
+
+  /* --- legend ---------------------------------------------------- */
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.1rem;
+    font-size: 0.8rem;
+    color: var(--ink-soft);
+    margin: 0.4rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .legend li { display: flex; align-items: center; gap: 0.4rem; }
+  .swatch { width: 0.85rem; height: 0.85rem; border-radius: 3px; border: 1px solid; display: inline-block; }
+  .sw-client { background: var(--client-wash); border-color: var(--client); }
+  .sw-server { background: var(--server-wash); border-color: var(--server); }
+  .sw-store  { background: var(--store-wash);  border-color: var(--store); }
+  .sw-deny   { background: var(--deny-wash);   border-color: var(--deny); }
+  .sw-hazard { background: var(--hazard-wash); border-color: var(--hazard); }
+
+  footer.foot {
+    margin-top: 4rem;
+    border-top: 1px solid var(--rule);
+    padding-top: 1.25rem;
+    font-size: 0.84rem;
+    color: var(--ink-faint);
+  }
+  footer.foot code { background: none; padding: 0; }
+</style>
+</head>
+
+<body>
+
+<header class="masthead">
+  <div class="wrap">
+    <p class="kicker">Genesis · Slice 04 · design companion</p>
+    <h1>Two writes,<br>one clock</h1>
+    <p class="standfirst">
+      The workspace is three panels and a chat that remembers. Only one of those is hard.
+      A turn is two documents committed together — and a batch gives every
+      <span class="mono">serverTimestamp()</span> in it the <em>same</em> reading, so the reply
+      and the prompt it answers are exactly tied on every single turn. This page draws the
+      three things the markdown can only describe: who is allowed to author a message, what
+      the tie does if nothing breaks it, and where a failed send lands.
+    </p>
+    <p class="meta">
+      <span class="chip"><b>Spec</b> F6.1 · F6.2 · F3.4 (partial)</span>
+      <span class="chip"><b>Branch</b> slice/04-workspace-shell</span>
+      <span class="chip"><b>Depends on</b> Slice 3</span>
+      <span class="chip"><b>Date</b> 2026-08-17</span>
+      <span class="chip"><b>Contract</b> 02-prd.md</span>
+    </p>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ================================================================ -->
+  <section id="authorship">
+    <div class="sec-head">
+      <span class="sec-num">01</span>
+      <h2>Who is allowed to author a message</h2>
+    </div>
+
+    <div class="sec-body">
+      <p class="lede">
+        The browser sends one field. Everything else about a message — its role, its position,
+        its clock reading — is assigned by the server, and a body that tries to supply any of
+        them is refused rather than quietly stripped.
+      </p>
+
+      <p>
+        Today the assistant is an echo, so this looks like fussiness. From Slice 5 on
+        <strong>the transcript is the LLM's context</strong>: a client that can author an
+        assistant turn can write its own future prompt — one that also carries the HighLevel
+        API cheat-sheet and the user's project files. That is why <code>role</code> is not in
+        the request body, and why the collection is closed even to its owner.
+      </p>
+
+      <figure>
+        <div class="fig-scroll">
+          <svg viewBox="0 0 940 400" width="940" height="400" role="img"
+               aria-label="The browser supplies only a content field; the server assigns role, seq and createdAt, and a body containing role is refused with 400 invalid_body. The browser has no path to the messages collection at all — security rules deny it.">
+            <defs>
+              <marker id="a-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="m-ink" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+              <marker id="a-client" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="m-client" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+              <marker id="a-server" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="m-server" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+              <marker id="a-store" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="m-store" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+              <marker id="a-deny" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="m-deny" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+            </defs>
+
+            <!-- browser -->
+            <rect class="s-client" x="16" y="40" width="196" height="120" rx="9"/>
+            <text class="t-title" x="30" y="63">Browser</text>
+            <text class="t-soft"  x="30" y="81">MessageComposer</text>
+            <rect class="s-box" x="30" y="92" width="168" height="54" rx="6"/>
+            <text class="t-mono" x="42" y="111">{ "content":</text>
+            <text class="t-mono" x="42" y="128">&#160;&#160;"build a dashboard" }</text>
+
+            <!-- refused body -->
+            <rect class="s-deny" x="16" y="248" width="196" height="80" rx="9"/>
+            <text class="t-deny" x="30" y="270">A body that names a role</text>
+            <text class="t-mono" x="30" y="291">{ "role": "assistant",</text>
+            <text class="t-mono" x="30" y="308">&#160;&#160;"content": "…" }</text>
+
+            <!-- gate stack -->
+            <rect class="s-server" x="290" y="24" width="200" height="304" rx="9"/>
+            <text class="t-title" x="304" y="47">POST route</text>
+            <text class="t-faint" x="304" y="64">FUNCTIONS · asia-south1</text>
+
+            <rect class="s-box" x="304" y="78" width="172" height="42" rx="6"/>
+            <text class="t-mono" x="316" y="95">withVerifiedUser</text>
+            <text class="t-soft" x="316" y="112">uid + email_verified</text>
+
+            <rect class="s-box" x="304" y="130" width="172" height="42" rx="6"/>
+            <text class="t-mono" x="316" y="147">projectIdSchema</text>
+            <text class="t-soft" x="316" y="164">before any read</text>
+
+            <rect class="s-box" x="304" y="182" width="172" height="42" rx="6"/>
+            <text class="t-mono" x="316" y="199">body.strict()</text>
+            <text class="t-soft" x="316" y="216">content, and only content</text>
+
+            <rect class="s-box" x="304" y="234" width="172" height="42" rx="6"/>
+            <text class="t-mono" x="316" y="251">readProject(uid, id)</text>
+            <text class="t-soft" x="316" y="268">gone → 404</text>
+
+            <rect class="s-box" x="304" y="286" width="172" height="30" rx="6"/>
+            <text class="t-mono" x="316" y="305">count &lt; 200 → batch</text>
+
+            <!-- arrows in -->
+            <path class="ln-client" d="M212 100 L284 100" marker-end="url(#a-client)"/>
+            <text class="t-client" x="218" y="92">content</text>
+
+            <path class="ln-deny" d="M212 288 L284 210" marker-end="url(#a-deny)"/>
+            <text class="t-deny" x="196" y="352">400 invalid_body</text>
+            <text class="t-soft" x="196" y="369">refused, not stripped</text>
+
+            <!-- documents written -->
+            <rect class="s-store" x="580" y="40" width="330" height="112" rx="9"/>
+            <text class="t-title" x="596" y="63">messages/&lt;auto-id&gt; · the user turn</text>
+            <text class="t-client" x="596" y="86">content&#160;&#160;&#160;"build a dashboard"</text>
+            <text class="t-server" x="596" y="105">role&#160;&#160;&#160;&#160;&#160;&#160;"user"</text>
+            <text class="t-server" x="596" y="124">seq&#160;&#160;&#160;&#160;&#160;&#160;&#160;0</text>
+            <text class="t-server" x="596" y="143">createdAt&#160;serverTimestamp()</text>
+
+            <rect class="s-store" x="580" y="176" width="330" height="112" rx="9"/>
+            <text class="t-title" x="596" y="199">messages/&lt;auto-id&gt; · the reply</text>
+            <text class="t-server" x="596" y="222">content&#160;&#160;&#160;"You said: build a dashboard"</text>
+            <text class="t-server" x="596" y="241">role&#160;&#160;&#160;&#160;&#160;&#160;"assistant"</text>
+            <text class="t-server" x="596" y="260">seq&#160;&#160;&#160;&#160;&#160;&#160;&#160;1</text>
+            <text class="t-server" x="596" y="279">createdAt&#160;serverTimestamp()</text>
+
+            <path class="ln-store" d="M490 150 L540 150 L540 96 L574 96" marker-end="url(#a-store)"/>
+            <path class="ln-store" d="M540 150 L540 232 L574 232" marker-end="url(#a-store)"/>
+            <text class="t-store" x="496" y="142">one WriteBatch</text>
+
+            <!-- the denied direct path -->
+            <path class="ln-deny ln-dash" d="M114 168 L114 356 L700 356 L700 300" marker-end="url(#a-deny)"/>
+            <rect class="s-deny" x="404" y="340" width="196" height="32" rx="6"/>
+            <text class="t-deny" x="416" y="361">firestore.rules — denied</text>
+
+            <text class="t-faint" x="596" y="386">EVERY FIELD IN TEAL IS THE SERVER'S. THE BROWSER SUPPLIES ONE.</text>
+          </svg>
+        </div>
+        <figcaption>
+          <b>The authorship boundary.</b> One field crosses it. <span class="mono">role</span>,
+          <span class="mono">seq</span> and <span class="mono">createdAt</span> are assigned on the
+          server, so a client cannot put words in the assistant's mouth — and because the body is
+          <span class="mono">.strict()</span>, a body that tries is a 400 rather than a field
+          silently dropped. The dashed path is the one a Firestore client SDK would take; there is
+          no such SDK in the bundle, and the rules would refuse it if there were.
+        </figcaption>
+      </figure>
+
+      <ul class="legend">
+        <li><span class="swatch sw-client"></span> supplied by the browser</li>
+        <li><span class="swatch sw-server"></span> assigned by the server</li>
+        <li><span class="swatch sw-store"></span> stored in Firestore</li>
+        <li><span class="swatch sw-deny"></span> refused</li>
+        <li><span class="swatch sw-hazard"></span> the ordering hazard</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ================================================================ -->
+  <section id="hazard">
+    <div class="sec-head">
+      <span class="sec-num">02</span>
+      <h2>The hazard: one commit, one clock reading</h2>
+    </div>
+
+    <div class="sec-body">
+      <p class="lede">
+        A Firestore <span class="mono">WriteBatch</span> resolves every
+        <span class="mono">serverTimestamp()</span> sentinel in it to the commit's single
+        timestamp. The prompt and its reply are therefore not <em>nearly</em> tied. They are
+        exactly tied, every time.
+      </p>
+
+      <p>
+        Firestore then breaks the tie the only way it can: by document name. A document name
+        here is a random auto-id, so the transcript renders in coin-flip order — the echo above
+        the prompt about half the time. It would present as a flaky test and be a deterministic
+        bug.
+      </p>
+
+      <figure>
+        <div class="fig-scroll">
+          <svg viewBox="0 0 940 372" width="940" height="372" role="img"
+               aria-label="Left: ordering by createdAt alone leaves the two messages of a turn tied, so Firestore orders them by random auto-id and the reply can render above the prompt. Right: adding seq as a second order key puts the prompt first every time.">
+            <defs>
+              <marker id="b-hazard" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="m-hazard" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+              <marker id="b-server" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="m-server" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+            </defs>
+
+            <!-- ===== left: without seq ===== -->
+            <text class="t-title" x="16" y="24">Without a tiebreak</text>
+            <text class="t-mono"  x="16" y="44">.orderBy('createdAt','asc')</text>
+
+            <rect class="s-hazard" x="16" y="58" width="424" height="96" rx="9"/>
+            <text class="t-faint" x="30" y="78">TWO DOCUMENTS, ONE COMMIT</text>
+            <text class="t-mono" x="30" y="100">k3Ba9…&#160;&#160;role "assistant"&#160;&#160;createdAt 12:04:07.412Z</text>
+            <text class="t-mono" x="30" y="122">9fQz1…&#160;&#160;role "user"&#160;&#160;&#160;&#160;&#160;&#160;createdAt 12:04:07.412Z</text>
+            <text class="t-hazard" x="30" y="144">identical — the sort key cannot separate them</text>
+
+            <path class="ln-hazard" d="M228 158 L228 186" marker-end="url(#b-hazard)"/>
+            <text class="t-hazard" x="238" y="178">falls through to __name__ · a random id</text>
+
+            <rect class="s-box" x="16" y="192" width="424" height="128" rx="9"/>
+            <text class="t-faint" x="30" y="212">WHAT THE USER READS</text>
+            <rect class="s-box2" x="30" y="222" width="396" height="38" rx="6"/>
+            <text class="t" x="42" y="246">Genesis · “You said: build a contact dashboard”</text>
+            <rect class="s-box2" x="30" y="266" width="396" height="38" rx="6"/>
+            <text class="t" x="42" y="290">You · “build a contact dashboard”</text>
+
+            <text class="t-deny" x="16" y="344">✗ The answer arrives before the question, about half the time.</text>
+
+            <!-- divider -->
+            <path class="ln-life" d="M470 20 L470 352"/>
+
+            <!-- ===== right: with seq ===== -->
+            <text class="t-title" x="500" y="24">With the tiebreak</text>
+            <text class="t-mono"  x="500" y="44">.orderBy('createdAt','asc').orderBy('seq','asc')</text>
+
+            <rect class="s-server" x="500" y="58" width="424" height="96" rx="9"/>
+            <text class="t-faint" x="514" y="78">SAME TWO DOCUMENTS, SAME COMMIT</text>
+            <text class="t-mono" x="514" y="100">k3Ba9…&#160;&#160;seq 1&#160;&#160;createdAt 12:04:07.412Z</text>
+            <text class="t-mono" x="514" y="122">9fQz1…&#160;&#160;seq 0&#160;&#160;createdAt 12:04:07.412Z</text>
+            <text class="t-server" x="514" y="144">seq is the index within the write that made it</text>
+
+            <path class="ln-server" d="M712 158 L712 186" marker-end="url(#b-server)"/>
+            <text class="t-server" x="722" y="178">deterministic, before __name__ is consulted</text>
+
+            <rect class="s-box" x="500" y="192" width="424" height="128" rx="9"/>
+            <text class="t-faint" x="514" y="212">WHAT THE USER READS</text>
+            <rect class="s-box2" x="514" y="222" width="396" height="38" rx="6"/>
+            <text class="t" x="526" y="246">You · “build a contact dashboard”</text>
+            <rect class="s-box2" x="514" y="266" width="396" height="38" rx="6"/>
+            <text class="t" x="526" y="290">Genesis · “You said: build a contact dashboard”</text>
+
+            <text class="t-server" x="500" y="344">✓ Every turn, in the order it happened.</text>
+          </svg>
+        </div>
+        <figcaption>
+          <b>The one thing this slice exists to get right.</b> Left is what a chat built the obvious
+          way does. <span class="mono">seq</span> costs one integer per document and one index entry,
+          and it stays correct in Slice 5, where the assistant message is written by a separate
+          request whose commit timestamp genuinely differs — then both rows carry
+          <span class="mono">seq 0</span> and the first key already separates them.
+        </figcaption>
+      </figure>
+
+      <div class="note">
+        <span class="tag">Rejected, and it was tempting</span>
+        <p>
+          One <em>turn</em> document holding prompt and reply together dissolves the tie
+          completely — one document, one timestamp, nothing to break. It fails in Slice 5, where
+          the reply is written separately from a stream and a turn can end in an error with no
+          reply at all. A per-project counter in a transaction is also exactly correct, and buys a
+          contended counter and a transaction on every turn, forever, to order a collection that
+          only ever appends.
+        </p>
+      </div>
+
+      <div class="note plain">
+        <span class="tag">And the index nobody can test</span>
+        <p>
+          Two order keys make this a composite query, and <strong>the Firestore emulator serves
+          any query without an index</strong> — so L3, L4 and L5 all pass against a project that
+          has none. It fails in production, on the first workspace load after deploy. The
+          mitigation is a line in <span class="mono">firestore.indexes.json</span> and a line in
+          the definition of done; there is no test to write. Slice 3 hit the same thing, which is
+          why it is called out twice.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================ -->
+  <section id="sequence">
+    <div class="sec-head">
+      <span class="sec-num">03</span>
+      <h2>Sending a message, end to end</h2>
+    </div>
+
+    <div class="sec-body">
+      <p class="lede">
+        Ten steps from a keypress to a scrolled transcript. The two worth noticing are 8 — where
+        both documents commit together, so a prompt can never be stranded without a reply — and
+        10, where the store appends the response instead of re-reading the history.
+      </p>
+
+      <figure>
+        <div class="fig-scroll">
+          <svg viewBox="0 0 940 520" width="940" height="520" role="img"
+               aria-label="Sequence diagram across four lifelines — composer, workspace store, POST route and Firestore — showing ten numbered steps from pressing Enter to appending the returned pair and scrolling to the bottom.">
+            <defs>
+              <marker id="c-client" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="m-client" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+              <marker id="c-server" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="m-server" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+              <marker id="c-store" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="m-store" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+            </defs>
+
+            <!-- lifeline heads -->
+            <rect class="s-client" x="14" y="14" width="176" height="40" rx="8"/>
+            <text class="t-title" x="28" y="32">MessageComposer</text>
+            <text class="t-soft"  x="28" y="47">browser</text>
+
+            <rect class="s-client" x="222" y="14" width="176" height="40" rx="8"/>
+            <text class="t-title" x="236" y="32">useWorkspaceStore</text>
+            <text class="t-soft"  x="236" y="47">browser</text>
+
+            <rect class="s-server" x="430" y="14" width="246" height="40" rx="8"/>
+            <text class="t-title" x="444" y="32">POST /api/projects/:id/messages</text>
+            <text class="t-soft"  x="444" y="47">Cloud Function · asia-south1</text>
+
+            <rect class="s-store" x="708" y="14" width="218" height="40" rx="8"/>
+            <text class="t-title" x="722" y="32">Firestore · hl-genesis</text>
+            <text class="t-soft"  x="722" y="47">users/{uid}/projects/{id}/messages</text>
+
+            <!-- lifelines -->
+            <path class="ln-life" d="M102 58 L102 500"/>
+            <path class="ln-life" d="M310 58 L310 500"/>
+            <path class="ln-life" d="M553 58 L553 500"/>
+            <path class="ln-life" d="M817 58 L817 500"/>
+
+            <!-- 1 -->
+            <circle class="step" cx="102" cy="82" r="10"/><text class="t-step" x="99" y="86">1</text>
+            <path class="ln-client" d="M114 82 L298 82" marker-end="url(#c-client)"/>
+            <text class="t-soft" x="122" y="75">Enter pressed · Shift+Enter would newline</text>
+
+            <!-- 2 -->
+            <circle class="step" cx="310" cy="112" r="10"/><text class="t-step" x="307" y="116">2</text>
+            <path class="ln-client" d="M322 112 L392 112 L392 132 L322 132" marker-end="url(#c-client)"/>
+            <text class="t-soft" x="330" y="105">sending = true · draft kept, not cleared</text>
+
+            <!-- 3 -->
+            <circle class="step" cx="310" cy="162" r="10"/><text class="t-step" x="307" y="166">3</text>
+            <path class="ln-client" d="M322 162 L541 162" marker-end="url(#c-client)"/>
+            <text class="t-soft" x="330" y="155">{ content } · Bearer ID token · App Check</text>
+
+            <!-- 4 -->
+            <circle class="step" cx="553" cy="196" r="10"/><text class="t-step" x="550" y="200">4</text>
+            <path class="ln-server" d="M565 196 L648 196 L648 216 L565 216" marker-end="url(#c-server)"/>
+            <text class="t-soft" x="573" y="189">verify token + email_verified</text>
+
+            <!-- 5 -->
+            <circle class="step" cx="553" cy="246" r="10"/><text class="t-step" x="550" y="250">5</text>
+            <path class="ln-server" d="M565 246 L648 246 L648 266 L565 266" marker-end="url(#c-server)"/>
+            <text class="t-soft" x="573" y="239">projectId schema, then body .strict()</text>
+
+            <!-- 6 -->
+            <circle class="step" cx="553" cy="296" r="10"/><text class="t-step" x="550" y="300">6</text>
+            <path class="ln-store" d="M565 296 L805 296" marker-end="url(#c-store)"/>
+            <text class="t-soft" x="573" y="289">readProject(uid, id) — absent, deleted or corrupt → 404</text>
+
+            <!-- 7 -->
+            <circle class="step" cx="553" cy="336" r="10"/><text class="t-step" x="550" y="340">7</text>
+            <path class="ln-store" d="M565 336 L805 336" marker-end="url(#c-store)"/>
+            <text class="t-soft" x="573" y="329">count refs, capped at 200 — the pair would cross it → 409</text>
+
+            <!-- 8 -->
+            <circle class="step" cx="553" cy="382" r="10"/><text class="t-step" x="550" y="386">8</text>
+            <path class="ln-store" d="M565 382 L805 382" marker-end="url(#c-store)"/>
+            <text class="t-soft" x="573" y="375">batch.set ×2 — seq 0 then seq 1 — ONE commit, ONE timestamp</text>
+
+            <!-- 9 -->
+            <circle class="step" cx="553" cy="424" r="10"/><text class="t-step" x="550" y="428">9</text>
+            <path class="ln-server" d="M541 424 L322 424" marker-end="url(#c-server)"/>
+            <text class="t-soft" x="330" y="417">201 { messages: [ user, assistant ] } — re-read, so timestamps are real</text>
+
+            <!-- 10 -->
+            <circle class="step" cx="310" cy="466" r="10"/><text class="t-step" x="305" y="470">10</text>
+            <path class="ln-client" d="M298 466 L114 466" marker-end="url(#c-client)"/>
+            <text class="t-soft" x="122" y="459">append both · clear draft · scroll to bottom</text>
+
+            <rect class="s-box2" x="222" y="480" width="440" height="26" rx="6"/>
+            <text class="t-mono" x="234" y="498">no GET is issued — appending IS the server's order</text>
+          </svg>
+        </div>
+        <figcaption>
+          <b>Step 8 is the atomicity claim and step 10 is the liveness claim.</b> Slice 3 refetched
+          after every mutation because its list is server-ordered by a field the mutation changes.
+          A transcript cannot be reordered — it only appends — so the pair the server just returned
+          is by construction its two newest members, and re-reading the whole history to learn that
+          would grow without bound while telling us nothing new. Nothing here subscribes to
+          Firestore; the state rendered is a response body.
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ================================================================ -->
+  <section id="failures">
+    <div class="sec-head">
+      <span class="sec-num">04</span>
+      <h2>Where a failed send lands</h2>
+    </div>
+
+    <div class="sec-body">
+      <p class="lede">
+        One entry, eight exits. Every one of them leaves the draft in the composer and appends
+        nothing to the transcript, so re-submitting is always a legitimate retry.
+      </p>
+
+      <figure>
+        <div class="fig-scroll">
+          <svg viewBox="0 0 940 470" width="940" height="470" role="img"
+               aria-label="One POST fans out to eight outcomes — 201 success, 400 invalid id, 401 unauthenticated, 403 email unverified, 400 invalid body, 404 not found, 409 message limit and a network failure — each labelled with what the user sees.">
+            <defs>
+              <marker id="d-server" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="m-server" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+              <marker id="d-deny" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="m-deny" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+            </defs>
+
+            <rect class="s-client" x="14" y="196" width="180" height="76" rx="9"/>
+            <text class="t-title" x="28" y="222">POST a message</text>
+            <text class="t-soft"  x="28" y="240">one draft, one keypress</text>
+            <text class="t-mono"  x="28" y="260">{ content }</text>
+
+            <!-- spine -->
+            <path class="ln" d="M194 234 L262 234"/>
+            <path class="ln" d="M262 42 L262 434"/>
+
+            <!-- exits: y positions -->
+            <!-- 201 -->
+            <path class="ln-server" d="M262 42 L326 42" marker-end="url(#d-server)"/>
+            <rect class="s-server" x="332" y="22" width="586" height="40" rx="7"/>
+            <text class="t-mono"   x="346" y="40">201</text>
+            <text class="t"        x="400" y="40">two messages appended, draft cleared, transcript scrolled to the bottom</text>
+            <text class="t-soft"   x="400" y="55">the only exit that changes stored state</text>
+
+            <!-- 400 invalid_id -->
+            <path class="ln-deny" d="M262 98 L326 98" marker-end="url(#d-deny)"/>
+            <rect class="s-deny" x="332" y="80" width="586" height="36" rx="7"/>
+            <text class="t-mono" x="346" y="103">400 invalid_id</text>
+            <text class="t"      x="470" y="103">“That project could not be found.” — before any Firestore call</text>
+
+            <!-- 401 -->
+            <path class="ln-deny" d="M262 146 L326 146" marker-end="url(#d-deny)"/>
+            <rect class="s-deny" x="332" y="128" width="586" height="36" rx="7"/>
+            <text class="t-mono" x="346" y="151">401 unauthenticated</text>
+            <text class="t"      x="470" y="151">“Sign in and try again.” — the router guard owns a genuinely dead session</text>
+
+            <!-- 403 -->
+            <path class="ln-deny" d="M262 194 L326 194" marker-end="url(#d-deny)"/>
+            <rect class="s-deny" x="332" y="176" width="586" height="36" rx="7"/>
+            <text class="t-mono" x="346" y="199">403 email_unverified</text>
+            <text class="t"      x="470" y="199">“Verify your email address first.” — the gate, enforced server-side</text>
+
+            <!-- 400 invalid_body -->
+            <path class="ln-deny" d="M262 242 L326 242" marker-end="url(#d-deny)"/>
+            <rect class="s-deny" x="332" y="224" width="586" height="36" rx="7"/>
+            <text class="t-mono" x="346" y="247">400 invalid_body</text>
+            <text class="t"      x="470" y="247">Zod's message, naming the field — blank, over 4,000 chars, or a forbidden key</text>
+
+            <!-- 404 -->
+            <path class="ln-deny" d="M262 290 L326 290" marker-end="url(#d-deny)"/>
+            <rect class="s-deny" x="332" y="272" width="586" height="36" rx="7"/>
+            <text class="t-mono" x="346" y="295">404 not_found</text>
+            <text class="t"      x="470" y="295">“That project no longer exists.” — absent, deleted, corrupt, or another user's</text>
+
+            <!-- 409 -->
+            <path class="ln-deny" d="M262 338 L326 338" marker-end="url(#d-deny)"/>
+            <rect class="s-deny" x="332" y="320" width="586" height="36" rx="7"/>
+            <text class="t-mono" x="346" y="343">409 message_limit</text>
+            <text class="t"      x="470" y="343">“This project has reached its limit of 200 messages.” — composer already disabled</text>
+
+            <!-- network -->
+            <path class="ln-deny" d="M262 386 L326 386" marker-end="url(#d-deny)"/>
+            <rect class="s-deny" x="332" y="368" width="586" height="36" rx="7"/>
+            <text class="t-mono" x="346" y="391">status 0</text>
+            <text class="t"      x="470" y="391">“Check your connection and try again.” — ApiError, never a raw TypeError</text>
+
+            <!-- footer band -->
+            <rect class="s-box2" x="262" y="420" width="656" height="34" rx="7"/>
+            <text class="t-mono" x="276" y="442">every non-201 exit: draft retained · transcript unchanged · re-submitting retries</text>
+          </svg>
+        </div>
+        <figcaption>
+          <b>The failure fan.</b> Four of these eight are shared with every authenticated route in
+          the codebase; the two that are this slice's own are <span class="mono">409
+          message_limit</span> and the <span class="mono">404</span> for a project deleted in another
+          tab while the workspace was open. The band along the bottom is the property that makes
+          all of them safe to retry.
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ================================================================ -->
+  <section id="layout">
+    <div class="sec-head">
+      <span class="sec-num">05</span>
+      <h2>Three panels, and what survives the switch</h2>
+    </div>
+
+    <div class="sec-body">
+      <p class="lede">
+        At 1024px and wider, three resizable panels. Below it, one panel at a time behind a tab
+        list. Those are two different component trees, and crossing the breakpoint unmounts one
+        and mounts the other — which is why the draft does not live in the composer.
+      </p>
+
+      <figure>
+        <div class="fig-scroll">
+          <svg viewBox="0 0 940 330" width="940" height="330" role="img"
+               aria-label="At 1024 pixels and wider the workspace shows chat, code and preview as three resizable panels; below it shows one panel at a time behind a Chat, Code and Preview tab list. Crossing the breakpoint swaps the component tree, and the draft survives because it is held in the workspace store.">
+            <defs>
+              <marker id="e-hazard" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="m-hazard" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+            </defs>
+
+            <!-- wide -->
+            <text class="t-faint" x="16" y="20">≥ 1024PX · RESIZABLE</text>
+            <rect class="s-box" x="16" y="30" width="500" height="230" rx="9"/>
+            <rect class="s-box2" x="28" y="42" width="476" height="30" rx="5"/>
+            <text class="t-mono" x="40" y="62">Contact dashboard</text>
+            <rect class="s-server" x="330" y="48" width="120" height="18" rx="9"/>
+            <text class="t-server" x="340" y="61">HighLevel connected</text>
+
+            <rect class="s-client" x="28" y="82" width="148" height="164" rx="6"/>
+            <text class="t-title" x="40" y="102">Chat</text>
+            <rect class="s-box" x="40" y="112" width="124" height="18" rx="4"/>
+            <rect class="s-box" x="52" y="136" width="112" height="18" rx="4"/>
+            <rect class="s-box" x="40" y="160" width="124" height="18" rx="4"/>
+            <rect class="s-box2" x="40" y="204" width="124" height="30" rx="5"/>
+            <text class="t-soft" x="50" y="223">textarea · Enter</text>
+
+            <path class="ln" d="M182 92 L182 236"/>
+            <circle class="s-box" cx="182" cy="164" r="5"/>
+
+            <rect class="s-box2" x="190" y="82" width="148" height="164" rx="6"/>
+            <text class="t-title" x="202" y="102">Code</text>
+            <text class="t-soft"  x="202" y="120">placeholder</text>
+            <text class="t-soft"  x="202" y="136">Slices 6 &amp; 7</text>
+
+            <path class="ln" d="M344 92 L344 236"/>
+            <circle class="s-box" cx="344" cy="164" r="5"/>
+
+            <rect class="s-box2" x="352" y="82" width="152" height="164" rx="6"/>
+            <text class="t-title" x="364" y="102">Preview</text>
+            <text class="t-soft"  x="364" y="120">placeholder</text>
+            <text class="t-soft"  x="364" y="136">Slice 10</text>
+
+            <text class="t-soft" x="16" y="282">Two drag handles, defaults 30 / 40 / 30, each panel floored at 15%.</text>
+            <text class="t-soft" x="16" y="300">Sizes are not persisted across visits — the draft is.</text>
+
+            <!-- switch -->
+            <path class="ln-hazard" d="M528 130 L604 130" marker-end="url(#e-hazard)"/>
+            <path class="ln-hazard" d="M604 168 L528 168" marker-end="url(#e-hazard)"/>
+            <text class="t-hazard" x="524" y="122">tree swap</text>
+            <text class="t-soft"   x="524" y="192">v-if, both ways</text>
+
+            <!-- narrow -->
+            <text class="t-faint" x="668" y="20">&lt; 1024PX · TABBED</text>
+            <rect class="s-box" x="668" y="30" width="220" height="230" rx="9"/>
+            <rect class="s-box2" x="680" y="42" width="196" height="30" rx="5"/>
+            <text class="t-mono" x="692" y="62">Contact dashboard</text>
+
+            <rect class="s-box2" x="680" y="82" width="196" height="26" rx="5"/>
+            <rect class="s-client" x="684" y="86" width="62" height="18" rx="4"/>
+            <text class="t" x="694" y="99">Chat</text>
+            <text class="t-soft" x="758" y="99">Code</text>
+            <text class="t-soft" x="812" y="99">Preview</text>
+
+            <rect class="s-client" x="680" y="118" width="196" height="128" rx="6"/>
+            <rect class="s-box" x="692" y="130" width="172" height="18" rx="4"/>
+            <rect class="s-box" x="704" y="154" width="160" height="18" rx="4"/>
+            <rect class="s-box2" x="692" y="204" width="172" height="30" rx="5"/>
+            <text class="t-soft" x="702" y="223">textarea · Enter</text>
+
+            <rect class="s-hazard" x="560" y="278" width="366" height="34" rx="7"/>
+            <text class="t-mono" x="574" y="299">draft lives in useWorkspaceStore, not the composer</text>
+          </svg>
+        </div>
+        <figcaption>
+          <b>The switch is a component-tree swap, not a stylesheet.</b> Anything held in panel-local
+          state is destroyed by a window resize. The draft moves into the store now, before Slice 5
+          has streaming state with the same exposure — the rule the panels inherit is that state
+          which must survive the breakpoint lives in <span class="mono">useWorkspaceStore</span>.
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ================================================================ -->
+  <section id="contracts">
+    <div class="sec-head">
+      <span class="sec-num">06</span>
+      <h2>The two endpoints</h2>
+    </div>
+
+    <div class="sec-body">
+      <p>
+        Both mounted on the existing <span class="mono">api</span> function at
+        <span class="mono">/</span> and <span class="mono">/api</span>, both behind
+        <span class="mono">withVerifiedUser</span>. The uid is never in the path; it comes off the
+        token and composes the document path server-side.
+      </p>
+
+      <div class="cards">
+        <div class="card">
+          <div class="card-top">
+            <span class="verb get">GET</span>
+            <span class="path">/api/projects/:projectId/messages</span>
+          </div>
+          <div class="card-body">
+            <dl class="kv">
+              <dt>auth</dt><dd>ID token + <span class="mono">email_verified</span></dd>
+              <dt>app check</dt><dd>no — a plain authenticated read</dd>
+              <dt>returns</dt><dd><span class="mono">{ messages: Message[] }</span>, chronological, at most 200</dd>
+              <dt>omits</dt><dd>documents that fail to parse; <span class="mono">message.unreadable</span> logged</dd>
+              <dt>never</dt><dd>sends <span class="mono">seq</span> on the wire</dd>
+            </dl>
+            <div class="codes">
+              <span class="code-pill ok">200</span>
+              <span class="code-pill ok">200 · empty</span>
+              <span class="code-pill bad">400 invalid_id</span>
+              <span class="code-pill bad">401</span>
+              <span class="code-pill bad">403</span>
+              <span class="code-pill bad">404 not_found</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-top">
+            <span class="verb post">POST</span>
+            <span class="path">/api/projects/:projectId/messages</span>
+          </div>
+          <div class="card-body">
+            <dl class="kv">
+              <dt>auth</dt><dd>ID token + <span class="mono">email_verified</span></dd>
+              <dt>app check</dt><dd><b>required</b> — one rule since Slice 2: mutations are attested</dd>
+              <dt>body</dt><dd><span class="mono">{ content: string }</span>, <span class="mono">.strict()</span>, 1–4,000 after trim</dd>
+              <dt>writes</dt><dd>two documents, one <span class="mono">WriteBatch</span>, <span class="mono">seq</span> 0 then 1</dd>
+              <dt>returns</dt><dd><span class="mono">{ messages: [user, assistant] }</span> — exactly two</dd>
+            </dl>
+            <div class="codes">
+              <span class="code-pill ok">201</span>
+              <span class="code-pill bad">400 invalid_body</span>
+              <span class="code-pill bad">400 invalid_id</span>
+              <span class="code-pill bad">401</span>
+              <span class="code-pill bad">403</span>
+              <span class="code-pill bad">404 not_found</span>
+              <span class="code-pill bad">409 message_limit</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="note plain">
+        <span class="tag">This contract changes in Slice 5, and knowingly</span>
+        <p>
+          The assistant write moves to the stream's <span class="mono">done</span> handler and the
+          response becomes the user message alone. The user-message write stays exactly where it is,
+          and the frontend does not change at all — appending the response is already what a
+          streamed reply needs. Written down here so the change reads as planned rather than as
+          churn.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================ -->
+  <section id="distribution">
+    <div class="sec-head">
+      <span class="sec-num">07</span>
+      <h2>Where the risk is tested</h2>
+    </div>
+
+    <div class="sec-body">
+      <p>
+        Thirty-six rows in the test matrix across thirty-seven acceptance criteria. The shape is a
+        statement about where this slice can go wrong: the boundary is the risk, so
+        <strong>L4 carries the most weight</strong> — every refusal is asserted over the wire, with
+        the collection checked afterwards rather than only the status code.
+      </p>
+
+      <div class="dist" role="img" aria-label="Test matrix rows by level: L1 unit ten, L2 component nine, L3 rules two, L4 integration fourteen, L5 end to end one.">
+        <div class="dist-row">
+          <span class="dist-label">L1 · unit</span>
+          <span class="dist-track"><span class="dist-fill" style="width:71%;background:var(--server)"></span></span>
+          <span class="dist-n">10</span>
+        </div>
+        <div class="dist-row">
+          <span class="dist-label">L2 · component</span>
+          <span class="dist-track"><span class="dist-fill" style="width:64%;background:var(--client)"></span></span>
+          <span class="dist-n">9</span>
+        </div>
+        <div class="dist-row">
+          <span class="dist-label">L3 · rules</span>
+          <span class="dist-track"><span class="dist-fill" style="width:14%;background:var(--deny)"></span></span>
+          <span class="dist-n">2</span>
+        </div>
+        <div class="dist-row">
+          <span class="dist-label">L4 · integration</span>
+          <span class="dist-track"><span class="dist-fill" style="width:100%;background:var(--store)"></span></span>
+          <span class="dist-n">14</span>
+        </div>
+        <div class="dist-row">
+          <span class="dist-label">L5 · end to end</span>
+          <span class="dist-track"><span class="dist-fill" style="width:7%;background:var(--hazard)"></span></span>
+          <span class="dist-n">1</span>
+        </div>
+      </div>
+
+      <p>
+        The two L3 rows are small and are not optional: rules do not cascade into subcollections,
+        so neither the <span class="mono">users/{uid}</span> block nor the
+        <span class="mono">projects</span> block says anything about
+        <span class="mono">messages</span>. Every case is an <span class="mono">assertFails</span>,
+        including the verified owner — the one people skip.
+      </p>
+
+      <p>
+        The single L5 is the demo line and nothing more: dashboard → project → send → echo →
+        reload → still there. One per slice, by the plan's own rule.
+      </p>
+    </div>
+  </section>
+
+  <!-- ================================================================ -->
+  <section id="risks">
+    <div class="sec-head">
+      <span class="sec-num">08</span>
+      <h2>Risks carried into the build</h2>
+    </div>
+
+    <div class="sec-body">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Risk</th><th>Mitigation</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="rid">R1</td>
+              <td>The batch timestamp tie renders the echo above the prompt — on every turn, resolved by a random auto-id.</td>
+              <td><span class="mono">seq</span>, asserted twice: L1 over a synthetic tied pair, and L4 over a real pair written through the route and read back. The L4 one is the assertion that matters, because it exercises the actual commit.</td>
+            </tr>
+            <tr>
+              <td class="rid">R2</td>
+              <td>The composite index is missing in production and no test can see it — the emulator serves any query.</td>
+              <td>Declared in the same commit as the query, a line in the definition of done, and re-read at review against the handler. Slice 3's R2 recurring, because the mitigation is a reading rather than a test.</td>
+            </tr>
+            <tr>
+              <td class="rid">R3</td>
+              <td>A client authors an assistant message. Harmless against an echo; prompt injection from Slice 5 on.</td>
+              <td><span class="mono">role</span> is server-assigned and the body is <span class="mono">.strict()</span>. AC-11 posts <span class="mono">{ role: "assistant", … }</span> specifically and asserts the 400.</td>
+            </tr>
+            <tr>
+              <td class="rid">R4</td>
+              <td>Largest slice so far — two routes, six vendored blocks, a view, four components, a store, plus app-shell and dashboard changes. Something gets skimmed.</td>
+              <td>Build order puts the boundary first: schemas → routes → rules → client → UI, so the security-relevant half is reviewable before a component exists. The vendored blocks are diffed against upstream, not read.</td>
+            </tr>
+            <tr>
+              <td class="rid">R5</td>
+              <td>The <span class="mono">POST</span> contract is rewritten in Slice 5, so a reviewer reads a shape that is about to change.</td>
+              <td>Recorded as D6, with exactly what moves and what stays. The frontend's append model is chosen <em>because</em> streaming needs it, so that half does not change.</td>
+            </tr>
+            <tr>
+              <td class="rid">R6</td>
+              <td>Appending the response deviates from Slice 3's refetch rule and reads as an inconsistency.</td>
+              <td>Argued in D12 rather than left to be found: a server-ordered list can be reordered by a mutation, an append-only transcript cannot. Neither uses <span class="mono">onSnapshot</span>, which is what the rule actually forbids.</td>
+            </tr>
+            <tr>
+              <td class="rid">R7</td>
+              <td><span class="mono">PRODUCT_SPEC.md</span> F6.2 mentions “streaming assistant status”, which this slice does not build.</td>
+              <td>Deliberate and stated: there is no stream to have a status for. F6.5 and the streaming half of F6.2 are Slice 5's, which the plan's conformance ledger already assigns them to.</td>
+            </tr>
+            <tr>
+              <td class="rid">R8</td>
+              <td>The breakpoint swaps component trees, so panel-local state is destroyed by a window resize.</td>
+              <td>The draft moves to the store now, asserted by AC-25 — before Slice 5 has streaming state with the same exposure.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <p>
+      This page is the companion, not the contract.
+      <code>docs/slices/04-workspace-shell/02-prd.md</code> holds the decisions table, the
+      thirty-seven acceptance criteria, the test matrix and the definition of done, and it is what
+      the build is graded against. Both themes are driven by one set of CSS custom properties; no
+      webfonts are loaded.
+    </p>
+  </footer>
+
+</div>
+
+</body>
+</html>

@@ -28,9 +28,25 @@ export type RouteAccess =
   /** Requires a session *and* a verified address. */
   | 'protected'
 
+/**
+ * How much room `main` gives a route (Slice 4, D22).
+ *
+ * `contained` is the default and what every screen before the workspace wants: the
+ * centred, padded container. `full` is the whole window — the workspace's three
+ * panels need a *bounded* height to scroll inside, and a flex column gives them one
+ * without a `calc()` that hard-codes the header's height and breaks the first time
+ * the header gains a line.
+ *
+ * Declared per route rather than decided inside a view, because breaking out of the
+ * container from the inside means negative margins: a lie about who owns the layout,
+ * which also leaves the container's padding in the scroll height.
+ */
+export type RouteLayout = 'contained' | 'full'
+
 declare module 'vue-router' {
   interface RouteMeta {
     access?: RouteAccess
+    layout?: RouteLayout
   }
 }
 

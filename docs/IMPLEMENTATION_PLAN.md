@@ -18,8 +18,9 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 | 1 — Account & session | ✅ merged to `main` |
 | 2 — HighLevel connection | ✅ merged to `main` |
 | 2b — API-only data access | ✅ merged to `main` |
-| 3 — Projects | ✅ shipped — PR open, awaiting merge |
-| 4–13 | not started |
+| 3 — Projects | ✅ merged to `main` |
+| 4 — Workspace shell & chat persistence | 🟡 reviewed — PR open, awaiting merge |
+| 5–13 | not started |
 
 **Slices from here run unattended.** `scripts/autopilot.sh` drives the five-stage loop
 one slice at a time — a fresh session per stage, the suite run by the orchestrator rather
@@ -33,13 +34,14 @@ been red since Slice 1: `vite.config.ts` threw at config load on any checkout wi
 8080 — the *development* emulator — so off CI it "passed" by finding a dev session, loading
 its rules over that session's and calling `clearFirestore()` on it.
 
-**Suite, re-run in full on `slice/03-projects` at ship time (2026-08-17):**
-typecheck 0 · lint 0 · **607 unit** (243 functions · 353 frontend · 11 scripts) ·
-**19 rules** · **155 integration** · **6 e2e**. All six green.
+**Suite, re-run in full on `slice/04-workspace-shell` at ship time (2026-08-17):**
+typecheck 0 · lint 0 · **748 unit** (286 functions · 451 frontend · 11 scripts) ·
+**26 rules** · **198 integration** · **9 e2e**. All six green.
 
-Unit stood at 602 when the build finished; the review added five cases — four L1 on the
-project schemas, and one L2 that mounts the real projects card inside the real dashboard,
-for an AC that until then nothing asserted. See `05-review.md`.
+Slice 4 added 112 unit cases (14 functions · 98 frontend), 7 rules cases, 43 integration cases
+and 3 e2e cases. The previous full run, at Slice 3's ship time, was 636 unit · 19 rules ·
+155 integration · 6 e2e. Six of the frontend cases are the review's own — the staleness guard
+in `stores/workspace.ts`, written test-first after the build's 742-case run.
 
 Slice 3 added 131 unit cases, 7 rules cases, 69 integration cases and 2 e2e tests. The rules
 suite grew for the first time since 2b — `users/{uid}/projects/{projectId}` is a new
@@ -295,10 +297,30 @@ persistence model get reviewed without streaming complexity on top.
 brief names — **`tabs`** and **`badge`** (both named explicitly), plus the layout primitives
 **`resizable`**, **`scroll-area`** and **`separator`**. All via the CLI. After this slice the
 "inputs, buttons, dialogs, tabs, badges, and layout primitives" list from the brief is
-complete except `sheet`, which Slice 11 needs.
+complete except `sheet`, which Slice 11 needs. **A sixth was added and recorded:**
+**`textarea`**, for the chat composer — see the slice PRD's D21 and `PRODUCT_SPEC.md` §7.2.
 **Key tests:** L2 panel layout and message rendering, L3 messages scoped to project owner,
 L5 send a message, reload, history is still there.
 **Demo:** open a project, send a message, reload, history persists.
+
+**Built 2026-08-17** on `slice/04-workspace-shell`. Two routes in a new `functions/src/messages/`
+module — `GET` and attested `POST /api/projects/:projectId/messages` — a deny-all rules block
+with L3 tests, the `createdAt`+`seq` composite index, one `useWorkspaceStore`, a typed client,
+`WorkspaceView` with the `lg` layout switch, `ChatPanel`, `MessageComposer`, two labelled
+placeholders, `meta.layout` on the app shell, and the dashboard's project name as a link.
+
+The **one hazard worth carrying forward**: a `WriteBatch` resolves every `serverTimestamp()`
+in it to the *same* commit timestamp, so both messages of a turn tie on `createdAt` exactly and
+Firestore falls through to its random-auto-id tiebreak. `seq` (0 user, 1 assistant) plus a
+two-key `orderBy` is the fix, and Slice 5 keeps both: when the assistant write moves to the
+stream's `done` handler the timestamps genuinely differ, so `seq` costs nothing and the query
+does not change.
+
+**What Slice 5 changes here, planned rather than churn** (PRD D6): the assistant write moves to
+the stream's `done` handler, the user write stays in the `POST`, and the response becomes the
+user message alone. The frontend does not change at all — the store already appends what the
+server returned, which is the shape a streamed reply needs. `echoFor()` and the `Echo mode`
+badge are what Slice 5 deletes.
 
 ---
 
@@ -617,13 +639,13 @@ read. `PRODUCT_SPEC.md` §7 holds the package-level version of this.
 | Tokens in Firestore scoped to the Firebase user, refresh on expiry | F1.3 | 2 | ⏭ |
 | One HighLevel location per user | F1.3 | 2 | ⏭ — falls out of Target User = Sub-account |
 | Project CRUD incl. soft-delete, scoped per user by the API | F2.1–2.3 | 3 | ✅ |
-| Server-side generation: bounded context → stream → validated file ops → persist | F3.1–3.4 | 5, 6, 9 | ⏭ |
+| Server-side generation: bounded context → stream → validated file ops → persist | F3.1–3.4 | 5, 6, 9 | 🟡 F3.4's persistence half shipped in 4 — the transcript is stored and read back through the API |
 | SSE endpoint; protocol covers tokens, file boundaries, completion, errors | F4.1–4.3 | 5, 6 | 🟡 transport proven in Slice 0 |
 | File tree, read file, save manual edits | F5.1 | 6 | ⏭ |
 | Snapshot per generation; list and restore | F5.2–5.3 | 11 | ⏭ |
-| shadcn-vue as the primary component library | F6.1 | 0–12 | 🟡 `button`/`input`/`label`/`card`/`alert`/`dialog` in; `tabs`/`badge`/`sheet` owed |
-| Three-panel workspace: chat · editor · preview | F6.1 | 4 | ⏭ |
-| Chat panel with history and input | F6.2 | 4 | ⏭ |
+| shadcn-vue as the primary component library | F6.1 | 0–12 | 🟡 `button`/`input`/`label`/`card`/`alert`/`dialog`/`tabs`/`badge`/`resizable`/`scroll-area`/`separator`/`textarea` in; only `sheet` (11) and `skeleton`/`sonner` (12) owed |
+| Three-panel workspace: chat · editor · preview | F6.1 | 4 | 🟡 shell shipped — resizable at ≥1024px, tabbed below; editor and preview are labelled placeholders until 6/7 and 10 |
+| Chat panel with history and input | F6.2 | 4 | ✅ history, input and persistence; the assistant is an echo until Slice 5, and F6.2's streaming-status half goes with it |
 | Monaco via `@guolao/vue-monaco-editor`, tabs, live tokens, read-only while streaming | F6.3 | 7 | ⏭ |
 | iframe preview showing **real** HL data, refreshes after generation | F6.4 | 10 | ⏭ — the money shot |
 | SSE client handles all event types, survives disconnects | F6.5 | 5 | ⏭ |

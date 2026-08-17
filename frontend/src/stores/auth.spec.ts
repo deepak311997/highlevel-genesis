@@ -18,6 +18,7 @@ const { useAuthStore } = await import('./auth')
 const { useProfileStore } = await import('./profile')
 const { useHlStore } = await import('./hl')
 const { useProjectsStore } = await import('./projects')
+const { useWorkspaceStore } = await import('./workspace')
 
 /** Hand the store a user, as Firebase would. */
 function emit(user: Partial<User> | null): void {
@@ -169,6 +170,37 @@ describe('session state', () => {
 
     expect(projects.projects).toEqual([])
     expect(projects.loaded).toBe(false)
+  })
+
+  /* And the workspace: a transcript is one account's conversation, and the draft
+   * is one person's unsent words. Neither belongs to whoever signs in next. */
+  it('empties the workspace too', async () => {
+    const store = useAuthStore()
+    const workspace = useWorkspaceStore()
+    signOut.mockResolvedValue(undefined)
+
+    workspace.projectId = 'proj-1'
+    workspace.project = {
+      id: 'proj-1',
+      name: 'Contact dashboard',
+      description: null,
+      locationId: null,
+      createdAt: '',
+      updatedAt: '',
+    }
+    workspace.messages = [
+      { id: 'msg-1', role: 'user', content: 'build a contact dashboard', createdAt: '' },
+    ]
+    workspace.messagesLoaded = true
+    workspace.draft = 'half a sentence'
+
+    await store.signOutNow()
+
+    expect(workspace.project).toBeNull()
+    expect(workspace.projectId).toBeNull()
+    expect(workspace.messages).toEqual([])
+    expect(workspace.messagesLoaded).toBe(false)
+    expect(workspace.draft).toBe('')
   })
 
   it('signs in through Firebase', async () => {
