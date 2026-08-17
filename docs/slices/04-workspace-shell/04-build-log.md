@@ -263,3 +263,29 @@ file exists would assert the CLI ran. The plan's replacements for the red step, 
 
 **Refactor.** `npm --prefix frontend run format`. Prettier also wanted to reformat four files this
 slice does not touch; those were reverted (see *Deferred*).
+
+## T10 — `MessageComposer`
+
+**Red.** `frontend/src/components/workspace/MessageComposer.spec.ts`, 16 cases, mocking
+`@/stores/workspace` with a plain object as `ProjectsCard.spec.ts` mocks its store. The draft
+renders from the store and typing writes back to it (D17, both directions); an empty and a
+whitespace-only draft disable submit and send nothing on Enter (AC-31); a non-empty draft plus
+Enter calls `send()` exactly once, as does the button; **Shift+Enter** sends nothing and does not
+clear the draft (AC-33), and so do Ctrl/Meta/Alt+Enter; `sending` disables submit; at `atLimit` the
+textarea and the button are both `disabled` and the limit is stated on screen with the number
+(AC-32); `sendError` renders under the composer with the textarea still holding the draft, and a
+resubmit after a failure still sends (AC-34).
+
+**Green.** `MessageComposer.vue` — `Textarea` bound to `workspace.draft`,
+`@keydown.enter.exact.prevent="submit()"` (`.exact` is what makes every modifier combination fall
+through rather than send), an `Alert variant="destructive"` for `sendError`, and the `composer-input`
+/ `composer-submit` / `composer-error` / `composer-limit` test ids.
+
+**Refactor.** Header comment explaining why the draft is not local state, and why Enter and
+Shift+Enter differ. `submit()` re-checks `canSend` rather than trusting the `disabled` attribute:
+a keyboard shortcut reaches the handler without going through the button.
+
+**Deviations from the plan:** two small additions. The Ctrl/Meta/Alt+Enter cases (the plan named
+only Shift), because `.exact` is what makes all four behave and one assertion would not pin it;
+and the at-limit case asserts the *number* appears, since D10's point is that the cap is stated
+rather than hidden.
