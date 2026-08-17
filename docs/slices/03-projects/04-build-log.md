@@ -132,3 +132,34 @@ before the field existed can still be deleted. `updatedAt` advances alongside `d
 **Deviations from the plan:** none. One case beyond the plan's list — a corrupt document is
 deletable — because that is the whole reason P3 says this handler does not parse, and it was
 otherwise untested.
+
+---
+
+## T7 — Rules and index
+
+**The red step here cannot fail against the file as it stood, and that is stated rather than
+skipped.** `users/{uid}/projects/{projectId}` matched no block, so it was already denied by
+default and every `assertFails` passed before the change. To prove the cases are meaningful
+rather than vacuous, the block was first added as
+`allow read, write: if request.auth != null` and the suite run: **6 of the 7 new cases
+failed** (the anonymous one still passed, since that rule denies it too). The permissive rule
+was then replaced by the deny-all the PRD prints verbatim, and all 19 cases pass.
+
+That is also the standing value of these tests: they are what would catch a later rule
+granting `users/{uid}/{document=**}` recursively.
+
+**Red/Green:** `tests/rules/firestore.spec.ts` gains
+`describe('users/{uid}/projects/{projectId}')` — owner read, list, create, update and delete;
+a different verified user doing all five; an anonymous client reading and writing. Seeded past
+the rules with `withSecurityRulesDisabled`, so update and delete have a document to be denied
+on. The suite still has no `assertSucceeds` import.
+
+`firestore.rules` gains the deny-all block with its comment; `firestore.indexes.json` gains
+the `projects` COLLECTION-scope entry, `deletedAt` ASCENDING + `updatedAt` DESCENDING.
+
+**Not test-covered by construction (R2, D7):** the index. The emulator serves any query, so no
+test at any level can catch it missing. Verified by reading the entry against
+`handleListProjects`'s `where('deletedAt','==',null).orderBy('updatedAt','desc')` — field for
+field, in that order.
+
+**ACs:** AC-21, AC-22, AC-23 (the existing suites are untouched and still pass).
