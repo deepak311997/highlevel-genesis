@@ -62,3 +62,36 @@ returns `Message`; the store appends one.
 **Note.** The cap check stays `count + 2 > MESSAGE_LIMIT` even though one document is written, per
 D4 — the reply needs room. `frontend/src/stores/auth.spec.ts` needed a `truncated` on its inline
 message fixture; that is a type consequence of T1, not a behaviour change.
+
+## T3 — The `/generate` body schema
+
+**Commit:** `71b9862`
+
+**Tests added:** L1 `functions/src/llm/schema.spec.ts` — `.strict()` refuses `content`, `role`,
+`uid`, `prompt`, `messages` and `model` alongside a valid `projectId`; refuses a missing,
+non-string, null, empty, 65-character, `..`, `a/b` and `bad!id` project id; accepts `proj-1` and a
+64-character id; the refusal message is the project copy, not a regex complaint.
+
+**Green:** `functions/src/llm/schema.ts` — `generateBodySchema`, `GenerateErrorCode`, and the three
+SSE payload types, with `projectIdSchema` imported rather than restated.
+
+## T4 — The system prompt and its breakpoint
+
+**Commit:** `28970dc`
+
+**Tests added:** L1 `functions/src/llm/prompt.spec.ts` — a non-empty array of `text` blocks; exactly
+one `cache_control` breakpoint and it is on the last block; nothing matching
+`/\d{4}-\d{2}-\d{2}|\d{10,}|\buid\b|projectId/i` in any block (AC-7); the value is identical on
+every read; no HighLevel endpoint, no file-format instruction.
+
+**Green:** `functions/src/llm/prompt.ts`.
+
+**Deviation from the plan.** `@anthropic-ai/sdk@^0.117.1` is installed here rather than in T8: T4,
+T5, T6 and T7 all need its types (`TextBlockParam`, `MessageParam`, `MessageStreamParams`,
+`MessageStreamEvent`), so the plan's ordering could not compile. Only the install moved — the
+client, the fake and the fixtures are still T8.
+
+**R8 confirmed resolved against the installed package**, not recalled:
+`node_modules/@anthropic-ai/sdk/resources/messages/messages.d.ts` types `OutputConfig.effort` as
+`'low' | 'medium' | 'high' | 'xhigh' | 'max' | null`, and `MessageStreamParams =
+ParseableMessageCreateParams`, which carries `output_config`. No cast is needed anywhere.
