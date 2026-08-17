@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest'
 
-import { HL_ROUTES, isLegalParam, matchRoute, type HlRoute } from './routes'
+import { hlApiBase } from './config'
+import {
+  buildUpstreamBody,
+  buildUpstreamUrl,
+  HL_ROUTES,
+  isLegalParam,
+  matchRoute,
+  type HlRoute,
+} from './routes'
+
+/** The connection's location — the only one that is ever injected (D10). */
+const LOCATION = 'lUanVn0CtZJTlymH8ySo'
 
 /**
  * The allowlist, and the matcher that is the whole of the confused-deputy fix.
@@ -191,4 +202,151 @@ describe('matchRoute', () => {
 
     expect(match.kind === 'matched' && match.row.pattern).toBe('/contacts/')
   })
+})
+
+/**
+ * Assembling the upstream request.
+ *
+ * AC-6 is asserted on the **assembled URL** rather than on the match, because
+ * the match is not the property that matters: a matcher can be right and a
+ * handler can still concatenate the caller's path onto a base and undo all of
+ * it. What is tested here is that there is no way to express that mistake —
+ * the URL is a compile-time template plus `[A-Za-z0-9_-]` parameters, and
+ * nothing else.
+ */
+describe('buildUpstreamUrl', () => {
+  function matched(
+    method: HlRoute['method'],
+    path: string,
+  ): {
+    row: HlRoute
+    params: Record<string, string>
+  } {
+    const match = matchRoute(method, path)
+    if (match.kind !== 'matched') throw new Error(`${method} ${path} did not match`)
+    return { row: match.row, params: match.params }
+  }
+
+  // AC-6 — every row, from its own template.
+  it.each(Object.entries(CONCRETE))('assembles %s from the row template', (name, path) => {
+    const method = name.split(' ')[0] as HlRoute['method']
+    const { row, params } = matched(method, path)
+
+    const url = buildUpstreamUrl(row, params, '', LOCATION)
+
+    expect(url.href.startsWith(hlApiBase())).toBe(true)
+    expect(url.pathname).toBe(
+      row.pattern.replace(/:(\w+)/g, (_m, key: string) => encodeURIComponent(params[key] ?? '')),
+    )
+  })
+
+  /*
+   * The total form of D6. `matchRoute` can never hand this over — the grammar
+   * refuses `..` — but the claim is that the URL cannot be built from a
+   * caller-supplied string *at all*, and a claim that depends on its only
+   * caller being careful is not structural. So the assembler re-checks.
+   */
+  it('refuses to assemble a URL from a parameter outside the grammar', () => {
+    const { row } = matched('GET', '/contacts/JwwI60NJqfc8I4Ay2MiA')
+
+    expect(() => buildUpstreamUrl(row, { contactId: '../../oauth/token' }, '', LOCATION)).toThrow()
+    expect(() => buildUpstreamUrl(row, { contactId: '..' }, '', LOCATION)).toThrow()
+  })
+
+  // AC-7, second half.
+  it.each(['/calendars', '/calendars/'])('assembles /calendars/ from %s', (path) => {
+    const { row, params } = matched('GET', path)
+
+    expect(buildUpstreamUrl(row, params, '', LOCATION).pathname).toBe('/calendars/')
+  })
+
+  /*
+   * AC-9. Our location wins, once, and nothing else about the caller's query is
+   * touched — including a repeated parameter, which is why the raw query string
+   * is carried rather than Express's qs-parsed `req.query` (P3, D12).
+   */
+  it('writes our locationId into the query, leaving unrelated parameters alone', () => {
+    const { row, params } = matched('GET', '/calendars/')
+
+    const url = buildUpstreamUrl(
+      row,
+      params,
+      'locationId=someone-else&limit=5&showDrafted=true',
+      LOCATION,
+    )
+
+    expect(url.searchParams.getAll('locationId')).toEqual([LOCATION])
+    expect(url.searchParams.get('limit')).toBe('5')
+    expect(url.searchParams.get('showDrafted')).toBe('true')
+  })
+
+  it('round-trips a repeated query parameter', () => {
+    const { row, params } = matched('GET', '/conversations/search')
+
+    const url = buildUpstreamUrl(row, params, 'tag=a&tag=b', LOCATION)
+
+    expect(url.searchParams.getAll('tag')).toEqual(['a', 'b'])
+  })
+
+  /*
+   * AC-10, and P1's stronger form: `locationId` is a reserved key on *every*
+   * row, so a caller-supplied one never reaches HighLevel even where we inject
+   * nothing of our own.
+   */
+  it('adds no locationId on a row that takes none, and removes the caller’s', () => {
+    const { row, params } = matched('GET', '/contacts/JwwI60NJqfc8I4Ay2MiA')
+
+    const url = buildUpstreamUrl(row, params, 'locationId=someone-else&fields=email', LOCATION)
+
+    expect(url.searchParams.has('locationId')).toBe(false)
+    expect(url.searchParams.get('fields')).toBe('email')
+  })
+})
+
+describe('buildUpstreamBody', () => {
+  function rowFor(pattern: string): HlRoute {
+    const row = HL_ROUTES.find((r) => r.pattern === pattern)
+    if (row === undefined) throw new Error(`no row for ${pattern}`)
+    return row
+  }
+
+  // AC-8.
+  it('writes our locationId over the caller’s, leaving every other field', () => {
+    const body = { locationId: 'someone-else', pageLimit: 1, filters: [{ field: 'email' }] }
+
+    const out = buildUpstreamBody(rowFor('/contacts/search'), body, LOCATION) as Record<
+      string,
+      unknown
+    >
+
+    expect(out['locationId']).toBe(LOCATION)
+    expect(out['pageLimit']).toBe(1)
+    expect(out['filters']).toEqual([{ field: 'email' }])
+  })
+
+  it('leaves the caller’s own object alone', () => {
+    const body = { locationId: 'someone-else' }
+
+    buildUpstreamBody(rowFor('/contacts/search'), body, LOCATION)
+
+    expect(body.locationId).toBe('someone-else')
+  })
+
+  // AC-10 in the body, again in P1's stronger form.
+  it('removes a locationId on a row that takes none', () => {
+    const out = buildUpstreamBody(
+      rowFor('/conversations/messages'),
+      { locationId: 'someone-else', type: 'SMS' },
+      LOCATION,
+    ) as Record<string, unknown>
+
+    expect(out).toEqual({ type: 'SMS' })
+  })
+
+  it.each([['a string'], [42], [null], [['an', 'array']]])(
+    'forwards a non-object body (%s) unchanged',
+    (body) => {
+      expect(buildUpstreamBody(rowFor('/contacts/search'), body, LOCATION)).toEqual(body)
+    },
+  )
 })
