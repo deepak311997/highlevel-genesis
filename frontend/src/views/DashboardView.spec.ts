@@ -10,11 +10,13 @@ vi.mock('@/stores/profile', () => ({
 import DashboardView from './DashboardView.vue'
 
 /*
- * Both cards are stubbed. Each owns a Pinia store and an endpoint call and has a
- * suite of its own; mounting them here would make this file fail for reasons
- * that have nothing to do with the dashboard.
+ * All three cards are stubbed. Each owns a Pinia store and an endpoint call and
+ * has a suite of its own; mounting them here would make this file fail for
+ * reasons that have nothing to do with the dashboard.
  */
-const MOUNT = { global: { stubs: { ConnectionPanel: true, AccountCard: true } } }
+const MOUNT = {
+  global: { stubs: { ConnectionPanel: true, AccountCard: true, ProjectsCard: true } },
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -28,10 +30,10 @@ describe('DashboardView', () => {
     expect(wrapper.findComponent({ name: 'AccountCard' }).exists()).toBe(true)
   })
 
-  it('ships an empty state, since there is nothing to list yet', () => {
+  it('renders the projects card', () => {
     const wrapper = mount(DashboardView, MOUNT)
 
-    expect(wrapper.find('[data-testid="dashboard-empty"]').exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'ProjectsCard' }).exists()).toBe(true)
   })
 
   // Idempotent, so a sign-up interrupted before the profile existed heals here.
@@ -55,6 +57,6 @@ describe('DashboardView', () => {
     await flushPromises()
 
     expect(wrapper.findComponent({ name: 'ConnectionPanel' }).exists()).toBe(true)
-    expect(wrapper.find('[data-testid="dashboard-empty"]').exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'ProjectsCard' }).exists()).toBe(true)
   })
 })
