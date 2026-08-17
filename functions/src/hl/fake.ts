@@ -167,6 +167,58 @@ function echoed(req: Request, res: Response, id: string): boolean {
   return true
 }
 
+/** Longer than the suite's overridden timeout, shorter than the real one. */
+const SLOW_MS = 5_000
+
+/** Just past the proxy's 5 MiB cap, and not a byte more than it has to be. */
+const OVER_CAP_BYTES = 5 * 1024 * 1024 + 1024
+
+/**
+ * The failure markers, recognised in any path parameter.
+ *
+ * One helper called from every surface, so a route added later inherits the
+ * whole failure vocabulary rather than the subset whoever added it remembered.
+ * Same idiom as the authorization codes above: **the input says what should
+ * happen**, so a case reads as the condition it is testing.
+ *
+ * `__huge` and `__hugestream` are the same condition reached two ways — one
+ * declares a `Content-Length` the proxy can short-circuit on, the other arrives
+ * chunked and declares nothing, so only the running byte count can stop it.
+ */
+function marked(res: Response, id: string): boolean {
+  switch (id) {
+    case '__401':
+      // The shape their errors actually use — see the recorded
+      // location-401-missing-scope.json fixture.
+      res.status(401).json({ message: 'Invalid JWT' })
+      return true
+    case '__429':
+      res.status(429).json({ message: 'Too many requests, please try again later' })
+      return true
+    case '__500':
+      res.status(500).json({ message: 'Internal server error' })
+      return true
+    case '__slow':
+      setTimeout(() => {
+        res.json({ ok: true })
+      }, SLOW_MS)
+      return true
+    case '__huge':
+      res.json({ padding: 'x'.repeat(OVER_CAP_BYTES) })
+      return true
+    case '__hugestream':
+      res.type('application/json')
+      res.write('{"padding":"')
+      for (let sent = 0; sent < OVER_CAP_BYTES; sent += 64 * 1024) {
+        res.write('x'.repeat(64 * 1024))
+      }
+      res.end('"}')
+      return true
+    default:
+      return false
+  }
+}
+
 /**
  * Replay a fixture, filtered by the `locationId` the request actually carried.
  *
@@ -352,6 +404,7 @@ export function buildFakeHlRouter(enabled: boolean): Router {
 
   router.get('/__fake-hl/contacts/:contactId', (req, res) => {
     if (!surface(req, res)) return
+    if (marked(res, req.params.contactId)) return
     if (echoed(req, res, req.params.contactId)) return
     res.json({ contact: { id: req.params.contactId, locationId: LOCATION_ID } })
   })
@@ -373,6 +426,7 @@ export function buildFakeHlRouter(enabled: boolean): Router {
 
   router.get('/__fake-hl/calendars/:calendarId', (req, res) => {
     if (!surface(req, res)) return
+    if (marked(res, req.params.calendarId)) return
     if (echoed(req, res, req.params.calendarId)) return
     res.json({ calendar: { id: req.params.calendarId, locationId: LOCATION_ID } })
   })

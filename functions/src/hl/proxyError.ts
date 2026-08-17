@@ -142,6 +142,42 @@ export function mapTokenError(err: unknown): HttpError {
 }
 
 /**
+ * The upstream call was aborted because it outlived {@link hlUpstreamTimeoutMs}.
+ *
+ * A distinct class rather than an inspection of the `AbortError` `fetch`
+ * raises, because an abort is also how the size cap stops a read — the two
+ * failures are indistinguishable from the exception alone, and they map to
+ * different statuses.
+ */
+export class UpstreamTimeoutError extends Error {
+  constructor() {
+    super('HighLevel took too long to answer.')
+    this.name = 'UpstreamTimeoutError'
+  }
+}
+
+/** The upstream body passed the 5 MiB cap and the read was abandoned (D27). */
+export class UpstreamTooLargeError extends Error {
+  constructor() {
+    super('That HighLevel response was too large.')
+    this.name = 'UpstreamTooLargeError'
+  }
+}
+
+/**
+ * A failure of the call itself, as distinct from a status it answered with.
+ *
+ * The tail is `502 hl_unavailable` rather than a rethrow, because at this point
+ * every remaining possibility is a network-shaped one — DNS, a refused
+ * connection, a reset — and each of them means the same thing to a caller.
+ */
+export function mapForwardError(err: unknown): HttpError {
+  if (err instanceof UpstreamTimeoutError) return proxyError(504, 'hl_timeout')
+  if (err instanceof UpstreamTooLargeError) return proxyError(502, 'hl_too_large')
+  return proxyError(502, 'hl_unavailable')
+}
+
+/**
  * Whether a failed refresh means the grant is dead.
  *
  * **Only `invalid_grant` on a 400.** §3's first rule is never to destroy a

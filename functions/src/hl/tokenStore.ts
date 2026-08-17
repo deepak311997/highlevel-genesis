@@ -1,3 +1,4 @@
+import { FieldValue } from 'firebase-admin/firestore'
 import { z } from 'zod'
 
 import { CONNECTIONS } from './connection'
@@ -55,6 +56,21 @@ function snapshotOf(data: unknown): ConnectionSnapshot | undefined {
 
   const { accessToken, expiresAt, locationId, needsReconnect } = parsed.data
   return { accessToken, expiresAtMs: expiresAt.toMillis(), locationId, needsReconnect }
+}
+
+/**
+ * Record that only the user can fix this connection (D20, D26).
+ *
+ * A plain `update`, not a transaction: there is nothing to read first, and
+ * setting a flag that is already set is the same document either way. It
+ * deliberately touches **nothing else** — in particular it does not clear the
+ * refresh token, because §3's first rule is never to destroy a token that may
+ * still be valid, and reconnecting overwrites the document anyway.
+ */
+export async function markNeedsReconnect(uid: string): Promise<void> {
+  await getDb()
+    .doc(`${CONNECTIONS}/${uid}`)
+    .update({ needsReconnect: true, updatedAt: FieldValue.serverTimestamp() })
 }
 
 export function firestoreTokenDeps(): TokenDeps {

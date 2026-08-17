@@ -1,9 +1,23 @@
 import type { Request, Response } from 'express'
 
-import { buildUpstreamBody, buildUpstreamUrl, isRouteEnabled, matchRoute, type HlRoute } from './routes'
-import { firestoreTokenDeps } from './tokenStore'
+import {
+  buildUpstreamBody,
+  buildUpstreamUrl,
+  isRouteEnabled,
+  matchRoute,
+  type HlRoute,
+} from './routes'
+import { firestoreTokenDeps, markNeedsReconnect } from './tokenStore'
+import { hlUpstreamTimeoutMs } from './config'
 import { logProxyEvent, type ProxyLogContext } from '../lib/log'
-import { mapTokenError, mapUpstreamStatus, routeRefusal } from './proxyError'
+import {
+  mapForwardError,
+  mapTokenError,
+  mapUpstreamStatus,
+  routeRefusal,
+  UpstreamTimeoutError,
+  UpstreamTooLargeError,
+} from './proxyError'
 import { resolveConnection, type ResolvedConnection } from './token'
 
 /**
@@ -68,6 +82,66 @@ interface UpstreamResponse {
 }
 
 /**
+ * The response cap (D27) — roughly 25× the largest recorded fixture, and well
+ * inside what a Cloud Run response can carry.
+ *
+ * Real, not overridden under test. 5 MiB over localhost costs milliseconds, so
+ * there is nothing to buy by faking it — and a cap that is 5 MiB in production
+ * and 5 KiB in the suite is a cap nobody has actually tested. Without it a
+ * pathological `pageLimit` is an out-of-memory rather than an error.
+ */
+const MAX_UPSTREAM_BYTES = 5 * 1024 * 1024
+
+/**
+ * Read the body, abandoning it the moment it passes the cap.
+ *
+ * Two checks, because either alone leaves a hole. `Content-Length` is the cheap
+ * one and saves downloading megabytes we would discard — but a chunked response
+ * declares none, and a declared length is upstream's claim rather than a fact.
+ * The running count is what actually enforces the bound, and aborting the
+ * controller is what stops the rest of the body arriving after we have decided
+ * not to want it.
+ */
+async function readCapped(
+  // `globalThis.Response` explicitly: this module also imports Express's
+  // `Response`, and the two are entirely different things one letter apart.
+  upstream: globalThis.Response,
+  controller: AbortController,
+): Promise<string> {
+  const declared = Number(upstream.headers.get('content-length') ?? '')
+  if (Number.isFinite(declared) && declared > MAX_UPSTREAM_BYTES) {
+    controller.abort()
+    throw new UpstreamTooLargeError()
+  }
+
+  // A 204, or any response the runtime gave no body — an empty string rather
+  // than a throw, because "nothing" is a legitimate thing for HighLevel to say.
+  if (upstream.body === null) return ''
+
+  // Annotated rather than inferred: Node's `fetch` types the body as
+  // `ReadableStream<any>`, and an `any` chunk would make the byte count that is
+  // the whole point of this function unchecked.
+  const body: ReadableStream<Uint8Array> = upstream.body
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let size = 0
+  let text = ''
+
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.byteLength
+    if (size > MAX_UPSTREAM_BYTES) {
+      controller.abort()
+      throw new UpstreamTooLargeError()
+    }
+    text += decoder.decode(value, { stream: true })
+  }
+
+  return text + decoder.decode()
+}
+
+/**
  * The raw query string, not `req.query`.
  *
  * `req.query` is qs-parsed, and a repeated parameter or bracket syntax cannot
@@ -104,13 +178,42 @@ async function forwardUpstream(
   }
   if (writes) headers['Content-Type'] = 'application/json'
 
-  const upstream = await fetch(url, {
-    method: row.method,
-    headers,
-    ...(writes ? { body: JSON.stringify(body) } : {}),
-  })
+  /*
+   * One controller for both bounds. `timedOut` is a flag rather than an
+   * inspection of the resulting `AbortError`, because the cap aborts through
+   * the same controller and the two are otherwise indistinguishable — and they
+   * are a 504 and a 502 respectively.
+   */
+  const controller = new AbortController()
+  // A field rather than a `let`, because the compiler narrows a captured local
+  // to its initial value across the await and then reports the check below as
+  // dead code. A property is re-widened by the intervening call, which is both
+  // true and what makes this readable.
+  const bound = { timedOut: false }
+  const timer = setTimeout(() => {
+    bound.timedOut = true
+    controller.abort()
+  }, hlUpstreamTimeoutMs())
 
-  return { status: upstream.status, text: await upstream.text(), headers: upstream.headers }
+  try {
+    const upstream = await fetch(url, {
+      method: row.method,
+      headers,
+      signal: controller.signal,
+      ...(writes ? { body: JSON.stringify(body) } : {}),
+    })
+
+    return {
+      status: upstream.status,
+      text: await readCapped(upstream, controller),
+      headers: upstream.headers,
+    }
+  } catch (err) {
+    if (bound.timedOut) throw new UpstreamTimeoutError()
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 /**
@@ -144,12 +247,17 @@ export async function handleProxy(req: Request, res: Response, uid: string): Pro
     throw mapTokenError(err)
   }
 
-  const upstream = await forwardUpstream(
-    row,
-    buildUpstreamUrl(row, params, rawQueryOf(req), connection.locationId),
-    buildUpstreamBody(row, req.body, connection.locationId),
-    connection.accessToken,
-  )
+  let upstream: UpstreamResponse
+  try {
+    upstream = await forwardUpstream(
+      row,
+      buildUpstreamUrl(row, params, rawQueryOf(req), connection.locationId),
+      buildUpstreamBody(row, req.body, connection.locationId),
+      connection.accessToken,
+    )
+  } catch (err) {
+    throw mapForwardError(err)
+  }
 
   // Copied before the status is decided, so a 429 still carries the numbers
   // that explain it (D18). `api/index.ts` exposes the same list through CORS.
@@ -165,6 +273,16 @@ export async function handleProxy(req: Request, res: Response, uid: string): Pro
     rateLimitRemaining: upstream.headers.get('X-RateLimit-Remaining'),
   })
 
+  /*
+   * Marked before the error is built, and only on a 401 (D20).
+   *
+   * With the proactive five-minute skew a 401 is never an expiry we should have
+   * caught — it is a revoked install, an uninstalled app, or a scope the app no
+   * longer has, and all three are fixed by reconnecting rather than by
+   * refreshing. So the flag is written here, the panel offers the button, and
+   * D24's short-circuit stops every later call before it costs a round trip.
+   */
+  if (upstream.status === 401) await markNeedsReconnect(uid)
   if (upstream.status >= 400) throw mapUpstreamStatus(upstream.status, upstream.text)
 
   // `send` on the text we read, never `json` on a parsed object: Slice 9's
