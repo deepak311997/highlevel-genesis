@@ -82,3 +82,22 @@ export async function assertEmulatorBuild(page: Page): Promise<void> {
     'the app under test is not an emulator build — start it with `vite --mode emulator`',
   ).toBe('true')
 }
+
+/**
+ * Create a project and open its workspace.
+ *
+ * Extracted for the reason `signUpAndVerify` was: a second suite needs it, and a
+ * second copy is where two specs start to disagree about what an open workspace
+ * looks like. It waits on the chat panel's empty state rather than on the URL,
+ * so callers start from a workspace that has finished loading rather than one
+ * that has merely been navigated to.
+ */
+export async function openNewProject(page: Page, name = 'Contact dashboard'): Promise<void> {
+  await page.getByTestId('projects-new').click()
+  await page.getByTestId('project-form-name').fill(name)
+  await page.getByTestId('project-form-submit').click()
+  await expect(page.getByTestId('project-form-dialog')).toBeHidden()
+  // The project's *name* is the link, not the row.
+  await page.getByTestId('project-name').click()
+  await expect(page.getByTestId('chat-empty')).toBeVisible()
+}

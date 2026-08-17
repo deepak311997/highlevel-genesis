@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import { resetEmulators } from '../integration/helpers'
-import { assertEmulatorBuild, signUpAndVerify } from './helpers'
+import { assertEmulatorBuild, openNewProject, signUpAndVerify } from './helpers'
 
 /**
  * The demo line, walked in a browser.
@@ -29,16 +29,6 @@ import { assertEmulatorBuild, signUpAndVerify } from './helpers'
 
 /** `__slow` makes the stream observable: 600 ms, then a token every 150 ms. */
 const PROMPT = '__slow build a contact dashboard'
-
-/** Create a project and open it. Every test here starts from a workspace. */
-async function openNewProject(page: import('@playwright/test').Page): Promise<void> {
-  await page.getByTestId('projects-new').click()
-  await page.getByTestId('project-form-name').fill('Contact dashboard')
-  await page.getByTestId('project-form-submit').click()
-  await expect(page.getByTestId('project-form-dialog')).toBeHidden()
-  await page.getByTestId('project-name').click()
-  await expect(page.getByTestId('chat-empty')).toBeVisible()
-}
 
 test.describe('Slice 05 — streaming generation', () => {
   test.beforeEach(async ({ page }) => {
