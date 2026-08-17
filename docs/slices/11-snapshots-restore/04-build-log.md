@@ -255,3 +255,203 @@ Out of plan order, for the reason above.
   with exactly the union state R3 predicts, *40 files where 20 were expected*. Restored, green
   again. A restore that writes but does not delete is the failure this slice was most likely to
   ship, and it is now a red test rather than a review catch.
+
+### T11 — the rendered labels → AC-29's label half *(lane E)*
+
+- **Red:** `frontend/src/lib/snapshots.spec.ts` (8 cases) and four `formatBytes` cases in
+  `frontend/src/lib/files.spec.ts`. Both failed on a missing export.
+- **Green:** `versionLabel`, `originLabel` (a `switch` with **no `default`**, so a third origin is a
+  type error rather than a blank cell) and `snapshotSubtitle`; `formatBytes` beside `utf8Bytes`,
+  with P7's decimal KB and its `Math.max(1, …)` floor so 1000–1499 bytes cannot render as `0 KB`.
+- The lane deliberately did **not** pin `formatBytes(1) === '1 bytes'`: P7's rule produces that
+  string, but asserting it would bake in awkward copy for a case the caller cannot reach. The
+  0/512/999/1000 boundaries pin the branch instead.
+
+### T12 — the client library → AC-22
+
+Landed first; see *Session 2* above.
+
+### T13, T14 — the store's list, its restore and the tabs → AC-23 – AC-28 *(lane D)*
+
+- **Red (T13):** 11 cases under `the snapshot list` — the loading/loaded lifecycle, the list
+  replaced on success, a failure that sets `snapshotsError` and **leaves the existing list in
+  place**, the conditional refetch on `done` (only once loaded, and never for a turn that wrote
+  nothing), and `reset()`/`open()` returning every field to its initial value with a stale response
+  unable to repopulate it.
+- **Red (T14):** 12 cases under `restoreSnapshot` — `restoringId` for the length of the request,
+  `files` replaced, the history refetched, a failure leaving `files`/`openTabs`/every buffer alone,
+  the tab reconciliation (surviving tab re-read, deleted tab closed and dropped, a dirty buffer
+  coming back with `replaced` set), and the two guards (`generating`, and a restore already in
+  flight) each issuing no request.
+- **Committed as one commit**, not two. The two cycles were worked in order inside one 2,500-line
+  spec file; splitting the diff afterwards would have put the lane's internal history above the
+  branch's, which is the opposite of what per-task commits are for.
+- **One judgement call the lane made and flagged, which stands.** `applyRestoredFiles` runs only
+  when the response says `changed`. That follows D10 — a no-op restore wrote nothing, so re-reading
+  every tab would discard an unsaved edit for a change that never happened. The file list and the
+  history refetch happen either way, which is what AC-24 asks for unconditionally. Pinned by
+  `leaves every tab and buffer alone when nothing changed`.
+- **The refactor came out cleanly**, so it was taken: `rereadTab(path, id, gen)` now carries the
+  shared "re-read, announce a discarded dirty buffer" body for both `applyGenerationFiles` and
+  `applyRestoredFiles`, returning whether the caller should continue. The deleted-tab case stays in
+  `applyRestoredFiles` alone, above the shared call — nothing was forced into the helper that only
+  one caller has.
+
+### T15 — the `sheet` primitive *(lane E)*
+
+- **The CLI reached the network**, so provenance is upstream's:
+  `npx shadcn-vue@latest add sheet --yes --overwrite`. Nine files under
+  `frontend/src/components/ui/sheet/`. **Hand-vendoring was not needed**, so R9's fallback did not
+  fire.
+- Four deviations from what the CLI emitted, each commented in place and each with precedent in
+  `ui/dialog/`: omit-`undefined` prop forwarding in the five components that use
+  `useForwardPropsEmits` (`exactOptionalPropertyTypes` treats a key valued `undefined` as different
+  from an absent one); an `sr-only` "Close" label on `SheetContent`'s close button, which upstream
+  ships as an icon with no accessible name; an explicit `sheetVariants({ side: props.side })`
+  binding; and Prettier's formatting. `Sheet.vue` is byte-identical to upstream and to
+  `ui/dialog/Dialog.vue`.
+- **The CLI installed a package and it was reverted.** It added `@lucide/vue` to
+  `frontend/package.json` and rewrote the lockfile; `npm uninstall @lucide/vue` undid both, and
+  `git status` confirms **`frontend/package.json` and `frontend/package-lock.json` are unchanged
+  from `main`**. The vendored components import `X` from `lucide-vue-next`, as the rest of the
+  codebase does. **No new runtime dependency ships with this slice.**
+
+### T16, T17 — the History sheet and its trigger → AC-29, AC-30 *(lane E)*
+
+- **Red (T16):** 14 cases across `the trigger`, `the four states` and `restoring`, on
+  `ProjectFormDialog.spec.ts`'s pattern — a `reactive` store stub with `vi.mock('@/stores/workspace')`,
+  queried on `document.body` because Reka portals the sheet content.
+- **Green:** `SnapshotSheet.vue` — a ghost **History** trigger, `Sheet` with `side="right"` (P9), a
+  `SheetTitle` of "Version history", and branches ordered error → loading → rows → empty, which is
+  `FileTree.vue`'s rule and matters because a failed *first* request leaves `snapshotsLoaded` false
+  and would otherwise render the empty state over an error. `open` and `confirmingId` are local
+  `ref`s (D20). Rows sort defensively by `seq` descending with a comment saying why, and the spec
+  feeds them ascending to pin it.
+- One testid beyond the plan's eleven: `snapshot-restore-error`, because AC-30's restore-failure
+  clause had no id in the list.
+- **T17's "watch" was decided by running it, and went the no-stub way.** All five `EditorPanel`
+  cases pass with the real `SnapshotSheet` mounted: a closed sheet renders no `div` at all — `Sheet`
+  is `DialogRoot` (slot only), the trigger is a `<button>`, and the content is portaled only when
+  open — so the spec's `findAll('div')` `max-h-` assertion still finds exactly one element. No stub
+  was added and no assertion was moved.
+
+### T18 — the origin-neutral replaced notice → AC-31 *(lane F)*
+
+- **Red:** `names neither a generation nor a restore in the replaced notice`, asserting
+  case-insensitively against both words. It failed on Slice 6's copy, which said "generation".
+- **Green:** P8's sentence — `Replaced by a newer version of this file. Your unsaved changes were
+  discarded.`
+- The pre-existing `renders the replaced notice` case asserted the old sentence verbatim, so it was
+  updated to the new one **in full**. That strengthens it: it now pins the whole sentence where it
+  used to pin a fragment. Nothing was weakened or deleted.
+
+### T19 — end to end → AC-32
+
+- **Red:** `tests/e2e/snapshots.spec.ts`, one test in six movements — empty history on a fresh
+  project; two generations, the second `__alt_files`; the history showing two rows newest-first
+  with their labels, counts and dates; the inline confirm cancelled and then taken; a **third** row
+  marked *Before restore*; the tree back to three files with `about.html` gone and the open tab
+  showing version 1's bytes again; and all of it surviving a reload.
+- **Green:** nothing new, as the plan predicts — T10, T14 and T16 wrote the behaviour and this is
+  the level that proves the three of them meet.
+- The test compares the editor's contents against a value captured *before* the second generation,
+  and asserts in between that the second generation **changed** it — so "it came back" cannot pass
+  by the value never having moved.
+
+### T20 — the documents *(lane G)*
+
+- `docs/IMPLEMENTATION_PLAN.md` §0's status table (Slice 11 given its own row), §4's Slice 11 entry,
+  and §9's rows for F5.2, F5.3, F6.6 and the shadcn inventory. `docs/PRODUCT_SPEC.md` §7.2's `sheet`
+  row marked shipped.
+- **Suite counts were deliberately left out**, per the plan: they go in at ship time from the
+  orchestrator's own run rather than from a claim. §0's per-slice counts paragraph for Slice 11 is
+  the one thing still owed.
+- The lane grepped both documents for `onSnapshot`, `:uid`, `/me` and "client SDK" and found **no
+  contradiction** with the API-only or no-uid-in-routes rules near its edits.
+
+## Suite
+
+Measured on this branch after the last commit. The baseline column is `main` at `e6dd2d9`, measured
+the same way — the functions figure from a clean worktree of `main` rather than inferred.
+
+| Suite | Baseline | Now | Added |
+|---|---|---|---|
+| `test:unit` — functions | 39 files / 922 | 42 files / **1000** | +3 files, +78 |
+| `test:unit` — frontend | 60 files / 786 | 63 files / **843** | +3 files, +57 |
+| `test:unit` — scripts | 3 files / 21 | 3 files / **21** | — |
+| `test:rules` | 1 file / 38 | 1 file / **52** | +14 |
+| `test:integration` | 15 files / 325 | 16 files / **373** | +1 file, +48 |
+| `test:e2e` | 16 | **17** | +1 |
+
+`typecheck` (functions, frontend, root) and `lint` (functions, frontend) both clean, zero warnings.
+
+## AC coverage — every criterion, and the passing test that proves it
+
+| AC | Level | Test |
+|---|---|---|
+| AC-1 | L1 | `snapshots/plan.spec.ts` › `mergeSnapshotFiles` (5 cases); `files/handlers.spec.ts` › *returns the merge of what is stored with what the turn wrote*, *issues no read and resolves to an empty resulting set for a prose-only turn* |
+| AC-2 | L1 | `snapshots/plan.spec.ts` › `planSnapshotSeq` (4 cases) |
+| AC-3 | L1 | `snapshots/plan.spec.ts` › `planSnapshotPrune` (5 cases) |
+| AC-4 | L1 | `snapshots/plan.spec.ts` › `filesEqual` (6 cases) |
+| AC-5 | L1 | `snapshots/schema.spec.ts` (17 cases); `snapshots/handlers.spec.ts` › *refuses and logs a document whose path disagrees with its id* |
+| AC-6 | L4 | `snapshots.spec.ts` › *a generation that stores files* (4 cases) |
+| AC-7 | L4 | `snapshots.spec.ts` › *a second generation that rewrites one file and adds another* (3 cases) |
+| AC-8 | L4 | `snapshots.spec.ts` › *a turn that stores no files* (6 markers + the never-generated case) |
+| AC-9 | L1 | `messages/handlers.spec.ts` › *stages the message, the files, the snapshot and its copies on one batch*, *stages the prune on that same batch…*, *stages nothing for the history when the turn carries no snapshot* |
+| AC-10 | L4 | `snapshots.spec.ts` › *keeps exactly the cap, drops the lowest, and takes its files with it*, *numbers the new version above the highest, gap or no gap* |
+| AC-11 | L4 | `snapshots.spec.ts` › `GET …/snapshots` (10 cases) |
+| AC-12 | L4 | `snapshots.spec.ts` › *restoring an earlier version* (3 cases) |
+| AC-13 | L4 | `snapshots.spec.ts` › *the safety snapshot* (2 cases) |
+| AC-14 | L4 | `snapshots.spec.ts` › *restoring the version the project already is* (2 cases) |
+| AC-15 | L4 | `snapshots.spec.ts` › *writes the version's files and takes no safety snapshot* |
+| AC-16 | L4 | `snapshots.spec.ts` › *a version that cannot be read whole* (3 cases) |
+| AC-17 | L4 | `snapshots.spec.ts` › *a version that is not this caller's to restore* (6 cases); *answers 404 for another user's project, and leaves it alone* |
+| AC-18 | L4 | `snapshots.spec.ts` › *ends with exactly the version's twenty files* |
+| AC-19 | L1 + L4 | `index.spec.ts` › *does not attest the snapshot list…*, *attests the snapshot restore*, *guards both snapshot routes with withVerifiedUser*, *names the resource and never the user…*; `snapshots.spec.ts` › *the restore route's guards* (4 cases) and the list's 401/403 |
+| AC-20 | L3 | `tests/rules/firestore.spec.ts` › the two new `describe`s (15 cases over both collections × three callers × five operations) |
+| AC-21 | L3 | `tests/rules/firestore.spec.ts` › *denies a verified owner one operation on every collection*, extended with both new paths |
+| AC-22 | L1 | `lib/snapshotsApi.spec.ts` (6 cases); `lib/no-firestore.spec.ts`, unchanged and re-run — its scan covers the new files automatically |
+| AC-23 | L1 | `stores/workspace.spec.ts` › *the snapshot list* — *fills the list and marks it loaded*, *is loading while the list request is in flight*, *records a failure and leaves any existing list in place* |
+| AC-24 | L1 | `stores/workspace.spec.ts` › *posts the restore, applies the returned list, and refetches the history*, *names the snapshot being restored for the length of the request*, *records a failure and leaves the files, the tabs and every buffer alone* |
+| AC-25 | L1 | `stores/workspace.spec.ts` › *re-reads a surviving tab, closes a deleted one, and announces the discard*, *re-reads a clean surviving tab without the notice*, *drops every closed-but-buffered file…* |
+| AC-26 | L1 | `stores/workspace.spec.ts` › *issues no request while a generation is open*, *issues no second request while a restore is already in flight* |
+| AC-27 | L1 | `stores/workspace.spec.ts` › *refetches the list on a done that wrote files, once it has been loaded*, *issues no snapshot request on a done when the sheet was never opened*, *issues no snapshot request on a done that wrote nothing* |
+| AC-28 | L1 | `stores/workspace.spec.ts` › *returns every snapshot field to its initial value on reset*, *returns them to their initial value when another project is opened*, *does not render the previous project's history*, *does not apply a restore that lands after another project was opened* |
+| AC-29 | L1 + L2 | `lib/snapshots.spec.ts` (8 label cases); `SnapshotSheet.spec.ts` › `the trigger` (3) and `the four states` (5); `EditorPanel.spec.ts` › *renders the History trigger in its header* |
+| AC-30 | L2 | `SnapshotSheet.spec.ts` › `restoring` (6 cases) |
+| AC-31 | L2 | `FileEditor.spec.ts` › *names neither a generation nor a restore in the replaced notice*, *renders the replaced notice* |
+| AC-32 | L5 | `tests/e2e/snapshots.spec.ts` › *two generations, a restore, and all of it survives a reload* |
+
+**No AC is unmapped, and no AC is mapped to a test that does not pass.**
+
+## Amendments to the plan
+
+Three, all recorded above at the task that made them and none of them a redesign.
+
+1. **T4 creates `snapshots/handlers.ts` holding only two type declarations**, because it cannot name
+   `SnapshotPlan` otherwise and the plan places that file in T6. No runtime code; T6 appends every
+   function, each behind a failing test.
+2. **AC-19's structural assertion is split across T9 and T10**, because as written T9 asserts a
+   router shape only T10 provides and so could not have been green. Same coverage, in the commits
+   that can honestly hold it.
+3. **`planSnapshotPrune` is generic over its head type.** A strict widening that keeps every pinned
+   call site and removes an unreachable, untestable branch from `planSnapshot`.
+
+Two further departures worth naming, neither a change to the plan:
+
+- **T12 was worked first**, out of order, because it is the interface two lanes meet at.
+- **T13 and T14 share one commit**, for the reason given at that task.
+
+## Deferred
+
+Nothing. Every task in the plan is done, and no work was found that the plan does not cover.
+
+One item is **owed at ship rather than deferred**: `docs/IMPLEMENTATION_PLAN.md` §0's per-slice
+suite-counts paragraph for Slice 11. The plan puts it at ship time deliberately, from the
+orchestrator's own run rather than from a claim — the numbers are in the *Suite* table above.
+
+## Manual verification
+
+Not performed: this session is unattended and has no browser to drive by hand. The plan's twelve
+manual steps are covered mechanically — steps 3–10 and 12 by `tests/e2e/snapshots.spec.ts`, step 11
+by `SnapshotSheet.spec.ts` › *disables every Restore during a generation, with the reason on screen*.
