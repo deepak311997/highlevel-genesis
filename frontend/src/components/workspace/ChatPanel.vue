@@ -56,6 +56,19 @@ watch(() => workspace.messages.length, scrollToBottom, { flush: 'post' })
 onMounted(scrollToBottom)
 
 /**
+ * The transcript, each message carrying the time it renders with.
+ *
+ * Derived once here rather than calling `formatTime` twice per bubble in the
+ * template — once to decide whether there is a line and once to fill it — which is
+ * two `Intl` formats per message per render, and a condition and its content that
+ * could in principle disagree. `null` is the whole of D29: a stored timestamp that
+ * will not parse yields no line at all rather than "Invalid Date".
+ */
+const bubbles = computed(() =>
+  workspace.messages.map((message) => ({ ...message, time: formatTime(message.createdAt) })),
+)
+
+/**
  * The composer is available in every branch except loading.
  *
  * A failed transcript still gets one: the send route is a different request from the
@@ -110,12 +123,12 @@ const showComposer = computed(
       <div ref="scrollRoot" class="min-h-0 flex-1">
         <ScrollArea class="h-full">
           <ul
-            v-if="workspace.messages.length > 0"
+            v-if="bubbles.length > 0"
             class="flex flex-col gap-3 p-4"
             data-testid="chat-transcript"
           >
             <li
-              v-for="message in workspace.messages"
+              v-for="message in bubbles"
               :key="message.id"
               data-testid="message-bubble"
               :data-role="message.role"
@@ -125,11 +138,11 @@ const showComposer = computed(
               <p class="whitespace-pre-wrap text-sm">{{ message.content }}</p>
               <!-- A timestamp that will not parse yields no line at all (D29). -->
               <span
-                v-if="formatTime(message.createdAt)"
+                v-if="message.time !== null"
                 data-testid="message-time"
                 class="text-xs text-muted-foreground"
               >
-                {{ formatTime(message.createdAt) }}
+                {{ message.time }}
               </span>
             </li>
           </ul>
