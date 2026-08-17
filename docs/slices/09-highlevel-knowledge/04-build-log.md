@@ -476,3 +476,5 @@ automated tests instead: the two `hl(...)` calls in `app.js` (AC-25, AC-26), the
 `generation.complete` counters reading 2 and 0 for that fixture (`hlCalls.spec.ts`), the
 `__context` block count of 4 with files and 3 without (`generate-context.spec.ts`), and
 `POST /conversations/messages` appearing only under `HL_ALLOW_MESSAGE_SEND=true` (AC-3).
+
+<!-- build-complete -->
