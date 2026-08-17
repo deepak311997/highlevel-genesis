@@ -29,7 +29,9 @@ vi.mock('./llm', async (importOriginal) => ({
 }))
 
 import { handleGenerate, keepAliveMs, logGeneration } from './generate'
+import { HttpError } from './lib/errors'
 import type { LlmStream } from './llm'
+import { MESSAGE_LIMIT } from './messages/schema'
 
 /**
  * The two pieces of `/generate` that are pure enough to test without an emulator.
@@ -386,6 +388,84 @@ describe('handleGenerate — the client goes away', () => {
     expect(res.frames.filter((frame) => frame.startsWith('event: done'))).toHaveLength(1)
     // `close` after `end()` must change nothing.
     res.express.emit('close')
+    expect(appendAssistantMessage).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * The 200-message cap, on the endpoint that also writes into the collection.
+ *
+ * `POST /api/projects/:projectId/messages` refuses at 199 so the reply it is
+ * about to trigger has room — but **`/generate` writes an assistant message
+ * without going through that route**, and Retry re-opens it with no new user
+ * message at all (D26). A transcript already at the cap therefore grows past it,
+ * once per Retry, and `transcriptQuery`'s own `limit(200)` then hides every
+ * document written after the two-hundredth: the reply arrives on screen, and is
+ * gone on the next load. D34 leans on this cap to bound a project's spend
+ * absolutely, so the endpoint that spends has to honour it too.
+ */
+describe('handleGenerate — the message cap', () => {
+  function transcriptOf(count: number): unknown[] {
+    return Array.from({ length: count }, (_unused, index) => ({
+      id: `m${String(index)}`,
+      // Ending on a user turn, so nothing here is D6's trailing-assistant drop.
+      role: index % 2 === 0 ? 'user' : 'assistant',
+      content: `message ${String(index)}`,
+      createdAt: '',
+      truncated: false,
+    }))
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    readProject.mockResolvedValue({ id: 'proj-1' })
+    openStream.mockResolvedValue(scriptedStream(['one ']))
+    appendAssistantMessage.mockResolvedValue({
+      id: 'a1',
+      role: 'assistant',
+      content: 'one ',
+      createdAt: '',
+      truncated: false,
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('refuses a transcript already at the cap, with the message route’s answer', async () => {
+    readTranscript.mockResolvedValue(transcriptOf(MESSAGE_LIMIT))
+
+    await expect(handleGenerate(fakeRequest(), fakeResponse().express, 'alice')).rejects.toThrow(
+      HttpError,
+    )
+  })
+
+  it('refuses with 409 message_limit, before the LLM is called or anything written', async () => {
+    readTranscript.mockResolvedValue(transcriptOf(MESSAGE_LIMIT))
+
+    const err = await handleGenerate(fakeRequest(), fakeResponse().express, 'alice').catch(
+      (thrown: unknown) => thrown,
+    )
+
+    expect(err).toMatchObject({ status: 409, code: 'message_limit' })
+    expect((err as HttpError).message).toBe(
+      `This project has reached its limit of ${String(MESSAGE_LIMIT)} messages.`,
+    )
+    // The refusal is cheap and it is a JSON one: it happens before `flushHeaders`,
+    // so it still gets a real status line rather than an `error` frame (D9).
+    expect(openStream).not.toHaveBeenCalled()
+    expect(appendAssistantMessage).not.toHaveBeenCalled()
+  })
+
+  /* The boundary: one short of the cap is exactly the turn the cap leaves room for. */
+  it('generates from a transcript one message short of the cap', async () => {
+    readTranscript.mockResolvedValue(transcriptOf(MESSAGE_LIMIT - 1))
+
+    await handleGenerate(fakeRequest(), fakeResponse().express, 'alice')
+
+    expect(openStream).toHaveBeenCalledTimes(1)
     expect(appendAssistantMessage).toHaveBeenCalledTimes(1)
   })
 })

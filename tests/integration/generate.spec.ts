@@ -250,6 +250,45 @@ describe('POST /generate — the boundary, before a byte is streamed', () => {
     expect(await countMessages(aliceUid, 'echoes')).toBe(1)
   })
 
+  /*
+   * The 200-message cap, on the endpoint that also writes into the collection.
+   *
+   * `POST /api/projects/:projectId/messages` refuses at 199 so the reply it is
+   * about to trigger has room — but `/generate` writes an assistant message
+   * without going through that route, and **Retry re-opens it with no new user
+   * message at all** (D26). Unchecked, a transcript at the cap grows past it once
+   * per Retry, and `transcriptQuery`'s own `limit(200)` then hides every document
+   * beyond the two-hundredth: the reply arrives on screen and is gone on the next
+   * load. D34 leans on this cap to bound a project's spend absolutely, which only
+   * holds if the endpoint that spends the money honours it.
+   *
+   * Asserted through `expectJsonRefusal` like every other pre-flush refusal: a
+   * status alone would not notice a handler that opened the stream first.
+   */
+  it('answers 409 message_limit for a transcript at the cap, writing nothing', async () => {
+    await seedProject(aliceUid, 'full')
+    const batch = adminDb().batch()
+    for (let index = 0; index < 200; index += 1) {
+      batch.set(adminDb().doc(`users/${aliceUid}/projects/full/messages/m${String(index)}`), {
+        role: index % 2 === 0 ? 'user' : 'assistant',
+        content: `message ${String(index)}`,
+        seq: index % 2,
+        createdAt: Timestamp.fromMillis(1_700_000_000_000 + index * 1000),
+        truncated: false,
+      })
+    }
+    await batch.commit()
+
+    const res = await postGenerate({ projectId: 'full' }, auth(aliceToken))
+
+    expectJsonRefusal(res, 409, 'message_limit')
+    expect((res.body as { error?: string }).error).toBe(
+      'This project has reached its limit of 200 messages.',
+    )
+    // Not one document more: the collection is exactly what was seeded.
+    expect(await countMessages(aliceUid, 'full')).toBe(200)
+  })
+
   it('answers 400 empty_context for a project with no messages at all', async () => {
     await seedProject(aliceUid, 'empty')
 

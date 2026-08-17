@@ -746,6 +746,46 @@ describe('send — the two requests of a turn', () => {
     expect(store.sendError).toBe('That project no longer exists.')
     expect(store.generating).toBe(false)
   })
+
+  /*
+   * D27, and the store keeping the promise its own comment makes.
+   *
+   * `canSend` names three reasons not to send — an empty draft, a send already
+   * in flight, and a stream already open — and the composer disables itself on
+   * all three. The store re-checks them because "a keyboard shortcut reaches
+   * this function without going through the button", and the third one is the
+   * expensive reason: a second `send()` during a stream posts a message and
+   * opens a **second paid generation**, and the first stream's abort then lands
+   * on the second one's state, clearing `generating` and raising an error for a
+   * request that is still running.
+   */
+  it('sends nothing while a stream is already open', async () => {
+    const store = await opened()
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    // Waiting on the request rather than on `generating`: the flag is set a tick
+    // before `fetch` is reached, so clearing the log on it races the very call
+    // this case is about not seeing a second of.
+    await vi.waitFor(() => {
+      expect(requests()).toEqual(['POST /generate'])
+    })
+    fetchMock.mockClear()
+    store.draft = 'and add a search box'
+
+    await store.send()
+
+    expect(requests()).toEqual([])
+    // The draft survives, so the user's words are not the price of the guard.
+    expect(store.draft).toBe('and add a search box')
+
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE }))
+    stream.close()
+    await running
+
+    expect(store.generateError).toBeNull()
+    expect(store.messages).toEqual([ASSISTANT_MESSAGE])
+  })
 })
 
 describe('the stream', () => {

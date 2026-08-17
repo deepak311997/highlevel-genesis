@@ -31,31 +31,17 @@ export function asyncHandler(
 }
 
 /**
- * The JSON envelope, extracted so a non-Express handler can answer with it too.
- *
- * `/generate` is an `onRequest` function rather than a route on the `api` Express
- * app, so it has no error-handling middleware to fall through to — but its
- * refusals have to be byte-identical to every other route's, or a client would
- * need two ways to read a failure. One function, two callers.
+ * The terminal error handler, and the one JSON envelope every route answers with.
  *
  * Known `HttpError`s are surfaced verbatim; anything else becomes a generic 500
  * so an internal message never reaches a client.
- */
-export function sendHttpError(err: unknown, res: Response): void {
-  if (err instanceof HttpError) {
-    res.status(err.status).json({ error: err.message, code: err.code })
-    return
-  }
-
-  // Redacted, not serialised whole. Firebase errors carry the failing request
-  // on the error object, so `console.error(err)` on a rejected Admin SDK call
-  // is enough to put a plaintext password into Cloud Logging.
-  console.error('Unhandled error', describeError(err))
-  res.status(500).json({ error: 'Internal error', code: 'internal' })
-}
-
-/**
- * Terminal error handler — the Express adapter for {@link sendHttpError}.
+ *
+ * `/generate` reaches this too. It is a separate `onRequest` function, but it is
+ * an Express app rather than a hand-rolled wrapper precisely so that it can
+ * mount this — its refusals before the flush are byte-identical to every other
+ * route's, and a client needs one way to read a failure rather than two.
+ * `terminalErrorHandler` in `generate.ts` delegates here and only takes over
+ * once the headers are gone and the status line is spent.
  *
  * Express identifies an error handler by its four-argument signature, so `next`
  * must stay in the list even though nothing reads it.
@@ -66,5 +52,14 @@ export function errorHandler(
   res: Response,
   _next: NextFunction,
 ): void {
-  sendHttpError(err, res)
+  if (err instanceof HttpError) {
+    res.status(err.status).json({ error: err.message, code: err.code })
+    return
+  }
+
+  // Redacted, not serialised whole. Firebase errors carry the failing request
+  // on the error object, so `console.error(err)` on a rejected Admin SDK call
+  // is enough to put a plaintext password into Cloud Logging.
+  console.error('Unhandled error', describeError(err))
+  res.status(500).json({ error: 'Internal error', code: 'internal' })
 }

@@ -331,9 +331,18 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
   async function send(): Promise<void> {
     const id = projectId.value
     const content = draft.value.trim()
-    // The composer disables submit for both of these, but the store is the
-    // boundary a keyboard shortcut cannot go around.
-    if (id === null || content === '') return
+    /*
+     * The composer disables submit for all three of these, but the store is the
+     * boundary a keyboard shortcut cannot go around — so it re-checks the same
+     * three reasons `canSend` names rather than two of them.
+     *
+     * `generating` is the expensive one (D27). A second `send()` during an open
+     * stream posts a message and opens a **second paid generation**, and
+     * `runGeneration`'s abort of the first then lands on the second one's state:
+     * `generating` cleared and an error raised for a request that is still
+     * running. The draft is left alone, so the guard costs the user nothing.
+     */
+    if (id === null || content === '' || generating.value) return
 
     const gen = generation
     sending.value = true

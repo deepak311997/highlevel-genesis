@@ -20,6 +20,7 @@ import {
   type LlmEvent,
 } from './llm'
 import { appendAssistantMessage, readTranscript } from './messages/handlers'
+import { MESSAGE_LIMIT } from './messages/schema'
 import { notFound, readProject } from './projects/handlers'
 
 /**
@@ -207,9 +208,10 @@ export const generate = onRequest(
  * 2. the project — absent, soft-deleted, unreadable and somebody else's collapse
  *    into one 404 (D14), and the path is composed from the token's uid, so
  *    another user's project is not addressable rather than merely refused;
- * 3. the context, with trailing assistant turns dropped (D6);
- * 4. an empty context, which is a 400 before any LLM call (D7);
- * 5. the upstream stream — a missing API key throws here, and it is still an
+ * 3. the 200-message cap, which this route writes into and so has to honour;
+ * 4. the context, with trailing assistant turns dropped (D6);
+ * 5. an empty context, which is a 400 before any LLM call (D7);
+ * 6. the upstream stream — a missing API key throws here, and it is still an
  *    ordinary 500 with the reason logged rather than surfaced.
  *
  * Only then do headers go out.
@@ -219,7 +221,32 @@ export async function handleGenerate(req: Request, res: Response, uid: string): 
 
   if ((await readProject(uid, projectId)) === null) throw notFound()
 
-  const context = buildContext(await readTranscript(uid, projectId))
+  const transcript = await readTranscript(uid, projectId)
+
+  /*
+   * The cap, honoured by the endpoint that also writes into the collection.
+   *
+   * `POST /api/projects/:projectId/messages` refuses at 199 so the reply it is
+   * about to trigger has room — but this route writes an assistant message
+   * without going through that one, and Retry re-opens it with no new user
+   * message at all (D26). Left unchecked, a transcript at the cap grows past it
+   * once per Retry, and `transcriptQuery`'s own `limit(MESSAGE_LIMIT)` then
+   * hides every document beyond the two-hundredth: the reply arrives on screen
+   * and is gone on the next load. D34 leans on this cap to bound a project's
+   * spend absolutely, so the endpoint that spends the money enforces it too.
+   *
+   * Same status, code and copy as the message route, because it is the same
+   * limit — a caller should not have to learn two ways to be told one thing.
+   */
+  if (transcript.length >= MESSAGE_LIMIT) {
+    throw new HttpError(
+      409,
+      `This project has reached its limit of ${String(MESSAGE_LIMIT)} messages.`,
+      'message_limit',
+    )
+  }
+
+  const context = buildContext(transcript)
   if (context.length === 0) {
     throw new HttpError(
       400,
