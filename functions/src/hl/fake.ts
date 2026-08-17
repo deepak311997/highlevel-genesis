@@ -51,6 +51,32 @@ const SECOND_LOCATION_ID = 'aB9zzQ1CtZJTlymH8ySo'
  */
 const consumedCodes = new Set<string>()
 
+/**
+ * How many requests the stub has received since the last reset.
+ *
+ * **The only way to observe a call that was never made.** A refusal that
+ * short-circuits before the upstream request and one that forwards and then
+ * fails are indistinguishable from the caller's side — both answer an error —
+ * so the tests for "no upstream call was made" need the far side to say so.
+ *
+ * Module state, which assumes the request and the read land in the same
+ * process. `consumedCodes` above already makes that assumption and the functions
+ * emulator has honoured it; unlike the token exchange there is nothing to carry
+ * this on the input instead, because the whole point is to count requests that
+ * carry nothing.
+ */
+let receivedCalls = 0
+
+/**
+ * Control routes are spelled `__name` and are not counted.
+ *
+ * A counter that counted the read of itself would make every assertion in the
+ * suite off by however many times it had been read.
+ */
+function isControlRoute(path: string): boolean {
+  return path.startsWith('/__')
+}
+
 /** A query parameter as a string — see the same helper in callback.ts. */
 function q(req: Request, name: string, fallback = ''): string {
   const value = req.query[name]
@@ -99,6 +125,22 @@ export function buildFakeHlRouter(enabled: boolean): Router {
   // HighLevel's token endpoint takes form-urlencoded, and so does this, so a
   // JSON body would fail here exactly as it fails there.
   router.use('/__fake-hl', urlencoded({ extended: false }))
+
+  router.use('/__fake-hl', (req, _res, next) => {
+    if (!isControlRoute(req.path)) receivedCalls += 1
+    next()
+  })
+
+  router.get('/__fake-hl/__calls', (_req, res) => {
+    res.json({ total: receivedCalls })
+  })
+
+  // Reset rather than a fresh process: the tests run against one long-lived
+  // emulator, so `beforeEach` needs a way to zero it.
+  router.delete('/__fake-hl/__calls', (_req, res) => {
+    receivedCalls = 0
+    res.json({ ok: true })
+  })
 
   /**
    * The consent screen. Two controls, because a demo that cannot be declined

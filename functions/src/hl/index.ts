@@ -5,6 +5,7 @@ import { handleCallback } from './callback'
 import { handleConnect } from './connect'
 import { handleDeleteConnection, handleGetConnection } from './connection'
 import { buildFakeHlRouter } from './fake'
+import { handleProxy } from './proxy'
 import { isEmulator } from '../lib/env'
 import { requireAppCheck } from '../auth/appCheck'
 import { withVerifiedUser } from '../auth/requireUser'
@@ -31,9 +32,9 @@ import { withVerifiedUser } from '../auth/requireUser'
  * ordering matches the auth router so there is one rule to remember rather than
  * two.
  *
- * `/api/hl/proxy/**` is reserved for Slice 8, which forwards arbitrary
- * HighLevel paths. Without that reservation a HighLevel path segment could one
- * day shadow a management route here.
+ * `/api/hl/proxy/**` takes the subtree Slice 2 reserved, and forwards arbitrary
+ * HighLevel paths from the allowlist. Without that reservation a HighLevel path
+ * segment could one day shadow a management route here.
  */
 export const hlRouter: Router = Router()
 
@@ -53,6 +54,30 @@ hlRouter.post('/hl/connect', attested, asyncHandler(withVerifiedUser(handleConne
 // it is destructive.
 hlRouter.get('/hl/connection', asyncHandler(withVerifiedUser(handleGetConnection)))
 hlRouter.delete('/hl/connection', attested, asyncHandler(withVerifiedUser(handleDeleteConnection)))
+
+/**
+ * The proxy — every method, and the bare subtree (P2, AC-23).
+ *
+ * A **pathful** `router.use` rather than a `router.all` or a pathless `use`, and
+ * each half of that matters. Pathless would run twice, because this router is
+ * mounted at both `/` and `/api`; with a path it matches under exactly one of
+ * them. `router.all` would need a second line for the bare `/hl/proxy` and would
+ * still miss any method with no `router.<verb>` — and a `DELETE` here must be
+ * refused with `403 route_not_allowed`, not fall through to the app's 404.
+ *
+ * Above the fake, and clear of `/__fake-hl`, so the order of these two lines is
+ * not load-bearing. `cors()` answers preflight `OPTIONS` ahead of the router, so
+ * no `OPTIONS` reaches the matcher.
+ *
+ * **App Check on this route cannot be observed by an emulator-backed test**:
+ * `requireAppCheck` short-circuits under `FUNCTIONS_EMULATOR` and there is no
+ * App Check emulator to stand in for it, so AC-19 is covered by
+ * `auth/appCheck.spec.ts` plus a reading of this line. `projects/index.ts`
+ * carries the same note. It is also the constraint Slice 10 inherits (D16): a
+ * `srcdoc` iframe has an opaque origin and cannot mint an App Check token, so
+ * the shim's fetch has to happen in the parent.
+ */
+hlRouter.use('/hl/proxy', attested, asyncHandler(withVerifiedUser(handleProxy)))
 
 /**
  * The stand-in for HighLevel, mounted last and only under the emulator.

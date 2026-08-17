@@ -37,6 +37,9 @@ const DETAIL_MAX = 200
  * about the set, not about a line in a switch.
  */
 const MESSAGES = {
+  route_not_allowed: 'That HighLevel route is not available through Genesis.',
+  route_disabled: 'That HighLevel route is switched off in this environment.',
+  invalid_path: 'That is not a HighLevel path Genesis can forward.',
   hl_reconnect_required: 'Your HighLevel connection expired.',
   hl_not_connected: 'No HighLevel account is connected.',
   hl_forbidden: 'HighLevel refused that request for this account.',
@@ -53,6 +56,36 @@ export type ProxyErrorCode = keyof typeof MESSAGES
 /** Build one of our failures from its code, with upstream's text attached. */
 export function proxyError(status: number, code: ProxyErrorCode, detail?: string): HttpError {
   return new HttpError(status, MESSAGES[code], code, detail)
+}
+
+/**
+ * The three refusals the allowlist itself issues, and their statuses.
+ *
+ * `403` for both route refusals rather than `404`, because 403 states the true
+ * reason (D21): the path may well exist at HighLevel and we are declining to
+ * reach it, whereas a 404 implies it does not exist and sends a generated app
+ * looking for a typo. `route_disabled` is deliberately *not* `route_not_allowed`
+ * — the row exists and is safed, and a caller that cannot tell those apart
+ * cannot tell a policy from an omission (D5, R5).
+ *
+ * `400` for `invalid_path`, because the caller sent a path parameter outside the
+ * grammar rather than asking for a route we refuse.
+ */
+const ROUTE_STATUS = {
+  route_not_allowed: 403,
+  route_disabled: 403,
+  invalid_path: 400,
+} as const
+
+export type RouteRefusalCode = keyof typeof ROUTE_STATUS
+
+/**
+ * A refusal decided by the table, before any Firestore read and any upstream
+ * call. Here rather than in the handler so that **every** copy string and every
+ * status this surface can answer with is readable in one file (F8.3).
+ */
+export function routeRefusal(code: RouteRefusalCode): HttpError {
+  return new HttpError(ROUTE_STATUS[code], MESSAGES[code], code)
 }
 
 /**
