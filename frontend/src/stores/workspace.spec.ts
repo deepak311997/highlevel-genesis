@@ -1754,6 +1754,69 @@ describe('the stream — files', () => {
     expect(store.editorContent).toBe('')
   })
 
+  /*
+   * The same rule, for the case that bites harder: the stream selected a file the
+   * project **already holds**, and then the set was refused. The buffer for that
+   * selection was never read — `file_start` selects, it does not fetch — so
+   * leaving it selected shows an empty textarea for a file with content behind
+   * it. `savedContent` is empty too, so the first keystroke makes it dirty and
+   * **Save** offers to replace the real file with whatever was typed.
+   *
+   * The selection was the generation's, not the user's, and nothing was written,
+   * so it goes back to where it was: no selection, and no request issued (AC-40).
+   */
+  it('drops a selection auto-made for a stored file the turn did not write', async () => {
+    const store = await openedWithFiles()
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+
+    stream.push(frame('file_start', { path: 'app.js' }))
+    stream.push(frame('file_chunk', { path: 'app.js', text: 'const a = 1' }))
+    await vi.waitFor(() => {
+      expect(store.selectedPath).toBe('app.js')
+    })
+    fetchMock.mockClear()
+
+    stream.push(
+      frame('done', {
+        message: ASSISTANT_MESSAGE,
+        files: [],
+        fileError: 'Genesis could not save the generated files: "../x.js" is not a file name.',
+      }),
+    )
+    stream.close()
+    await running
+
+    expect(store.selectedPath).toBeNull()
+    expect(store.editorContent).toBe('')
+    expect(store.fileDirty).toBe(false)
+    expect(requests()).toEqual([])
+  })
+
+  /*
+   * And the selection the *user* made survives a turn that did not write it —
+   * dropping that one would take away the file they were reading, and discard an
+   * edit to it, for a generation that changed nothing about it.
+   */
+  it('keeps a selection the user made through a turn that wrote nothing', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(response({ file: { ...APP_FILE, content: 'const a = 1\n' } }))
+    await store.selectFile('app.js')
+    store.fileContent = 'my unsaved edit'
+
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }))
+    stream.close()
+    await running
+
+    expect(store.selectedPath).toBe('app.js')
+    expect(store.fileContent).toBe('my unsaved edit')
+    expect(store.fileDirty).toBe(true)
+  })
+
   /** AC-42. */
   it('records a fileError and clears it on the next generation', async () => {
     const store = await openedWithFiles()
