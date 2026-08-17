@@ -13,6 +13,7 @@ const store = vi.hoisted(() => ({
   draft: '',
   sending: false,
   sendError: null as string | null,
+  generating: false,
   atLimit: false,
   canSend: false,
   send: vi.fn(),
@@ -43,6 +44,7 @@ beforeEach(() => {
   store.draft = ''
   store.sending = false
   store.sendError = null
+  store.generating = false
   store.atLimit = false
   store.canSend = false
   vi.clearAllMocks()
@@ -201,6 +203,54 @@ describe('MessageComposer', () => {
     const wrapper = mount(MessageComposer)
     await wrapper.find(SUBMIT).trigger('click')
 
+    expect(store.send).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * A stream in flight is the **third** reason not to send, beside the cap and a
+ * send already going (AC-42).
+ *
+ * It is not politeness. Two turns interleaved for one project produce two replies
+ * to one prompt — D27 declines to prevent that server-side precisely because the
+ * composer covers the single-tab case, so this is the control that decision
+ * relies on.
+ */
+describe('MessageComposer while a stream is open', () => {
+  it('disables the textarea and the button', () => {
+    store.draft = 'build a contact dashboard'
+    store.generating = true
+    // The store's own `canSend` already accounts for this; mirrored here because
+    // the mocked store is a stand-in rather than the real computed.
+    store.canSend = false
+
+    const wrapper = mount(MessageComposer)
+
+    expect(wrapper.find(INPUT).attributes('disabled')).toBeDefined()
+    expect(wrapper.find(SUBMIT).attributes('disabled')).toBeDefined()
+  })
+
+  /* The guard the `disabled` attribute cannot make: Enter never reaches a button. */
+  it('sends nothing when Enter is pressed', async () => {
+    store.draft = 'build a contact dashboard'
+    store.generating = true
+    store.canSend = false
+
+    const wrapper = mount(MessageComposer)
+    await wrapper.find(INPUT).trigger('keydown', { key: 'Enter' })
+
+    expect(store.send).not.toHaveBeenCalled()
+  })
+
+  it('is usable again once the stream ends', async () => {
+    store.draft = 'build a contact dashboard'
+    store.generating = false
+    store.canSend = true
+
+    const wrapper = mount(MessageComposer)
+    await wrapper.find(INPUT).trigger('keydown', { key: 'Enter' })
+
+    expect(wrapper.find(INPUT).attributes('disabled')).toBeUndefined()
     expect(store.send).toHaveBeenCalledTimes(1)
   })
 })

@@ -23,6 +23,13 @@ import { useWorkspaceStore } from '@/stores/workspace'
  * The at-limit state **says why it is disabled** (AC-32, D10): the cap is a product
  * limit stated out loud, and a dead button with no explanation is exactly what that
  * decision rules out.
+ *
+ * **A stream in flight is the third reason not to send** (D27, AC-42), beside the
+ * cap and a send already going. It is not politeness: two turns interleaved for
+ * one project produce two replies to one prompt, and D27 declines to prevent
+ * that server-side *because* this covers the single-tab case. Unlike the at-limit
+ * state it needs no explanation — the `Generating…` badge and the placeholder
+ * bubble above are already saying why.
  */
 const workspace = useWorkspaceStore()
 
@@ -48,7 +55,7 @@ function submit(): void {
       v-model="workspace.draft"
       data-testid="composer-input"
       class="min-h-16 resize-none"
-      :disabled="workspace.atLimit || workspace.sending"
+      :disabled="workspace.atLimit || workspace.sending || workspace.generating"
       placeholder="Describe the app you want…"
       aria-label="Message"
       @keydown.enter.exact.prevent="submit()"
