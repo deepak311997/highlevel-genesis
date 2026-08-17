@@ -55,6 +55,30 @@ test.describe('Slice 02 — HighLevel connection', () => {
     await page.goto('/dashboard')
     await expect(page.getByTestId('connection-location')).toHaveText('India Square')
 
+    /*
+     * Slice 8's demo line, on the same walk rather than in a second connect.
+     *
+     * Idle until pressed (D30): the counts are three real HighLevel calls, and
+     * spending a rate-limit budget on every dashboard visit answers a question
+     * nobody asked. So the rows must not be there yet.
+     *
+     * A digit is the assertion, not a particular digit. The fixtures are
+     * recorded data and their sizes are theirs to change; what this proves is
+     * that a count came back through `/api/hl/proxy/**` at all — which means the
+     * ID token was verified, the connection was read, the row's `Version` went
+     * upstream and the location was injected, none of which the browser can see
+     * directly.
+     */
+    await expect(page.getByTestId('data-access-row-contacts')).toHaveCount(0)
+
+    await page.getByTestId('data-access-check').click()
+
+    for (const surface of ['contacts', 'conversations', 'calendars']) {
+      await expect(page.getByTestId(`data-access-row-${surface}`)).toHaveText(/\d+/, {
+        timeout: 15_000,
+      })
+    }
+
     await page.getByTestId('connection-disconnect').click()
     await expect(page.getByTestId('connection-empty')).toBeVisible()
 
