@@ -47,6 +47,19 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // --- projects -----------------------------------------------------
+    // A subcollection of the profile, so the owner's uid is part of the
+    // document path and the API scopes by the uid from the token alone.
+    // Enforcement lives in /api/projects*, not here — PRODUCT_SPEC.md F2.2
+    // predates the API-only decision; see the slice PRD's D2.
+    //
+    // Rules do not cascade into subcollections, so `match /users/{uid}`
+    // above says nothing about this path. This block is required, not
+    // decorative, even though the default is denial.
+    match /users/{uid}/projects/{projectId} {
+      allow read, write: if false;
+    }
+
     // --- everything else ----------------------------------------------
     // Collections are added slice by slice, each with its own denial test.
     // Nothing is reachable until it is.

@@ -5,6 +5,7 @@ import { computed, ref, type ComputedRef, type Ref } from 'vue'
 import { auth } from '@/lib/firebase'
 import { useHlStore } from '@/stores/hl'
 import { useProfileStore } from '@/stores/profile'
+import { useProjectsStore } from '@/stores/projects'
 
 /**
  * Session state, and the one thing the router cannot work without: a promise
@@ -89,6 +90,7 @@ export const useAuthStore = defineStore('auth', (): AuthStore => {
     await signOut(auth)
     useProfileStore().reset()
     useHlStore().reset()
+    useProjectsStore().reset()
   }
 
   /**

@@ -238,6 +238,19 @@ export async function putJson(
   return toJsonResponse(res)
 }
 
+export async function patchJson(
+  path: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Promise<JsonResponse> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+  })
+  return toJsonResponse(res)
+}
+
 export async function deleteJson(
   path: string,
   headers: Record<string, string> = {},

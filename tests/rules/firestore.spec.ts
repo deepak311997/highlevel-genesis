@@ -6,9 +6,11 @@ import {
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing'
 import {
+  collection,
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -171,6 +173,103 @@ describe('users/{uid} — denied to everyone else', () => {
 
     await assertFails(getDoc(doc(anon, 'users/alice')))
     await assertFails(setDoc(doc(anon, 'users/alice'), profile()))
+  })
+})
+
+/**
+ * A complete, valid project document — as a payload for a write that must fail.
+ *
+ * Exactly what `POST /api/projects` writes, so the denial is on the rule and not
+ * on the shape: a payload the rules would have refused for some other reason
+ * would prove nothing about this block.
+ */
+function project() {
+  return {
+    name: 'Contact dashboard',
+    description: null,
+    locationId: null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    deletedAt: null,
+  }
+}
+
+async function seedProject(uid = 'alice', id = 'proj-1'): Promise<void> {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(asModular(ctx.firestore()), `users/${uid}/projects/${id}`), {
+      ...project(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+  })
+}
+
+describe('users/{uid}/projects/{projectId}', () => {
+  /*
+   * AC-21. The owner is the most privileged client there is, and every one of
+   * their four operations is denied — the browser has `lib/projectsApi.ts` and
+   * nothing else, and this is what makes a mistake in one of those routes a bug
+   * rather than a breach.
+   *
+   * Rules do **not** cascade into subcollections, so `match /users/{uid}` above
+   * says nothing at all about this path. The block being tested here is required
+   * rather than decorative, and these cases are what would catch a later rule
+   * that granted the parent recursively.
+   */
+  it('denies a verified owner reading their own project', async () => {
+    await seedProject()
+
+    await assertFails(getDoc(doc(verified('alice'), 'users/alice/projects/proj-1')))
+  })
+
+  it('denies a verified owner listing their own projects', async () => {
+    await seedProject()
+
+    await assertFails(getDocs(collection(verified('alice'), 'users/alice/projects')))
+  })
+
+  it('denies a verified owner creating a project', async () => {
+    await assertFails(setDoc(doc(verified('alice'), 'users/alice/projects/proj-1'), project()))
+  })
+
+  it('denies a verified owner updating their own project', async () => {
+    await seedProject()
+
+    await assertFails(
+      updateDoc(doc(verified('alice'), 'users/alice/projects/proj-1'), {
+        name: 'Contacts',
+        updatedAt: serverTimestamp(),
+      }),
+    )
+  })
+
+  /* Soft-delete belongs to the endpoint, which writes a timestamp rather than
+   * removing the document. A client deleting it outright would destroy the one
+   * record of when it went. */
+  it('denies a verified owner deleting their own project', async () => {
+    await seedProject()
+
+    await assertFails(deleteDoc(doc(verified('alice'), 'users/alice/projects/proj-1')))
+  })
+
+  /** AC-22. */
+  it('denies a different signed-in user, however verified they are', async () => {
+    await seedProject()
+    const mallory = verified('mallory')
+
+    await assertFails(getDoc(doc(mallory, 'users/alice/projects/proj-1')))
+    await assertFails(getDocs(collection(mallory, 'users/alice/projects')))
+    await assertFails(setDoc(doc(mallory, 'users/alice/projects/proj-2'), project()))
+    await assertFails(updateDoc(doc(mallory, 'users/alice/projects/proj-1'), { name: 'Stolen' }))
+    await assertFails(deleteDoc(doc(mallory, 'users/alice/projects/proj-1')))
+  })
+
+  it('denies an unauthenticated client', async () => {
+    await seedProject()
+    const anon = anonymous()
+
+    await assertFails(getDoc(doc(anon, 'users/alice/projects/proj-1')))
+    await assertFails(setDoc(doc(anon, 'users/alice/projects/proj-2'), project()))
   })
 })
 

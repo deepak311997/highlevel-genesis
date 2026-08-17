@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
-import { latestCodeFor, resetEmulators } from '../integration/helpers'
+import { resetEmulators } from '../integration/helpers'
+import { assertEmulatorBuild, signUpAndVerify } from './helpers'
 
 /**
  * Slice 2's one end-to-end test: the demo line, walked in a browser.
@@ -18,65 +19,14 @@ import { latestCodeFor, resetEmulators } from '../integration/helpers'
  * router will actually render.
  */
 
-const PASSWORD = 'Correct-Horse-9'
-
-function freshEmail(): string {
-  return `hl-${String(Date.now())}-${String(Math.floor(Math.random() * 10_000))}@example.test`
-}
-
-async function activationLinkFor(email: string): Promise<string> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const code = await latestCodeFor(email, 'VERIFY_EMAIL')
-    if (code !== undefined) {
-      return `/auth/action?mode=verifyEmail&oobCode=${encodeURIComponent(code.oobCode)}`
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250))
-  }
-  throw new Error(`no verification code was issued for ${email}`)
-}
-
-/** Sign up, verify, and land on the dashboard — Slice 1's path, reused. */
-async function signUpAndVerify(page: import('@playwright/test').Page): Promise<string> {
-  const email = freshEmail()
-
-  await page.goto('/signup')
-  await page.fill('#signup-email', email)
-  await page.fill('#signup-password', PASSWORD)
-  await page.click('button[type="submit"]')
-  await expect(page.getByTestId('signup-sent')).toBeVisible()
-
-  await page.goto('/signin')
-  await page.fill('#signin-password', PASSWORD)
-  await page.click('button[type="submit"]')
-  await expect(page).toHaveURL(/\/verify-email/)
-  await expect(page.getByTestId('verify-headline')).toContainText("We've sent a link", {
-    timeout: 15_000,
-  })
-
-  await page.goto(await activationLinkFor(email))
-  await expect(page.getByTestId('action-verified')).toBeVisible({ timeout: 15_000 })
-  await page.click('button:has-text("Continue")')
-  await expect(page).toHaveURL(/\/dashboard/)
-
-  return email
-}
-
 test.describe('Slice 02 — HighLevel connection', () => {
   test.beforeEach(async ({ page }) => {
     await resetEmulators()
-
-    // The same guard Slice 1 uses. A development-mode server on this port talks
-    // to real Firebase, and a suite that silently tested production while
-    // reporting an emulator pass is worse than one that refuses to start.
-    await page.goto('/signin')
-    expect(
-      await page.locator('html').getAttribute('data-genesis-emulator'),
-      'the app under test is not an emulator build — start it with `vite --mode emulator`',
-    ).toBe('true')
+    await assertEmulatorBuild(page)
   })
 
   test('connect the sandbox location, see its name, disconnect', async ({ page }) => {
-    await signUpAndVerify(page)
+    await signUpAndVerify(page, 'hl')
 
     // Empty state: the panel has asked the endpoint and been told nothing is
     // connected. Reaching this at all proves the authenticated GET works with a
@@ -113,7 +63,7 @@ test.describe('Slice 02 — HighLevel connection', () => {
   })
 
   test('declining at HighLevel says so, and leaves the user able to retry', async ({ page }) => {
-    await signUpAndVerify(page)
+    await signUpAndVerify(page, 'hl')
 
     await page.getByTestId('connection-connect').click()
     await expect(page.locator('#deny')).toBeVisible({ timeout: 15_000 })

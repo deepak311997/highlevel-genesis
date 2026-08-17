@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { formatDay } from '@/lib/date'
 import { useProfileStore } from '@/stores/profile'
 
 /**
@@ -20,20 +21,6 @@ import { useProfileStore } from '@/stores/profile'
  */
 const profile = useProfileStore()
 
-/**
- * Locale and time zone are pinned deliberately.
- *
- * Left to the environment, the rendered date depends on whichever machine the
- * page — or the test — happens to run on, which turns a stable assertion into a
- * machine-dependent one and shows two users different text for the same day.
- */
-const MEMBER_SINCE = new Intl.DateTimeFormat('en-GB', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  timeZone: 'UTC',
-})
-
 const name = computed(() => {
   const current = profile.profile
   if (current === null) return null
@@ -42,12 +29,9 @@ const name = computed(() => {
 
 const memberSince = computed(() => {
   const createdAt = profile.profile?.createdAt
-  if (createdAt === undefined) return null
-
-  const date = new Date(createdAt)
   // A stored timestamp that does not parse is not worth a broken screen; the
-  // rest of the card still says who you are.
-  return Number.isNaN(date.getTime()) ? null : MEMBER_SINCE.format(date)
+  // rest of the card still says who you are, and `formatDay` answers null.
+  return createdAt === undefined ? null : formatDay(createdAt)
 })
 </script>
 

@@ -17,8 +17,9 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 | 0 — Rails | ✅ merged to `main` |
 | 1 — Account & session | ✅ merged to `main` |
 | 2 — HighLevel connection | ✅ merged to `main` |
-| 2b — API-only data access | ✅ shipped — PR open, awaiting merge |
-| 3–13 | not started |
+| 2b — API-only data access | ✅ merged to `main` |
+| 3 — Projects | ✅ shipped — PR open, awaiting merge |
+| 4–13 | not started |
 
 **Slices from here run unattended.** `scripts/autopilot.sh` drives the five-stage loop
 one slice at a time — a fresh session per stage, the suite run by the orchestrator rather
@@ -32,9 +33,21 @@ been red since Slice 1: `vite.config.ts` threw at config load on any checkout wi
 8080 — the *development* emulator — so off CI it "passed" by finding a dev session, loading
 its rules over that session's and calling `clearFirestore()` on it.
 
-**Suite, re-run in full on `slice/02b-api-data-access` at ship time (2026-08-17):**
-typecheck 0 · lint 0 · **476 unit** (183 functions · 282 frontend · 11 scripts) ·
-**12 rules** · **86 integration** · **4 e2e**. All six green.
+**Suite, re-run in full on `slice/03-projects` at ship time (2026-08-17):**
+typecheck 0 · lint 0 · **607 unit** (243 functions · 353 frontend · 11 scripts) ·
+**19 rules** · **155 integration** · **6 e2e**. All six green.
+
+Unit stood at 602 when the build finished; the review added five cases — four L1 on the
+project schemas, and one L2 that mounts the real projects card inside the real dashboard,
+for an AC that until then nothing asserted. See `05-review.md`.
+
+Slice 3 added 131 unit cases, 7 rules cases, 69 integration cases and 2 e2e tests. The rules
+suite grew for the first time since 2b — `users/{uid}/projects/{projectId}` is a new
+collection, and every one of its cases is an `assertFails`, because rules do not cascade into
+subcollections and this block is required rather than decorative.
+
+Previously, on `slice/02b-api-data-access` at ship time: typecheck 0 · lint 0 · **476 unit**
+(183 functions · 282 frontend · 11 scripts) · **12 rules** · **86 integration** · **4 e2e**.
 
 The rules suite went 19 cases on `main` to 12 — it shrank, deliberately. Slice 2b collapsed
 `users/{uid}` to deny-all, so the four `assertSucceeds` cases that asserted a *permitted*
@@ -603,12 +616,12 @@ read. `PRODUCT_SPEC.md` §7 holds the package-level version of this.
 | HighLevel OAuth 2.0, full flow via Cloud Function callback | F1.2 | 2 | ⏭ next |
 | Tokens in Firestore scoped to the Firebase user, refresh on expiry | F1.3 | 2 | ⏭ |
 | One HighLevel location per user | F1.3 | 2 | ⏭ — falls out of Target User = Sub-account |
-| Project CRUD incl. soft-delete, scoped per user by the API | F2.1–2.3 | 3 | ⏭ |
+| Project CRUD incl. soft-delete, scoped per user by the API | F2.1–2.3 | 3 | ✅ |
 | Server-side generation: bounded context → stream → validated file ops → persist | F3.1–3.4 | 5, 6, 9 | ⏭ |
 | SSE endpoint; protocol covers tokens, file boundaries, completion, errors | F4.1–4.3 | 5, 6 | 🟡 transport proven in Slice 0 |
 | File tree, read file, save manual edits | F5.1 | 6 | ⏭ |
 | Snapshot per generation; list and restore | F5.2–5.3 | 11 | ⏭ |
-| shadcn-vue as the primary component library | F6.1 | 0–12 | 🟡 `button`/`input`/`label`/`card`/`alert` in; `dialog`/`tabs`/`badge`/`sheet` owed |
+| shadcn-vue as the primary component library | F6.1 | 0–12 | 🟡 `button`/`input`/`label`/`card`/`alert`/`dialog` in; `tabs`/`badge`/`sheet` owed |
 | Three-panel workspace: chat · editor · preview | F6.1 | 4 | ⏭ |
 | Chat panel with history and input | F6.2 | 4 | ⏭ |
 | Monaco via `@guolao/vue-monaco-editor`, tabs, live tokens, read-only while streaming | F6.3 | 7 | ⏭ |

@@ -7,18 +7,44 @@ vi.mock('@/stores/profile', () => ({
   useProfileStore: () => ({ profile: null, loading: false, loaded: false, error: null, ensure }),
 }))
 
+/*
+ * Plain values, not refs — a Pinia store auto-unwraps its refs on the store
+ * object. Mocked here rather than only in `ProjectsCard.spec` because AC-28 is
+ * about the *dashboard* when the card's request has failed, which needs the real
+ * card mounted inside the real view.
+ */
+const projects = vi.hoisted(() => ({
+  projects: [] as unknown[],
+  loading: false,
+  loaded: false,
+  busy: false,
+  error: null as string | null,
+  load: vi.fn(),
+  create: vi.fn(),
+  rename: vi.fn(),
+  remove: vi.fn(),
+}))
+
+vi.mock('@/stores/projects', () => ({ useProjectsStore: () => projects }))
+
 import DashboardView from './DashboardView.vue'
 
 /*
- * Both cards are stubbed. Each owns a Pinia store and an endpoint call and has a
- * suite of its own; mounting them here would make this file fail for reasons
- * that have nothing to do with the dashboard.
+ * All three cards are stubbed. Each owns a Pinia store and an endpoint call and
+ * has a suite of its own; mounting them here would make this file fail for
+ * reasons that have nothing to do with the dashboard.
  */
-const MOUNT = { global: { stubs: { ConnectionPanel: true, AccountCard: true } } }
+const MOUNT = {
+  global: { stubs: { ConnectionPanel: true, AccountCard: true, ProjectsCard: true } },
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
   ensure.mockResolvedValue(undefined)
+  projects.projects = []
+  projects.loading = false
+  projects.loaded = false
+  projects.error = null
 })
 
 describe('DashboardView', () => {
@@ -28,10 +54,10 @@ describe('DashboardView', () => {
     expect(wrapper.findComponent({ name: 'AccountCard' }).exists()).toBe(true)
   })
 
-  it('ships an empty state, since there is nothing to list yet', () => {
+  it('renders the projects card', () => {
     const wrapper = mount(DashboardView, MOUNT)
 
-    expect(wrapper.find('[data-testid="dashboard-empty"]').exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'ProjectsCard' }).exists()).toBe(true)
   })
 
   // Idempotent, so a sign-up interrupted before the profile existed heals here.
@@ -55,6 +81,31 @@ describe('DashboardView', () => {
     await flushPromises()
 
     expect(wrapper.findComponent({ name: 'ConnectionPanel' }).exists()).toBe(true)
-    expect(wrapper.find('[data-testid="dashboard-empty"]').exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'ProjectsCard' }).exists()).toBe(true)
+  })
+
+  /*
+   * AC-28, and the one case the stub above cannot express: the projects card is
+   * mounted for real, and its list request has failed.
+   *
+   * Every other test of the failure renders the card in isolation, where a card
+   * that threw on its error path would fail only its own suite. Here it would
+   * take the whole view down and the account card and connection panel with it —
+   * which is precisely the claim AC-28 makes. The sign-out control lives in
+   * `App.vue` rather than this view, and the e2e covers it.
+   */
+  it('keeps the rest of the dashboard when the project list has failed', async () => {
+    projects.error = 'Could not load your projects.'
+
+    const wrapper = mount(DashboardView, {
+      global: { stubs: { ConnectionPanel: true, AccountCard: true } },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="projects-error"]').text()).toContain(
+      'Could not load your projects.',
+    )
+    expect(wrapper.findComponent({ name: 'AccountCard' }).exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'ConnectionPanel' }).exists()).toBe(true)
   })
 })
