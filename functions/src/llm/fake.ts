@@ -1,9 +1,14 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import type { MessageParam, MessageStreamEvent } from '@anthropic-ai/sdk/resources/messages'
+import type {
+  MessageParam,
+  MessageStreamEvent,
+  TextBlockParam,
+} from '@anthropic-ai/sdk/resources/messages'
 
 import { isEmulator } from '../lib/env'
+import { PROJECT_FILE_OPEN } from './projectState'
 import { MAX_OUTPUT_BYTES, type LlmStream } from './stream'
 
 /**
@@ -45,6 +50,7 @@ import { MAX_OUTPUT_BYTES, type LlmStream } from './stream'
  * | `__bad_path`       | `bad-path.json` — a block naming `../secrets.js` |
  * | `__unterminated`   | `unterminated.json` — a block that never closes |
  * | `__dup_files`      | `duplicate-files.json` — one path written twice |
+ * | `__context`        | One token: the system blocks, messages and paths it was sent |
  * | *(none)*           | `reply.json`, a few tokens a second |
  *
  * The four file-shaped failures are **fixtures rather than L1-only inputs**
@@ -65,9 +71,18 @@ import { MAX_OUTPUT_BYTES, type LlmStream } from './stream'
  * would be a fixture nobody can read.
  */
 
-/** Enough of `MessageStreamParams` for the marker to be found. */
+/**
+ * Enough of `MessageStreamParams` for the marker to be found — and, since Slice
+ * 9, for `__context` to describe what it was sent (D25).
+ *
+ * `system` is optional because that is how the SDK types it, not because a
+ * caller may sensibly omit it: every real call carries the stable prefix. The
+ * optionality is what keeps the existing tests, which pass `{ messages }` alone,
+ * saying exactly what they mean.
+ */
 interface FakeParams {
   messages: readonly MessageParam[]
+  system?: string | readonly TextBlockParam[] | undefined
 }
 
 /**
@@ -95,6 +110,7 @@ const MARKERS = [
   '__bad_path',
   '__unterminated',
   '__dup_files',
+  '__context',
 ] as const
 
 type Marker = (typeof MARKERS)[number]
@@ -166,6 +182,83 @@ function longEvents(): MessageStreamEvent[] {
   return [...start, ...deltas, ...finish]
 }
 
+/**
+ * The paths named by a project-state block, in the order it lists them.
+ *
+ * Read with {@link PROJECT_FILE_OPEN}, the builder's **own exported delimiter**,
+ * so the reader and the writer cannot drift (D25). A literal `'===== FILE '`
+ * here would be a second definition of the format, and the first one to change
+ * would go unnoticed — which is exactly the failure this marker exists to catch
+ * elsewhere.
+ *
+ * The manifest of omitted files renders as `- path (n characters)` and so does
+ * not match: what is reported is what the model was actually **shown**, which is
+ * the question AC-27 asks.
+ */
+function pathsIn(block: string): string[] {
+  return block
+    .split('\n')
+    .filter((line) => line.startsWith(PROJECT_FILE_OPEN))
+    .map((line) => line.slice(PROJECT_FILE_OPEN.length).split(' (')[0] ?? '')
+    .filter((path) => path !== '')
+}
+
+/**
+ * `__context` — a report of the request, as one text delta (D25).
+ *
+ * Built programmatically rather than from a fixture, like {@link longEvents},
+ * because the answer depends on the input: a recorded sequence could only ever
+ * describe a request somebody typed out by hand, which is the opposite of what
+ * this is for.
+ *
+ * The report is deliberately **counts and paths, never content**. A fake that
+ * echoed the blocks back would put the whole project's code through the SSE
+ * stream and into every test's failure output, and it would make this marker a
+ * way to read a prompt rather than a way to check a wiring.
+ */
+function contextEvents(params: FakeParams): MessageStreamEvent[] {
+  const blocks = typeof params.system === 'string' ? [] : (params.system ?? [])
+  const report = {
+    systemBlocks: typeof params.system === 'string' ? 1 : blocks.length,
+    messages: params.messages.length,
+    // The project state is the last block when it is present at all; when it is
+    // not, there is nothing to read and the answer is honestly empty.
+    paths: pathsIn(blocks.at(-1)?.text ?? ''),
+  }
+
+  return [
+    {
+      type: 'message_start',
+      message: {
+        id: 'msg_01FakeContextReport',
+        type: 'message',
+        role: 'assistant',
+        model: 'claude-opus-5',
+        content: [],
+        stop_reason: null,
+        stop_sequence: null,
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+        },
+      },
+    },
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'text_delta', text: JSON.stringify(report) },
+    },
+    {
+      type: 'message_delta',
+      delta: { stop_reason: 'end_turn', stop_sequence: null },
+      usage: { output_tokens: 1 },
+    },
+    { type: 'message_stop' },
+  ] as MessageStreamEvent[]
+}
+
 interface Plan {
   events: MessageStreamEvent[]
   /** Throw once this many text deltas have been yielded. */
@@ -174,10 +267,12 @@ interface Plan {
   deltaDelayMs: number
 }
 
-function planFor(messages: readonly MessageParam[]): Plan {
-  const marker = markerFor(messages)
+function planFor(params: FakeParams): Plan {
+  const marker = markerFor(params.messages)
 
   switch (marker) {
+    case '__context':
+      return { events: contextEvents(params), firstDelayMs: 0, deltaDelayMs: 0 }
     case '__refuse':
       return { events: loadEvents('refusal.json'), firstDelayMs: 0, deltaDelayMs: 0 }
     case '__max_tokens':
@@ -256,7 +351,7 @@ export function buildFakeStream(params: FakeParams): Promise<LlmStream> {
     )
   }
 
-  const plan = planFor(params.messages)
+  const plan = planFor(params)
   let aborted = false
 
   return Promise.resolve({
