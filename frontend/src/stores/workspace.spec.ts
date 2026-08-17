@@ -434,11 +434,14 @@ describe('send', () => {
     await store.open('proj-1')
     fetchMock.mockClear()
     fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }, 201))
+    // The reply is a second request now (D3); this case is about the first.
+    fetchMock.mockResolvedValueOnce(cannedStream(`event: done\ndata: {"message":null}\n\n`))
     store.draft = 'build a contact dashboard'
 
     await store.send()
 
-    expect(requests()).toEqual(['POST /api/projects/proj-1/messages'])
+    expect(requests()[0]).toBe('POST /api/projects/proj-1/messages')
+    expect(requests()).not.toContain('GET /api/projects/proj-1/messages')
     expect(store.messages).toEqual([USER_MESSAGE])
     expect(store.draft).toBe('')
     expect(store.sendError).toBeNull()
@@ -511,11 +514,13 @@ describe('send', () => {
     expect(store.sending).toBe(false)
 
     fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }, 201))
+    fetchMock.mockResolvedValueOnce(cannedStream(`event: done\ndata: {"message":null}\n\n`))
     await store.send()
 
     expect(requests()).toEqual([
       'POST /api/projects/proj-1/messages',
       'POST /api/projects/proj-1/messages',
+      'POST /generate',
     ])
     expect(store.sendError).toBeNull()
     expect(store.draft).toBe('')
@@ -639,5 +644,334 @@ describe('reset', () => {
     expect(store.draft).toBe('')
     expect(store.sending).toBe(false)
     expect(store.sendError).toBeNull()
+  })
+})
+
+/**
+ * A `Response` whose body is a stream this test pushes frames into by hand.
+ *
+ * That control is what makes "tokens accumulate" observable: with a canned body
+ * the whole reply arrives in one tick and `streamingText` is only ever seen at
+ * its final value, which is exactly the state a broken accumulator also reaches.
+ */
+function pushableStream(): {
+  response: Response
+  push: (chunk: string) => void
+  close: () => void
+} {
+  let controller!: ReadableStreamDefaultController<Uint8Array>
+  const encoder = new TextEncoder()
+  const body = new ReadableStream<Uint8Array>({
+    start(c) {
+      controller = c
+    },
+  })
+
+  return {
+    response: { ok: true, status: 200, body } as unknown as Response,
+    push: (chunk: string) => {
+      controller.enqueue(encoder.encode(chunk))
+    },
+    close: () => {
+      controller.close()
+    },
+  }
+}
+
+const frame = (event: string, data: unknown): string =>
+  `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+
+/** A whole stream, delivered as one canned body. */
+function cannedStream(...frames: string[]): Response {
+  const encoder = new TextEncoder()
+  return {
+    ok: true,
+    status: 200,
+    body: new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(frames.join('')))
+        controller.close()
+      },
+    }),
+  } as unknown as Response
+}
+
+const ASSISTANT_TRUNCATED = { ...ASSISTANT_MESSAGE, id: 'msg-3', truncated: true }
+
+/** Open a project and clear the request log, so a case starts from zero. */
+async function opened(): Promise<ReturnType<typeof useWorkspaceStore>> {
+  respondOpenOk()
+  const store = useWorkspaceStore()
+  await store.open('proj-1')
+  fetchMock.mockClear()
+  return store
+}
+
+describe('send — the two requests of a turn', () => {
+  /*
+   * AC-32, D3. The message write first, then the stream, and **no `GET`**: the
+   * prompt is durable before the expensive, failure-prone half begins, which is
+   * the whole of F8.2. A refetch would re-read the entire history on every turn
+   * to re-read something that cannot have changed.
+   */
+  it('posts the message, then opens the stream, and issues no GET', async () => {
+    const store = await opened()
+    fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }, 201))
+    fetchMock.mockResolvedValueOnce(cannedStream(frame('done', { message: ASSISTANT_MESSAGE })))
+    store.draft = 'build a contact dashboard'
+
+    await store.send()
+
+    expect(requests()).toEqual(['POST /api/projects/proj-1/messages', 'POST /generate'])
+    expect(store.messages).toEqual([USER_MESSAGE, ASSISTANT_MESSAGE])
+    expect(store.draft).toBe('')
+  })
+
+  /*
+   * AC-33. A failed write opens **no stream at all**: there is nothing to
+   * generate from, the user's words are still in the composer, and offering a
+   * generation for a prompt that was never stored would produce a reply attached
+   * to nothing.
+   */
+  it('opens no stream when the message write fails, and keeps the draft', async () => {
+    const store = await opened()
+    fetchMock.mockResolvedValueOnce(response({ error: 'That project no longer exists.' }, 404))
+    store.draft = 'build a contact dashboard'
+
+    await store.send()
+
+    expect(requests()).toEqual(['POST /api/projects/proj-1/messages'])
+    expect(store.messages).toEqual([])
+    expect(store.draft).toBe('build a contact dashboard')
+    expect(store.sendError).toBe('That project no longer exists.')
+    expect(store.generating).toBe(false)
+  })
+})
+
+describe('the stream', () => {
+  /*
+   * AC-34. The tokens accumulate into `streamingText` and **`messages` is
+   * untouched** until the terminal event — D31's shape: the tokens become a
+   * `Message` exactly once, at the end, rather than an array pushed to
+   * thousands of times.
+   */
+  it('accumulates tokens without touching the transcript, then appends on done', async () => {
+    const store = await opened()
+    fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }, 201))
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    store.draft = 'build a contact dashboard'
+
+    const sending = store.send()
+    await vi.waitFor(() => {
+      expect(store.generating).toBe(true)
+    })
+
+    stream.push(frame('token', { text: 'Here is ' }))
+    await vi.waitFor(() => {
+      expect(store.streamingText).toBe('Here is ')
+    })
+    expect(store.messages).toEqual([USER_MESSAGE])
+
+    stream.push(frame('token', { text: 'a contact dashboard' }))
+    await vi.waitFor(() => {
+      expect(store.streamingText).toBe('Here is a contact dashboard')
+    })
+    expect(store.messages).toEqual([USER_MESSAGE])
+
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE }))
+    stream.close()
+    await sending
+
+    expect(store.messages).toEqual([USER_MESSAGE, ASSISTANT_MESSAGE])
+    expect(store.streamingText).toBe('')
+    expect(store.generating).toBe(false)
+    expect(store.generateError).toBeNull()
+  })
+
+  /*
+   * AC-35. An `error` carrying a message appends it — the partial the server
+   * actually stored, not the client's own copy of it (D9). Whatever arrives, the
+   * placeholder is replaced by the server's record.
+   */
+  it('appends the persisted partial and sets the error', async () => {
+    const store = await opened()
+    fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }, 201))
+    fetchMock.mockResolvedValueOnce(
+      cannedStream(
+        frame('token', { text: 'Here is ' }),
+        frame('error', {
+          error: 'The reply was interrupted. Try again.',
+          code: 'upstream',
+          message: ASSISTANT_TRUNCATED,
+        }),
+      ),
+    )
+    store.draft = 'build a contact dashboard'
+
+    await store.send()
+
+    expect(store.messages).toEqual([USER_MESSAGE, ASSISTANT_TRUNCATED])
+    expect(store.generateError).toBe('The reply was interrupted. Try again.')
+    expect(store.streamingText).toBe('')
+    expect(store.generating).toBe(false)
+  })
+
+  /** AC-35's other half: nothing was produced, so nothing is appended. */
+  it('appends nothing when the error carries a null message', async () => {
+    const store = await opened()
+    fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }, 201))
+    fetchMock.mockResolvedValueOnce(
+      cannedStream(
+        frame('error', {
+          error: 'Claude declined to answer that. Try rephrasing.',
+          code: 'refused',
+          message: null,
+        }),
+      ),
+    )
+    store.draft = 'build a contact dashboard'
+
+    await store.send()
+
+    expect(store.messages).toEqual([USER_MESSAGE])
+    expect(store.generateError).toBe('Claude declined to answer that. Try rephrasing.')
+    expect(store.generating).toBe(false)
+  })
+
+  /*
+   * The stream failing to *open* is the third case, and it is a rejection rather
+   * than an event — so it has to reach the same error state, or a 404 on
+   * `/generate` would leave the composer disabled with nothing on screen.
+   */
+  it('records a refusal to open the stream as a generation error', async () => {
+    const store = await opened()
+    fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }, 201))
+    fetchMock.mockResolvedValueOnce(
+      response({ error: 'There is nothing to generate from yet. Send a message first.' }, 400),
+    )
+    store.draft = 'build a contact dashboard'
+
+    await store.send()
+
+    expect(store.messages).toEqual([USER_MESSAGE])
+    expect(store.generateError).toBe('There is nothing to generate from yet. Send a message first.')
+    expect(store.generating).toBe(false)
+    expect(store.streamingText).toBe('')
+  })
+})
+
+describe('retryGeneration', () => {
+  /*
+   * AC-36, D26. **No message write.** The endpoint's whole input is the
+   * transcript (D2), so a retry is the same request again — which is what makes
+   * Retry free, and what D6's trailing-assistant drop exists to keep working.
+   */
+  it('re-opens the stream and writes no message', async () => {
+    const store = await opened()
+    fetchMock.mockResolvedValueOnce(cannedStream(frame('done', { message: ASSISTANT_MESSAGE })))
+
+    await store.retryGeneration()
+
+    expect(requests()).toEqual(['POST /generate'])
+    expect(store.messages).toEqual([ASSISTANT_MESSAGE])
+  })
+
+  it('clears a previous generation error when it succeeds', async () => {
+    const store = await opened()
+    fetchMock.mockResolvedValueOnce(response({ error: 'Something went wrong.' }, 500))
+    await store.retryGeneration()
+    expect(store.generateError).toBe('Something went wrong.')
+
+    fetchMock.mockResolvedValueOnce(cannedStream(frame('done', { message: ASSISTANT_MESSAGE })))
+    await store.retryGeneration()
+
+    expect(store.generateError).toBeNull()
+  })
+
+  it('does nothing without a project open', async () => {
+    const store = useWorkspaceStore()
+
+    await store.retryGeneration()
+
+    expect(requests()).toEqual([])
+  })
+})
+
+describe('a stream that outlives the screen it was opened for', () => {
+  /*
+   * AC-37, and the reason the controller lives in the store rather than in a
+   * component (D31, Slice 4's D17). The `lg` breakpoint swaps one component tree
+   * for another, so a controller held in the chat panel is dropped by a window
+   * resize — and the stream it was meant to cancel keeps writing.
+   */
+  it('aborts the request on reset, and a later frame mutates nothing', async () => {
+    const store = await opened()
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+
+    const running = store.retryGeneration()
+    await vi.waitFor(() => {
+      expect(store.generating).toBe(true)
+    })
+
+    store.reset()
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE }))
+    stream.close()
+    await running
+
+    expect(store.messages).toEqual([])
+    expect(store.streamingText).toBe('')
+    expect(store.generating).toBe(false)
+    expect(store.projectId).toBeNull()
+  })
+
+  it('leaves the second project’s state alone when the first project’s stream ends', async () => {
+    const store = await opened()
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+
+    const running = store.retryGeneration()
+    await vi.waitFor(() => {
+      expect(store.generating).toBe(true)
+    })
+    stream.push(frame('token', { text: 'belongs to proj-1' }))
+
+    fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    await store.open('proj-2')
+
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE }))
+    stream.close()
+    await running
+
+    expect(store.projectId).toBe('proj-2')
+    expect(store.messages).toEqual([])
+    expect(store.streamingText).toBe('')
+    expect(store.generating).toBe(false)
+  })
+})
+
+describe('canSend while generating', () => {
+  /* AC-42's source of truth: the composer keys off this. */
+  it('is false while a stream is open and true again after it ends', async () => {
+    const store = await opened()
+    store.draft = 'build a contact dashboard'
+    expect(store.canSend).toBe(true)
+
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    await vi.waitFor(() => {
+      expect(store.generating).toBe(true)
+    })
+
+    expect(store.canSend).toBe(false)
+
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE }))
+    stream.close()
+    await running
+
+    expect(store.canSend).toBe(true)
   })
 })

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
 
 import { ApiError } from '@/lib/api'
+import { streamGeneration } from '@/lib/generateApi'
 import { listMessages, sendMessage, MESSAGE_LIMIT, type Message } from '@/lib/messagesApi'
 import { getProject, type Project } from '@/lib/projectsApi'
 
@@ -49,11 +50,27 @@ export interface WorkspaceStore {
   draft: Ref<string>
   sending: Ref<boolean>
   sendError: Ref<string | null>
+  /** Whether a generation stream is open. The composer keys off this. */
+  generating: Ref<boolean>
+  /**
+   * The reply as it arrives, rendered as one placeholder bubble.
+   *
+   * **A plain `ref<string>` re-assigned per token** (D31). The accumulation trap
+   * `typescript-vue.md` warns about is an array of objects pushed to thousands of
+   * times, which makes every render walk the whole list; a string re-assignment
+   * is one reactive write per token and one text node update. The tokens become a
+   * `Message` exactly once, at the terminal event.
+   */
+  streamingText: Ref<string>
+  /** Kept apart from `sendError`: one renders under the composer, one above it. */
+  generateError: Ref<string | null>
   atLimit: ComputedRef<boolean>
   canSend: ComputedRef<boolean>
   open: (projectId: string) => Promise<void>
   loadMessages: () => Promise<void>
   send: () => Promise<void>
+  /** Re-open the stream for the same transcript — no new user message (D26). */
+  retryGeneration: () => Promise<void>
   /** Forget everything fetched for the session that just ended. */
   reset: () => void
 }
@@ -74,8 +91,29 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
   const sending = ref(false)
   const sendError = ref<string | null>(null)
 
+  const generating = ref(false)
+  const streamingText = ref('')
+  const generateError = ref<string | null>(null)
+
+  /**
+   * The in-flight generation's controller — **in the store, not the component**
+   * (D31, and Slice 4's D17 for its reason).
+   *
+   * The `lg` breakpoint swaps one component tree for another, so a controller
+   * held in the chat panel is dropped by a window resize while the stream it was
+   * meant to cancel keeps writing. Not a `ref`: nothing renders it.
+   */
+  let controller: AbortController | null = null
+
+  function abortGeneration(): void {
+    controller?.abort()
+    controller = null
+  }
+
   const atLimit = computed(() => messages.value.length >= MESSAGE_LIMIT)
-  const canSend = computed(() => draft.value.trim() !== '' && !sending.value && !atLimit.value)
+  const canSend = computed(
+    () => draft.value.trim() !== '' && !sending.value && !generating.value && !atLimit.value,
+  )
 
   /**
    * A 404 is a different state from any other failure, so it gets its own flag.
@@ -141,6 +179,14 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
 
     const gen = ++generation
 
+    /*
+     * Any generation in flight is cancelled, whichever project it belonged to
+     * (AC-37). `open` re-reads the whole transcript from the server, so a stream
+     * still appending into `messages` is stale by construction — and a stream
+     * left running would go on spending money for a screen nobody is looking at.
+     */
+    abortGeneration()
+
     // Everything belonging to whatever was open before, cleared up front — a
     // second project must not render the first one's transcript while it loads.
     projectId.value = id
@@ -151,6 +197,9 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     messagesLoaded.value = false
     messagesError.value = null
     projectLoading.value = true
+    generating.value = false
+    streamingText.value = ''
+    generateError.value = null
 
     try {
       const fetched = await getProject(id)
@@ -197,11 +246,87 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
   }
 
   /**
-   * Send the draft, and append the turn the server wrote.
+   * Open `POST /generate` and consume it to its terminal event.
    *
-   * On failure **nothing is appended and the draft is kept** (AC-34): a user who
-   * has written a page of prose must not lose it to a 500, and re-submitting has
-   * to be able to send the same text again.
+   * Shared by `send()` and by the chat panel's **Retry**, which is the whole of
+   * D26: the endpoint's only input is the transcript (D2), so retrying is
+   * literally the same request again — no new user message, no special case.
+   *
+   * The three states it owns are cleared up front and restored in `finally`,
+   * both guarded by `current(gen)`, so a stream belonging to a project the user
+   * has since left cannot re-enable the composer of the one they are looking at.
+   */
+  async function runGeneration(): Promise<void> {
+    const id = projectId.value
+    if (id === null) return
+
+    const gen = generation
+    abortGeneration()
+    // Held locally as well as in the store, so `finally` can tell "my own
+    // controller" from "one a newer generation installed while I was awaiting".
+    const ours = new AbortController()
+    controller = ours
+
+    generating.value = true
+    streamingText.value = ''
+    generateError.value = null
+
+    try {
+      for await (const event of streamGeneration(id, ours.signal)) {
+        if (!current(gen)) return
+
+        if (event.type === 'token') {
+          // Re-assigned, not pushed to (D31). One reactive write per token.
+          streamingText.value += event.text
+          continue
+        }
+
+        if (event.type === 'done') {
+          messages.value = [...messages.value, event.message]
+          return
+        }
+
+        /*
+         * An `error` carries the message the server actually **persisted**, or
+         * `null` when nothing had been produced (D9). Appending the server's copy
+         * rather than the client's accumulated text is what makes the interrupted
+         * case the same rendering path as the successful one — and what stops an
+         * id-less bubble that disagrees with the server on the next load.
+         */
+        if (event.message !== null) messages.value = [...messages.value, event.message]
+        generateError.value = event.error
+        return
+      }
+    } catch (err) {
+      if (!current(gen)) return
+      /*
+       * A refusal decided before the server flushed its headers, or a dropped
+       * connection. Both reach the same state as a mid-stream `error` event, so
+       * the panel has one error to render and one Retry to offer.
+       */
+      generateError.value =
+        err instanceof Error ? err.message : 'Could not generate a reply. Try again.'
+    } finally {
+      if (current(gen)) {
+        streamingText.value = ''
+        generating.value = false
+      }
+      if (controller === ours) controller = null
+    }
+  }
+
+  /**
+   * Send the draft, then generate a reply — two requests, in that order (D3).
+   *
+   * The message write comes first and the stream only opens if it succeeded, so
+   * the user's prompt is durable before the expensive, failure-prone half
+   * begins. That is the whole of F8.2: a generation that dies before producing a
+   * byte still leaves a transcript the user recognises and a Retry that works.
+   *
+   * On a failed write **nothing is appended, the draft is kept, and no stream is
+   * opened** (AC-33): a user who has written a page of prose must not lose it to
+   * a 500, and generating a reply to a prompt that was never stored would attach
+   * an answer to nothing.
    */
   async function send(): Promise<void> {
     const id = projectId.value
@@ -226,6 +351,8 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     } catch (err) {
       if (!current(gen)) return
       sendError.value = err instanceof Error ? err.message : 'Could not send that message.'
+      // No stream: there is nothing stored to generate from (AC-33).
+      return
     } finally {
       /*
        * Unconditionally, unlike the loading flags above: there is only ever one send
@@ -235,12 +362,15 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
        */
       sending.value = false
     }
+
+    await runGeneration()
   }
 
   function reset(): void {
     // Bumped first: a request in flight when the session ends must not repopulate a
     // store that has just been emptied, which is the whole point of emptying it.
     generation += 1
+    abortGeneration()
     projectId.value = null
     project.value = null
     projectLoading.value = false
@@ -253,6 +383,9 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     draft.value = ''
     sending.value = false
     sendError.value = null
+    generating.value = false
+    streamingText.value = ''
+    generateError.value = null
   }
 
   return {
@@ -268,11 +401,15 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     draft,
     sending,
     sendError,
+    generating,
+    streamingText,
+    generateError,
     atLimit,
     canSend,
     open,
     loadMessages,
     send,
+    retryGeneration: runGeneration,
     reset,
   }
 })
