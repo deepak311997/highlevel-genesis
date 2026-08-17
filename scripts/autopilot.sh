@@ -522,7 +522,13 @@ run_slice() {
   # Every slice starts from a clean, current main. Anything else means the
   # previous slice left the tree in a state this script should not guess about.
   git checkout main >/dev/null 2>&1 || die "cannot check out main"
-  [[ -z "$(git status --porcelain)" ]] || die "working tree is dirty on main — resolve it, then re-run (state is preserved in .autopilot/)"
+  # This slice's own docs are written on main and only committed once the build
+  # stage cuts the branch, so a resumed run legitimately finds them untracked
+  # here. Anything else dirty is a surprise this script should not guess about.
+  local dirty
+  dirty="$(git status --porcelain | grep -v "^?? docs/slices/$nn-$slug/" || true)"
+  [[ -z "$dirty" ]] || die "working tree is dirty on main — resolve it, then re-run (state is preserved in .autopilot/):
+$dirty"
   git pull --ff-only >/dev/null 2>&1 || die "cannot fast-forward main"
 
   run_stage prd    "$nn" "$slug" "$name" "$mode" \
