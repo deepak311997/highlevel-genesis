@@ -57,6 +57,21 @@ export async function listProjects(): Promise<Project[]> {
   return projects
 }
 
+/**
+ * One project by id.
+ *
+ * The route has existed since Slice 3; the workspace is the first thing to call
+ * it. It opens on a deep link, a reload or a bookmark, so it fetches its own
+ * project rather than reading a store that is populated only when you arrived
+ * from the dashboard (Slice 4, D26). The rejection keeps its status, because the
+ * workspace renders a 404 as "no longer exists" with a Back link and anything
+ * else as a failure with a Retry.
+ */
+export async function getProject(id: string): Promise<Project> {
+  const { project } = await request<{ project: Project }>(pathFor(id))
+  return project
+}
+
 export async function createProject(input: CreateProjectInput): Promise<Project> {
   const { project } = await request<{ project: Project }>('/api/projects', json('POST', input))
   return project

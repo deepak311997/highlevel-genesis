@@ -183,3 +183,42 @@ waiting to drift.
 
 **Deviation from the plan:** none. The midnight case is one line beyond the plan's list, guarding
 a real `Intl` foot-gun.
+
+## T8 — The workspace store
+
+**Red.** `frontend/src/stores/workspace.spec.ts`, 24 cases, stubbing `fetch` rather than the
+client — `projects.spec.ts`'s pattern, and what makes the header assertion real. `open()` issues
+`GET /api/projects/proj-1` then `GET /api/projects/proj-1/messages` in that order, both carrying
+`Authorization: Bearer` and `X-Firebase-AppCheck` (AC-36); a 404 sets `projectMissing` and issues
+**no** second request (AC-21's store half); a 500 sets `projectError` and leaves `projectMissing`
+false; opening a second project drops the first's transcript; `loadMessages()` re-issues the
+request and clears its error (AC-30); `send()` issues one `POST`, appends both returned messages,
+clears the draft and issues **no `GET`** (AC-31), sends the trimmed draft, and appends rather than
+replaces; a failed `send()` sets `sendError`, appends nothing, keeps the draft, and re-submitting
+re-issues (AC-34); a blank or whitespace draft and a closed workspace issue nothing; the draft
+survives a fresh `useWorkspaceStore()`, which is what a remounted component gets (AC-25);
+`atLimit` is false at 199 and true at 200 (AC-32's source); `reset()` empties all twelve pieces of
+state. Plus a case in `auth.spec.ts`: sign-out empties the workspace as the fourth store.
+
+**Green.** `frontend/src/stores/workspace.ts`, and `useWorkspaceStore().reset()` added to
+`signOutNow()`.
+
+**Refactor.** Store header covering D12 (why appending is not a deviation from the liveness rule),
+D17/R8 (why the draft lives here) and D26 (why the project is fetched rather than read from the
+projects store). One test-side fix: `init.body` needed narrowing rather than `String()`, which
+`no-base-to-string` correctly flagged.
+
+**Plan amendment — `getProject` did not exist.** The plan has the store call
+`GET /api/projects/:projectId` and does not list `frontend/src/lib/projectsApi.ts` as edited. The
+route has existed since Slice 3 (AC-5) but **no typed client function for it did** — Slice 3's
+dashboard only ever listed, created, patched and deleted. The options were to add it to
+`projectsApi.ts`, to put it in `messagesApi.ts`, or to call `request()` directly from the store.
+The first is the only one that keeps a client module per route module, so `getProject(id)` was
+added to `projectsApi.ts` with its own red test first (path, envelope unwrapping, rejection, and
+the id-encoding case it joins). This is an addition to the plan's file map, not a departure from
+its design.
+
+**Also noted:** `npm --prefix frontend run format` reformatted four files this slice does not
+touch — `stores/hl.ts`, `components/ConnectionPanel.vue`, `lib/authApi.ts`, `lib/hlApi.spec.ts` —
+so `main` is not Prettier-clean at those lines. Reverted to keep the slice's diff reviewable. See
+*Deferred* at the end of this log.
