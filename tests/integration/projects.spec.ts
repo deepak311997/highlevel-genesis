@@ -1,7 +1,15 @@
 import { Timestamp } from 'firebase-admin/firestore'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
-import { adminDb, getJson, idTokenFor, postJson, resetEmulators, seedUser } from './helpers'
+import {
+  adminDb,
+  getJson,
+  idTokenFor,
+  patchJson,
+  postJson,
+  resetEmulators,
+  seedUser,
+} from './helpers'
 
 /**
  * `/api/projects*` — the whole of the browser's access to its projects.
@@ -470,6 +478,177 @@ describe('GET /api/projects/:projectId', () => {
   /** AC-11. */
   it('refuses an unverified caller with 403', async () => {
     const res = await getJson('/api/projects/anything', auth(unverifiedToken))
+
+    expect(res.status).toBe(403)
+    expect(codeOf(res.body)).toBe('email_unverified')
+  })
+})
+
+describe('PATCH /api/projects/:projectId', () => {
+  /** A live project of alice's, created through the route under test's sibling. */
+  async function createForAlice(
+    body: Record<string, unknown> = { name: 'Contact dashboard' },
+  ): Promise<Record<string, unknown>> {
+    return projectOf((await postJson('/api/projects', body, auth(aliceToken))).body)
+  }
+
+  /*
+   * AC-6. The sleep is not padding: the wire format is millisecond-precision
+   * ISO, and two back-to-back writes can land inside a single millisecond, which
+   * would make "strictly later" a flake rather than a bug.
+   * `users-profile.spec.ts` sleeps for the same reason.
+   */
+  it('renames, preserving createdAt and advancing updatedAt', async () => {
+    const created = await createForAlice()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const res = await patchJson(
+      `/api/projects/${String(created['id'])}`,
+      { name: 'Contacts' },
+      auth(aliceToken),
+    )
+    const patched = projectOf(res.body)
+
+    expect(res.status).toBe(200)
+    expect(patched['name']).toBe('Contacts')
+    expect(patched['createdAt']).toBe(created['createdAt'])
+    expect(String(patched['updatedAt']) > String(created['updatedAt'])).toBe(true)
+  })
+
+  /** AC-7. An explicit null clears; an absent key leaves the stored value alone. */
+  it('clears a description with an explicit null, and leaves it alone when absent', async () => {
+    const created = await createForAlice({ name: 'Contacts', description: 'Lists contacts' })
+    const path = `/api/projects/${String(created['id'])}`
+
+    const renamed = projectOf(
+      (await patchJson(path, { name: 'Contacts v2' }, auth(aliceToken))).body,
+    )
+    expect(renamed['description']).toBe('Lists contacts')
+
+    const cleared = projectOf((await patchJson(path, { description: null }, auth(aliceToken))).body)
+    expect(cleared['description']).toBeNull()
+    expect(cleared['name']).toBe('Contacts v2')
+  })
+
+  it('trims a new description', async () => {
+    const created = await createForAlice()
+
+    const patched = projectOf(
+      (
+        await patchJson(
+          `/api/projects/${String(created['id'])}`,
+          { description: '  Notes  ' },
+          auth(aliceToken),
+        )
+      ).body,
+    )
+
+    expect(patched['description']).toBe('Notes')
+  })
+
+  /*
+   * AC-16, D18. An accepted no-op would still advance `updatedAt`, which
+   * reorders a list sorted by it for a request that changed nothing — so the
+   * assertion that matters is the second one.
+   */
+  it('refuses an empty body, and does not move updatedAt', async () => {
+    const created = await createForAlice()
+    const path = `users/${aliceUid}/projects/${String(created['id'])}`
+    const before = (await adminDb().doc(path).get()).get('updatedAt') as { toMillis: () => number }
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const res = await patchJson(`/api/projects/${String(created['id'])}`, {}, auth(aliceToken))
+
+    expect(res.status).toBe(400)
+    expect(codeOf(res.body)).toBe('invalid_body')
+    expect((res.body as { error?: string }).error).toBe('Send a name or a description to change.')
+    const after = (await adminDb().doc(path).get()).get('updatedAt') as { toMillis: () => number }
+    expect(after.toMillis()).toBe(before.toMillis())
+  })
+
+  /** AC-14, AC-15 over the wire. */
+  it.each([
+    ['ownerUid', { ownerUid: 'bob' }],
+    ['id', { id: 'other' }],
+    ['locationId', { locationId: 'loc_999' }],
+    ['createdAt', { createdAt: '2020-01-01T00:00:00.000Z' }],
+    ['deletedAt', { deletedAt: null }],
+    ['a blank name', { name: '' }],
+    ['a non-string name', { name: 42 }],
+    ['an over-length name', { name: 'a'.repeat(81) }],
+    ['an over-length description', { description: 'a'.repeat(501) }],
+  ])('refuses a body carrying %s, changing nothing', async (_label, body) => {
+    const created = await createForAlice()
+
+    const res = await patchJson(`/api/projects/${String(created['id'])}`, body, auth(aliceToken))
+
+    expect(res.status).toBe(400)
+    expect(codeOf(res.body)).toBe('invalid_body')
+    const stored = await adminDb()
+      .doc(`users/${aliceUid}/projects/${String(created['id'])}`)
+      .get()
+    expect(stored.get('name')).toBe('Contact dashboard')
+  })
+
+  /*
+   * AC-12, and R1's second half. The 404 alone would be satisfied by a handler
+   * that read bob's document and then refused; the byte-for-byte comparison is
+   * what proves it was never reachable.
+   */
+  it("answers 404 for bob's project and leaves his document untouched", async () => {
+    await seedProject(bobUid, 'bob-1', { name: "Bob's" })
+    const before = (await adminDb().doc(`users/${bobUid}/projects/bob-1`).get()).data()
+
+    const res = await patchJson('/api/projects/bob-1', { name: 'Stolen' }, auth(aliceToken))
+
+    expectNotFound(res)
+    expect((await adminDb().doc(`users/${bobUid}/projects/bob-1`).get()).data()).toEqual(before)
+  })
+
+  /** AC-17's D17 half: a rename is not something the caller already has. */
+  it('answers 404 for a soft-deleted project rather than resurrecting it', async () => {
+    await seedProject(aliceUid, 'gone', { deletedAt: Timestamp.fromMillis(1_700_000_900_000) })
+
+    const res = await patchJson('/api/projects/gone', { name: 'Back' }, auth(aliceToken))
+
+    expectNotFound(res)
+    const stored = await adminDb().doc(`users/${aliceUid}/projects/gone`).get()
+    expect(stored.get('name')).toBe('Project gone')
+  })
+
+  /** AC-20. */
+  it('answers 404 for a document that cannot be parsed', async () => {
+    await adminDb().doc(`users/${aliceUid}/projects/corrupt`).set({ description: 'no name here' })
+
+    expectNotFound(await patchJson('/api/projects/corrupt', { name: 'A' }, auth(aliceToken)))
+  })
+
+  it('answers 404 for an id that never existed', async () => {
+    expectNotFound(await patchJson('/api/projects/neverExisted', { name: 'A' }, auth(aliceToken)))
+  })
+
+  /** AC-17. */
+  it.each(['a'.repeat(65), 'bad!id', 'a%2Fb'])(
+    'refuses the malformed id %s with 400',
+    async (id) => {
+      const res = await patchJson(`/api/projects/${id}`, { name: 'A' }, auth(aliceToken))
+
+      expect(res.status).toBe(400)
+      expect(codeOf(res.body)).toBe('invalid_id')
+    },
+  )
+
+  /** AC-10. */
+  it('refuses an unauthenticated caller with 401', async () => {
+    const res = await patchJson('/api/projects/anything', { name: 'A' })
+
+    expect(res.status).toBe(401)
+    expect(codeOf(res.body)).toBe('unauthenticated')
+  })
+
+  /** AC-11. */
+  it('refuses an unverified caller with 403', async () => {
+    const res = await patchJson('/api/projects/anything', { name: 'A' }, auth(unverifiedToken))
 
     expect(res.status).toBe(403)
     expect(codeOf(res.body)).toBe('email_unverified')
