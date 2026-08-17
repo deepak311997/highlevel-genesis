@@ -170,6 +170,22 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
   const fileReplaced = ref(false)
   const generateFileError = ref<string | null>(null)
 
+  /**
+   * The path **this generation** selected on the user's behalf, if any.
+   *
+   * `file_start` selects into an empty panel; it does not fetch, because the
+   * bytes are already arriving. So a selection made that way has an empty
+   * `savedContent` until `done` re-reads it — and if the turn's ops are refused
+   * there is no re-read, which would leave an empty textarea over a file that
+   * has content, with the first keystroke making it dirty and **Save** offering
+   * to replace the real file with what was typed.
+   *
+   * Remembering whose selection it was is what tells the two apart at `done`:
+   * the generation's own goes back to nothing, and the user's is never touched.
+   * Not a `ref`: nothing renders it.
+   */
+  let autoSelected: string | null = null
+
   const fileTree = computed(() => mergeFileTree(files.value, Object.keys(streamingFiles.value)))
 
   /**
@@ -387,6 +403,8 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
 
     const gen = generation
     selectedPath.value = path
+    // A deliberate choice, so no generation may take it back.
+    autoSelected = null
     fileContent.value = ''
     savedContent.value = ''
     fileError.value = null
@@ -505,15 +523,27 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     }
 
     /*
-     * A path that streamed but was never stored — a refused op set, or an
-     * unterminated block — leaves a selection pointing at nothing. Dropped, so
-     * the editor shows its empty state rather than a filename with no file.
-     * A file this generation simply did not touch keeps its buffer, dirty
-     * included: re-reading it would discard an edit for a reason the user cannot
+     * The selection this generation made for itself, on a turn that stored
+     * nothing. Two shapes, and the second is the dangerous one:
+     *
+     * - a path that streamed but was never stored — a refused op set, or an
+     *   unterminated block — which leaves a filename with no file behind it;
+     * - a path the project **already holds**, whose buffer was never read,
+     *   because `file_start` selects and does not fetch. Left selected it shows
+     *   an empty textarea over a file with content, and the first keystroke
+     *   makes it dirty enough for **Save** to offer to replace that file with
+     *   what was typed.
+     *
+     * Both go back to no selection, which is where the panel was before the
+     * generation borrowed it — and no request is issued (AC-40).
+     *
+     * A selection the **user** made is never touched here, dirty included:
+     * re-reading or dropping it would discard an edit for a reason they cannot
      * see and the server never asked for.
      */
-    if (!files.value.some((entry) => entry.path === path)) {
+    if (autoSelected === path || !files.value.some((entry) => entry.path === path)) {
       selectedPath.value = null
+      autoSelected = null
       fileContent.value = ''
       savedContent.value = ''
     }
@@ -543,6 +573,7 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     filesLoaded.value = false
     filesError.value = null
     selectedPath.value = null
+    autoSelected = null
     fileContent.value = ''
     savedContent.value = ''
     fileLoading.value = false
@@ -582,6 +613,9 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     streamingFiles.value = {}
     generateFileError.value = null
     fileReplaced.value = false
+    // Whatever the last generation selected for itself is the last generation's
+    // business; this one has borrowed nothing yet.
+    autoSelected = null
 
     try {
       for await (const event of streamGeneration(id, ours.signal)) {
@@ -599,8 +633,15 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
            * The first streamed file opens itself — but only into an empty panel.
            * Moving a user off the file they were reading, mid-reply, is the
            * screen being taken away from them.
+           *
+           * Recorded as this generation's own selection, so a turn that ends up
+           * storing nothing can put the panel back rather than leaving an
+           * unread buffer under a real filename.
            */
-          selectedPath.value ??= event.path
+          if (selectedPath.value === null) {
+            selectedPath.value = event.path
+            autoSelected = event.path
+          }
           continue
         }
 
