@@ -289,3 +289,46 @@ a keyboard shortcut reaches the handler without going through the button.
 only Shift), because `.exact` is what makes all four behave and one assertion would not pin it;
 and the at-limit case asserts the *number* appears, since D10's point is that the cap is stated
 rather than hidden.
+
+## T11 — `ChatPanel`
+
+**Red.** `frontend/src/components/workspace/ChatPanel.spec.ts`, 15 cases, with `MessageComposer`
+stubbed and the workspace store mocked. `messagesLoading` — and the tick before a request starts —
+renders `chat-loading` and no bubbles (AC-27); loaded-and-empty renders `chat-empty`, no error, and
+the composer (AC-28); loaded-with-messages renders one `message-bubble` per message with a
+`data-role` distinguishing the two, its content, and a `message-time` of `09:05`, while a message
+whose `createdAt` is `'not a date'` renders its content with **no** time (AC-29); `messagesError`
+renders the server's message and a `chat-retry` whose click calls `loadMessages()`, and beats the
+loading branch (AC-30); the `Echo mode` badge is present; the composer renders in every branch but
+loading; and AC-35's two scroll cases.
+
+**Green.** `ChatPanel.vue`. Branch order is `ProjectsCard.vue`'s — error, then
+`messagesLoading || !messagesLoaded`, then bubbles, then empty. The transcript sits in `ScrollArea`
+inside a plain `<div ref="scrollRoot">`, and the scrolling element is found with
+`scrollRoot.value?.querySelector('[data-reka-scroll-area-viewport]')`; a
+`watch(() => workspace.messages.length, …, { flush: 'post' })` plus one `onMounted` call sets
+`scrollTop = scrollHeight`.
+
+**Refactor.** The two-branch `MessageComposer` became one `showComposer` computed with a comment
+saying why a failed transcript still gets a composer (the send route is a different request from
+the list route). A duplicated paragraph was removed from the spec header.
+
+**Two plan corrections, both about AC-35's test mechanics:**
+
+1. **The mocked store had to be `reactive`.** The plan reuses `ProjectsCard.spec.ts`'s plain-object
+   mock, but that spec only ever sets state *before* mounting. AC-35 is about appending to a
+   *mounted* panel, and `watch` cannot fire on a plain object — the two scroll cases failed with
+   `scrollTop` 0 while the other 13 passed. The store is now `reactive(...)`, and `ChatPanel` is
+   imported dynamically after it, since a static import is hoisted above the `const` and the mock
+   factory would close over an undefined store.
+2. **`Object.defineProperty` on the element after mount was too late, and `scrollHeight` had to
+   vary.** The plan's recipe defines `scrollHeight` on the viewport after mounting, but `onMounted`
+   has already read 0 by then, so the mount case could never pass. `scrollHeight` is now a settable
+   getter on `HTMLElement.prototype` for the suite (removed in `afterAll`), and the append case
+   mounts at **120** and grows to **480** — which is stronger than the plan's version, because it
+   proves the panel re-measured on the append rather than reusing the height it read on mount. The
+   plan's claim that jsdom stores a written `scrollTop` was checked directly with a scratch spec
+   and is correct.
+
+**Also caught by typecheck:** `mount(Component, MOUNT, { attachTo })` takes two arguments, not
+three, so the `attachTo` was being silently dropped. Merged into the options object.
