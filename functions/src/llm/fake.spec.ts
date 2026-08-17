@@ -1,6 +1,9 @@
 import type { MessageParam } from '@anthropic-ai/sdk/resources/messages'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import { buildParams } from './params'
+import type { ProjectFile } from './projectState'
+import { SYSTEM_PROMPT } from './prompt'
 import { mapStream, MAX_OUTPUT_BYTES, type LlmEvent } from './stream'
 import { buildFakeStream } from './fake'
 
@@ -278,5 +281,72 @@ describe('abort', () => {
     }
 
     expect(seen.length).toBeLessThan(10)
+  })
+})
+
+/**
+ * `__context` — how an integration test sees **what was actually sent** (D25).
+ *
+ * Without it, budget trimming is provable only at L1 and the wiring between
+ * `handleGenerate`, the file read and `buildParams` is proven by nothing at all:
+ * the three could be connected to each other in any order, or not at all, and
+ * every existing test would still pass. So the fake reports the shape of its own
+ * input back down the stream, and an L4 test reads it out of a real SSE response.
+ *
+ * The paths are recovered from the assembled block with `PROJECT_FILE_OPEN`, the
+ * builder's own exported delimiter, so the reader and the writer cannot drift —
+ * a second copy of `'===== FILE '` here would be a second definition of the
+ * format, and the first one to change would go unnoticed.
+ */
+describe('the __context marker', () => {
+  const FILES: readonly ProjectFile[] = [
+    { path: 'index.html', content: '<!doctype html>\n<h1>Contacts</h1>\n' },
+    { path: 'app.js', content: 'const a = 1\n' },
+  ]
+
+  async function reported(files: readonly ProjectFile[]): Promise<Record<string, unknown>> {
+    const params = buildParams(context('__context build me something'), files)
+    const events: LlmEvent[] = []
+    for await (const event of mapStream(await buildFakeStream(params))) events.push(event)
+    return JSON.parse(text(events)) as Record<string, unknown>
+  }
+
+  it('reports the block count, the message count and the paths it was shown', async () => {
+    const seen = await reported(FILES)
+
+    expect(seen['systemBlocks']).toBe(SYSTEM_PROMPT.length + 1)
+    // `context()` builds user → assistant → user, and the fake counts what it got.
+    expect(seen['messages']).toBe(3)
+    // The builder's order, not the caller's: `index.html` first (D14).
+    expect(seen['paths']).toEqual(['index.html', 'app.js'])
+  })
+
+  /* A project with no files appends no block at all (AC-13), so there is nothing
+   * to read paths out of — and the count is the bare prefix. */
+  it('reports the bare prefix and no paths for a project holding no files', async () => {
+    const seen = await reported([])
+
+    expect(seen['systemBlocks']).toBe(SYSTEM_PROMPT.length)
+    expect(seen['paths']).toEqual([])
+  })
+
+  /* It is one text delta, so a test can `JSON.parse` the whole token stream. */
+  it('answers in a single token and ends cleanly', async () => {
+    const params = buildParams(context('__context'), FILES)
+    const events: LlmEvent[] = []
+    for await (const event of mapStream(await buildFakeStream(params))) events.push(event)
+
+    expect(events.filter((event) => event.kind === 'token')).toHaveLength(1)
+    expect(terminal(events)).toMatchObject({ kind: 'end', truncated: false })
+  })
+
+  /* The marker is only a marker when it is asked for; an ordinary prompt still
+   * gets the recorded reply even with files present. */
+  it('leaves an unmarked prompt on the recorded reply', async () => {
+    const params = buildParams(context('build a contact dashboard'), FILES)
+    const events: LlmEvent[] = []
+    for await (const event of mapStream(await buildFakeStream(params))) events.push(event)
+
+    expect(text(events)).toContain('Here is a contact dashboard.')
   })
 })
