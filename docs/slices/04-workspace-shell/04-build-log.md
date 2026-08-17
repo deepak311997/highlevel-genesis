@@ -45,3 +45,45 @@ answers on a path that carries the same `:projectId`.
 **Refactor.** Each doc comment extended to say it is now shared with `messages/`, and why.
 
 **Deviation from the plan:** none.
+
+## T3 — `GET /api/projects/:projectId/messages`
+
+**Red, L1.** `functions/src/messages/handlers.spec.ts` — `transcriptQuery()` is called with a
+chainable recording spy and the assertion is on the *ordered* list of calls:
+`orderBy(createdAt,asc)`, `orderBy(seq,asc)`, `limit(200)`. That is R1's regression guard —
+deleting the second `orderBy` breaks nothing an emulator-backed test can see reliably, so it has
+to fail here. `parseStoredMessage` returns `null` and logs `message.unreadable` with
+`outcome: 'invalid'` for each of the three corrupt shapes, puts no field of the document in the
+line, and returns `null` without logging for an absent snapshot. Failed on the missing module.
+
+**Red, L4.** `tests/integration/messages.spec.ts`, 16 GET cases — a batch-tied pair returns
+user-before-assistant (AC-2) and the wire shape carries no `seq`; three turns at distinct
+timestamps come back oldest-first (AC-3); empty is `200 {messages: []}` (AC-4); no header → 401
+and unverified → 403 (AC-6, AC-7); alice gets 404 on bob's project and his documents are
+byte-identical after (AC-8); soft-deleted, never-existed and unparseable project ids → 404 via
+`expectNotFound` (AC-9); four malformed ids → 400 `invalid_id` (AC-10); corrupt message documents
+are omitted and their siblings returned (AC-15); 205 seeded returns 200. All 16 failed against
+the terminal catch-all, which is why `expectNotFound` asserts the user-facing copy and not just
+the code.
+
+**Green.** `handlers.ts` (`parseStoredMessage`, `transcriptQuery`, `handleListMessages`),
+`messages/index.ts` with the `GET` route only, mounted in `api/index.ts` at `/` and `/api` after
+`projectsRouter`.
+
+**Refactor.** Module headers for both files, and the comment on `transcriptQuery` explaining why
+it is a function rather than an inline chain.
+
+**Deviations from the plan:**
+
+1. The plan's T3 sketch had the AC-3 case posting three turns through the route. That would make
+   T3's red step depend on T4's `POST` existing, so the case seeds three turns at distinct
+   timestamps instead — which is also closer to what the AC says ("written in separate
+   requests" is about distinct commit timestamps, and seeding gives exactly that). The
+   round-trip-through-`POST` version of AC-3 lands in T4, where `POST` exists.
+2. Two cases beyond the plan's list: a project document that cannot be parsed reads as 404 (the
+   third shape D14 collapses, which the plan named only for `readProject`'s own tests), and a
+   205-message transcript returns exactly 200. Both are one line each against behaviour the
+   plan already specifies.
+3. `clearProjects` in this file uses `recursiveDelete`, not `listDocuments().delete()` as
+   `projects.spec.ts` does — a project now has a subcollection, and deleting the parent document
+   would leave its messages orphaned and visible to the next test.
