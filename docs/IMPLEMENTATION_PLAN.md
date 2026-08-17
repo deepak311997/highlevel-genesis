@@ -41,13 +41,18 @@ been red since Slice 1: `vite.config.ts` threw at config load on any checkout wi
 8080 — the *development* emulator — so off CI it "passed" by finding a dev session, loading
 its rules over that session's and calling `clearFirestore()` on it.
 
-**Suite, re-run in full on `slice/07-monaco-editor` (2026-08-18):** typecheck 0 · lint 0 ·
-**1,501 unit** (750 functions · 732 frontend · 19 scripts) · **36 rules** ·
-**292 integration** · **16 e2e**. All six green — 1,845 cases.
+**Suite, re-run in full on `slice/07-monaco-editor` after its review (2026-08-18):**
+typecheck 0 · lint 0 · **1,506 unit** (750 functions · 737 frontend · 19 scripts) ·
+**36 rules** · **292 integration** · **16 e2e**. All six green — 1,850 cases.
 
-Slice 7 added 97 frontend unit cases and 2 e2e cases, and **nothing anywhere else**: no
+Slice 7 added 102 frontend unit cases and 2 e2e cases, and **nothing anywhere else**: no
 route, no collection, no rules block, no index, no fixture. It is `frontend/` plus three
-files under `tests/e2e/` plus these two documents.
+files under `tests/e2e/` plus these two documents. Five of those unit cases are its
+review's own, written test-first for the four defects that review found — including one
+the **e2e caught on a re-run**: a model created before its file's bytes arrive inherits the
+platform's line ending, so an empty model could come out CRLF and the first keystroke would
+mark every line of the file changed. Line endings are now pinned to LF in the registry
+rather than left to whichever text the model happened to be created from.
 
 Slice 8 added 223 unit cases (172 functions · 49 frontend · 2 scripts), 2 rules cases and
 33 integration cases. Thirty-three of the unit cases are its review's own, written test-first
