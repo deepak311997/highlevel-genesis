@@ -78,15 +78,24 @@ describe('buildParams', () => {
   })
 
   /*
-   * D15. `low` for this slice: it keeps thinking short, so D14's pause before
-   * the first token stays small, and it keeps a whole turn well inside the
-   * window a Hosting rewrite is known to tolerate (R2). **Slice 9 re-tunes this**
-   * against real HighLevel prompts, where `high` or `xhigh` is the documented
-   * starting point — recorded so that change reads as planned rather than churn.
+   * AC-22, D17 — the re-tune Slice 5 D15 named, arriving as planned rather than
+   * as churn. `low` was chosen when this endpoint generated prose; it now
+   * generates code against a fifteen-hundred-token cheat-sheet, and `high` is
+   * the documented minimum for intelligence-sensitive work and the API default.
+   *
+   * `xhigh` was rejected rather than overlooked: the visible thing in this
+   * demo is *tokens appearing*, and R2 — the Hosting-rewrite window — is argued
+   * rather than measured. Choosing properly needs an effort sweep against real
+   * generations, which is a named manual check in the definition of done.
+   *
+   * This is only safe because D14 left thinking on: `thinking: { type:
+   * 'disabled' }` is rejected outright above effort `high` on `claude-opus-5`,
+   * so the case below asserting no `thinking` key is now load-bearing for this
+   * one.
    */
-  it('asks for effort low', () => {
-    expect(EFFORT).toBe('low')
-    expect(buildParams([]).output_config?.effort).toBe('low')
+  it('asks for effort high', () => {
+    expect(EFFORT).toBe('high')
+    expect(buildParams([]).output_config?.effort).toBe('high')
   })
 
   /*
