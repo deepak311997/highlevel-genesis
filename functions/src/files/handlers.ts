@@ -1,17 +1,25 @@
-import type { Request } from 'express'
-import type { DocumentSnapshot, WriteBatch } from 'firebase-admin/firestore'
+import type { Request, Response } from 'express'
+import type { DocumentReference, DocumentSnapshot, WriteBatch } from 'firebase-admin/firestore'
 import { FieldValue } from 'firebase-admin/firestore'
 
 import { HttpError } from '../lib/errors'
 import { getDb } from '../lib/firebase'
 import { logAuthEvent } from '../lib/log'
+import { parseBody } from '../lib/parse'
 import type { CollectResult } from '../llm/fileops'
+import { notFound, readProject, requireProjectId } from '../projects/handlers'
 import {
+  byteLength,
   filePathSchema,
   FILE_LIMIT,
   filesPath,
+  putFileBodySchema,
+  storedFileMetaSchema,
   storedFileSchema,
+  toFile,
+  toFileMeta,
   validateFileOps,
+  type FileMeta,
   type FileRejection,
   type FileWrite,
   type StoredFile,
@@ -222,4 +230,127 @@ export async function planFileWrites(
     writes: validated.writes.map((write) => ({ ...write, exists: existing.has(write.path) })),
     error: null,
   }
+}
+
+/**
+ * The list, parsed and ordered — metadata only.
+ *
+ * `orderBy('path')` on a single field is served by Firestore's automatic index,
+ * and `select()` adds no requirement (D30) — stated because Slices 3 and 4 both
+ * paid for a missing composite index and the emulator does not enforce them.
+ *
+ * `select(...)` is what makes this a projection rather than a read of the whole
+ * project's code: opening a workspace must not ship 20 × 100 KB for files nobody
+ * has clicked on. The cap matches `FILE_LIMIT`, so "you are seeing every file" is
+ * a guarantee rather than a hope — `LIST_LIMIT` / `PROJECT_LIMIT`'s rule.
+ */
+export async function readFileList(uid: string, projectId: string): Promise<FileMeta[]> {
+  const snapshot = await getDb()
+    .collection(filesPath(uid, projectId))
+    .orderBy('path')
+    .limit(FILE_LIMIT)
+    .select('path', 'size', 'createdAt', 'updatedAt')
+    .get()
+
+  return snapshot.docs
+    .map((doc) => {
+      const parsed = storedFileMetaSchema.safeParse(doc.data())
+      if (!parsed.success) {
+        logAuthEvent('file.unreadable', { outcome: 'invalid' })
+        return null
+      }
+      if (parsed.data.path !== doc.id) {
+        logAuthEvent('file.unreadable', { outcome: 'invalid', detail: 'id mismatch' })
+        return null
+      }
+      return toFileMeta(parsed.data)
+    })
+    .filter((file): file is FileMeta => file !== null)
+}
+
+/** One file's document reference. The id *is* the path (D13). */
+function fileRef(uid: string, projectId: string, path: string): DocumentReference {
+  return getDb().doc(`${filesPath(uid, projectId)}/${path}`)
+}
+
+/**
+ * A project's file tree — or the 404 the project earns.
+ *
+ * The project first, and its answer is the whole of "gone" (D14). A file is not
+ * addressable without one, so there is nothing to read past this.
+ */
+export async function handleListFiles(req: Request, res: Response, uid: string): Promise<void> {
+  const projectId = requireProjectId(req)
+
+  if ((await readProject(uid, projectId)) === null) throw notFound()
+
+  res.json({ files: await readFileList(uid, projectId) })
+}
+
+/**
+ * One file, with its content.
+ *
+ * The id, then the path, then the project: a refusal costs no Firestore call at
+ * all — `handleCreateProject`'s rule, restated. `%2e%2e%2fsecrets.js` is refused
+ * here, before anything composes a document path out of it.
+ */
+export async function handleGetFile(req: Request, res: Response, uid: string): Promise<void> {
+  const projectId = requireProjectId(req)
+  const path = requireFilePath(req)
+
+  if ((await readProject(uid, projectId)) === null) throw notFound()
+
+  const stored = parseStoredFile(await fileRef(uid, projectId, path).get())
+  if (stored === null) throw fileNotFound()
+
+  res.json({ file: toFile(stored) })
+}
+
+/**
+ * Save an edit. **`PUT` does not create** (D19).
+ *
+ * Creating a file by hand is not in F5.1, and refusing it keeps the write surface
+ * to documents the generator made — so a path the project does not hold is a 404
+ * rather than a new file.
+ *
+ * Deliberately not transactional, and not optimistically concurrent (D23). Last
+ * write wins: two tabs editing one file is a case a user has to work at, and the
+ * realistic collision — a generation against an editor — is closed by D21, where
+ * it actually happens, by making the panel read-only while a stream is open.
+ *
+ * The order is the same as every other mutation in this codebase: id, path, body,
+ * project. A refused body writes nothing and costs no read.
+ */
+export async function handlePutFile(req: Request, res: Response, uid: string): Promise<void> {
+  const projectId = requireProjectId(req)
+  const path = requireFilePath(req)
+  const body = parseBody(putFileBodySchema, req)
+
+  if ((await readProject(uid, projectId)) === null) throw notFound()
+
+  const ref = fileRef(uid, projectId, path)
+  // A document that will not parse is unreadable, which from outside is the same
+  // answer as a file that was never generated (D13).
+  if (parseStoredFile(await ref.get()) === null) throw fileNotFound()
+
+  await ref.update({
+    content: body.content,
+    // Recomputed server-side: `size` is not a field a caller may choose, which is
+    // what `.strict()` on the body makes a property rather than a promise.
+    size: byteLength(body.content),
+    updatedAt: FieldValue.serverTimestamp(),
+    // `createdAt` is deliberately untouched — it is the date the file was first
+    // generated, and a save is not that.
+  })
+
+  // Re-read, because `serverTimestamp()` is a sentinel until it commits.
+  const stored = parseStoredFile(await ref.get())
+  if (stored === null) {
+    // Unreachable: we have just written a complete document. It fails closed
+    // rather than answering a half-shaped file to a caller whose save succeeded.
+    logAuthEvent('file.unreadable', { outcome: 'invalid', detail: 'after put' })
+    throw new HttpError(500, 'Internal error', 'internal')
+  }
+
+  res.json({ file: toFile(stored) })
 }
