@@ -377,3 +377,114 @@ describe('the upstream call', () => {
     expect((bob.body as { contacts: unknown[] }).contacts).toEqual([])
   })
 })
+
+/**
+ * Every way HighLevel can fail us, over the wire.
+ *
+ * The pure mapping is proved row by row in `functions/src/hl/proxyError.spec.ts`.
+ * What this adds is the two halves that file cannot see: that the mapped status
+ * is what a caller actually receives, and that the **side effects** happen — a
+ * 401 marks the connection, an abort is a real abort rather than a request still
+ * running behind a returned error.
+ *
+ * The failures are selected by a marker id on an ordinary parameterised row,
+ * which is the stub's existing idiom: the input says what should happen, so a
+ * case reads as the condition it is testing.
+ */
+describe('upstream failures', () => {
+  beforeEach(async () => {
+    await seedConnection(aliceUid)
+  })
+
+  async function storedFlag(): Promise<unknown> {
+    return (await adminDb().doc(`hlConnections/${aliceUid}`).get()).data()?.['needsReconnect']
+  }
+
+  /*
+   * Never 401, and the reason is not cosmetic: `apiClient` reads a 401 as "your
+   * session died" and signs the user out of Genesis. Mirroring HighLevel's
+   * would end a perfectly good Genesis session because a *CRM* token was
+   * revoked (D20).
+   */
+  it('turns an upstream 401 into a 409 and marks the connection', async () => {
+    const res = await getJson('/api/hl/proxy/contacts/__401', auth(aliceToken))
+
+    expect(res.status).toBe(409)
+    expect(res.status).not.toBe(401)
+    expect((res.body as { code?: string }).code).toBe('hl_reconnect_required')
+    expect(await storedFlag()).toBe(true)
+  })
+
+  it("forwards HighLevel's own message as detail", async () => {
+    const res = await getJson('/api/hl/proxy/contacts/__401', auth(aliceToken))
+
+    expect((res.body as { detail?: string }).detail).toBe('Invalid JWT')
+  })
+
+  /*
+   * The headers are the whole value of a 429: they turn "try again later" into
+   * a number. Copying them before the status is decided is what makes that
+   * true on the failure path as well as the success one.
+   */
+  it('maps a 429 with the rate-limit headers still attached', async () => {
+    const res = await getJson('/api/hl/proxy/contacts/__429', auth(aliceToken))
+
+    expect(res.status).toBe(429)
+    expect((res.body as { code?: string }).code).toBe('hl_rate_limited')
+    expect(res.headers.get('x-ratelimit-remaining')).not.toBeNull()
+    expect(await storedFlag()).toBe(false)
+  })
+
+  it('maps an upstream 5xx to hl_unavailable without marking the connection', async () => {
+    const res = await getJson('/api/hl/proxy/contacts/__500', auth(aliceToken))
+
+    expect(res.status).toBe(502)
+    expect((res.body as { code?: string }).code).toBe('hl_unavailable')
+    expect(await storedFlag()).toBe(false)
+  })
+
+  /*
+   * The `api` function's own budget is 60 s, so an unbounded upstream call
+   * would spend the whole request and answer nothing (D27). Twenty seconds in
+   * production; the suite overrides it to two, and the twenty is asserted at L1
+   * in `functions/src/hl/config.spec.ts` — a twenty-second case in a suite that
+   * runs on every push is a case people delete.
+   */
+  it('aborts an upstream that will not answer', async () => {
+    const res = await getJson('/api/hl/proxy/contacts/__slow', auth(aliceToken))
+
+    expect(res.status).toBe(504)
+    expect((res.body as { code?: string }).code).toBe('hl_timeout')
+  })
+
+  it('refuses an upstream body over the cap when its length is declared', async () => {
+    const res = await getJson('/api/hl/proxy/contacts/__huge', auth(aliceToken))
+
+    expect(res.status).toBe(502)
+    expect((res.body as { code?: string }).code).toBe('hl_too_large')
+  })
+
+  /*
+   * The same cap, reached the other way. A chunked response declares no
+   * `Content-Length`, so the short-circuit cannot see it and the running byte
+   * count is the only thing standing between a pathological `pageLimit` and an
+   * out-of-memory. Both branches get a case, because an untested branch in a
+   * size cap is precisely the branch that fails.
+   */
+  it('refuses an upstream body over the cap when it arrives chunked', async () => {
+    const res = await getJson('/api/hl/proxy/contacts/__hugestream', auth(aliceToken))
+
+    expect(res.status).toBe(502)
+    expect((res.body as { code?: string }).code).toBe('hl_too_large')
+  })
+
+  it('puts no token material in any upstream failure', async () => {
+    for (const marker of ['__401', '__429', '__500', '__slow', '__huge']) {
+      const res = await getJson(`/api/hl/proxy/contacts/${marker}`, auth(aliceToken))
+
+      expect(res.raw).not.toContain(ACCESS_TOKEN)
+      expect(res.raw).not.toContain(REFRESH_TOKEN)
+      expect(res.raw).not.toContain(aliceUid)
+    }
+  })
+})
