@@ -1,5 +1,6 @@
 import type {
   CollectionReference,
+  DocumentReference,
   DocumentSnapshot,
   Query,
   WriteBatch,
@@ -20,6 +21,7 @@ import {
   transcriptQuery,
   type AssistantTurn,
 } from './handlers'
+import type { SnapshotPlan } from '../snapshots/handlers'
 import { MESSAGE_LIMIT } from './schema'
 
 /**
@@ -123,6 +125,8 @@ interface FakeDb {
   path: string
   /** Every document staged, in order, with the collection it was staged into. */
   staged: { path: string; data: Record<string, unknown>; options: unknown }[]
+  /** Every ref deleted, in order — the prune's two halves (R4). */
+  deleted: string[]
   /** How many batches were created, and how many were committed. */
   batches: number
   commits: number
@@ -133,6 +137,7 @@ function fakeDb(stored: Record<string, unknown> | null): FakeDb {
     written: undefined,
     path: '',
     staged: [],
+    deleted: [],
     batches: 0,
     commits: 0,
   }
@@ -157,6 +162,12 @@ function fakeDb(stored: Record<string, unknown> | null): FakeDb {
     set(ref: { path: string }, data: Record<string, unknown>, options?: unknown) {
       record.staged.push({ path: ref.path, data, options })
       if (ref.path === message.path) record.written = data
+      return this
+    },
+    // Recorded from Slice 11: the prune deletes, and AC-9 is the claim that it
+    // does so on *this* batch rather than in a commit of its own.
+    delete(ref: { path: string }) {
+      record.deleted.push(ref.path)
       return this
     },
     commit() {
@@ -205,6 +216,34 @@ function storedAssistant(truncated: boolean): Record<string, unknown> {
  */
 function turn(content: string, overrides: Partial<AssistantTurn> = {}): AssistantTurn {
   return { content, truncated: false, fileWrites: [], snapshot: null, ...overrides }
+}
+
+/** A ref that knows its own path and can reach its subcollection, like a real one. */
+function fakeRef(path: string): DocumentReference {
+  return {
+    id: path.slice(path.lastIndexOf('/') + 1),
+    path,
+    collection: (name: string) =>
+      ({ doc: (id: string) => fakeRef(`${path}/${name}/${id}`) }) as unknown as CollectionReference,
+  } as unknown as DocumentReference
+}
+
+/**
+ * A snapshot already planned — every ref minted, nothing left to read.
+ *
+ * That `stageSnapshot` needs no `getDb()` is what makes this a plain object
+ * rather than a second Firestore fake (P4): the plan carries the new snapshot's
+ * reference, and `DocumentReference.collection()` reaches its copied files.
+ */
+function snapshotPlan(overrides: Partial<SnapshotPlan> = {}): SnapshotPlan {
+  return {
+    ref: fakeRef('users/alice/projects/proj-1/snapshots/snap-new'),
+    seq: 1,
+    origin: 'generation',
+    files: [{ path: 'index.html', content: '<h1>x</h1>\n', size: 11 }],
+    prune: [],
+    ...overrides,
+  }
 }
 
 describe('appendAssistantMessage', () => {
@@ -330,6 +369,74 @@ describe('appendAssistantMessage', () => {
     expect(db.batches).toBe(1)
     expect(db.commits).toBe(1)
     expect(db.staged).toHaveLength(1)
+  })
+
+  /**
+   * AC-9, and the whole of R5.
+   *
+   * Writing the snapshot in its own commit after the turn's is one line shorter
+   * and leaves a crash window in which the project's files moved and its history
+   * did not. The assertion is against a **recording batch**, so a second
+   * `commit()` or a write that reached Firestore some other way is a red test
+   * rather than something a reviewer has to notice.
+   *
+   * The worst case staged here is 63 writes — one message, twenty files, one
+   * snapshot, twenty copied files, one pruned snapshot and its twenty — which is
+   * comfortably inside Firestore's limit of 500.
+   */
+  it('stages the message, the files, the snapshot and its copies on one batch', async () => {
+    const db = fakeDb(storedAssistant(false))
+
+    await appendAssistantMessage(
+      'alice',
+      'proj-1',
+      turn('Here is a contact dashboard', {
+        fileWrites: [{ path: 'index.html', content: '<h1>x</h1>\n', size: 11, exists: false }],
+        snapshot: snapshotPlan(),
+      }),
+    )
+
+    expect(db.batches).toBe(1)
+    expect(db.commits).toBe(1)
+    expect(db.staged.map((entry) => entry.path)).toEqual([
+      'users/alice/projects/proj-1/messages/assistant-1',
+      'users/alice/projects/proj-1/files/index.html',
+      'users/alice/projects/proj-1/snapshots/snap-new',
+      'users/alice/projects/proj-1/snapshots/snap-new/files/index.html',
+    ])
+  })
+
+  /** The prune's deletes are on the same batch as the writes they make room for. */
+  it('stages the prune on that same batch, files first and the snapshot after', async () => {
+    const db = fakeDb(storedAssistant(false))
+    const pruned = fakeRef('users/alice/projects/proj-1/snapshots/snap-1')
+
+    await appendAssistantMessage(
+      'alice',
+      'proj-1',
+      turn('Here is a contact dashboard', {
+        snapshot: snapshotPlan({
+          prune: [{ ref: pruned, fileRefs: [fakeRef(`${pruned.path}/files/index.html`)] }],
+        }),
+      }),
+    )
+
+    expect(db.batches).toBe(1)
+    expect(db.commits).toBe(1)
+    expect(db.deleted).toEqual([
+      'users/alice/projects/proj-1/snapshots/snap-1/files/index.html',
+      'users/alice/projects/proj-1/snapshots/snap-1',
+    ])
+  })
+
+  /* A turn that stored no files plans no snapshot, so nothing extra is staged. */
+  it('stages nothing for the history when the turn carries no snapshot', async () => {
+    const db = fakeDb(storedAssistant(false))
+
+    await appendAssistantMessage('alice', 'proj-1', turn('Just prose.'))
+
+    expect(db.staged).toHaveLength(1)
+    expect(db.deleted).toEqual([])
   })
 
   /*
