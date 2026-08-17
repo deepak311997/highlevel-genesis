@@ -62,12 +62,21 @@ export const MAX_LINE = MAX_INDENT + OPEN_HEAD.length + PATH_MAX + OPEN_TAIL.len
  * out, so the tag the parser recognises and the tag the system prompt documents
  * cannot drift apart (D25).
  *
- * The path capture is `[^"\n]*` — syntax only. A path is whatever sits between
- * the quotes; whether it is storable is decided once, at the terminal.
+ * The path capture is `[^"\n]{0,PATH_MAX}` — syntax only, with the one exception
+ * that is not validation. A path is whatever sits between the quotes and whether
+ * it is *storable* is decided once, at the terminal (D8); but its **length** is
+ * bounded here, because `couldBeDelimiter` stops holding a partial line once the
+ * path passes `PATH_MAX` and it must, or an adversarial reply makes the splitter
+ * buffer without limit. A grammar that accepted what the hold-back had already
+ * given up on would open the block when the tag arrived in one delta and not when
+ * it arrived in two — D4's chunking dependence exactly, with the whole
+ * application landing in the chat bubble as prose. One bound, honoured by both.
  */
 const INDENT = `[ \\t]{0,${String(MAX_INDENT)}}`
 const TRAILING = '[ \\t]*'
-const OPEN_LINE = new RegExp(`^${INDENT}${OPEN_HEAD}([^"\\n]*)${OPEN_TAIL}${TRAILING}$`)
+const OPEN_LINE = new RegExp(
+  `^${INDENT}${OPEN_HEAD}([^"\\n]{0,${String(PATH_MAX)}})${OPEN_TAIL}${TRAILING}$`,
+)
 const CLOSE_LINE = new RegExp(`^${INDENT}${CLOSE_TAG}${TRAILING}$`)
 
 /** Only spaces and tabs — a newline would have ended the line. */
