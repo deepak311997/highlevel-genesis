@@ -78,13 +78,17 @@ export function planSnapshotSeq(heads: readonly SnapshotHead[]): number {
  * yet and is not in `heads`. At exactly the cap the collection is not over it —
  * it is one write away from being over it — so one goes.
  *
+ * Generic over the head, so a caller that read the document *references* along
+ * with the numbers gets them back rather than having to look each one up again
+ * by id — which is what the prune needs, since it deletes what it selects.
+ *
  * It selects by `seq` rather than by position so an already-broken invariant
  * repairs itself: 22 heads prune three and land at 20, rather than pruning one
  * and staying broken by two forever. That case is reachable — a crash between a
  * commit and a prune, or a limit that was once higher — and a prune that could
  * only ever remove one would never recover from it.
  */
-export function planSnapshotPrune(heads: readonly SnapshotHead[]): SnapshotHead[] {
+export function planSnapshotPrune<T extends SnapshotHead>(heads: readonly T[]): T[] {
   const excess = heads.length + 1 - SNAPSHOT_LIMIT
   if (excess <= 0) return []
 

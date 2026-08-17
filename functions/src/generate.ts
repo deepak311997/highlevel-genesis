@@ -29,6 +29,7 @@ import { fileErrorCopy } from './files/schema'
 import { appendAssistantMessage, readTranscript } from './messages/handlers'
 import { MESSAGE_LIMIT } from './messages/schema'
 import { notFound, readProject } from './projects/handlers'
+import { planSnapshot } from './snapshots/handlers'
 
 /**
  * `POST /generate` — the streaming generation endpoint.
@@ -520,6 +521,17 @@ async function finishTurn(
    * content is `messageText` rather than the mapper's raw accumulation — which
    * still carries the tags and the code.
    */
+  /*
+   * **Inside the branch that also writes the message** (D2, D4), and that
+   * placement is load-bearing twice over. A turn with no prose writes nothing at
+   * all, so it must not pay for a snapshot read either; and a turn that stored no
+   * files has no resulting set to copy, so `plan.writes.length` is the whole
+   * condition — a refusal, an unterminated block and a prose-only reply all
+   * arrive here with it at zero.
+   *
+   * The snapshot is *planned* here and *staged* by `appendAssistantMessage`, on
+   * the batch it already owns. It is never committed separately (R5).
+   */
   const message =
     collected.messageText === ''
       ? null
@@ -527,7 +539,10 @@ async function finishTurn(
           content: collected.messageText,
           truncated,
           fileWrites: plan.writes,
-          snapshot: null,
+          snapshot:
+            plan.writes.length > 0
+              ? await planSnapshot(uid, projectId, plan.resulting, 'generation')
+              : null,
         })
 
   // Nobody is listening. The partial and its files are already committed, which

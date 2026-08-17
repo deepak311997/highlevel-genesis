@@ -8,7 +8,7 @@ import { getDb } from '../lib/firebase'
 import { logAuthEvent } from '../lib/log'
 import { parseBody } from '../lib/parse'
 import { notFound, readProject, requireProjectId } from '../projects/handlers'
-import type { SnapshotPlan } from '../snapshots/handlers'
+import { stageSnapshot, type SnapshotPlan } from '../snapshots/handlers'
 import {
   createMessageBodySchema,
   MESSAGE_LIMIT,
@@ -198,6 +198,9 @@ export async function appendAssistantMessage(
   })
 
   stageFileWrites(batch, uid, projectId, turn.fileWrites)
+  // D4, R5. On the turn's own batch, so the files and the history cannot part
+  // company across a crash.
+  if (turn.snapshot !== null) stageSnapshot(batch, turn.snapshot)
 
   await batch.commit()
 

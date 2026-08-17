@@ -194,6 +194,11 @@ function storedFile(path: string, content: string): { id: string; data: () => un
  * - `readProjectFiles` — the context read, before the model is called (Slice 9 T9);
  * - `readStoredFiles` — the write-path read, inside `planFileWrites`.
  *
+ * It also serves the two calls `planSnapshot` makes of the *snapshots*
+ * collection — the heads projection and the `doc()` that mints the new version's
+ * id — because a turn that writes files now writes a snapshot on the same batch.
+ * They answer an empty list, which is the state every case here starts from.
+ *
  * `rejectProjectFiles` therefore fails whichever of the two runs, and what makes
  * it still prove AC-28 is the *order*: the context read happens before the LLM
  * call, so a rejection there is the one the handler is waiting on and the
@@ -208,16 +213,23 @@ function fakeFilesDb(
   } = {},
 ): unknown {
   const files = options.files ?? []
+  const readFiles = (): Promise<unknown> =>
+    options.rejectProjectFiles === true
+      ? Promise.reject(new Error('Firestore is unavailable'))
+      : Promise.resolve({ docs: files })
+  const noHeads = { get: (): Promise<unknown> => Promise.resolve({ docs: [] }) }
+
   return {
-    collection: () => ({
+    collection: (path: string) => ({
       orderBy: () => ({
-        limit: () => ({
-          get: () =>
-            options.rejectProjectFiles === true
-              ? Promise.reject(new Error('Firestore is unavailable'))
-              : Promise.resolve({ docs: files }),
-        }),
+        limit: () => ({ get: readFiles }),
+        select: () => noHeads,
       }),
+      // The heads read is a projection with no ordering after F1 — served here
+      // and after `orderBy` both, so neither shape can silently stop matching.
+      select: () => noHeads,
+      // `planSnapshot` mints the new version's id from the collection.
+      doc: () => ({ id: 'snap-new', path: `${path}/snap-new` }),
     }),
   }
 }
