@@ -197,3 +197,34 @@ the call, awaits `load()`, and rethrows without touching `error` (P6).
 **Deviations from the plan:** none. The three mutations share one `describe.each`, since
 "issue the call, then refetch; on failure rethrow and do neither" is one behaviour tested
 three times rather than three behaviours.
+
+---
+
+## T10 — Vendor the dialog
+
+**No red step, as the plan states.** `npx shadcn-vue@latest add dialog` wrote ten files under
+`frontend/src/components/ui/dialog/`. There is no behaviour of ours to assert; T11–T13
+exercise them.
+
+**Two things the CLI touched outside `ui/dialog/`, both reverted (P-R1):** it added
+`@lucide/vue` to `frontend/package.json` and the lockfile. Nothing imports it — the generated
+files import `X` from `lucide-vue-next`, which was already a dependency — so both files were
+restored with `git checkout` and `npm install` re-run. The plan's "no new npm packages" holds.
+
+**Hand-adjusted, as the plan predicted.** Five of the ten files failed `vue-tsc` under
+`exactOptionalPropertyTypes`, all with the same TS2379: upstream's forwarding produces an
+object whose optional keys may be `undefined`, and "absent" and "present but undefined" are
+different types.
+
+- `DialogTitle.vue`, `DialogDescription.vue` — `reactiveOmit` + `useForwardProps` replaced by
+  the omit-undefined computed `ui/label/Label.vue` already documents.
+- `DialogTrigger.vue`, `DialogClose.vue` — same, over `props` directly.
+- `DialogContent.vue`, `DialogScrollContent.vue` — `useForwardPropsEmits` **kept**, because
+  dropping it would stop the wrapper forwarding its declared emits (declared emits do not fall
+  through), and its result filtered for undefined values instead.
+
+Everything else is upstream's, reformatted by Prettier to the repo's single quotes. Typecheck
+and lint are clean; the whole frontend suite (313) still passes.
+
+**Committed as `build:`, on its own,** so a reviewer can diff the vendored code against
+upstream without slice code mixed in.
