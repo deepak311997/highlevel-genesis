@@ -11,6 +11,7 @@ import {
   createProjectBodySchema,
   LIST_LIMIT,
   PROJECT_LIMIT,
+  projectIdSchema,
   projectsPath,
   storedProjectSchema,
   toProject,
@@ -57,6 +58,31 @@ function parseStored(snapshot: DocumentSnapshot): StoredProject | null {
 function readProjectFrom(snapshot: DocumentSnapshot): Project | null {
   const stored = parseStored(snapshot)
   return stored === null ? null : toProject(snapshot.id, stored)
+}
+
+/**
+ * The id from the path, or a refusal.
+ *
+ * Called as the **first statement** of every handler that takes one, so a
+ * malformed id costs no Firestore call at all. `getDb().doc()` composes a path
+ * by string concatenation: an id containing `/` changes the depth of the path
+ * rather than the document it names, and `.` / `..` are ids Firestore refuses
+ * outright.
+ *
+ * A malformed id and a stranger's id read identically to the caller. That is not
+ * politeness — under this path shape they genuinely are the same answer.
+ */
+function requireProjectId(req: Request): string {
+  const parsed = projectIdSchema.safeParse(req.params['projectId'])
+  if (!parsed.success) {
+    throw new HttpError(400, 'That project could not be found.', 'invalid_id')
+  }
+  return parsed.data
+}
+
+/** The one 404, so three handlers cannot describe the same state differently. */
+function notFound(): HttpError {
+  return new HttpError(404, 'That project no longer exists.', 'not_found')
 }
 
 /**
@@ -203,4 +229,14 @@ export async function handleCreateProject(req: Request, res: Response, uid: stri
   }
 
   res.status(201).json({ project })
+}
+
+/** One project, or the 404 that covers everything it could mean. */
+export async function handleGetProject(req: Request, res: Response, uid: string): Promise<void> {
+  const id = requireProjectId(req)
+
+  const project = await readProject(uid, id)
+  if (project === null) throw notFound()
+
+  res.json({ project })
 }

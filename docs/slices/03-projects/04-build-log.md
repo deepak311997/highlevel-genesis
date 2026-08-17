@@ -71,3 +71,29 @@ such field. `parseStored` also returns `null` for an absent document without log
 
 **Deviations from the plan:** none. `readProject` arrives one task earlier than the plan
 placed it (T4), because T3's re-read is its first caller.
+
+---
+
+## T4 — `GET /api/projects/:projectId`
+
+**Red:** `describe('GET /api/projects/:projectId')` — 11 cases.
+
+The first draft of the four 404 cases **passed before the route existed**, because the app's
+terminal catch-all also answers `404 { code: 'not_found' }`. That is a test proving nothing,
+so an `expectNotFound(res)` helper was added that also asserts the user-facing message
+(`That project no longer exists.`), which only the handler produces. All 11 then failed.
+
+**Green:** `requireProjectId(req)` as each handler's first statement, `notFound()` as the one
+404 factory, and `handleGetProject`.
+
+**ACs:** AC-5, AC-12 (read), AC-17 (L4), AC-20 (by id), AC-10/AC-11 (GET by id).
+
+**P7 resolved — `a%2Fb` does reach the route.** The plan hedged that the emulator might
+normalise it. It does not: `fetch` leaves `%2F` percent-encoded in the path, the router
+matches it as a single segment, and Express decodes `req.params['projectId']` to `a/b`, which
+the id schema refuses with 400 `invalid_id`. So AC-17's most interesting case is covered at
+L4 after all. `..` remains L1-only, as the plan predicted — the WHATWG URL parser removes
+double-dot segments before the request is sent. `has%20space` was added alongside, since it
+is the same class of case and free.
+
+**Deviations from the plan:** none.

@@ -1,7 +1,7 @@
 import { Router } from 'express'
 
 import { asyncHandler } from '../lib/errors'
-import { handleCreateProject, handleListProjects } from './handlers'
+import { handleCreateProject, handleGetProject, handleListProjects } from './handlers'
 import { requireAppCheck } from '../auth/appCheck'
 import { withVerifiedUser } from '../auth/requireUser'
 
@@ -35,3 +35,4 @@ const attested = asyncHandler(requireAppCheck)
 // reading these lines, and the plan says so rather than pretending otherwise.
 projectsRouter.get('/projects', asyncHandler(withVerifiedUser(handleListProjects)))
 projectsRouter.post('/projects', attested, asyncHandler(withVerifiedUser(handleCreateProject)))
+projectsRouter.get('/projects/:projectId', asyncHandler(withVerifiedUser(handleGetProject)))
