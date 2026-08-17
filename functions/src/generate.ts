@@ -523,7 +523,12 @@ async function finishTurn(
   const message =
     collected.messageText === ''
       ? null
-      : await appendAssistantMessage(uid, projectId, collected.messageText, truncated, plan.writes)
+      : await appendAssistantMessage(uid, projectId, {
+          content: collected.messageText,
+          truncated,
+          fileWrites: plan.writes,
+          snapshot: null,
+        })
 
   // Nobody is listening. The partial and its files are already committed, which
   // is the whole of what a returning user needs (F8.2, D10).
