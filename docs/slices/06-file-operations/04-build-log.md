@@ -121,3 +121,86 @@ This is R1's failure mode precisely, one level in from where the risk register e
 loop and the hold predicate, and `finish()` respects it too.
 
 Commits: `bcbb132` (corpus), `fa41798` (property + fix).
+
+## T8 — The collection's rules, before anything writes to it (AC-32, AC-33)
+
+`firestore.rules` gains the deny-all block for
+`users/{uid}/projects/{projectId}/files/{fileId}`, and `tests/rules/firestore.spec.ts` gains eight
+cases: five for the owner, one for a verified stranger, one for an anonymous client, and AC-33's
+one-pass re-assertion over every collection. 28 → 36 L3 cases.
+
+The tests pass against the *unedited* rules too, because an unmatched path is denied by default —
+which the plan predicted. Verified meaningful by mutation: an
+`allow if request.auth.uid == uid` block for files fails six of them.
+
+Commit: `1e3a1b1`.
+
+## T9 — One batch per turn (D11, P7)
+
+`functions/src/files/handlers.ts` + `handlers.spec.ts` (24 L1 cases), and
+`appendAssistantMessage` rewritten around a `WriteBatch`. `messages/handlers.spec.ts`'s `fakeDb`
+grew `batch()` and every existing call gained the fifth argument.
+
+**Deviation.** The fifth parameter is `FileWritePlan[]`, not the plan's `FileWrite[]` —
+`FileWrite` plus an `exists` flag. `stageFileWrites` needs create-versus-update to preserve
+`createdAt` (AC-19), and `readFilePaths` has already answered that question for the cap check;
+re-reading it inside the write path would be a second answer to it.
+
+`generate.ts` passes `[]` at this point, replaced in T11.
+
+Commit: `e278ff7`.
+
+## T10 — The fake grows files (D26, R8)
+
+`reply.json` becomes prose + `index.html` + `styles.css` + `app.js` + closing prose, with its
+**prose byte-identical** and each block split across several deltas. `max-tokens.json` gains an
+opened block before its cut-off (P6). Four new fixtures and four new markers.
+
+`fake.spec.ts` pins the five recorded prose deltas, so R8's promise is asserted rather than
+trusted. Integration stayed at 232 passing and e2e at 12 — the existing assertions are about prose
+that has not moved.
+
+Commit: `d1cbb35`.
+
+## T11 — The write path, over the wire (AC-16 – AC-25)
+
+`tests/integration/generate-files.spec.ts`, 17 L4 cases, red before a line of the wiring existed.
+`lib/sse.ts`, `llm/schema.ts`, `llm/index.ts`, `files/handlers.ts`'s `planFileWrites` and
+`generate.ts` are the green step.
+
+**Amendment to the plan.** The plan's green step writes
+`completed = event.kind === 'end' && !truncated`, using the *forced* `truncated` — which is
+`clientGone || …`. That would make a client disconnect suppress the file write, and D10 says the
+opposite in as many words: "`clientGone` does not suppress the write: the files belong to the
+project, not to the connection", which the PRD's edge-case table repeats ("The client disconnects
+after a clean `end` → Message and files still commit"). The implementation reads the **mapper's
+own** `event.truncated` instead. There is an L1 case for it in `generate.spec.ts`, because the
+functions emulator never propagates a disconnect to the runtime.
+
+**One existing assertion changed.** `generate.spec.ts`'s client-gone case expected `'one two '` and
+now expects `'one two'`: the collector is the single producer of the chat text and D16 trims it in
+the emitted stream. The invariant that case actually guards — persisted content equals the token
+frames — is unchanged and still asserted, at L1 over 21 fixtures and at L4 over the wire.
+
+`tests/integration/generate.spec.ts` gained a comment only; its assertions are untouched (R8).
+
+Commit: `cc2b05c`.
+
+## T12 — The three routes (AC-26 – AC-31)
+
+`tests/integration/files.spec.ts` (26 L4 cases), `functions/src/index.spec.ts`'s router scan, and
+`files/handlers.ts` + `files/index.ts` + the mount.
+
+**A finding, recorded because it changed a test.** A whole path segment of `..` — encoded or not —
+never reaches the file handler: URL normalisation collapses `/files/..` and `/files/%2E%2E` before
+routing, so the request resolves one segment up to the project route. This was measured, not
+assumed. It is safe rather than lucky, since the segment is gone before anything could compose a
+document path from it, so the case asserts the negative that matters (**no file is reachable that
+way**) instead of the 400 the plan expected. The encoded traversals that *do* arrive —
+`%2e%2e%2fsecrets.js`, `%2fetc%2fpasswd`, `%2e%2e%5csecrets.js` — are refused `400 invalid_path`
+for failing to be filenames.
+
+The "no Firestore read before a refusal" clause of AC-27 is made observable: a `400 invalid_path`
+against a project id that does not exist could only be a 404 if the lookup had happened first.
+
+Commit: `cf755ce`.
