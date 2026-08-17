@@ -2,36 +2,53 @@ import type { TextBlockParam } from '@anthropic-ai/sdk/resources/messages'
 
 import { FILE_BYTES_MAX, FILE_EXTENSIONS, FILE_LIMIT } from '../files/schema'
 import { CLOSE_TAG, OPEN_HEAD, OPEN_TAIL } from './fileops'
+import { HL_KNOWLEDGE } from './hlKnowledge'
 
 /**
- * The system prompt — the stable prefix, and today the whole of it (D17).
+ * The system prompt — the stable prefix, whole: who the model is, how it writes
+ * files, and how the app it writes talks to HighLevel.
  *
- * ## What is here, and what deliberately is not
+ * ## Three blocks, in the order they became true
  *
- * What Genesis is, that it builds small web apps over a HighLevel CRM, and the
- * response-style constraints. **No HighLevel endpoints and no file-format
- * instructions**: an endpoint list written now would be wrong by Slice 9, which
- * owns the cheat-sheet, and a file-format instruction would describe a parser
- * that does not exist until Slice 6. Stability is the requirement the breakpoint
- * imposes, and the surest way to be stable is to say only what is already true.
+ * Identity and response style (Slice 5), the file format (Slice 6), and the
+ * HighLevel cheat-sheet (Slice 9, F3.2). Each was added only once the thing it
+ * describes existed — an endpoint list written in Slice 5 would have been wrong
+ * by Slice 8's allowlist, and a file-format instruction would have described a
+ * parser that did not exist. Stability is the requirement the breakpoint imposes,
+ * and the surest way to be stable is to say only what is already true.
  *
- * ## The `cache_control` breakpoint is declared, and is a no-op until Slice 9
+ * The cheat-sheet is one block rather than several, and it is last. That is what
+ * keeps "the breakpoint is the last element of the stable prefix" a one-line
+ * assertion, and it is the property `params.ts` depends on when it appends the
+ * volatile project-state block *after* this array (D11).
  *
- * `CLAUDE.md` requires the cheat-sheet pinned behind a breakpoint. This slice
- * owes the *structure*: a stable prefix, a breakpoint at its end, and nothing
- * volatile above it.
+ * ## The `cache_control` breakpoint, which is real from here (D18)
  *
- * The honest note, so a reviewer does not read it as a bug (D16):
- * `claude-opus-5`'s minimum cacheable prefix is **512 tokens**, and this prompt
- * is far shorter — so `cache_creation_input_tokens` will be `0`,
- * `cache_read_input_tokens` will be `0`, and **no error will say so**. That is a
- * silent no-op, not a failure. It becomes a real cache read in Slice 9, when the
- * cheat-sheet is added above this block and the prefix crosses the minimum.
+ * Slice 5 declared the breakpoint and recorded it as a **silent no-op**:
+ * `claude-opus-5` caches nothing below a 512-token prefix, the two-block prompt
+ * was far shorter, and nothing errors when a prefix is too short —
+ * `cache_creation_input_tokens` and `cache_read_input_tokens` simply both read
+ * `0`. That note was a promissory one, and this is the slice it comes due in.
+ *
+ * What changed: the cheat-sheet is roughly a thousand tokens of allowlist,
+ * parameter notes and response shapes, so the prefix now clears the minimum, and
+ * the breakpoint moved from the file-format block down onto it — a breakpoint in
+ * the middle would cache a prefix shorter than the stable one, which is a subtler
+ * bug than no breakpoint at all. `prompt.spec.ts` asserts the prefix estimates to
+ * at least **1,024** tokens: twice the minimum, because `estimateTokens` is four
+ * characters per token rather than the tokenizer, and a margin is what makes an
+ * estimate safe to build on.
+ *
+ * The estimate is not the confirmation. The confirmation is
+ * `cacheReadInputTokens > 0` on the second generation of a session, which the
+ * `generation.complete` log line already carries and which the definition of done
+ * checks by hand against real credentials — no automated test in this repo can
+ * observe it.
  *
  * A constant, not a function: anything computed per call — a date, a project
- * name, an interpolated id — would make every request a cache miss once caching
- * is real, and the only symptom would be the bill. `prompt.spec.ts` asserts the
- * absence with a pattern rather than trusting this paragraph.
+ * name, an interpolated id — makes every request a cache miss now that caching is
+ * real, and the only symptom is the bill. `prompt.spec.ts` asserts the absence
+ * with a pattern rather than trusting this paragraph.
  */
 export const SYSTEM_PROMPT: TextBlockParam[] = [
   {
@@ -107,8 +124,16 @@ export const SYSTEM_PROMPT: TextBlockParam[] = [
       'limitation described, reply without any file at all — that is a complete',
       'answer, not a failure.',
     ].join('\n'),
-    // The breakpoint, moved here so it stays the last element of the stable
-    // prefix. Slice 9 adds the HighLevel cheat-sheet above this block.
+  },
+  {
+    type: 'text',
+    // Rendered from `HL_ROUTES` and `proxyError.ts` at module load, so the
+    // allowlist has one source and this is a view of it (D2). Included whole
+    // rather than assembled here: what it says is `hlKnowledge.ts`'s business,
+    // and what this file decides is where it sits and what is pinned to it.
+    text: HL_KNOWLEDGE,
+    // The breakpoint, on the last element of the stable prefix — and from this
+    // slice a real cache read rather than a declared one (D18).
     cache_control: { type: 'ephemeral' },
   },
 ]
