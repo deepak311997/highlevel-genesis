@@ -40,7 +40,20 @@ vi.mock('./lib/firebase', () => ({ getDb }))
 import { handleGenerate, keepAliveMs, logGeneration } from './generate'
 import { HttpError } from './lib/errors'
 import { SYSTEM_PROMPT, type LlmStream } from './llm'
+import type { AssistantTurn } from './messages/handlers'
 import { MESSAGE_LIMIT } from './messages/schema'
+
+/**
+ * The `AssistantTurn` of the nth `appendAssistantMessage` call (R10).
+ *
+ * The three parts of a turn used to be positional, and these assertions read
+ * `call[2]` / `call[3]` / `call[4]` — three index literals whose meaning lived
+ * in the signature rather than on the page. Named through this helper, an
+ * assertion says which part of the turn it is about.
+ */
+function turnOf(index: number): AssistantTurn {
+  return appendAssistantMessage.mock.calls[index]?.[2] as AssistantTurn
+}
 
 /**
  * The two pieces of `/generate` that are pure enough to test without an emulator.
@@ -473,8 +486,14 @@ describe('handleGenerate — the client goes away', () => {
         truncated: false,
       },
     ])
-    appendAssistantMessage.mockImplementation((_uid, _projectId, content, truncated) =>
-      Promise.resolve({ id: 'a1', role: 'assistant', content, createdAt: '', truncated }),
+    appendAssistantMessage.mockImplementation((_uid, _projectId, turn: AssistantTurn) =>
+      Promise.resolve({
+        id: 'a1',
+        role: 'assistant',
+        content: turn.content,
+        createdAt: '',
+        truncated: turn.truncated,
+      }),
     )
   })
 
@@ -506,8 +525,8 @@ describe('handleGenerate — the client goes away', () => {
      * stream**. The persisted content is still byte-identical to the token frames
      * the client received, which is the invariant that actually matters (D7).
      */
-    expect(appendAssistantMessage.mock.calls[0]?.[2]).toBe('one two')
-    expect(appendAssistantMessage.mock.calls[0]?.[3]).toBe(true)
+    expect(turnOf(0).content).toBe('one two')
+    expect(turnOf(0).truncated).toBe(true)
     // Nobody is listening, so nothing is written to the dead socket.
     expect(res.frames.filter((frame) => frame.startsWith('event: done'))).toHaveLength(0)
     expect(res.frames.filter((frame) => frame.startsWith('event: error'))).toHaveLength(0)
@@ -550,10 +569,11 @@ describe('handleGenerate — the client goes away', () => {
     await handleGenerate(fakeRequest(), res.express, 'alice')
 
     expect(stream.aborted).toBe(true)
-    const call = appendAssistantMessage.mock.calls[0] ?? []
-    expect(call[2]).toBe('Here it is.\n\n[file: app.js]')
-    expect(call[3]).toBe(true)
-    expect(call[4]).toEqual([{ path: 'app.js', content: 'const a = 1\n', size: 12, exists: false }])
+    expect(turnOf(0).content).toBe('Here it is.\n\n[file: app.js]')
+    expect(turnOf(0).truncated).toBe(true)
+    expect(turnOf(0).fileWrites).toEqual([
+      { path: 'app.js', content: 'const a = 1\n', size: 12, exists: false },
+    ])
     // And still nothing on the dead socket.
     expect(res.frames.filter((frame) => frame.startsWith('event: done'))).toHaveLength(0)
   })
@@ -570,7 +590,7 @@ describe('handleGenerate — the client goes away', () => {
 
     await handleGenerate(fakeRequest(), res.express, 'alice')
 
-    expect(appendAssistantMessage.mock.calls[0]?.[3]).toBe(false)
+    expect(turnOf(0).truncated).toBe(false)
     expect(res.frames.filter((frame) => frame.startsWith('event: done'))).toHaveLength(1)
     // `close` after `end()` must change nothing.
     res.express.emit('close')

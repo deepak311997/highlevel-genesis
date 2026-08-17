@@ -14,7 +14,12 @@ const getDb = vi.hoisted(() => vi.fn())
 // here — which is fine: `vi.mock` is what does the work either way.
 vi.mock('../lib/firebase', () => ({ getDb }))
 
-import { appendAssistantMessage, parseStoredMessage, transcriptQuery } from './handlers'
+import {
+  appendAssistantMessage,
+  parseStoredMessage,
+  transcriptQuery,
+  type AssistantTurn,
+} from './handlers'
 import { MESSAGE_LIMIT } from './schema'
 
 /**
@@ -189,6 +194,19 @@ function storedAssistant(truncated: boolean): Record<string, unknown> {
   }
 }
 
+/**
+ * One assistant turn, with the three parts that vary defaulted (R10).
+ *
+ * The regrouping this helper exists for is the point of the task: the function
+ * took four positional parameters and was about to take a fifth, at which point
+ * `('alice', 'proj-1', text, false, [], null)` is a call nobody can read and a
+ * `null` in the wrong slot is a type error only if two adjacent parameters
+ * happen to have different types. An object says which is which.
+ */
+function turn(content: string, overrides: Partial<AssistantTurn> = {}): AssistantTurn {
+  return { content, truncated: false, fileWrites: [], snapshot: null, ...overrides }
+}
+
 describe('appendAssistantMessage', () => {
   /*
    * AC-2, D35. `seq` is 1 and it is assigned here rather than derived: the
@@ -200,7 +218,7 @@ describe('appendAssistantMessage', () => {
   it('writes the assistant document under the project, with seq 1', async () => {
     const db = fakeDb(storedAssistant(false))
 
-    await appendAssistantMessage('alice', 'proj-1', 'Here is a contact dashboard', false, [])
+    await appendAssistantMessage('alice', 'proj-1', turn('Here is a contact dashboard'))
 
     expect(db.path).toBe('users/alice/projects/proj-1/messages')
     const written = db.written as Record<string, unknown>
@@ -221,7 +239,7 @@ describe('appendAssistantMessage', () => {
   it('stamps the document with a server timestamp sentinel', async () => {
     const db = fakeDb(storedAssistant(false))
 
-    await appendAssistantMessage('alice', 'proj-1', 'Here is a contact dashboard', false, [])
+    await appendAssistantMessage('alice', 'proj-1', turn('Here is a contact dashboard'))
 
     expect((db.written as Record<string, unknown>)['createdAt']).toBeInstanceOf(
       FieldValue.serverTimestamp().constructor,
@@ -232,7 +250,7 @@ describe('appendAssistantMessage', () => {
   it('carries the truncated flag it was given into the document', async () => {
     const db = fakeDb(storedAssistant(true))
 
-    await appendAssistantMessage('alice', 'proj-1', 'Here is a contact dash', true, [])
+    await appendAssistantMessage('alice', 'proj-1', turn('Here is a contact dash', { truncated: true }))
 
     expect((db.written as Record<string, unknown>)['truncated']).toBe(true)
   })
@@ -249,9 +267,7 @@ describe('appendAssistantMessage', () => {
     const message = await appendAssistantMessage(
       'alice',
       'proj-1',
-      'Here is a contact dash',
-      true,
-      [],
+      turn('Here is a contact dash', { truncated: true }),
     )
 
     expect(message).toEqual({
@@ -272,7 +288,7 @@ describe('appendAssistantMessage', () => {
     vi.spyOn(console, 'info').mockImplementation(() => undefined)
     fakeDb({ role: 'assistant' })
 
-    await expect(appendAssistantMessage('alice', 'proj-1', 'hi', false, [])).rejects.toThrow()
+    await expect(appendAssistantMessage('alice', 'proj-1', turn('hi'))).rejects.toThrow()
   })
 
   /**
@@ -285,10 +301,16 @@ describe('appendAssistantMessage', () => {
   it('stages the message and every file into one batch, committed once', async () => {
     const db = fakeDb(storedAssistant(false))
 
-    await appendAssistantMessage('alice', 'proj-1', 'Here is a contact dashboard', false, [
-      { path: 'index.html', content: '<h1>x</h1>\n', size: 11, exists: false },
-      { path: 'app.js', content: 'const a = 1\n', size: 12, exists: true },
-    ])
+    await appendAssistantMessage(
+      'alice',
+      'proj-1',
+      turn('Here is a contact dashboard', {
+        fileWrites: [
+          { path: 'index.html', content: '<h1>x</h1>\n', size: 11, exists: false },
+          { path: 'app.js', content: 'const a = 1\n', size: 12, exists: true },
+        ],
+      }),
+    )
 
     expect(db.batches).toBe(1)
     expect(db.commits).toBe(1)
@@ -303,7 +325,7 @@ describe('appendAssistantMessage', () => {
   it('commits exactly one batch of one document when there are no files', async () => {
     const db = fakeDb(storedAssistant(false))
 
-    await appendAssistantMessage('alice', 'proj-1', 'Here is a contact dashboard', false, [])
+    await appendAssistantMessage('alice', 'proj-1', turn('Here is a contact dashboard'))
 
     expect(db.batches).toBe(1)
     expect(db.commits).toBe(1)
@@ -318,9 +340,11 @@ describe('appendAssistantMessage', () => {
   it('answers with the committed message even when files were written', async () => {
     fakeDb(storedAssistant(false))
 
-    const message = await appendAssistantMessage('alice', 'proj-1', 'x', false, [
-      { path: 'app.js', content: 'a\n', size: 2, exists: false },
-    ])
+    const message = await appendAssistantMessage(
+      'alice',
+      'proj-1',
+      turn('x', { fileWrites: [{ path: 'app.js', content: 'a\n', size: 2, exists: false }] }),
+    )
 
     expect(message.id).toBe('assistant-1')
     expect(message.createdAt).toBe('2023-11-14T22:13:20.000Z')
