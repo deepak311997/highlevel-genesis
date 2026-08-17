@@ -173,16 +173,20 @@ function storedFile(path: string, content: string): { id: string; data: () => un
 
 /**
  * A Firestore stand-in answering **both** reads a turn makes of the files
- * collection, told apart by the call shape rather than by a flag:
+ * collection. As of Slice 11 (D14) they share one call shape —
+ * `.orderBy('path').limit(n).get()`, whole documents — because the cap check
+ * stopped being a `select()` of ids when one read had to also answer which of
+ * the turn's writes are rewrites and what the snapshot must copy:
  *
- * - `readFilePaths` — `.limit(n).select().get()`, ids only, for the cap check;
- * - `readProjectFiles` — `.orderBy('path').limit(n).get()`, whole documents, for
- *   the context (Slice 9 T9).
+ * - `readProjectFiles` — the context read, before the model is called (Slice 9 T9);
+ * - `readStoredFiles` — the write-path read, inside `planFileWrites`.
  *
- * Keeping them distinguishable by shape is what lets `rejectProjectFiles` fail
- * exactly one of the two, which is the whole of AC-28: the *context* read
- * failing must be an ordinary pre-flush 500, and a fake that could only fail
- * both would not tell us which one the handler was waiting on.
+ * `rejectProjectFiles` therefore fails whichever of the two runs, and what makes
+ * it still prove AC-28 is the *order*: the context read happens before the LLM
+ * call, so a rejection there is the one the handler is waiting on and the
+ * write-path read is never reached. The assertion — an ordinary pre-flush 500,
+ * no SSE frame — is what pins that down, since a failure at the write-path read
+ * would arrive after the stream had already flushed.
  */
 function fakeFilesDb(
   options: {
@@ -193,7 +197,6 @@ function fakeFilesDb(
   const files = options.files ?? []
   return {
     collection: () => ({
-      limit: () => ({ select: () => ({ get: () => Promise.resolve({ docs: [] }) }) }),
       orderBy: () => ({
         limit: () => ({
           get: () =>
