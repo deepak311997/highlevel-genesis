@@ -158,3 +158,23 @@ arriving despite the type still goes through `redact`.
 
 **Implementation:** `ProxyLogContext` and `logProxyEvent` in `lib/log.ts` (P9);
 `RATE_LIMIT_HEADERS` and `logProxy` in `hl/proxy.ts` (P7).
+
+---
+
+## Session 2 — resumed, and what the first session had actually done
+
+The first build session ended without a final message. Its log stops at T7; its **commits do
+not**. Reading the branch rather than the log: T13 (the typed client) and T14 (the store
+probe) are both committed, green, and match the plan. So the work left is T8–T12, T15–T17.
+
+Why the first session jumped: the baseline note above says the emulator ports were held by
+another checkout, and T8–T12 are exactly the emulator-backed tasks. T13 and T14 are pure L1,
+so it took the work it could run. That was the right call and is recorded here rather than
+treated as a deviation to undo — but the log not saying so is the reason this section exists.
+
+**Baseline re-established on resume**, ports now free, everything green before the first new
+change: `typecheck`, `lint`, `test:unit` (539 frontend, functions unit, 15 scripts),
+`test:rules` (28), `test:integration` (232, 11 files). So the emulator-backed suites the first
+session could not start are green as inherited, and every failure from here is this session's.
+
+---
