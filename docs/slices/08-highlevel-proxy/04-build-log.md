@@ -507,6 +507,55 @@ variables; nothing sets them here. Today the `/tmp/genesis-suite-gate.lock` in
 `scripts/autopilot.sh` serialises emulator runs across checkouts and hides it, but a suite run
 outside that lock will hit `EADDRINUSE` on 4600 or 4650. **Export all five, not three.**
 
+### Amendment 5 — the second gate did not test this branch at all
+
+A second post-build gate ran at 01:18 and came back red with five e2e failures. **None of them
+is a defect in this slice, and no code was changed for them.** The run tested a different
+branch's working tree, and then had that tree swapped underneath it mid-run.
+
+The evidence is in the gate log itself
+(`.autopilot/logs/08/gate-post-build.1.log`, which the second attempt overwrote, so it no longer
+holds the failures Amendment 4 is about):
+
+- Four of the five failures are `Cannot find module './tests/e2e/globalSetup.ts'`. That file does
+  not exist on this branch and never has — it arrived with Slice 06, which merged to `main` as
+  `5c1fb06`, *after* this branch was cut from `99e3f2d`. Nor does this branch's
+  `playwright.config.ts` mention `globalSetup`; `main`'s declares it on line 21.
+- The run executed `tests/e2e/files.spec.ts`, which likewise exists only on `main`.
+- So the tree under test was `main`'s. The reflog agrees: `checkout: moving from
+  slice/08-highlevel-proxy to main` at **01:17:59**, five seconds before the gate started, and
+  `checkout: moving from main to slice/08-highlevel-proxy` at **01:20:33**, while Playwright was
+  running. The same log line-for-line: *"firestore: Change detected, updating rules"* and a
+  functions emulator restart (*"Serving at port 8790"*) at exactly that point.
+- The fifth failure is the in-flight test at the moment of the swap — `signup-sent` never
+  appeared, because the functions emulator was restarting under it.
+- Everything that ran *before* the swap was green: typecheck, lint, 750 + 635 + 19 unit,
+  36 rules, 292 integration. Those counts are `main`'s, not this branch's (577 / 549 / 21,
+  30, 265) — a second, independent confirmation of which tree was under test.
+
+**Cause:** two `scripts/autopilot.sh` runs were live in this one checkout at once. The first
+started at 01:10:25 and its fix session was still working — checking out `main`, pulling,
+cherry-picking, amending — when a second run started at 01:17:59 and immediately ran the gate.
+`/tmp/genesis-suite-gate.lock` serialises emulator use *between checkouts*; nothing serialises
+two autopilot runs *within* one, and the second run's log even records it reclaiming the gate
+lock from a dead pid. One working tree cannot serve a git-manipulating session and a test run at
+the same time.
+
+**Verification, on a quiet machine with nothing else touching the tree** — the whole suite, this
+branch, `git status` clean at `0faa7a6`:
+
+| Suite | Result |
+|---|---|
+| `typecheck` | clean (functions, frontend, root) |
+| `lint` | clean, zero warnings |
+| `test:unit` | 1 147 — 577 functions, 549 frontend, 21 scripts |
+| `test:rules` | 30 |
+| `test:integration` | 265, 13 files |
+| `test:e2e` | 12, all green in 1.3 min |
+
+Identical to the final-state table below, which is what "no defect" looks like when it is
+checked rather than asserted.
+
 ---
 
 ## Acceptance criteria — every one, and where it is proved
