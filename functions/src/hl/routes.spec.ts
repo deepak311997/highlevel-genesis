@@ -6,6 +6,7 @@ import {
   buildUpstreamUrl,
   HL_ROUTES,
   isLegalParam,
+  isRouteEnabled,
   matchRoute,
   type HlRoute,
 } from './routes'
@@ -349,4 +350,39 @@ describe('buildUpstreamBody', () => {
       expect(buildUpstreamBody(rowFor('/contacts/search'), body, LOCATION)).toEqual(body)
     },
   )
+})
+
+/**
+ * AC-21's enabled half, at L1.
+ *
+ * The functions emulator's environment is fixed for the whole `emulators:exec`
+ * run, so a shell value that turns the flag on turns it on for *every* case in
+ * the integration suite — including the one that has to prove the default is
+ * off. The safety-critical direction keeps its wire test; this is the other one.
+ */
+describe('isRouteEnabled', () => {
+  function rowFor(pattern: string): HlRoute {
+    const row = HL_ROUTES.find((r) => r.pattern === pattern)
+    if (row === undefined) throw new Error(`no row for ${pattern}`)
+    return row
+  }
+
+  const send = rowFor('/conversations/messages')
+  const search = rowFor('/contacts/search')
+
+  it('leaves an unflagged row enabled whatever the environment says', () => {
+    expect(isRouteEnabled(search, {})).toBe(true)
+    expect(isRouteEnabled(search, { HL_ALLOW_MESSAGE_SEND: 'false' })).toBe(true)
+  })
+
+  it.each([{}, { HL_ALLOW_MESSAGE_SEND: '' }, { HL_ALLOW_MESSAGE_SEND: 'false' }])(
+    'keeps a flagged row disabled for %o',
+    (env) => {
+      expect(isRouteEnabled(send, env)).toBe(false)
+    },
+  )
+
+  it('enables a flagged row only when its variable is exactly true', () => {
+    expect(isRouteEnabled(send, { HL_ALLOW_MESSAGE_SEND: 'true' })).toBe(true)
+  })
 })
