@@ -1,8 +1,9 @@
 import { Router } from 'express'
 
+import { requireAppCheck } from '../auth/appCheck'
 import { withVerifiedUser } from '../auth/requireUser'
 import { asyncHandler } from '../lib/errors'
-import { handleListSnapshots } from './handlers'
+import { handleListSnapshots, handleRestoreSnapshot } from './handlers'
 
 /**
  * A project's version history — list, and restore.
@@ -28,8 +29,12 @@ import { handleListSnapshots } from './handlers'
  */
 export const snapshotsRouter: Router = Router()
 
+const attested = asyncHandler(requireAppCheck)
+
 // Reading is not attested: a plain authenticated read, and App Check buys nothing
-// against a caller who already holds a valid ID token (D28).
+// against a caller who already holds a valid ID token. The restore is — it is the
+// one route here that writes, and the only route in this codebase that *deletes*
+// a user's files (D28).
 //
 // `requireAppCheck` short-circuits under the emulator, so no emulator-backed test
 // can observe the difference; which routes carry it is verified by reading these
@@ -37,4 +42,9 @@ export const snapshotsRouter: Router = Router()
 snapshotsRouter.get(
   '/projects/:projectId/snapshots',
   asyncHandler(withVerifiedUser(handleListSnapshots)),
+)
+snapshotsRouter.post(
+  '/projects/:projectId/snapshots/:snapshotId/restore',
+  attested,
+  asyncHandler(withVerifiedUser(handleRestoreSnapshot)),
 )

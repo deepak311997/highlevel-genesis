@@ -1,15 +1,22 @@
 import type { Request, Response } from 'express'
 import type { DocumentReference, DocumentSnapshot, WriteBatch } from 'firebase-admin/firestore'
 import { FieldValue } from 'firebase-admin/firestore'
+import { z } from 'zod'
 
+import { HttpError } from '../lib/errors'
 import { getDb } from '../lib/firebase'
 import { logAuthEvent } from '../lib/log'
+import { parseBody } from '../lib/parse'
 import { notFound, readProject, requireProjectId } from '../projects/handlers'
-import type { FileWrite } from '../files/schema'
-import { planSnapshotPrune, planSnapshotSeq, type SnapshotHead } from './plan'
+import { readFileList, readStoredFiles, stageFileWrites } from '../files/handlers'
+import { filesPath, toFileMeta, type FileWrite } from '../files/schema'
+import { filesEqual, planSnapshotPrune, planSnapshotSeq, type SnapshotHead } from './plan'
 import {
   SNAPSHOT_FILES,
   SNAPSHOT_LIMIT,
+  SNAPSHOT_MISSING,
+  SNAPSHOT_UNREADABLE,
+  snapshotIdSchema,
   snapshotsPath,
   storedSnapshotFileSchema,
   storedSnapshotSchema,
@@ -263,4 +270,189 @@ export async function handleListSnapshots(
   if ((await readProject(uid, projectId)) === null) throw notFound()
 
   res.json({ snapshots: await readSnapshotList(uid, projectId) })
+}
+
+/**
+ * The version id from the URL, or a refusal.
+ *
+ * Called as the **second statement** of the restore handler, right after
+ * `requireProjectId`, so a malformed id costs no Firestore call at all —
+ * `requireProjectId`'s rule, one segment deeper.
+ *
+ * It carries `snapshotIdSchema`'s own message rather than the project's (P1). A
+ * malformed version id and a malformed project id are two different failures one
+ * segment apart; they share a status and a code and deliberately not a sentence,
+ * so a caller who mistyped the version is not told they mistyped the project.
+ */
+export function requireSnapshotId(req: Request): string {
+  const parsed = snapshotIdSchema.safeParse(req.params['snapshotId'])
+  if (!parsed.success) {
+    throw new HttpError(400, 'That version could not be found.', 'invalid_id')
+  }
+  return parsed.data
+}
+
+/** The one 404, so no two snapshot handlers describe the same state differently. */
+export function snapshotNotFound(): HttpError {
+  return new HttpError(404, SNAPSHOT_MISSING, 'not_found')
+}
+
+/**
+ * A version's copied files — **all of them, or none** (D8).
+ *
+ * `null` is "this version cannot be read whole", and it has two causes that the
+ * caller deliberately does not tell apart: a document that will not parse, and
+ * a subcollection holding fewer documents than the snapshot says it should. Both
+ * would restore an app with a hole in it, which is worse than refusing because
+ * it looks like it worked.
+ *
+ * The count check is against the snapshot's own `fileCount`, so a subcollection
+ * that lost a document to a partial delete is caught even though every document
+ * still present parses perfectly.
+ *
+ * Read unordered: the restore compares sets and writes by name, so there is
+ * nothing an ordering would buy — and an unordered collection read needs no
+ * index (D16).
+ */
+export async function readSnapshotFiles(
+  uid: string,
+  projectId: string,
+  snapshotId: string,
+  fileCount: number,
+): Promise<FileWrite[] | null> {
+  const snapshot = await getDb()
+    .collection(`${snapshotsPath(uid, projectId)}/${snapshotId}/${SNAPSHOT_FILES}`)
+    .get()
+
+  const files = snapshot.docs
+    .map((doc) => parseSnapshotFile(doc))
+    .filter((file): file is StoredSnapshotFile => file !== null)
+
+  return files.length === fileCount ? files : null
+}
+
+/** A version's own document, parsed — or `null`, which is the whole of "gone". */
+async function readSnapshot(
+  uid: string,
+  projectId: string,
+  snapshotId: string,
+): Promise<{ seq: number; fileCount: number } | null> {
+  const doc = await getDb().doc(`${snapshotsPath(uid, projectId)}/${snapshotId}`).get()
+  if (!doc.exists) return null
+
+  const parsed = storedSnapshotSchema.safeParse(doc.data())
+  if (!parsed.success) {
+    logAuthEvent('snapshot.unreadable', { outcome: 'invalid' })
+    return null
+  }
+
+  return { seq: parsed.data.seq, fileCount: parsed.data.fileCount }
+}
+
+/**
+ * A body with **no keys at all** — the version to restore is named by the URL.
+ *
+ * `.strict()` is the whole schema. There is nothing for a caller to say here, and
+ * a route that ignored a body would be a route where a later field could be
+ * smuggled past review. `parseBody` substitutes `{}` for a bodyless request, so
+ * the ordinary call and this schema agree.
+ */
+const restoreBodySchema = z.object({}).strict()
+
+/**
+ * Roll a project back to one of its versions.
+ *
+ * The order is the point of the function, and each step is where it is because
+ * of what the step before it made impossible:
+ *
+ * 1. **the project id**, then 2. **the version id** — a malformed either costs no
+ *    Firestore call at all;
+ * 3. **the body**, refused before anything reads, so a request carrying a field
+ *    writes nothing;
+ * 4. **the project** — absent, soft-deleted, unreadable and somebody else's all
+ *    collapse into one 404 (D14), and the path is composed from the token's uid,
+ *    so another user's project is not addressable rather than merely refused;
+ * 5. **the version document** — a version id is scoped to its project, so one
+ *    from a different project of the caller's own is a 404 here rather than a
+ *    cross-project restore;
+ * 6. **the version's files, whole or not at all** — 409 before a batch is opened,
+ *    which is what lets the refusal promise that nothing was changed (D8);
+ * 7. **the project's current files**, which answers two questions at once: is
+ *    this a no-op, and what does the safety snapshot copy;
+ * 8. **the no-op**, answered with **no batch at all** (D10) — writing would
+ *    advance every file's `updatedAt` and mint a version recording that nothing
+ *    happened, and the prune would push a real one out to make room for it;
+ * 9. **one batch**: the safety snapshot, the writes and the deletes together;
+ * 10. **the re-read**, because `serverTimestamp()` is a sentinel until it
+ *     commits.
+ *
+ * `FILE_LIMIT` is never exceeded at any point (AC-18) because the writes and the
+ * deletes are in that one batch: the union of the old set and the new one never
+ * exists. A restore that deleted in a second commit would pass through 40 files
+ * on a full project, and a crash between the two would leave it there.
+ */
+export async function handleRestoreSnapshot(
+  req: Request,
+  res: Response,
+  uid: string,
+): Promise<void> {
+  const projectId = requireProjectId(req)
+  const snapshotId = requireSnapshotId(req)
+  parseBody(restoreBodySchema, req)
+
+  if ((await readProject(uid, projectId)) === null) throw notFound()
+
+  const stored = await readSnapshot(uid, projectId, snapshotId)
+  if (stored === null) throw snapshotNotFound()
+
+  const version = await readSnapshotFiles(uid, projectId, snapshotId, stored.fileCount)
+  if (version === null) throw new HttpError(409, SNAPSHOT_UNREADABLE, 'snapshot_unreadable')
+
+  const current = await readStoredFiles(uid, projectId)
+
+  /*
+   * D10. `readStoredFiles` orders by path and `filesEqual` is order-independent
+   * anyway, so this needs no second read — and answering the files we have just
+   * read costs nothing a `GET` would not have cost the caller anyway.
+   */
+  if (filesEqual(current, version)) {
+    res.json({ files: current.map(toFileMeta), changed: false })
+    return
+  }
+
+  const currentPaths = new Set(current.map((file) => file.path))
+
+  /*
+   * D9. Planned **before** the batch is opened, because planning reads and a
+   * batch is not a transaction — and skipped entirely for a project with no
+   * files, because a safety snapshot of nothing is a version nothing can restore
+   * to (and `fileCount` has a floor of 1, so it could not even be written).
+   */
+  const safety =
+    current.length > 0 ? await planSnapshot(uid, projectId, current, 'restore') : null
+
+  const batch = getDb().batch()
+  if (safety !== null) stageSnapshot(batch, safety)
+
+  // `exists` from the current path set, so a file both sides hold **merges** and
+  // keeps the date it was first generated, exactly as a rewriting generation does.
+  stageFileWrites(
+    batch,
+    uid,
+    projectId,
+    version.map((file) => ({ ...file, exists: currentPaths.has(file.path) })),
+  )
+
+  // D7, R3. The deletes are what make the restore an *equality* rather than an
+  // overlay: without them, version 1's files sit beside version 2's extra one and
+  // the app breaks in a way the tree does not show.
+  const restored = new Set(version.map((file) => file.path))
+  for (const path of currentPaths) {
+    if (!restored.has(path)) batch.delete(getDb().doc(`${filesPath(uid, projectId)}/${path}`))
+  }
+
+  await batch.commit()
+
+  // Re-read, because `serverTimestamp()` is a sentinel until it commits.
+  res.json({ files: await readFileList(uid, projectId), changed: true })
 }
