@@ -191,14 +191,28 @@ describe('GET /api/projects/:projectId/messages', () => {
     ])
   })
 
-  /** AC-2's wire shape: four keys, and `seq` is not one of them. */
+  /**
+   * AC-2's wire shape: five keys, and `seq` is not one of them.
+   *
+   * R7's L4 half, too. The seeded document is **Slice-4-shaped** — written by
+   * `seedMessage` with no `truncated` key at all — so reading `truncated: false`
+   * back off the wire proves the parse default carries an existing document
+   * rather than rejecting it.
+   */
   it('puts the wire shape on the wire, carrying no seq', async () => {
     await seedMessage(aliceUid, 'proj-1', 'msg-a')
 
     const messages = messagesOf((await getJson(path('proj-1'), auth(aliceToken))).body)
 
     for (const message of messages) {
-      expect(Object.keys(message).sort()).toEqual(['content', 'createdAt', 'id', 'role'])
+      expect(Object.keys(message).sort()).toEqual([
+        'content',
+        'createdAt',
+        'id',
+        'role',
+        'truncated',
+      ])
+      expect(message['truncated']).toBe(false)
       expect(new Date(message['createdAt'] as string).toISOString()).toBe(message['createdAt'])
     }
   })
@@ -390,7 +404,14 @@ describe('POST /api/projects/:projectId/messages', () => {
     expect(messages[1]?.['role']).toBe('assistant')
     expect(messages[1]?.['content']).toBe(ECHO)
     for (const message of messages) {
-      expect(Object.keys(message).sort()).toEqual(['content', 'createdAt', 'id', 'role'])
+      expect(Object.keys(message).sort()).toEqual([
+        'content',
+        'createdAt',
+        'id',
+        'role',
+        'truncated',
+      ])
+      expect(message['truncated']).toBe(false)
       expect(new Date(message['createdAt'] as string).toISOString()).toBe(message['createdAt'])
     }
 

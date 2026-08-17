@@ -85,6 +85,24 @@ export const storedMessageSchema = z.object({
   content: z.string().min(1),
   seq: z.number().int().min(0),
   createdAt: firestoreTimestamp,
+  /**
+   * Whether the reply stopped short of what the model had to say (D24).
+   *
+   * `true` for a client disconnect, a mid-stream failure, `stop_reason:
+   * 'max_tokens'`, and the 800,000-byte accumulation cap. One flat boolean
+   * rather than a discriminated union on `role`: the union is the right instinct
+   * in general, and for a single flag it doubles the schema a reviewer reads and
+   * buys nothing.
+   *
+   * **Defaulted, not `.catch`ed**, and the difference is D27's rule holding.
+   * Slice 4's documents do not carry this field at all, so a required one would
+   * make every message written before this slice unreadable — silently emptying
+   * every existing transcript (R7). A default on an *absent* field is a
+   * migration. A `.catch` on a *corrupt* one would be silently accepting a
+   * document that is wrong about itself, which is the thing D27 forbids: a
+   * `truncated: 'yes'` is a bug somewhere, not an old document.
+   */
+  truncated: z.boolean().default(false),
 })
 
 export type StoredMessage = z.infer<typeof storedMessageSchema>
@@ -103,6 +121,7 @@ export interface Message {
   role: 'user' | 'assistant'
   content: string
   createdAt: string
+  truncated: boolean
 }
 
 export function toMessage(id: string, stored: StoredMessage): Message {
@@ -111,5 +130,6 @@ export function toMessage(id: string, stored: StoredMessage): Message {
     role: stored.role,
     content: stored.content,
     createdAt: stored.createdAt.toDate().toISOString(),
+    truncated: stored.truncated,
   }
 }
