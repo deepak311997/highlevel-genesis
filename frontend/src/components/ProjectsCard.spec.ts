@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { RouterLinkStub, flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Project } from '@/lib/projectsApi'
@@ -53,7 +53,20 @@ const SECOND: Project = {
 
 /* The dialogs are stubbed: each owns the store and has a suite of its own, and
  * both teleport their content out of this component's tree. */
-const MOUNT = { global: { stubs: { ProjectFormDialog: true, ProjectDeleteDialog: true } } }
+/*
+ * The dialogs are stubbed: each owns the store and has a suite of its own, and both
+ * teleport their content out of this component's tree. `RouterLink` is stubbed
+ * because the project name became one in Slice 4 and there is no router here.
+ */
+const MOUNT = {
+  global: {
+    stubs: {
+      ProjectFormDialog: true,
+      ProjectDeleteDialog: true,
+      RouterLink: RouterLinkStub,
+    },
+  },
+}
 
 beforeEach(() => {
   store.projects = []
@@ -120,15 +133,23 @@ describe('ProjectsCard', () => {
     expect(wrapper.find('[data-testid="project-description"]').exists()).toBe(false)
   })
 
-  /* D12: rows are not navigable in this slice, because the workspace screen they
-   * would point at does not exist yet. */
-  it('does not make a row a link', () => {
+  /*
+   * **Deliberately inverted in Slice 4** (D23). Slice 3's D12 asserted that a row was
+   * not navigable at all, because the workspace it would point at did not exist —
+   * and said "the moment one becomes a link, Slice 4 has started". It has, so the
+   * claim narrows rather than disappears: the *row* is still not a link, and the name
+   * inside it now is. Kept as an assertion because it is what stops a later change
+   * wrapping the whole rectangle, with Delete inside it.
+   */
+  it('does not make the row itself a link', () => {
     store.projects = [PROJECT]
     store.loaded = true
 
     const wrapper = mount(ProjectsCard, MOUNT)
 
-    expect(wrapper.find('[data-testid="project-row"] a').exists()).toBe(false)
+    const row = wrapper.find('[data-testid="project-row"]')
+    expect(row.element.tagName).toBe('LI')
+    expect(row.attributes('href')).toBeUndefined()
   })
 
   /** AC-26. */
@@ -219,5 +240,39 @@ describe('ProjectsCard', () => {
       expect(confirmation.props('open')).toBe(true)
       expect(confirmation.props('project')).toEqual(PROJECT)
     })
+  })
+
+  /*
+   * AC-19, D23. Slice 3's D12 said "the moment one becomes a link, Slice 4 has
+   * started" — it has. **The name is the link and the row is not**, so a mis-aimed
+   * tap on a row cannot reach Rename or Delete; those two stay buttons, which is the
+   * second assertion here and the one that would catch a whole-row link added later.
+   */
+  it('makes the project name a link to its workspace, leaving the actions as buttons', () => {
+    store.loaded = true
+    store.projects = [PROJECT, SECOND]
+
+    const wrapper = mount(ProjectsCard, MOUNT)
+    const rows = wrapper.findAll('[data-testid="project-row"]')
+
+    const first = rows[0]?.findComponent(RouterLinkStub)
+    expect(first?.props('to')).toBe('/projects/proj-1')
+    expect(first?.text()).toBe('Contact dashboard')
+    expect(rows[1]?.findComponent(RouterLinkStub).props('to')).toBe('/projects/proj-2')
+
+    expect(rows[0]?.find('[data-testid="project-rename"]').element.tagName).toBe('BUTTON')
+    expect(rows[0]?.find('[data-testid="project-delete"]').element.tagName).toBe('BUTTON')
+  })
+
+  /* Exactly one link per row, and it is the name — nothing else in the row navigates. */
+  it('puts no link in a row beyond the name', () => {
+    store.loaded = true
+    store.projects = [PROJECT]
+
+    const wrapper = mount(ProjectsCard, MOUNT)
+
+    expect(
+      wrapper.find('[data-testid="project-row"]').findAllComponents(RouterLinkStub),
+    ).toHaveLength(1)
   })
 })

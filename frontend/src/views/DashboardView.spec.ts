@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { RouterLinkStub, flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const ensure = vi.hoisted(() => vi.fn())
@@ -98,7 +98,11 @@ describe('DashboardView', () => {
     projects.error = 'Could not load your projects.'
 
     const wrapper = mount(DashboardView, {
-      global: { stubs: { ConnectionPanel: true, AccountCard: true } },
+      // `RouterLink` is stubbed because the real card mounted here now renders one
+      // per project name (Slice 4, D23), and this test provides no router.
+      global: {
+        stubs: { ConnectionPanel: true, AccountCard: true, RouterLink: RouterLinkStub },
+      },
     })
     await flushPromises()
 
