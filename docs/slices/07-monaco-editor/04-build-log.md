@@ -334,3 +334,71 @@ Written down rather than built, because the plan does not cover them:
   exactly as the Code tab did before T14. Neither panel contains anything that measures its
   own container, so neither is broken today; only the Code tab was changed, because only the
   Code tab was in scope.
+
+## Acceptance criteria — every one, and the test that proves it
+
+Walked one by one against the PRD. **No criterion is without a named passing test.**
+
+| AC | Level | Test |
+|---|---|---|
+| AC-1 | L1 | `editorLanguage.spec.ts` — *"maps %s to %s"* (7 rows) and *"covers the whole allowlist, deliberately rather than by fall-through"* |
+| AC-2 | L1 | `editorContent.spec.ts` — *"returns null when the two are equal"* |
+| AC-3 | L1 | `editorContent.spec.ts` — *"returns an append carrying only the suffix"* (asserts the text is **shorter than `next`**) |
+| AC-4 | L1 | `editorContent.spec.ts` — *"returns a replace for %s"* (3 rows: another file, a repair, a shorter string) |
+| AC-5 | L1 | `editorContent.spec.ts` — *"applying the edit to %j yields %j"* over an 11-pair corpus |
+| AC-6 | L1 | `editorModels.spec.ts` — *"scopes the URI to the project"*, *"gives two projects distinct models for the same filename"* |
+| AC-7 | L1 | `editorModels.spec.ts` — *"returns the same model for a path it already has"* |
+| AC-8 | L1 | `editorModels.spec.ts` — *"saves A's view state before the switch and restores B's after it"*, *"attempts no restore for a path that was never open"* |
+| AC-9 | L1 | `editorModels.spec.ts` — *"detaches the editor, disposes everything it made, and empties itself"*, *"creates fresh models after a disposal"* · L2 `CodeEditor.spec.ts` — *"disposes the registry when the project changes, and rebuilds it"* |
+| AC-10 | L2 | `CodeEditor.spec.ts` — *"appends the tail of a streamed chunk, follows it, and never calls setValue"* |
+| AC-11 | L2 | `CodeEditor.spec.ts` — *"passes readOnly while generating, with a message, and automaticLayout always"* · L5 `editor.spec.ts` proves Monaco **honours** it |
+| AC-12 | L2 | `CodeEditor.spec.ts` — *"leaves the active model alone when the stream writes another path"* |
+| AC-13 | L1 | `workspace.spec.ts` — *"opens a tab, fetches it, and makes it active"*, *"keeps a failed read's tab and re-reads it on demand"* · L2 `EditorTabs.spec.ts` — *"renders one tab per open path, in order, marking the active one"* · L2 `FileEditor.spec.ts` — *"offers a Try again on a failed read"* · L2 `FileTree.spec.ts` — *"selects a file when its row is clicked"* (existing, unchanged) |
+| AC-14 | L1 | `workspace.spec.ts` — *"activates an open tab without a second tab and without a request"* |
+| AC-15 | L1 | `workspace.spec.ts` — *"keeps an unsaved edit across a tab switch, with no request"* · L5 `editor.spec.ts` |
+| AC-16 | L1 | `workspace.spec.ts` — three cases under *"closing a tab"* · L2 `EditorTabs.spec.ts` — *"closes a tab from its own control, without activating it"* |
+| AC-17 | L1 | `workspace.spec.ts` — *"restores a dirty buffer when a closed tab is reopened, with no request"* |
+| AC-18 | L1 | `workspace.spec.ts` — *"opens a tab for the first streamed file without creating a buffer"*, *"leaves the active tab alone for the whole generation"* |
+| AC-19 | L1 | `workspace.spec.ts` — *"PUTs the active buffer and takes the server's answer back into that tab only"*, *"keeps the buffer dirty and records the error when the save fails"* · L2 `FileEditor.spec.ts` — *"enables Save once the buffer is dirty"*, *"renders a save failure beside Save"* |
+| AC-20 | L1 | `workspace.spec.ts` — *"issues no save while a stream is open"* · L2 `FileEditor.spec.ts` — *"is read-only while a stream is open, with a reason on screen"* |
+| AC-21 | L2 | `FileEditor.spec.ts` — *"withholds Save over the byte cap and says why"* |
+| AC-22 | L1 | `workspace.spec.ts` — *"re-reads every open tab the generation rewrote, clean and dirty alike"*, *"keeps the replaced notice across a tab switch"* · L2 `FileEditor.spec.ts` — *"renders the replaced notice"* / *"renders no replaced notice otherwise"* |
+| AC-23 | L1 | `workspace.spec.ts` — *"drops a buffered but closed file the generation rewrote"* |
+| AC-24 | L1 | `workspace.spec.ts` — *"issues no file request and changes no buffer on a done that wrote nothing"* (deep equality over the whole map) |
+| AC-25 | L1 | `monacoSetup.spec.ts` — *"hands the loader the locally imported instance"*, *"imports edcore.main rather than another entry point"* · `no-cdn.spec.ts` — *"names no CDN host anywhere under src"* plus 7 scanner cases |
+| AC-26 | L2 | `CodeEditor.spec.ts` — *"renders the skeleton until the editor mounts"*, *"renders the failure and a Try again that retries the load"*, *"renders neither once mounted"* |
+| AC-27 | L2 | `CodeEditor.spec.ts` — *"passes vs-dark for the dark theme and vs for light, without remounting"* (same component instance, same model, same text) |
+| AC-28 | L2 | `CodeEditor.spec.ts` — *"holds the editor instance identically"* |
+| AC-29 | L1 | `deps.spec.ts` — *"declares the two Monaco packages and pins monaco exactly"*, *"adds nothing else"* · `no-firestore.spec.ts` (existing, unchanged) |
+| AC-30 | L5 | `editor.spec.ts` — *"the editor renders with a real height at both layouts"* · L2 `EditorPanel.spec.ts` — *"gives the editor region a definite height"*, *"scrolls the tree at the height it caps it to"* |
+| AC-31 | L5 | `editor.spec.ts` — *"code streams coloured into a locked editor, and tabs keep their edits"* |
+
+## Definition of done
+
+- [x] Every acceptance criterion maps to a named, passing test — the table above
+- [x] Full suite green: `typecheck` 0 · `lint` 0 · **1,501 unit** (750 functions · 732
+      frontend · 19 scripts) · **36 rules** · **292 integration** · **16 e2e** = 1,845
+- [x] `tests/e2e/files.spec.ts` passes **unchanged in what it asserts** — driven through
+      Monaco, not loosened, not skipped
+- [x] `firestore.rules`, `firestore.indexes.json` and `functions/` untouched — checked
+      against the diff, see below
+- [x] The code panel ships loading, empty and error states for the editor as well as the
+      tree (AC-26, and `FileEditor`'s four branches)
+- [x] `@guolao/vue-monaco-editor` is the exact package the brief names; `monaco-editor` is
+      pinned, and the reason is in the PRD, the plan and `PRODUCT_SPEC.md` §7.1
+- [x] Nothing fetched from a CDN at runtime: `loader.config({ monaco })` before the first
+      mount, and `no-cdn.spec.ts` standing guard over the source tree
+- [x] The editor instance is never `ref`/`reactive` — asserted by AC-28
+- [x] No `firebase/firestore` import under `frontend/src`; `.env.example` unchanged
+- [ ] **Manual, not run in this session:** `npm run dev` from a fresh clone with the network
+      unplugged (the plan's step 1). The automated half of that claim is
+      `monacoSetup.spec.ts` plus `no-cdn.spec.ts`; the rest is a human at a keyboard.
+- [ ] **Manual, not run in this session:** the bundle check — Monaco in its own chunk and
+      `grep -rlE 'jsdelivr|unpkg|cdnjs' frontend/dist` empty.
+- [x] `IMPLEMENTATION_PLAN.md` §0/§4/§9 and `PRODUCT_SPEC.md` §7.1 updated
+
+**D21, checked against the diff rather than asserted.** The branch touches `frontend/`,
+`tests/e2e/` and `docs/` — 37 files. `git diff --name-only main...HEAD` matches nothing
+under `functions/`, and `firestore.rules`, `firestore.indexes.json`, `firebase.json`,
+`.env.example`, `frontend/vite.config.ts` and `frontend/eslint.config.js` are all untouched.
+**No lint rule was relaxed and no test was weakened to get this green.**
