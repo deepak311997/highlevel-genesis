@@ -99,6 +99,26 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // --- snapshots ----------------------------------------------------
+    // A point-in-time copy of a project's whole file set, written only by
+    // /generate's one batch per turn and by
+    // POST /api/projects/:projectId/snapshots/:snapshotId/restore.
+    // Read only by GET /api/projects/:projectId/snapshots.
+    match /users/{uid}/projects/{projectId}/snapshots/{snapshotId} {
+      allow read, write: if false;
+    }
+
+    // --- a snapshot's copied files ------------------------------------
+    // These documents *are* the generated application, one version back, so a
+    // client that could write here could plant its own JavaScript and have a
+    // later restore put it into the project — where Slice 10's preview runs it.
+    //
+    // Rules do not cascade, so the block above says nothing about this path.
+    // It is the one a reader is most likely to assume is covered, and it is not.
+    match /users/{uid}/projects/{projectId}/snapshots/{snapshotId}/files/{fileId} {
+      allow read, write: if false;
+    }
+
     // --- everything else ----------------------------------------------
     // Collections are added slice by slice, each with its own denial test.
     // Nothing is reachable until it is.
