@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { RouterLink, RouterView, useRouter } from 'vue-router'
+import { computed } from 'vue'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import { Button } from '@/components/ui/button'
@@ -7,6 +8,19 @@ import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
+
+/**
+ * How much room the route gets (D22).
+ *
+ * `contained` is the default, so every route that predates the workspace keeps the
+ * centred container without saying anything. `full` drops the max width and the
+ * padding and makes `main` a flex child that may shrink — `min-h-0` is the
+ * load-bearing half of that: without it a flex item refuses to go below its
+ * content's height, so the workspace's panels would push the page taller instead of
+ * scrolling inside it.
+ */
+const contained = computed(() => route.meta.layout !== 'full')
 
 async function signOut(): Promise<void> {
   await auth.signOutNow()
@@ -15,8 +29,8 @@ async function signOut(): Promise<void> {
 </script>
 
 <template>
-  <div class="min-h-screen">
-    <header class="border-b bg-gradient-to-b from-raised to-card">
+  <div class="flex min-h-screen flex-col">
+    <header class="shrink-0 border-b bg-gradient-to-b from-raised to-card">
       <nav class="mx-auto flex max-w-5xl items-center gap-6 px-6 py-3">
         <RouterLink to="/" class="flex items-center gap-2 text-base font-bold tracking-tight">
           <svg viewBox="0 0 96 96" class="h-5 w-5" aria-hidden="true">
@@ -64,7 +78,9 @@ async function signOut(): Promise<void> {
       </nav>
     </header>
 
-    <main class="mx-auto max-w-5xl px-6 py-10">
+    <main
+      :class="contained ? 'mx-auto w-full max-w-5xl px-6 py-10' : 'flex min-h-0 flex-1 flex-col'"
+    >
       <!--
         The router guard awaits the same signal before resolving any route, so
         until Firebase answers there is nothing to show. Saying so beats an

@@ -66,6 +66,20 @@ const router = createRouter({
       component: () => import('@/views/DashboardView.vue'),
       meta: { access: 'protected' },
     },
+    {
+      /*
+       * The workspace. `/projects/:projectId` names the resource, not a piece of UI
+       * and not a user — `CLAUDE.md` bans a *user* identifier in a path, and this id
+       * is checked for ownership on the server by construction.
+       *
+       * `layout: 'full'` is the only route that declares one (D22): the three panels
+       * need the whole window and a bounded height to scroll inside.
+       */
+      path: '/projects/:projectId',
+      name: 'workspace',
+      component: () => import('@/views/WorkspaceView.vue'),
+      meta: { access: 'protected', layout: 'full' },
+    },
     // Anything unrecognised resolves through the guard rather than 404ing.
     { path: '/:pathMatch(.*)*', redirect: '/dashboard', meta: { access: 'protected' } },
   ],

@@ -332,3 +332,56 @@ the list route). A duplicated paragraph was removed from the spec header.
 
 **Also caught by typecheck:** `mount(Component, MOUNT, { attachTo })` takes two arguments, not
 three, so the `attachTo` was being silently dropped. Merged into the options object.
+
+## T12 — `EditorPanel` and `PreviewPanel`
+
+**Red.** Folded into T13's `WorkspaceView.spec.ts`, as the plan specifies — "each names the slice
+that fills it" is asserted there, and two placeholders with no request, no data and no failure mode
+have nothing else to test (D18).
+
+**Green.** `EditorPanel.vue` — heading `Code`, body naming Slices 6 and 7,
+`data-testid="editor-panel"`. `PreviewPanel.vue` — heading `Preview`, body naming Slice 10,
+`data-testid="preview-panel"`. Each header comment says why it has no loading/empty/error state.
+
+## T13 — `WorkspaceView`, the route, and the app shell
+
+**Red, `App.spec.ts`.** A memory router with two routes — one declaring no `meta.layout`, one
+declaring `layout: 'full'` — asserts `main` carries `max-w-5xl`/`mx-auto` on the first and
+`flex-1`/`min-h-0` without `max-w-5xl` on the second (D22), that the header renders on both, and
+that the shell still says "Loading…" until Firebase has answered.
+
+**Red, `WorkspaceView.spec.ts`.** 12 cases, with the store and `useRoute` mocked and
+`window.matchMedia` stubbed controllably — **jsdom has no `matchMedia` at all**, so without the
+stub `useMediaQuery` reports the query unsupported and the tabbed tree would render in every test,
+making AC-23 and AC-24 assert the same thing. `open()` is called once on mount and again when the
+route param changes; `projectLoading` renders `workspace-loading` and **no panels** (AC-20 — the AC
+is stricter than the PRD's user-flow prose, and the AC is the contract); `projectMissing` renders
+"That project no longer exists." with a `RouterLink` to `/dashboard`, no retry, no chat panel, and
+`loadMessages` never called (AC-21); `projectError` renders the server's message and a
+`workspace-retry` that re-opens (AC-22); with `matches: true` all three panels are present and the
+placeholders name Slices 6, 7 and 10 while the tabbed tree is **not mounted** (AC-23); with
+`matches: false` a tab list of Chat/Code/Preview renders with Chat shown, and selecting Preview
+shows the preview panel and removes the chat panel (AC-24); the badge follows `locationId` both
+ways (AC-26); and with `messagesError` set the header, badge and other two panels are still
+rendered while no *workspace* error shows (AC-30's view half).
+
+**Green.** `RouteLayout` added to `router/guard.ts`'s `RouteMeta`; the `/projects/:projectId` route
+with `meta: { access: 'protected', layout: 'full' }` and a lazy import; `App.vue` as a flex column
+with a `shrink-0` header and the contained/full switch on `main`; `WorkspaceView.vue`, driven by
+one `watch(..., { immediate: true })` that covers both first mount and a param change.
+
+**Refactor.** View header explaining why the project is fetched before the transcript (D25) and why
+the layout switch is a `v-if` rather than Tailwind visibility classes (D16) — CSS-only would leave
+both trees mounted, which is what would make AC-23 and AC-24 trivially true of the same DOM.
+
+**Three test-mechanics corrections, all found by running the tests:**
+
+1. **Mounted views leaked between tests.** Each test's view stayed alive watching the *shared*
+   mocked `route`, so changing a param in one test re-triggered views a previous test had left
+   mounted — `open` was called three times where two were expected, in a test that looked
+   unrelated. Fixed with `enableAutoUnmount(afterEach)`.
+2. **`App.spec.ts` needed `ThemeToggle` stubbed.** `App` renders it, and `useTheme` calls
+   `matchMedia`, which jsdom lacks — so mounting `App` threw. Stubbed, as `ProjectsCard.spec.ts`
+   stubs the dialogs that own their own suites.
+3. Two `as` assertions in the mocked store were flagged by `no-unnecessary-type-assertion` and
+   removed.
