@@ -151,3 +151,35 @@ then `seq` ASCENDING, in that order. (`firebase firestore:indexes` cannot verify
 says.)
 
 **Deviation from the plan:** none, beyond the extra work of proving the red step.
+
+## T6 — The typed messages client
+
+**Red.** `frontend/src/lib/messagesApi.spec.ts`, mocking `@/lib/apiClient`'s `request` as
+`projectsApi.spec.ts` does. `listMessages('proj-1')` calls `/api/projects/proj-1/messages` and
+unwraps `{ messages }`, including the empty case; `sendMessage` is a `POST` with
+`Content-Type: application/json` and a body of **exactly** `{ content: 'hi' }`; both encode an id
+needing escaping; both surface the server's message on a rejection; `MESSAGE_LIMIT` is 200.
+
+**Green.** `frontend/src/lib/messagesApi.ts` — `Message`, `MESSAGE_LIMIT`, `listMessages`,
+`sendMessage`, with `pathFor` using `encodeURIComponent`.
+
+**Refactor.** Header comment in `projectsApi.ts`'s voice, including why appending the returned
+pair is not a deviation from the liveness rule.
+
+**Deviation from the plan:** `MESSAGE_LIMIT` lives in `messagesApi.ts` as the plan specifies, and
+gained a test of its own pinning it to 200 — a duplicated constant with no assertion is a copy
+waiting to drift.
+
+## T7 — `formatTime`
+
+**Red.** Four cases in `frontend/src/lib/date.spec.ts`: `09:05` for `T09:05:00Z`, `23:30` for
+`T23:30:00Z` without shifting into the local zone, `00:00` for midnight (not `24:00`, which
+`hour12: false` produces without care), and `null` for `''` / `'not a date'` / `'undefined'`.
+
+**Green.** A second module-scope `Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute:
+'2-digit', hour12: false, timeZone: 'UTC' })` and `formatTime(iso)`.
+
+**Refactor.** The "why pinned" comment folded to cover both formatters.
+
+**Deviation from the plan:** none. The midnight case is one line beyond the plan's list, guarding
+a real `Intl` foot-gun.
