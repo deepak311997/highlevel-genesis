@@ -19,7 +19,7 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 | 2 — HighLevel connection | ✅ merged to `main` |
 | 2b — API-only data access | ✅ merged to `main` |
 | 3 — Projects | ✅ merged to `main` |
-| 4 — Workspace shell & chat persistence | 🔵 built — awaiting review |
+| 4 — Workspace shell & chat persistence | 🟡 reviewed — PR open, awaiting merge |
 | 5–13 | not started |
 
 **Slices from here run unattended.** `scripts/autopilot.sh` drives the five-stage loop
@@ -34,13 +34,14 @@ been red since Slice 1: `vite.config.ts` threw at config load on any checkout wi
 8080 — the *development* emulator — so off CI it "passed" by finding a dev session, loading
 its rules over that session's and calling `clearFirestore()` on it.
 
-**Suite, run in full on `slice/04-workspace-shell` when the build finished (2026-08-17):**
-typecheck 0 · lint 0 · **742 unit** (286 functions · 445 frontend · 11 scripts) ·
+**Suite, re-run in full on `slice/04-workspace-shell` at ship time (2026-08-17):**
+typecheck 0 · lint 0 · **748 unit** (286 functions · 451 frontend · 11 scripts) ·
 **26 rules** · **198 integration** · **9 e2e**. All six green.
 
-Slice 4 added 106 unit cases (14 functions · 92 frontend), 7 rules cases, 43 integration cases
+Slice 4 added 112 unit cases (14 functions · 98 frontend), 7 rules cases, 43 integration cases
 and 3 e2e cases. The previous full run, at Slice 3's ship time, was 636 unit · 19 rules ·
-155 integration · 6 e2e.
+155 integration · 6 e2e. Six of the frontend cases are the review's own — the staleness guard
+in `stores/workspace.ts`, written test-first after the build's 742-case run.
 
 Slice 3 added 131 unit cases, 7 rules cases, 69 integration cases and 2 e2e tests. The rules
 suite grew for the first time since 2b — `users/{uid}/projects/{projectId}` is a new
