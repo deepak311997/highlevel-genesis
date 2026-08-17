@@ -71,6 +71,17 @@ const consumedCodes = new Set<string>()
 let receivedCalls = 0
 
 /**
+ * How many refresh grants have been asked for since the last reset.
+ *
+ * Separate from {@link receivedCalls} because the property it exists to prove
+ * is different in kind: not "was anything sent" but "was it sent **once**". A
+ * concurrent rotation that ran twice would still answer every caller
+ * successfully, so the count is the only evidence D23's short-circuit is doing
+ * anything at all.
+ */
+let refreshGrants = 0
+
+/**
  * Control routes are spelled `__name` and are not counted.
  *
  * A counter that counted the read of itself would make every assertion in the
@@ -303,6 +314,15 @@ export function buildFakeHlRouter(enabled: boolean): Router {
     res.json({ ok: true })
   })
 
+  router.get('/__fake-hl/__refresh-count', (_req, res) => {
+    res.json({ total: refreshGrants })
+  })
+
+  router.delete('/__fake-hl/__refresh-count', (_req, res) => {
+    refreshGrants = 0
+    res.json({ ok: true })
+  })
+
   /**
    * The consent screen. Two controls, because a demo that cannot be declined
    * leaves the denied path untested.
@@ -331,6 +351,9 @@ export function buildFakeHlRouter(enabled: boolean): Router {
     const body = (req.body ?? {}) as Record<string, string>
 
     if (body['grant_type'] === 'refresh_token') {
+      // Counted before the outcome is decided: what AC-26 asks is how many
+      // refresh requests *reached* HighLevel, not how many succeeded.
+      refreshGrants += 1
       const token = body['refresh_token'] ?? ''
       if (token.startsWith('dead-')) {
         res
