@@ -24,7 +24,7 @@ import {
   type GenerateErrorCode,
   type LlmEvent,
 } from './llm'
-import { planFileWrites } from './files/handlers'
+import { planFileWrites, readProjectFiles } from './files/handlers'
 import { fileErrorCopy } from './files/schema'
 import { appendAssistantMessage, readTranscript } from './messages/handlers'
 import { MESSAGE_LIMIT } from './messages/schema'
@@ -240,7 +240,10 @@ export const generate = onRequest(
  * 3. the 200-message cap, which this route writes into and so has to honour;
  * 4. the context, with trailing assistant turns dropped (D6);
  * 5. an empty context, which is a 400 before any LLM call (D7);
- * 6. the upstream stream — a missing API key throws here, and it is still an
+ * 6. the project's files, which become the system block after the breakpoint
+ *    (Slice 9 D11) — capped at `FILE_LIMIT`, and a failure here is still an
+ *    ordinary 500 rather than a mid-stream frame (Slice 9 AC-28);
+ * 7. the upstream stream — a missing API key throws here, and it is still an
  *    ordinary 500 with the reason logged rather than surfaced.
  *
  * Only then do headers go out.
@@ -284,8 +287,20 @@ export async function handleGenerate(req: Request, res: Response, uid: string): 
     )
   }
 
+  /*
+   * The project's own files, which become the system block appended after the
+   * `cache_control` breakpoint (Slice 9 D11, D26).
+   *
+   * **Before the flush, deliberately.** It is the third Firestore read on this
+   * path and so the third way it can fail; sitting here, a failure is an
+   * ordinary JSON 500 with a real status line rather than an `error` frame on a
+   * 200 that has already gone out (D9, R8, AC-28). It is capped at `FILE_LIMIT`
+   * documents, so the cost is bounded by the same number that bounds a project.
+   */
+  const files = await readProjectFiles(uid, projectId)
+
   const startedAt = Date.now()
-  const stream = await openStream(buildParams(context))
+  const stream = await openStream(buildParams(context, files))
 
   /*
    * D21, AC-17, AC-18. Aborting rather than letting the generation run to

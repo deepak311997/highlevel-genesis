@@ -185,7 +185,10 @@ function storedFile(path: string, content: string): { id: string; data: () => un
  * both would not tell us which one the handler was waiting on.
  */
 function fakeFilesDb(
-  options: { files?: readonly { id: string; data: () => unknown }[]; rejectProjectFiles?: true } = {},
+  options: {
+    files?: readonly { id: string; data: () => unknown }[]
+    rejectProjectFiles?: true
+  } = {},
 ): unknown {
   const files = options.files ?? []
   return {
