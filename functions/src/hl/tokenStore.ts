@@ -91,11 +91,27 @@ function snapshotOf(stored: StoredTokens): ConnectionSnapshot {
  * deliberately touches **nothing else** — in particular it does not clear the
  * refresh token, because §3's first rule is never to destroy a token that may
  * still be valid, and reconnecting overwrites the document anyway.
+ *
+ * **Best effort, and that is the point.** `update` rejects on a document that
+ * is not there, and this write races a disconnect: `handleDeleteConnection`
+ * hard-deletes, so a call that resolved a connection and then got a 401 from
+ * HighLevel can find nothing left to mark. Left unguarded, that rejection
+ * escapes `handleProxy` and the terminal handler answers `500 internal` — the
+ * marking, which is an optimisation for the *next* call, would have eaten the
+ * `409 hl_reconnect_required` this one is owed (D20, AC-31). So the failure is
+ * logged and swallowed. Nothing is lost by not marking a document that no
+ * longer exists.
  */
 export async function markNeedsReconnect(uid: string): Promise<void> {
-  await getDb()
-    .doc(`${CONNECTIONS}/${uid}`)
-    .update({ needsReconnect: true, updatedAt: FieldValue.serverTimestamp() })
+  try {
+    await getDb()
+      .doc(`${CONNECTIONS}/${uid}`)
+      .update({ needsReconnect: true, updatedAt: FieldValue.serverTimestamp() })
+  } catch {
+    // No field of the document, and no uid: this is the collection that holds
+    // live tokens, and "which write failed" is not a diagnostic worth the risk.
+    logAuthEvent('hl.mark_reconnect_failed', { outcome: 'invalid' })
+  }
 }
 
 export function firestoreTokenDeps(): TokenDeps {
@@ -137,15 +153,28 @@ type Rotation =
  * already been spent — `invalid_grant`, and a connection dead until the user
  * reinstalls.
  *
- * Two properties close that, and both live in this function:
+ * Three properties close that, and all three live in this function:
  *
  * 1. Firestore read-write transactions are **pessimistic**. The second caller's
  *    `tx.get` on this document blocks until the first commits, so the two do not
  *    race — they queue.
  * 2. The body **re-reads and short-circuits**. Having waited, the second caller
- *    finds a token the first already rotated and returns it, and a transaction
- *    that Firestore *retried* re-enters here and does the same. That is what
- *    stops a retry from re-spending a refresh token.
+ *    finds a token the first already rotated and returns it.
+ * 3. A **retry of this same transaction reuses the grant it already bought**.
+ *
+ * The third is not the second, and conflating them is the bug this shape was
+ * written to have and now does not. A transaction the SDK retries re-enters the
+ * body against a document its own aborted attempt did **not** change — the
+ * staged `tx.update` was rolled back — so the re-read finds the same stale token
+ * and the same refresh token, and short-circuits on neither. It would then
+ * present a refresh token the first attempt had already spent, which against a
+ * HighLevel that rotates on use is `invalid_grant`: indistinguishable from a
+ * genuinely dead grant, so the connection would be marked `needsReconnect`, the
+ * good grant the first attempt was issued would be discarded with the rolled-back
+ * write, and the user would have to reinstall the marketplace app. A transaction
+ * rollback cannot un-spend a network call, so the only fix is not to make it
+ * twice — hence `spent` below, which lives outside the body and therefore
+ * survives a retry.
  *
  * The honest residue, which the PRD measured rather than assumed: if locking
  * ever failed to serialise the two, both would refresh, both would succeed, and
@@ -170,6 +199,19 @@ async function rotate(uid: string): Promise<string> {
   const db = getDb()
   const ref = db.doc(`${CONNECTIONS}/${uid}`)
 
+  /*
+   * What this call has already bought from HighLevel, held **outside** the
+   * transaction body so a retry can see it (property 3 above).
+   *
+   * Keyed by the refresh token that was presented, not merely present: if the
+   * document has moved on to a refresh token we did not spend, somebody else
+   * rotated in the meantime and their grant is the current one — writing ours
+   * over it would orphan theirs. In that case the re-read short-circuit has
+   * already returned, and if it has not, presenting the document's own token is
+   * the right thing to do.
+   */
+  let spent: { refreshToken: string; issued: TokenResponse } | undefined
+
   const outcome = await db.runTransaction<Rotation>(async (tx) => {
     const snapshot = await tx.get(ref)
     const stored = snapshot.exists ? parseStored(snapshot.data()) : undefined
@@ -182,26 +224,33 @@ async function rotate(uid: string): Promise<string> {
     }
 
     let next: TokenResponse
-    try {
-      next = await refreshTokens(stored.refreshToken)
-    } catch (err) {
-      if (isDefinitiveRefreshFailure(err)) {
-        /*
-         * The flag, and **nothing else**. In particular the refresh token is
-         * left exactly as it is: §3's first rule is never to destroy a token
-         * that may still be valid, and reconnecting overwrites the document
-         * anyway, so clearing it buys nothing and costs the one piece of
-         * evidence a support conversation would want.
-         */
-        tx.update(ref, { needsReconnect: true, updatedAt: FieldValue.serverTimestamp() })
-        return { kind: 'dead' }
-      }
+    if (spent?.refreshToken === stored.refreshToken) {
+      // A retry. The grant is already bought and paid for; re-presenting the
+      // token that bought it is what would kill the connection.
+      next = spent.issued
+    } else {
+      try {
+        next = await refreshTokens(stored.refreshToken)
+        spent = { refreshToken: stored.refreshToken, issued: next }
+      } catch (err) {
+        if (isDefinitiveRefreshFailure(err)) {
+          /*
+           * The flag, and **nothing else**. In particular the refresh token is
+           * left exactly as it is: §3's first rule is never to destroy a token
+           * that may still be valid, and reconnecting overwrites the document
+           * anyway, so clearing it buys nothing and costs the one piece of
+           * evidence a support conversation would want.
+           */
+          tx.update(ref, { needsReconnect: true, updatedAt: FieldValue.serverTimestamp() })
+          return { kind: 'dead' }
+        }
 
-      // Aborts the transaction, so nothing at all is written (D26). A 5xx, a
-      // network error and a timeout say nothing about the connection, and a
-      // blip recorded as a dead connection is unrecoverable without a
-      // reinstall.
-      throw new HlRefreshUnavailableError()
+        // Aborts the transaction, so nothing at all is written (D26). A 5xx, a
+        // network error and a timeout say nothing about the connection, and a
+        // blip recorded as a dead connection is unrecoverable without a
+        // reinstall.
+        throw new HlRefreshUnavailableError()
+      }
     }
 
     tx.update(ref, {
