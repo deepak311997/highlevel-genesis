@@ -402,8 +402,8 @@ bundle and share no module with it, the *relationship* between the counts is
 `params.spec.ts`'s business, and what this file owns is the number that actually went over
 the wire.
 
-- `ee02b7f` test: the fake reports the blocks, messages and paths it was sent
-- `bd5b5ea` feat: add the __context marker, reporting what the request carried
+- `4b064f1` test: the fake reports the blocks, messages and paths it was sent
+- `d3e9f66` feat: add the __context marker, reporting what the request carried
 
 ---
 
