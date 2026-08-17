@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest'
 
-import { createFileCollector, type CollectorFrame, type CollectResult } from './fileops'
+import {
+  createFileCollector,
+  createFileSplitter,
+  MAX_INDENT,
+  MAX_LINE,
+  OPEN_HEAD,
+  OPEN_TAIL,
+  type CollectorFrame,
+  type CollectResult,
+  type SplitEvent,
+} from './fileops'
+import { PATH_MAX } from '../files/schema'
 
 /**
  * The splitter and the collector — the pure boundary this slice is built on
@@ -223,5 +234,172 @@ describe('three blocks separated by prose (AC-3)', () => {
       'file_start:app.js',
       'file_end:app.js',
     ])
+  })
+})
+
+/**
+ * Near-delimiters, tags inside content, and the line-start rule (AC-5, AC-6, P1,
+ * P4).
+ *
+ * The splitter is exercised directly here rather than through the collector,
+ * because what is being asserted is the **grammar**: which lines are delimiters
+ * and which are text. Going through the collector would put both normalisers
+ * between the assertion and the thing it is about.
+ */
+
+function split(text: string): SplitEvent[] {
+  const splitter = createFileSplitter()
+  return [...splitter.push(text), ...splitter.finish()]
+}
+
+/** Every byte the splitter kept, in order — delimiter lines excluded. */
+const text = (events: SplitEvent[]): string =>
+  events
+    .flatMap((event) => (event.kind === 'prose' || event.kind === 'content' ? [event.text] : []))
+    .join('')
+
+const OPEN = '<genesis:file path="app.js">\n'
+const CLOSE = '</genesis:file>\n'
+
+describe('content that looks like markup (AC-5)', () => {
+  const BODY = [
+    '<!doctype html>\n',
+    'if (a < b && b > c) return\n',
+    '```js\n',
+    'const x = 1\n',
+    '```\n',
+    '<genesis:file path="nested.js">\n',
+    '</genesis:file >\n',
+    'x</genesis:file>\n',
+    ' </genesis:files>\n',
+  ].join('')
+
+  const INPUT = `Before.\n${OPEN}${BODY}${CLOSE}After.\n`
+
+  it('preserves the body verbatim, closing only on the real tag', () => {
+    const splitter = createFileSplitter()
+    const events = [...splitter.push(INPUT), ...splitter.finish()]
+
+    expect(events.flatMap((event) => (event.kind === 'content' ? [event.text] : [])).join('')).toBe(
+      BODY,
+    )
+  })
+
+  /*
+   * A nested open tag inside a block is content (P4): inside a block only the
+   * close tag is a delimiter, which is what AC-5 requires and what halves the
+   * candidate set the hold-back has to consider.
+   */
+  it('opens exactly one block and closes it exactly once', () => {
+    expect(split(INPUT).filter((event) => event.kind === 'open')).toHaveLength(1)
+    expect(split(INPUT).filter((event) => event.kind === 'close')).toHaveLength(1)
+  })
+
+  /** Nothing is lost and nothing is duplicated: the two tag lines, and no more. */
+  it('keeps every byte of the input except the two delimiter lines', () => {
+    expect(text(split(INPUT))).toBe(`Before.\n${BODY}After.\n`)
+  })
+
+  /* A stray close tag in prose is prose, for the same reason (P4). */
+  it('treats a close tag outside a block as ordinary prose', () => {
+    const events = split(`Here is one: ${CLOSE}and that is all.\n`)
+
+    expect(events.filter((event) => event.kind === 'close')).toHaveLength(0)
+    expect(text(events)).toBe(`Here is one: ${CLOSE}and that is all.\n`)
+  })
+})
+
+describe('the line-start rule (AC-6)', () => {
+  const opened = (line: string): boolean =>
+    split(`${line}\nbody\n${CLOSE}`).some((event) => event.kind === 'open')
+
+  it.each([
+    ['no indent', '<genesis:file path="app.js">'],
+    ['one space', ' <genesis:file path="app.js">'],
+    ['eight spaces', '        <genesis:file path="app.js">'],
+    ['a tab', '\t<genesis:file path="app.js">'],
+    ['trailing spaces after the tag', '<genesis:file path="app.js">   '],
+  ])('treats an open tag with %s as a delimiter', (_label, line) => {
+    expect(opened(line)).toBe(true)
+  })
+
+  it.each([
+    ['a non-whitespace character before it', 'x<genesis:file path="app.js">'],
+    ['a full stop before it', '. <genesis:file path="app.js">'],
+    ['nine spaces', '         <genesis:file path="app.js">'],
+    // P1: allowing a trailing suffix would open a file *and* eat the sentence.
+    ['trailing prose on the line', '<genesis:file path="app.js"> and here is why'],
+    ['an unquoted path', '<genesis:file path=app.js>'],
+    ['a missing closing quote', '<genesis:file path="app.js>'],
+    ['a missing angle bracket', '<genesis:file path="app.js"'],
+    ['a quote inside the path', '<genesis:file path="a"b.js">'],
+    ['a different tag name', '<genesis:files path="app.js">'],
+  ])('treats an open tag with %s as prose', (_label, line) => {
+    expect(opened(line)).toBe(false)
+  })
+
+  const closed = (line: string): boolean =>
+    split(`${OPEN}body\n${line}\n`).some((event) => event.kind === 'close')
+
+  it.each([
+    ['no indent', '</genesis:file>'],
+    ['four spaces', '    </genesis:file>'],
+    ['a tab', '\t</genesis:file>'],
+    ['trailing tabs', '</genesis:file>\t'],
+  ])('treats a close tag with %s as a delimiter', (_label, line) => {
+    expect(closed(line)).toBe(true)
+  })
+
+  it.each([
+    ['a character before it', 'x</genesis:file>'],
+    ['nine spaces', '         </genesis:file>'],
+    ['a space inside the tag', '</genesis:file >'],
+    ['trailing prose', '</genesis:file> done'],
+  ])('treats a close tag with %s as content', (_label, line) => {
+    expect(closed(line)).toBe(false)
+  })
+
+  /* The path capture is syntax only (D8): these all open a block and are refused
+   * by `validateFileOps` at the terminal. */
+  it.each(['../secrets.js', 'assets/app.js', '', 'A.HTML'])(
+    'opens a block for the syntactically valid path %s and validates nothing',
+    (path) => {
+      const events = split(`<genesis:file path="${path}">\nbody\n${CLOSE}`)
+
+      expect(events[0]).toEqual({ kind: 'open', path })
+    },
+  )
+})
+
+describe('the hold-back bound', () => {
+  /*
+   * Named and asserted rather than argued in a comment. The bound is what stops
+   * an adversarial reply from making the splitter buffer without limit: a line
+   * longer than this cannot be a delimiter, so it is emitted rather than held.
+   */
+  it('is the longest line a delimiter could possibly occupy', () => {
+    expect(MAX_LINE).toBe(
+      MAX_INDENT + OPEN_HEAD.length + PATH_MAX + OPEN_TAIL.length + MAX_INDENT + 1,
+    )
+    expect(MAX_LINE).toBe(103)
+  })
+
+  /**
+   * The property the bound exists for: a delimiter-shaped prefix followed by a
+   * very long path is emitted rather than held for ever.
+   */
+  it('emits a partial line that has grown past the bound', () => {
+    const splitter = createFileSplitter()
+    const long = OPEN_HEAD + 'a'.repeat(MAX_LINE)
+
+    expect(text(splitter.push(long))).toBe(long)
+  })
+
+  /* And a partial line still inside the bound is held, so the tag survives a split. */
+  it('holds a partial line that could still become a delimiter', () => {
+    const splitter = createFileSplitter()
+
+    expect(splitter.push('<genesis:fi')).toEqual([])
+    expect(splitter.push('le path="a.js">\n')).toEqual([{ kind: 'open', path: 'a.js' }])
   })
 })
