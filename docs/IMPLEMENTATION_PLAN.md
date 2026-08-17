@@ -18,7 +18,7 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 | 1 — Account & session | ✅ merged to `main` |
 | 2 — HighLevel connection | ✅ merged to `main` |
 | 2b — API-only data access | ✅ merged to `main` |
-| 3 — Projects | ✅ built and reviewed — ship pending |
+| 3 — Projects | ✅ shipped — PR open, awaiting merge |
 | 4–13 | not started |
 
 **Slices from here run unattended.** `scripts/autopilot.sh` drives the five-stage loop
@@ -33,14 +33,15 @@ been red since Slice 1: `vite.config.ts` threw at config load on any checkout wi
 8080 — the *development* emulator — so off CI it "passed" by finding a dev session, loading
 its rules over that session's and calling `clearFirestore()` on it.
 
-**Suite, re-run in full on `slice/03-projects` at build completion (2026-08-17):**
-typecheck 0 · lint 0 · **602 unit** (239 functions · 352 frontend · 11 scripts) ·
+**Suite, re-run in full on `slice/03-projects` at ship time (2026-08-17):**
+typecheck 0 · lint 0 · **607 unit** (243 functions · 353 frontend · 11 scripts) ·
 **19 rules** · **155 integration** · **6 e2e**. All six green.
 
-Review then added five cases — four L1 on the project schemas and one L2 on the dashboard —
-taking unit to **607** (243 functions · 353 frontend · 11 scripts). See `05-review.md`.
+Unit stood at 602 when the build finished; the review added five cases — four L1 on the
+project schemas, and one L2 that mounts the real projects card inside the real dashboard,
+for an AC that until then nothing asserted. See `05-review.md`.
 
-Slice 3 added 126 unit cases, 7 rules cases, 69 integration cases and 2 e2e tests. The rules
+Slice 3 added 131 unit cases, 7 rules cases, 69 integration cases and 2 e2e tests. The rules
 suite grew for the first time since 2b — `users/{uid}/projects/{projectId}` is a new
 collection, and every one of its cases is an `assertFails`, because rules do not cascade into
 subcollections and this block is required rather than decorative.
