@@ -194,3 +194,38 @@ export function logGenerationEvent(event: string, context: GenerationLogContext)
   const safe = redact(context) as Record<string, unknown>
   console.info(JSON.stringify({ event, ...safe }))
 }
+
+/**
+ * Context a proxy log line may carry — D28's one line per HighLevel call.
+ *
+ * **A third narrow context rather than a widening of either of the others**,
+ * and for the reason {@link AuthLogContext} already states: one typed context
+ * per event family is what makes "no request body, no response body, no token,
+ * no contact id" a property of the type instead of a habit. This is the family
+ * where that matters most — every proxied response is somebody's CRM data, and
+ * a log sink retains what it is given for far longer than the request.
+ *
+ * `pattern` is the **matched pattern**, never the concrete path. A pattern
+ * aggregates, which is what makes the line useful; a concrete path carries a
+ * contact id into Cloud Logging for no operational gain at all.
+ *
+ * `rateLimitRemaining` is here because §5's burst problem is invisible until
+ * somebody is already at 429. It is the header verbatim — a string, or null
+ * when upstream sent none — rather than a parsed number, so a value we did not
+ * expect is visible instead of becoming `NaN`.
+ *
+ * No field matches `SENSITIVE_KEY`, so nothing here is redacted away; the pass
+ * still runs, for a value that arrives despite the type.
+ */
+export interface ProxyLogContext {
+  pattern: string
+  status: number
+  durationMs: number
+  rateLimitRemaining: string | null
+}
+
+/** Emit one structured line for a proxied call. */
+export function logProxyEvent(event: string, context: ProxyLogContext): void {
+  const safe = redact(context) as Record<string, unknown>
+  console.info(JSON.stringify({ event, ...safe }))
+}
