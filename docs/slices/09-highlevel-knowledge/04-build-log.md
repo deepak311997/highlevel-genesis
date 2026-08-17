@@ -295,3 +295,184 @@ of this build with the rest of the suite.
 
 **After all four lanes:** `functions` unit suite 43 files / 1031 tests green, `typecheck`
 clean, `lint` clean at zero warnings.
+
+---
+
+## T11 — The two counters → AC-24
+
+Back to a single chain from here: T11, T12 and T13 all edit `generate.ts` /
+`generate.spec.ts` or depend on the wiring the one before it added, so they were never
+lane candidates.
+
+**Red** — `generate.spec.ts`. `OUTCOME` gains `hlCallsKnown` and `hlCallsUnknown`, the
+`it.each` gains both, and the exact-key assertion grows from nine keys to eleven. Two
+handler cases were added beyond the plan, because the projection alone leaves the
+interesting half untested: **the counters must be computed from the turn's file blocks, not
+from its chat text.** A wiring that counted the prose would emit two perfectly plausible
+integers and be wrong about what they mean, and nothing in the plan's red would notice. So
+the stream writes one file holding an allowlisted call and one the proxy would refuse, and
+*mentions a third call in the prose* — which is what tells the two wirings apart. Five
+failures.
+
+**Green** — `GenerationLogContext` gains the two integer fields, `logGeneration` projects
+them (the "eight fields" note in its comment is now ten), and `log.spec.ts`'s literal gains
+them. In `finishTurn`, `collector.finish()` moved **above** the `logGeneration` call; it
+emits no frames of its own and the frame loop stayed where it was, so the only thing the
+reordering changes is that `collected` exists in time to be counted.
+
+The interface header now carries the argument for admitting anything to a deliberately
+body-less context, because it will be needed again: the bar is not "is it useful?" but
+"can it hold user content?" — and an integer cannot carry a contact id, a path or a
+sentence somebody wrote.
+
+`llm/index.ts` also gained this slice's re-exports here: `estimateTokens` and the two
+budgets, `extractHlCalls`/`countHlCalls`, and `buildProjectState` with
+`PROJECT_FILE_OPEN`/`PROJECT_FILE_CLOSE` and the `ProjectFile` type. **`hlKnowledge` is
+deliberately not re-exported** — it is `prompt.ts`'s input and nobody else's, exactly as
+the plan's file map says. `PROJECT_FILE_OPEN` is there because T13's fake reads it back out
+of the assembled block, so the delimiter keeps one definition.
+
+- `95613ee` test: generation.complete carries the hl() counters, read from the file blocks
+- `ab22d61` feat: count the generated hl() calls onto generation.complete
+
+## T12 — The handler reads the project's files → AC-13, AC-14 (wiring), AC-28
+
+**Red** — three cases: the files reach `buildParams` as one extra block that is last and
+names them; a project with no files sends `SYSTEM_PROMPT` by identity; and the file read
+failing rejects with `headersSent === false`, `openStream` never called, and no frame
+written.
+
+The `getDb` stubs in this file were three separate inline literals answering only
+`readFilePaths`'s `.limit().select().get()`. They became one `fakeFilesDb` helper answering
+**both** reads and telling them apart **by call shape** — `.limit(n).select().get()` for the
+cap check, `.orderBy('path').limit(n).get()` for the context. That is what lets
+`rejectProjectFiles` fail exactly one of the two; a fake that could only fail both would
+not tell us which read the handler was waiting on, which is the whole of AC-28. Two
+failures, and every pre-existing case still green.
+
+**Green** — `readProjectFiles(uid, projectId)` between the empty-context check and
+`openStream`, its result passed to `buildParams`. The numbered order comment above
+`handleGenerate` grew a sixth step.
+
+**AC-28 is at L1, and the plan says why.** There is no honest way to make an Admin SDK read
+fail against the Firestore emulator: a corrupt document is *parsed and skipped*, not a read
+failure, and forcing a real one would mean a fault-injection path in production code — a
+backdoor whose only purpose is to prove an error message. At L1 `getDb` is already mocked
+and `res.headersSent` is directly observable. The neighbouring real behaviour is asserted
+at L4 instead (T13's third case).
+
+- `e771864` test: the handler reads the project's files, and fails before the flush
+- `abd451b` feat: read the project's files into the request, before the flush
+
+## T13 — The `__context` marker → AC-27
+
+**Red** — `fake.spec.ts` gains four cases driving the fake with real `buildParams` output,
+and `tests/integration/generate-context.spec.ts` is new with five. Three L1 failures
+(`Unexpected token 'H', "Here is a "... is not valid JSON` — the fake was still replaying
+the recorded reply).
+
+**Green** — `FakeParams` widens to `{ messages, system? }`, `planFor` takes the whole
+params, and `__context` joins `MARKERS` and the marker table in the module header. Its plan
+is built programmatically like `longEvents()` rather than from a fixture, because the answer
+depends on the input — a recorded sequence could only describe a request somebody typed out
+by hand, which is the opposite of what this is for.
+
+Two properties worth stating, both in the code:
+
+- **The paths are recovered with `PROJECT_FILE_OPEN`, the builder's own exported
+  delimiter.** A literal `'===== FILE '` in the fake would be a second definition of the
+  format, and the first one to change would go unnoticed — which is precisely the class of
+  drift this marker exists to catch elsewhere. The omitted-files manifest renders as
+  `- path (n characters)` and so does not match, which is correct: what is reported is what
+  the model was actually *shown*.
+- **The report is counts and paths, never content.** A fake that echoed the blocks back
+  would push the whole project's code through the SSE stream and into every failure dump,
+  and would turn this marker into a way to read a prompt rather than a way to check a
+  wiring.
+
+The L4 suite covers AC-27 (three files ⇒ four blocks and the three paths in the *builder's*
+order, not Firestore's), AC-13 over the wire (no files ⇒ three blocks, no paths), the
+corrupt-document case the AC-28 deviation owes (a file document whose id and `path`
+disagree is skipped, the generation still completes, and the other two files still reach the
+model), and the transcript half (a trailing assistant turn is dropped before the request
+goes out, so the fake counts one message where the collection holds two).
+
+`STABLE_BLOCKS = 3` is written out rather than imported: these tests run against the built
+bundle and share no module with it, the *relationship* between the counts is
+`params.spec.ts`'s business, and what this file owns is the number that actually went over
+the wire.
+
+- `ee02b7f` test: the fake reports the blocks, messages and paths it was sent
+- `bd5b5ea` feat: add the __context marker, reporting what the request carried
+
+---
+
+## Definition of done
+
+### Every acceptance criterion maps to a named, passing test
+
+| AC | Level | Test file |
+|---|---|---|
+| AC-1, 2, 3, 5, 6, 7, 8, 9 | L1 | `functions/src/llm/hlKnowledge.spec.ts` |
+| AC-4, 10, 11 | L1 | `functions/src/llm/prompt.spec.ts` |
+| AC-12, 13, 22 | L1 | `functions/src/llm/params.spec.ts` |
+| AC-14, 15, 16, 17 | L1 | `functions/src/llm/projectState.spec.ts` (AC-14's wiring also in `params.spec.ts`) |
+| AC-18, 19, 20, 21 | L1 | `functions/src/llm/context.spec.ts` |
+| AC-23, 25 | L1 | `functions/src/llm/hlCalls.spec.ts` |
+| AC-24, 28 | L1 | `functions/src/generate.spec.ts` |
+| AC-27 | L4 | `tests/integration/generate-context.spec.ts` |
+| AC-26 | L5 | `tests/e2e/files.spec.ts` |
+
+AC-28 is at L1 rather than L4 — the plan's first recorded deviation, restated under T12.
+AC-25's "golden reply fixture" is `tests/fixtures/llm/reply.json` rather than a new file —
+the plan's second, and what lets AC-25 and AC-26 assert the same artefact.
+
+### The full suite, green
+
+| Target | Result |
+|---|---|
+| `npm run typecheck` | clean (root, functions, frontend) |
+| `npm run lint` | clean, zero warnings |
+| `npm run test:unit` | functions 43 files / **1,042** tests · frontend 51 / **684** · scripts 3 / **21** |
+| `npm run test:rules` | passed, **unchanged** — no rules diff in this slice, which is the point |
+| `npm run test:integration` | 16 files / **329** tests |
+| `npm run test:e2e` | **14** passed |
+
+### The rest of the checklist
+
+- **No new Firestore collection, so no new rules.** This slice reads
+  `users/{uid}/projects/{projectId}/files`, which Slice 6 created and whose L3 denial tests
+  already exist. `firestore.rules` and `tests/rules/` are byte-identical to `main` — a diff
+  there would have been a mistake, not a feature.
+- **F8 error paths.** The file read's failure is a pre-flush JSON error with a real status
+  (AC-28), and the `hl()` error contract is taught in full — all twelve codes read from
+  `PROXY_ERROR_CODES`, `try`/`catch`, show `message`, reconnect on `hl_reconnect_required`
+  (AC-7).
+- **No new screen**, so the loading/empty/error requirement is vacuous. Recorded in D21
+  rather than skipped; not one frontend file changed, and the frontend suite is untouched
+  at 684 tests.
+- **No secrets in source.** `.env.example` unchanged — `HL_ALLOW_MESSAGE_SEND` was already
+  documented by Slice 8.
+- **No new dependency** in any package, and no `firestore.indexes.json` entry owed: the one
+  new read is `orderBy('path')` on a single field, served by Firestore's automatic index.
+
+### Owed to the PR, and not dischargeable here
+
+Three manual checks need credentials this session does not have. They are the PRD's own,
+and they go in the PR as named, unticked items rather than being quietly dropped — R1 says
+the whole slice is judged on model behaviour no automated test can observe, and D20 says it
+plainly: **the L1 prompt tests assert what the model is told, and no automated test in this
+repository can assert what the model does.**
+
+1. One real generation of "build a contact dashboard with a list of upcoming appointments",
+   with the generated `app.js` pasted into the PR.
+2. Two generations in one session, showing `cacheCreationInputTokens > 0` on the first and
+   `cacheReadInputTokens > 0` on the second — which is what retires Slice 5 D16 (D18).
+3. An effort sweep at `high` versus `xhigh`, recording time-to-first-token, and a note on
+   whether D17 should change.
+
+The emulator-only checks in the plan's *Manual verification* section are all discharged by
+automated tests instead: the two `hl(...)` calls in `app.js` (AC-25, AC-26), the
+`generation.complete` counters reading 2 and 0 for that fixture (`hlCalls.spec.ts`), the
+`__context` block count of 4 with files and 3 without (`generate-context.spec.ts`), and
+`POST /conversations/messages` appearing only under `HL_ALLOW_MESSAGE_SEND=true` (AC-3).
