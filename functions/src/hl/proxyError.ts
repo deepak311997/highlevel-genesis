@@ -68,6 +68,22 @@ const MESSAGES = {
 
 export type ProxyErrorCode = keyof typeof MESSAGES
 
+/**
+ * The same set, as **data** — one table, two consumers (Slice 9 D5).
+ *
+ * Slice 9's cheat-sheet has to name every code a rejected `hl()` call can carry,
+ * so that generated code can branch on one; a hand-written list in the system
+ * prompt would drift on the first code added here, and the drift is invisible —
+ * generated code branching on a `code` that no longer exists simply never runs
+ * that branch.
+ *
+ * Derived from `MESSAGES` rather than written out, and `ProxyErrorCode` is
+ * derived from the same object, so the array and the type cannot disagree.
+ * `MESSAGES` itself stays private: its *values* are user-facing copy, which is
+ * this module's business and nobody else's.
+ */
+export const PROXY_ERROR_CODES = Object.keys(MESSAGES) as readonly ProxyErrorCode[]
+
 /** Build one of our failures from its code, with upstream's text attached. */
 export function proxyError(status: number, code: ProxyErrorCode, detail?: string): HttpError {
   return new HttpError(status, MESSAGES[code], code, detail)
