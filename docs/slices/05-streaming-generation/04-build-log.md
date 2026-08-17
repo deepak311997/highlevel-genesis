@@ -95,3 +95,54 @@ client, the fake and the fixtures are still T8.
 `node_modules/@anthropic-ai/sdk/resources/messages/messages.d.ts` types `OutputConfig.effort` as
 `'low' | 'medium' | 'high' | 'xhigh' | 'max' | null`, and `MessageStreamParams =
 ParseableMessageCreateParams`, which carries `output_config`. No cast is needed anywhere.
+
+## T5 — The context builder
+
+**Commit:** `d621edc`
+
+**Tests added:** L1 `functions/src/llm/context.spec.ts` — order and roles preserved (AC-8); no `id`,
+`createdAt`, `seq` or `truncated` on any element; one trailing assistant dropped, three consecutive
+trailing assistants dropped, an assistant in the middle kept (AC-9); all-assistant and empty both
+yield `[]` (AC-10's L1 half); the caller's array is not mutated.
+
+**Green:** `functions/src/llm/context.ts`.
+
+## T6 — The request parameters
+
+**Commit:** `6dd6a88`
+
+**Tests added:** L1 `functions/src/llm/params.spec.ts` — `model` exactly `claude-opus-5`,
+`max_tokens` exactly `64000`, `output_config.effort` `'low'`, `system` the **same array reference**
+as `SYSTEM_PROMPT`, **no `thinking` key**, the context passed through untouched, and the whole
+parameter list pinned.
+
+**Green:** `functions/src/llm/params.ts`.
+
+**Deviation from the plan.** AC-6's source scan (`messages.create` appears nowhere; `messages.stream`
+appears somewhere) is deferred to T8, where `client.ts` makes the second half true. Landing it here
+would leave the suite red across two tasks for no gain.
+
+**Also:** `MessageStreamParams` is re-exported from `@anthropic-ai/sdk/resources/messages/messages`,
+not from the `resources/messages` index — the index omits it. Import path adjusted accordingly; no
+cast anywhere.
+
+## T7 — The stream mapper
+
+**Commit:** `08e5945`
+
+**Tests added:** L1 `functions/src/llm/stream.spec.ts`, 21 cases driven from hand-written SDK event
+arrays — thinking and signature deltas produce no `token` (AC-11); `end_turn` → `truncated: false`;
+`max_tokens` → `end` with `truncated: true` (AC-15); `refusal` → `error` code `refused` with empty
+text; a throw after two deltas → two `token`s then one `upstream` error carrying their text
+(AC-12); a throw before any delta and before `message_start`; the byte cap stops consumption, calls
+`abort()` exactly once, ends `truncated`, and keeps the stored text equal to the concatenation of
+the emitted tokens (AC-16); a multi-byte delta at the boundary is dropped whole, so no replacement
+character is stored; a delta landing exactly on the cap is accepted; usage merged from both events;
+and **exactly one terminal event, last**, over six different shapes.
+
+**Green:** `functions/src/llm/stream.ts`.
+
+**Deviation from the plan.** `LlmStream` is declared in `stream.ts` rather than `client.ts`. It is
+the mapper's input type and the mapper is the only thing that consumes it, so it belongs where it is
+used; `client.ts` imports it in T8. This also keeps T7 from having to create an untested `client.ts`
+just to hold an interface.
