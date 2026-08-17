@@ -33,7 +33,45 @@ const SRC = join(process.cwd(), 'src')
  * see, which is worse.
  */
 const NEEDLE = 'firebase' + '/firestore'
-const IMPORT = new RegExp(`from\\s+['"]${NEEDLE.replace('/', '\\/')}`)
+
+/**
+ * Anchored on the quote that opens a module specifier, not on `from`.
+ *
+ * `from` only covers static imports and re-exports. A side-effect import, a
+ * dynamic `import()` and a `require()` all name the module with no `from` in
+ * sight, and each one puts the SDK in the bundle just as effectively — as do
+ * the `/lite` subpath and `@firebase/firestore`, the implementation package
+ * that `firebase/firestore` re-exports and that ESLint's pattern does not
+ * match. The quote is what every one of them has in common.
+ *
+ * The optional `@` is what admits the scoped package without also admitting
+ * `@/lib/firebase`, our own wrapper, which is the import every module here is
+ * supposed to use. A bare mention in prose has no quote and does not match.
+ * `FORMS` and `INNOCENT` below are that sentence as tests.
+ */
+const IMPORT = new RegExp(`['"]@?${NEEDLE.replace('/', '\\/')}`)
+
+/** Every way the module can be named, as source a scanner has to catch. */
+const FORMS: readonly (readonly [string, string])[] = [
+  ['a named import', `import { doc } from '${NEEDLE}'`],
+  ['a side-effect import', `import '${NEEDLE}'`],
+  ['a dynamic import', `const mod = await import('${NEEDLE}')`],
+  ['a require', `const mod = require('${NEEDLE}')`],
+  ['a re-export', `export { doc } from '${NEEDLE}'`],
+  ['a subpath', `import { doc } from '${NEEDLE}/lite'`],
+  ['double quotes', `import { doc } from "${NEEDLE}"`],
+  // `@firebase/firestore` is the implementation package `firebase/firestore`
+  // re-exports. It resolves straight out of node_modules, and ESLint's
+  // `firebase/firestore` pattern does not match it, so nothing but this scan
+  // stands between it and the bundle.
+  ['the scoped implementation package', `import { doc } from '@${NEEDLE}'`],
+]
+
+const INNOCENT: readonly (readonly [string, string])[] = [
+  ['another Firebase product', `import { getAuth } from 'firebase/auth'`],
+  ['our own wrapper', `import { auth } from '@/lib/firebase'`],
+  ['a mention in prose', `// the ${NEEDLE} ban is absolute — see CLAUDE.md`],
+]
 
 /** Skipped so the scanner does not trip on its own source. */
 const SELF = 'no-firestore.spec.ts'
@@ -46,6 +84,25 @@ function sourceFiles(dir: string): string[] {
     return /\.(ts|vue)$/.test(entry.name) ? [path] : []
   })
 }
+
+describe('the scan itself', () => {
+  /*
+   * The scanner is tested before it is trusted.
+   *
+   * This layer exists to outlive the ESLint rule — someone editing the config,
+   * disabling the rule for a line, adding an allowlist entry "just for now". A
+   * scanner that catches less than the rule it is meant to outlive is worse
+   * than no scanner, because `offenders).toEqual([])` reads as proof either
+   * way. These cases are what "no import" has to mean for that to be true.
+   */
+  it.each(FORMS)('catches %s', (_label, source) => {
+    expect(IMPORT.test(source)).toBe(true)
+  })
+
+  it.each(INNOCENT)('does not fire on %s', (_label, source) => {
+    expect(IMPORT.test(source)).toBe(false)
+  })
+})
 
 describe('the frontend source tree', () => {
   it('imports nothing from the Firestore client SDK', () => {
