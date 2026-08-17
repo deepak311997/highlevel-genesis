@@ -54,6 +54,8 @@ mkdir -p "$STATE_DIR" "$LOG_DIR"
 : "${AUTOPILOT_STAGE_RETRIES:=2}"     # fresh-session retries per stage
 : "${AUTOPILOT_FIX_ATTEMPTS:=3}"      # fix sessions per red suite / red CI
 : "${AUTOPILOT_CI_TIMEOUT:=3600}"     # seconds to wait for GitHub checks
+: "${AUTOPILOT_LIMIT_WAIT:=900}"      # seconds to sleep before re-checking a usage limit
+: "${AUTOPILOT_LIMIT_MAX_WAITS:=24}"  # give up after this many (default: 6 hours)
 
 # Per-stage wall-clock ceilings, in seconds. Build is the long one.
 : "${TIMEOUT_PRD:=3600}"
@@ -331,6 +333,7 @@ run_claude() {
   local stage="$1" nn="$2" slug="$3" name="$4" mode="$5" prompt="$6" timeout="$7" attempt="$8"
   local dir="$LOG_DIR/$nn"; mkdir -p "$dir"
   local raw="$dir/$stage.$attempt.jsonl" err="$dir/$stage.$attempt.err"
+  LAST_RAW="$raw"   # read by the usage-limit check in run_stage
 
   local -a cmd=(claude -p "$prompt"
     --append-system-prompt "$(stage_addendum "$stage" "$nn" "$slug" "$name" "$mode")"
@@ -374,12 +377,27 @@ stage_artefacts_ok() {
   esac
 }
 
+# A session that ends on the account's usage limit did no work and tells us
+# nothing about the stage. Retrying it immediately just spends the remaining
+# attempts at four seconds each — which is exactly how slice 05 died with its
+# three PRD attempts inside four seconds. Waiting is the only useful response.
+# Text-matched rather than parsed with jq: the CLI interleaves the odd non-JSON
+# line into the stream (MCP capability notices, for one), and a `jq -rs` over the
+# whole file fails on those — silently returning nothing, which would read as
+# "no limit hit" exactly when the limit was hit. The last `result` field in the
+# file is the session's own verdict.
+hit_usage_limit() {
+  [[ -f "${1:-}" ]] || return 1
+  grep -o '"result":"[^"]*"' "$1" 2>/dev/null | tail -1 \
+    | grep -qiE "hit your (session|usage) limit|usage limit reached|limit . resets"
+}
+
 run_stage() {
   local stage="$1" nn="$2" slug="$3" name="$4" mode="$5" prompt="$6" timeout="$7"
 
   if is_done "$nn" "$stage"; then say "✓ slice $nn · $stage already done — skipping"; return 0; fi
 
-  local attempt=1
+  local attempt=1 waits=0
   while (( attempt <= AUTOPILOT_STAGE_RETRIES + 1 )); do
     local p="$prompt"
     if (( attempt > 1 )); then
@@ -398,6 +416,20 @@ there, or undo it deliberately and say why."
     if stage_artefacts_ok "$stage" "$nn" "$slug"; then
       mark_done "$nn" "$stage"; say "✓ slice $nn · $stage complete"; return 0
     fi
+
+    # Not a failed attempt — a session that never got to run. Wait it out and
+    # try again on the same attempt number, so the limit cannot exhaust the
+    # retries that exist for real failures.
+    if hit_usage_limit "$LAST_RAW"; then
+      (( waits++ ))
+      if (( waits > AUTOPILOT_LIMIT_MAX_WAITS )); then
+        die "slice $nn: usage limit still in force after $waits waits (~$(( waits * AUTOPILOT_LIMIT_WAIT / 3600 ))h) at stage '$stage'"
+      fi
+      say "· usage limit reached — waiting ${AUTOPILOT_LIMIT_WAIT}s, then retrying $stage (wait $waits/$AUTOPILOT_LIMIT_MAX_WAITS, attempt $attempt unchanged)"
+      sleep "$AUTOPILOT_LIMIT_WAIT"
+      continue
+    fi
+
     say "✗ slice $nn · $stage produced no usable output on attempt $attempt"
     (( attempt++ ))
   done
