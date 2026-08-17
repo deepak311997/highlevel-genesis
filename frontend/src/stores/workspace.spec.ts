@@ -48,6 +48,9 @@ const PROJECT = {
   updatedAt: '2026-08-17T09:00:00.000Z',
 }
 
+/** A second project, so a stale response has something newer to overwrite. */
+const OTHER_PROJECT = { ...PROJECT, id: 'proj-2', name: 'Appointment board' }
+
 const USER_MESSAGE = {
   id: 'msg-1',
   role: 'user' as const,
@@ -83,6 +86,20 @@ function requests(): string[] {
 function headersOf(index = 0): Record<string, string> {
   const init = (fetchMock.mock.calls[index]?.[1] ?? {}) as RequestInit
   return init.headers as Record<string, string>
+}
+
+/**
+ * A promise this test resolves by hand, so a request can be left in flight.
+ *
+ * The staleness cases below all need two requests alive at once and resolved in
+ * the wrong order, which `mockResolvedValueOnce` cannot express on its own.
+ */
+function deferred(): { promise: Promise<Response>; settle: (value: Response) => void } {
+  let settle!: (value: Response) => void
+  const promise = new Promise<Response>((resolve) => {
+    settle = resolve
+  })
+  return { promise, settle }
 }
 
 /** The happy path: the project resolves, then an empty transcript. */
@@ -203,6 +220,145 @@ describe('open', () => {
     await store.open('proj-2')
 
     expect(store.messages).toEqual([])
+  })
+})
+
+/**
+ * Every request here is issued for one project and lands after an `await`, by which
+ * time the route may have moved on — the dashboard is two clicks away and the store
+ * is a singleton, so "open A, go back, open B" leaves A's requests in flight against
+ * B's screen. A response that arrives for a project that is no longer open is not
+ * merely stale, it is *wrong*: it would put A's name over B's transcript, blank the
+ * screen by clearing a loading flag that belongs to B, or append A's messages to B's
+ * conversation.
+ *
+ * The rule is one line — a write only lands while `projectId` is still the id the
+ * call was made for — and these are the four ways it is otherwise broken.
+ */
+describe('a response that arrives for a project that is no longer open', () => {
+  it('does not overwrite the project that is on screen', async () => {
+    const slow = deferred()
+    fetchMock.mockReturnValueOnce(slow.promise)
+    const store = useWorkspaceStore()
+
+    const stale = store.open('proj-1')
+    fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    await store.open('proj-2')
+
+    slow.settle(response({ project: PROJECT }))
+    await stale
+
+    expect(store.project).toEqual(OTHER_PROJECT)
+    // And it does not go back to loading, or fetch proj-1's transcript.
+    expect(store.projectLoading).toBe(false)
+    expect(requests()).toEqual([
+      'GET /api/projects/proj-1',
+      'GET /api/projects/proj-2',
+      'GET /api/projects/proj-2/messages',
+    ])
+  })
+
+  /* A 404 for the project you have left is not a 404 for the one you are looking at. */
+  it('does not render the previous project’s 404 over the current one', async () => {
+    const slow = deferred()
+    fetchMock.mockReturnValueOnce(slow.promise)
+    const store = useWorkspaceStore()
+
+    const stale = store.open('proj-1')
+    fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    await store.open('proj-2')
+
+    slow.settle(response({ error: 'That project no longer exists.' }, 404))
+    await stale
+
+    expect(store.projectMissing).toBe(false)
+    expect(store.projectError).toBeNull()
+    expect(store.project).toEqual(OTHER_PROJECT)
+  })
+
+  /* The chat panel's Retry, left in flight — the transcript request on its own. */
+  it('does not render the previous project’s transcript', async () => {
+    respondOpenOk()
+    const store = useWorkspaceStore()
+    await store.open('proj-1')
+
+    const slow = deferred()
+    fetchMock.mockReturnValueOnce(slow.promise)
+    const stale = store.loadMessages()
+
+    fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    await store.open('proj-2')
+
+    slow.settle(response({ messages: [USER_MESSAGE, ASSISTANT_MESSAGE] }))
+    await stale
+
+    expect(store.messages).toEqual([])
+    // Nor may it report a load, or a failure, on the project now on screen.
+    expect(store.messagesLoading).toBe(false)
+    expect(store.messagesError).toBeNull()
+  })
+
+  /* The worst of the four: the user's own words in somebody else's conversation. */
+  it('does not append a send that resolves after another project was opened', async () => {
+    respondOpenOk()
+    const store = useWorkspaceStore()
+    await store.open('proj-1')
+    store.draft = 'build a contact dashboard'
+
+    const slow = deferred()
+    fetchMock.mockReturnValueOnce(slow.promise)
+    const sent = store.send()
+
+    fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    await store.open('proj-2')
+
+    slow.settle(response({ messages: [USER_MESSAGE, ASSISTANT_MESSAGE] }, 201))
+    await sent
+
+    expect(store.messages).toEqual([])
+    expect(store.sending).toBe(false)
+  })
+})
+
+/**
+ * A draft and a send error belong to the conversation they were written in.
+ *
+ * They are the two pieces of state `open` does *not* clear unconditionally, because
+ * `open` is also what the workspace's Retry button calls (AC-22) — and throwing away
+ * what the user has typed is not part of retrying a failed project fetch. Keyed on
+ * the id, both survive a retry and neither crosses into a different project.
+ */
+describe('the draft and the send error across projects', () => {
+  it('clears both when a different project is opened', async () => {
+    respondOpenOk()
+    const store = useWorkspaceStore()
+    await store.open('proj-1')
+    store.draft = 'half a sentence'
+    fetchMock.mockResolvedValueOnce(response({ error: 'Something went wrong.' }, 500))
+    await store.send()
+    expect(store.sendError).toBe('Something went wrong.')
+
+    fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    await store.open('proj-2')
+
+    expect(store.draft).toBe('')
+    expect(store.sendError).toBeNull()
+  })
+
+  it('keeps the draft when the same project is re-opened by a retry', async () => {
+    fetchMock.mockResolvedValue(response({ error: 'Something went wrong.' }, 500))
+    const store = useWorkspaceStore()
+    await store.open('proj-1')
+    store.draft = 'half a sentence'
+
+    await store.open('proj-1')
+
+    expect(store.draft).toBe('half a sentence')
   })
 })
 
