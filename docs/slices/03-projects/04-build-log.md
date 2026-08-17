@@ -178,3 +178,22 @@ every id-bearing path.
 **ACs:** AC-33 (paths, verbs, bodies).
 
 **Deviations from the plan:** none.
+
+---
+
+## T9 — `stores/projects.ts`
+
+**Red:** `frontend/src/stores/projects.spec.ts` — 22 cases against a stubbed `fetch`, so the
+assertions are about the requests that would go on the wire, plus one new case in
+`frontend/src/stores/auth.spec.ts` (sign-out empties the project list).
+
+**Green:** `frontend/src/stores/projects.ts` with the `loading`/`loaded`/`error` triple copied
+from `stores/profile.ts`, a `busy` flag for mutations, and a private `mutate()` that awaits
+the call, awaits `load()`, and rethrows without touching `error` (P6).
+`stores/auth.ts`'s `signOutNow` gains `useProjectsStore().reset()`.
+
+**ACs:** AC-29 (refetch), AC-31 (refetch), AC-32 (refetch), AC-33 (headers).
+
+**Deviations from the plan:** none. The three mutations share one `describe.each`, since
+"issue the call, then refetch; on failure rethrow and do neither" is one behaviour tested
+three times rather than three behaviours.
