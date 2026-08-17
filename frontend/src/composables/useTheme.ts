@@ -9,7 +9,10 @@ import { onScopeDispose, readonly, ref, type Ref } from 'vue'
  *
  * NOTE: the storage key and the `dark` class name are duplicated by the inline
  * script in index.html, which runs before paint to avoid a flash of the wrong
- * theme. Change them in both places.
+ * theme, and the class name again by `useDarkClass.ts`, which observes it rather
+ * than calling this a second time (P2 — this composable builds fresh state per
+ * call, so a second instance would never hear the first one's change). Change
+ * them in all three places.
  */
 
 export const THEME_STORAGE_KEY = 'genesis:theme'
