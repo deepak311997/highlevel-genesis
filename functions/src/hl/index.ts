@@ -71,9 +71,11 @@ hlRouter.delete('/hl/connection', attested, asyncHandler(withVerifiedUser(handle
  *
  * **App Check on this route cannot be observed by an emulator-backed test**:
  * `requireAppCheck` short-circuits under `FUNCTIONS_EMULATOR` and there is no
- * App Check emulator to stand in for it, so AC-19 is covered by
- * `auth/appCheck.spec.ts` plus a reading of this line. `projects/index.ts`
- * carries the same note. It is also the constraint Slice 10 inherits (D16): a
+ * App Check emulator to stand in for it. `index.spec.ts` covers AC-19 instead,
+ * by driving this router over a socket with the middleware replaced by one that
+ * refuses — so deleting `attested` from this line fails six cases rather than
+ * none, which is what it used to fail. It is also the constraint Slice 10
+ * inherits (D16): a
  * `srcdoc` iframe has an opaque origin and cannot mint an App Check token, so
  * the shim's fetch has to happen in the parent.
  */

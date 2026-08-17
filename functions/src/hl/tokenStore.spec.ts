@@ -125,8 +125,6 @@ function fakeDb(
   const updates: Record<string, unknown>[] = []
   let data = options.data
 
-  const ref = { id: UID } as unknown as DocumentReference
-
   const db = {
     doc: () => ({
       get: () => Promise.resolve({ exists, data: () => data }),
@@ -242,9 +240,7 @@ describe('the transactional rotation', () => {
     refreshTokens.mockRejectedValue(new HlRequestError(400, '{"error":"invalid_grant"}'))
     const db = fakeDb({ data: connection(INSIDE_SKEW_MS, 'dead-refresh') })
 
-    await expect(firestoreTokenDeps().refresh(UID)).rejects.toBeInstanceOf(
-      HlReconnectRequiredError,
-    )
+    await expect(firestoreTokenDeps().refresh(UID)).rejects.toBeInstanceOf(HlReconnectRequiredError)
 
     expect(db.commits[0]).toMatchObject({ needsReconnect: true })
     expect(db.commits[0]).not.toHaveProperty('refreshToken')
