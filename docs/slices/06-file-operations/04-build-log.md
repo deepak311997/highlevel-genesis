@@ -277,3 +277,56 @@ then alphabetical, plain `<` rather than `localeCompare` over a known ASCII subs
 mid-marker because the streaming placeholder is the same string).
 
 Commit: `280ef0b`.
+
+## T17 — The store: the list, the selection, the save (AC-37, AC-38)
+
+`useWorkspaceStore` grows the file half — 19 further L1 cases, and the existing 43 kept passing
+with one mechanical change: `open` now issues a third request, so every fixture that queued two
+responses queues three.
+
+`fileDirty` is **derived** (`fileContent !== savedContent`) rather than maintained as a flag. A
+flag has to be set on every edit path and cleared on every load and save path, and the first one
+anybody forgets either offers Save for an unchanged file or withholds it over a real edit.
+
+`open` loads the files after the transcript, unconditionally — a failed transcript is the chat
+panel's error state and has no business emptying the code panel, which is its own case. A failed
+list leaves the existing list alone, because emptying the tree claims "this project has no code"
+rather than "we could not reach the server".
+
+**Deviation (small, additive).** `saveFile` also refreshes that file's entry in `files` from the
+save response. The plan did not name it; the list carries `size` and `updatedAt` and the
+response is the server's own word for both, so the alternative is a stale row or a second `GET`.
+
+Commit: `5c44fe6`.
+
+## T18 — The store: the generation fan-out (AC-39 – AC-43) — **the plan was wrong here**
+
+17 further L1 cases. `streamingFiles` is a mutated `Record` keyed by each frame's own path (D5);
+`fileTree` is `mergeFileTree` over stored ∪ streaming; `editorContent` prefers the streaming
+buffer; `done` refetches and re-reads.
+
+**Amendment to the plan.** AC-40 reads "given `done` with a non-empty `files`, then the list is
+refetched, **the open file is re-read**", and the plan's task list repeats it. Taken literally
+that re-reads a file the generation never touched — silently discarding an unsaved edit to it,
+which is R4's failure arrived at from the other side, with no AC blessing it and nothing on
+screen to explain it. The implementation re-reads the open file **when it is in `done.files`**.
+A file this turn did not write keeps its buffer, dirty included, and has its own case. AC-41 is
+then exactly the criterion it says it is — a dirty buffer *for a file the generation rewrote* —
+and `fileReplaced` announces the discard (D22).
+
+**A consequence the ACs did not cover, handled here.** `file_start` auto-selects the first
+streamed file, so a turn whose op set is refused (`__bad_path`) leaves the selection pointing at
+a file that was never stored. It is dropped at `done`, so the editor shows its empty state
+rather than a filename with no file behind it. Its own case.
+
+`saveFile` refuses to issue while `generating` — D21 at the store rather than only in the
+component, because a keyboard shortcut does not go through the button. The streaming buffers are
+dropped in `finally`, so done, error, abort and a thrown request all end the same way, and
+*after* the `done` branch's refetch, so the tree does not flash empty for the length of the list
+request.
+
+Two ESLint findings were taken rather than suppressed: `selectedPath.value ??= event.path`, and
+the terminal `error` branch back to a fall-through now that the other five variants are handled
+above — exhaustion, so the compiler is what keeps it honest if a seventh event is ever added.
+
+Commit: `2dd95cb`.
