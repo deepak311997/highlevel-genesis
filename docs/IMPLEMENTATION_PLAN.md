@@ -22,7 +22,7 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 | 4 — Workspace shell & chat persistence | ✅ merged to `main` |
 | 5 — Streaming generation | ✅ merged to `main` |
 | 6 — File operations | ✅ merged to `main` |
-| 7 — Monaco editor | ✅ built on `slice/07-monaco-editor` |
+| 7 — Monaco editor | ✅ built, reviewed, PR open from `slice/07-monaco-editor` |
 | 8 — HighLevel API proxy | ✅ merged to `main` |
 | 9–13 | not started |
 
@@ -41,13 +41,16 @@ been red since Slice 1: `vite.config.ts` threw at config load on any checkout wi
 8080 — the *development* emulator — so off CI it "passed" by finding a dev session, loading
 its rules over that session's and calling `clearFirestore()` on it.
 
-**Suite, re-run in full on `slice/07-monaco-editor` after its review (2026-08-18):**
-typecheck 0 · lint 0 · **1,506 unit** (750 functions · 737 frontend · 19 scripts) ·
-**36 rules** · **292 integration** · **16 e2e**. All six green — 1,850 cases.
+**Suite, re-run in full on `slice/07-monaco-editor` at ship time, rebased on `main`
+(2026-08-18):** typecheck 0 · lint 0 · **1,729 unit** (922 functions · 786 frontend ·
+21 scripts) · **38 rules** · **325 integration** · **16 e2e**. All six green — 2,108 cases.
+`npm run build` clean, entry chunk 10.76 kB with monaco in its own chunks.
 
-Slice 7 added 102 frontend unit cases and 2 e2e cases, and **nothing anywhere else**: no
-route, no collection, no rules block, no index, no fixture. It is `frontend/` plus three
-files under `tests/e2e/` plus these two documents. Five of those unit cases are its
+The rebase put Slice 7 on top of Slice 8, so the functions, rules and integration counts
+are Slice 8's, unchanged. Slice 7 added 102 frontend unit cases and 2 e2e cases, and
+**nothing anywhere else**: no route, no collection, no rules block, no index, no fixture.
+It is `frontend/` plus three files under `tests/e2e/` plus these two documents. Five of
+those unit cases are its
 review's own, written test-first for the four defects that review found — including one
 the **e2e caught on a re-run**: a model created before its file's bytes arrive inherits the
 platform's line ending, so an empty model could come out CRLF and the first keystroke would
