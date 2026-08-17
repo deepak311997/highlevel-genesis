@@ -53,13 +53,15 @@ const USER: Message = {
   role: 'user',
   content: 'build a contact dashboard',
   createdAt: '2026-08-17T09:05:00.000Z',
+  truncated: false,
 }
 
 const ASSISTANT: Message = {
   id: 'msg-2',
   role: 'assistant',
-  content: 'You said: build a contact dashboard',
+  content: 'Here is a contact dashboard',
   createdAt: '2026-08-17T09:05:00.000Z',
+  truncated: false,
 }
 
 /* The composer owns the store and has a suite of its own. */
@@ -134,7 +136,7 @@ describe('ChatPanel', () => {
     expect(bubbles).toHaveLength(2)
     expect(bubbles.map((bubble) => bubble.attributes('data-role'))).toEqual(['user', 'assistant'])
     expect(bubbles[0]?.text()).toContain('build a contact dashboard')
-    expect(bubbles[1]?.text()).toContain('You said: build a contact dashboard')
+    expect(bubbles[1]?.text()).toContain('Here is a contact dashboard')
   })
 
   /** AC-29's time half — pinned by `formatTime`, so this is a fixed string. */

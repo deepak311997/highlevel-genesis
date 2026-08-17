@@ -139,12 +139,15 @@ describe('storedMessageSchema — what Firestore hands back', () => {
   })
 
   /*
-   * D11. The stored schema carries **no maximum** on content: the echo of a
-   * 4,000-character prompt is longer than one, and a stored document is not a
-   * request body. A maximum here would make the server's own write unreadable.
+   * D11, and it matters far more now than it did in Slice 4. The stored schema
+   * carries **no maximum** on content: a generated reply runs to `max_tokens`,
+   * which is three orders of magnitude past the 4,000-character request-body
+   * limit. A maximum here would make the server's own write unreadable. What
+   * bounds a stored reply is the 800,000-byte accumulation cap (D22), enforced
+   * where the text is accumulated rather than where it is parsed.
    */
   it('accepts stored content longer than the request-body maximum', () => {
-    const long = `You said: ${'a'.repeat(CONTENT_MAX)}`
+    const long = 'a'.repeat(CONTENT_MAX * 10)
 
     expect(storedMessageSchema.safeParse({ ...complete, content: long }).success).toBe(true)
   })

@@ -1,12 +1,19 @@
-import type { DocumentSnapshot, FieldValue, Query } from 'firebase-admin/firestore'
-import { Timestamp } from 'firebase-admin/firestore'
+import type { CollectionReference, DocumentSnapshot, Query } from 'firebase-admin/firestore'
+import { FieldValue, Timestamp } from 'firebase-admin/firestore'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { echoFor, messagePair, parseStoredMessage, transcriptQuery } from './handlers'
+const getDb = vi.hoisted(() => vi.fn())
+
+// Hoisted above the imports below by Vitest, so `handlers` closes over the fake.
+// The functions package is CommonJS, so a dynamic `await import` is not available
+// here — which is fine: `vi.mock` is what does the work either way.
+vi.mock('../lib/firebase', () => ({ getDb }))
+
+import { appendAssistantMessage, parseStoredMessage, transcriptQuery } from './handlers'
 import { MESSAGE_LIMIT } from './schema'
 
 /**
- * The two pure halves of the transcript read.
+ * The pure halves of the transcript read, plus the assistant write.
  *
  * `transcriptQuery` has a test of its own because of R1, which is the slice's one
  * real hazard and is invisible in production about half the time. A `WriteBatch`
@@ -93,71 +100,126 @@ describe('transcriptQuery', () => {
   })
 })
 
-describe('echoFor', () => {
+/**
+ * A Firestore stand-in with exactly the four members the write path touches.
+ *
+ * `getDb` is mocked rather than an emulator started, because what is worth
+ * asserting here is the *document* — and the document is decided before any I/O
+ * happens. The write reaching Firestore at all is T10's L4 case.
+ */
+function fakeDb(stored: Record<string, unknown> | null): { written: unknown; path: string } {
+  const record = { written: undefined as unknown, path: '' }
+  const ref = {
+    id: 'assistant-1',
+    set: (data: unknown) => {
+      record.written = data
+      return Promise.resolve()
+    },
+    get: () =>
+      Promise.resolve({
+        exists: stored !== null,
+        id: 'assistant-1',
+        data: () => stored,
+      } as unknown as DocumentSnapshot),
+  }
+  getDb.mockReturnValue({
+    collection: (path: string) => {
+      record.path = path
+      return { doc: () => ref } as unknown as CollectionReference
+    },
+  })
+  return record
+}
+
+/** What the re-read hands back for a document that was written whole. */
+function storedAssistant(truncated: boolean): Record<string, unknown> {
+  return {
+    role: 'assistant',
+    content: 'Here is a contact dashboard',
+    seq: 1,
+    createdAt: Timestamp.fromMillis(1_700_000_000_000),
+    truncated,
+  }
+}
+
+describe('appendAssistantMessage', () => {
   /*
-   * AC-5, D7. Deterministic, no LLM and no randomness — it has to be assertable
-   * byte-for-byte and obviously not intelligence when a human looks at it. The
-   * chat panel says so out loud with an `Echo mode` badge, and both disappear
-   * together in Slice 5.
+   * AC-2, D35. `seq` is 1 and it is assigned here rather than derived: the
+   * assistant turn is now written in a request of its own, so its `createdAt`
+   * genuinely differs from the user message's — which is exactly what Slice 4's
+   * D8 predicted. `seq` is belt and braces rather than the tiebreak it was, and
+   * the transcript query still reads it, so it still has to be right.
    */
-  it('is exactly "You said: <content>"', () => {
-    expect(echoFor('build a contact dashboard')).toBe('You said: build a contact dashboard')
-  })
+  it('writes the assistant document under the project, with seq 1', async () => {
+    const db = fakeDb(storedAssistant(false))
 
-  /* Trimming is the body schema's job, done before this is ever called, so the
-   * echo quotes whatever it was handed rather than trimming a second time. */
-  it('quotes the content it was given without touching it', () => {
-    expect(echoFor('a  b')).toBe('You said: a  b')
-  })
-})
+    await appendAssistantMessage('alice', 'proj-1', 'Here is a contact dashboard', false)
 
-describe('messagePair', () => {
-  /** A sentinel stands in for `FieldValue.serverTimestamp()`; purity is the point. */
-  const now = { sentinel: true } as unknown as FieldValue
-
-  /*
-   * AC-1, D8. `seq` 0 then 1 is the ordering the transcript is read back by, and
-   * it is assigned here rather than derived from anything — the two documents
-   * commit at the same instant, so their *position* cannot come from their
-   * timestamps.
-   */
-  it('returns the user turn then the assistant turn, seq 0 then 1', () => {
-    const [user, assistant] = messagePair('build a contact dashboard', now)
-
-    expect(user).toEqual({
-      role: 'user',
-      content: 'build a contact dashboard',
-      seq: 0,
-      createdAt: now,
-    })
-    expect(assistant).toEqual({
-      role: 'assistant',
-      content: 'You said: build a contact dashboard',
-      seq: 1,
-      createdAt: now,
-    })
-  })
-
-  /*
-   * Both documents carry the *same* timestamp value. Not a shortcut — it is what
-   * a `WriteBatch` produces whatever we pass, so writing it this way makes the
-   * tie visible in the code that creates it rather than a surprise in the read.
-   */
-  it('stamps both documents with the one timestamp it was handed', () => {
-    const [user, assistant] = messagePair('hi', now)
-
-    expect(user['createdAt']).toBe(now)
-    expect(assistant['createdAt']).toBe(now)
-  })
-
-  /** `role` appears in the document and never in a request body (D5). */
-  it('assigns role server-side, one of each', () => {
-    // Annotated because `DocumentData` indexes to `any`, and an unannotated
-    // callback would launder that into the assertion.
-    expect(messagePair('hi', now).map((doc): unknown => doc['role'])).toEqual([
-      'user',
-      'assistant',
+    expect(db.path).toBe('users/alice/projects/proj-1/messages')
+    const written = db.written as Record<string, unknown>
+    expect(Object.keys(written).sort()).toEqual([
+      'content',
+      'createdAt',
+      'role',
+      'seq',
+      'truncated',
     ])
+    expect(written['role']).toBe('assistant')
+    expect(written['content']).toBe('Here is a contact dashboard')
+    expect(written['seq']).toBe(1)
+    expect(written['truncated']).toBe(false)
+  })
+
+  /* The commit timestamp is Firestore's, not ours — a sentinel, resolved on write. */
+  it('stamps the document with a server timestamp sentinel', async () => {
+    const db = fakeDb(storedAssistant(false))
+
+    await appendAssistantMessage('alice', 'proj-1', 'Here is a contact dashboard', false)
+
+    expect((db.written as Record<string, unknown>)['createdAt']).toBeInstanceOf(
+      FieldValue.serverTimestamp().constructor,
+    )
+  })
+
+  /** D21, D22, D23 all set the one flag, so the UI has one thing to render. */
+  it('carries the truncated flag it was given into the document', async () => {
+    const db = fakeDb(storedAssistant(true))
+
+    await appendAssistantMessage('alice', 'proj-1', 'Here is a contact dash', true)
+
+    expect((db.written as Record<string, unknown>)['truncated']).toBe(true)
+  })
+
+  /*
+   * The wire shape, re-read rather than echoed back from what we wrote:
+   * `serverTimestamp()` is a sentinel until it commits, so the committed
+   * document is the only place the real timestamp exists — and the `done` frame
+   * carries this object, so the client's id and date have to be the server's.
+   */
+  it('returns the committed document in wire shape, carrying no seq', async () => {
+    fakeDb(storedAssistant(true))
+
+    const message = await appendAssistantMessage('alice', 'proj-1', 'Here is a contact dash', true)
+
+    expect(message).toEqual({
+      id: 'assistant-1',
+      role: 'assistant',
+      content: 'Here is a contact dashboard',
+      createdAt: '2023-11-14T22:13:20.000Z',
+      truncated: true,
+    })
+  })
+
+  /*
+   * Unreachable in practice — we have just written a complete document — but it
+   * fails closed rather than answering a `done` frame describing a message that
+   * cannot be read back.
+   */
+  it('fails closed when the document it just wrote will not parse', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    fakeDb({ role: 'assistant' })
+
+    await expect(appendAssistantMessage('alice', 'proj-1', 'hi', false)).rejects.toThrow()
   })
 })
 

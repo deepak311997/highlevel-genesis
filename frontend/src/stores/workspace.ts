@@ -19,16 +19,15 @@ import { getProject, type Project } from '@/lib/projectsApi'
  * review and infuriating in use, and the pattern is set here before Slice 5 has
  * streaming state to lose to the same swap.
  *
- * **Appending the sent pair is not a hole in the liveness rule** (D12). Slice 3's
- * projects store refetches after every mutation because that list is ordered by
- * `updatedAt` on the server, so a local splice would have to re-derive server
+ * **Appending the sent message is not a hole in the liveness rule** (D12). Slice
+ * 3's projects store refetches after every mutation because that list is ordered
+ * by `updatedAt` on the server, so a local splice would have to re-derive server
  * ordering and would eventually get it wrong. A transcript cannot be reordered: it
- * only ever appends, and the two messages the server just returned are by
- * construction its two newest members — so appending *is* the server's order
- * rather than an approximation of it. What is rendered is the server's own
- * response body, and nothing here is `onSnapshot`. Refetching instead would re-read
- * the whole history on every turn, unboundedly, to re-read something that cannot
- * have changed.
+ * only ever appends, and the message the server just returned is by construction
+ * its newest member — so appending *is* the server's order rather than an
+ * approximation of it. What is rendered is the server's own response body, and
+ * nothing here is `onSnapshot`. Refetching instead would re-read the whole history
+ * on every turn, unboundedly, to re-read something that cannot have changed.
  *
  * The project is fetched by this store rather than read from the projects store
  * (D26): a deep link, a reload or a bookmark arrives with an empty store, and a
@@ -215,12 +214,12 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     sending.value = true
     sendError.value = null
     try {
-      const pair = await sendMessage(id, content)
+      const message = await sendMessage(id, content)
       // The turn belongs to the project it was sent to. If the route has moved on it
       // is already stored and will be read back on the way in — appending it here
       // would put one conversation's messages inside another's.
       if (!current(gen)) return
-      messages.value = [...messages.value, ...pair]
+      messages.value = [...messages.value, message]
       // Cleared only on success, and only after the append, so a failure leaves
       // the textarea exactly as the user left it.
       draft.value = ''

@@ -24,14 +24,19 @@ const USER = {
   role: 'user' as const,
   content: 'build a contact dashboard',
   createdAt: '2026-08-17T09:00:00.000Z',
+  truncated: false,
 }
 
 const ASSISTANT = {
   id: 'msg-2',
   role: 'assistant' as const,
-  content: 'You said: build a contact dashboard',
+  content: 'Here is a contact dashboard',
   createdAt: '2026-08-17T09:00:00.000Z',
+  truncated: false,
 }
+
+/** An interrupted reply — the flag Slice 5 adds, off the wire (AC-40). */
+const TRUNCATED = { ...ASSISTANT, id: 'msg-3', content: 'Here is a cont', truncated: true }
 
 function callOf(index = 0): [string, RequestInit] {
   return request.mock.calls[index] as [string, RequestInit]
@@ -65,19 +70,42 @@ describe('listMessages', () => {
 
     await expect(listMessages('proj-1')).rejects.toThrow('That project no longer exists.')
   })
+
+  /** AC-40's client half: `truncated` survives the trip through this module. */
+  it('carries truncated through from the wire', async () => {
+    request.mockResolvedValue({ messages: [USER, TRUNCATED] })
+
+    await expect(listMessages('proj-1')).resolves.toEqual([USER, TRUNCATED])
+  })
 })
 
 describe('sendMessage', () => {
-  it('POSTs the content as JSON and returns the pair', async () => {
-    await expect(sendMessage('proj-1', 'build a contact dashboard')).resolves.toEqual([
-      USER,
-      ASSISTANT,
-    ])
+  /**
+   * AC-4, D3, D4. **One message back, not two.** The reply is no longer written
+   * here — `POST /generate` writes it at the stream's terminal event — so this
+   * resolves to the user's own turn and the array shape is kept with one element
+   * in it, which is what makes the change invisible to the store's append.
+   */
+  it('POSTs the content as JSON and returns the one user message', async () => {
+    request.mockResolvedValue({ messages: [USER] })
+
+    await expect(sendMessage('proj-1', 'build a contact dashboard')).resolves.toEqual(USER)
     const [path, init] = callOf()
 
     expect(path).toBe('/api/projects/proj-1/messages')
     expect(init.method).toBe('POST')
     expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json')
+  })
+
+  /*
+   * A 201 with nothing in it is a server that answered and said nothing, and the
+   * store's next line would otherwise append `undefined` to the transcript.
+   * Rejecting is what turns that into the composer's error state.
+   */
+  it('rejects when the server returns no message', async () => {
+    request.mockResolvedValue({ messages: [] })
+
+    await expect(sendMessage('proj-1', 'hi')).rejects.toThrow()
   })
 
   /** `content` and nothing else — `role` is the server's (D5). */

@@ -17,11 +17,15 @@ import { adminDb, getJson, idTokenFor, postJson, resetEmulators, seedUser } from
  * a test to catch missing — which is why the cross-tenant cases assert bob's
  * documents are *unchanged* rather than only that alice got a 404.
  *
- * The second is R1's, and it is the reason this file exists rather than trusting
- * the L1 query test alone. A `WriteBatch` gives every `serverTimestamp()` in it
- * the same commit timestamp, so the two messages of a turn are exactly tied on
- * `createdAt` — every single turn. Only a real commit read back through the real
- * query proves `seq` breaks that tie the right way round.
+ * The second is ordering, and it is the reason this file exists rather than
+ * trusting the L1 query test alone. Slice 4 wrote both messages of a turn in one
+ * `WriteBatch`, which gives every `serverTimestamp()` in it the same commit
+ * timestamp — so the pair was exactly tied on `createdAt`, every single turn.
+ * Slice 5 splits the turn across two requests (D3), so the timestamps genuinely
+ * differ now and `seq` is belt and braces rather than the tiebreak it was. The
+ * seeded tie cases below keep proving the tie is still broken the right way
+ * round, because a transcript can still *hold* tied documents: Slice 4 wrote
+ * plenty of them.
  */
 
 const PASSWORD = 'Correct-Horse-9'
@@ -29,8 +33,8 @@ const ALICE = 'messages-alice@example.test'
 const BOB = 'messages-bob@example.test'
 const UNVERIFIED = 'messages-unverified@example.test'
 
-/** D7's echo, byte for byte. The composer and the e2e test both read it. */
-const ECHO = 'You said: build a contact dashboard'
+/** A seeded assistant turn. Nothing here generates one — that is `/generate`. */
+const REPLY = 'Here is a contact dashboard'
 
 let aliceUid: string
 let bobUid: string
@@ -158,18 +162,19 @@ beforeEach(async () => {
 
 describe('GET /api/projects/:projectId/messages', () => {
   /*
-   * AC-2, and R1 from the direction that matters. The two documents carry the
-   * *same* `createdAt` — which is not a contrivance, it is what a `WriteBatch`
-   * actually produces — so ordering by `createdAt` alone would fall through to
-   * Firestore's `__name__` tiebreak. `msg-b` sorts before `msg-a` by name, so a
-   * handler missing the second `orderBy` returns the assistant first and fails
-   * here.
+   * AC-2, and the ordering hazard from the direction that matters. The two
+   * documents carry the *same* `createdAt` — which is not a contrivance, it is
+   * what Slice 4's `WriteBatch` actually produced and what every transcript
+   * written before this slice is full of — so ordering by `createdAt` alone
+   * would fall through to Firestore's `__name__` tiebreak. `msg-b` sorts before
+   * `msg-a` by name, so a handler missing the second `orderBy` returns the
+   * assistant first and fails here.
    */
   it('returns the user message before its assistant reply when the two share a timestamp', async () => {
     const tied = Timestamp.fromMillis(1_700_000_500_000)
     await seedMessage(aliceUid, 'proj-1', 'msg-b', {
       role: 'assistant',
-      content: ECHO,
+      content: REPLY,
       seq: 1,
       createdAt: tied,
     })
@@ -187,7 +192,7 @@ describe('GET /api/projects/:projectId/messages', () => {
     expect(messages.map((message) => message['role'])).toEqual(['user', 'assistant'])
     expect(messages.map((message) => message['content'])).toEqual([
       'build a contact dashboard',
-      ECHO,
+      REPLY,
     ])
   })
 
@@ -230,7 +235,7 @@ describe('GET /api/projects/:projectId/messages', () => {
       await seedMessage(aliceUid, 'proj-1', `user-${content}`, { content, seq: 0, createdAt: at })
       await seedMessage(aliceUid, 'proj-1', `bot-${content}`, {
         role: 'assistant',
-        content: `You said: ${content}`,
+        content: `reply to ${content}`,
         seq: 1,
         createdAt: at,
       })
@@ -240,11 +245,11 @@ describe('GET /api/projects/:projectId/messages', () => {
 
     expect(messages.map((message) => message['content'])).toEqual([
       'first',
-      'You said: first',
+      'reply to first',
       'second',
-      'You said: second',
+      'reply to second',
       'third',
-      'You said: third',
+      'reply to third',
     ])
   })
 
@@ -384,12 +389,14 @@ describe('GET /api/projects/:projectId/messages', () => {
 
 describe('POST /api/projects/:projectId/messages', () => {
   /*
-   * AC-1. The stored `seq` values are asserted as well as the response, because
-   * they are the ordering mechanism and a response-shape assertion cannot see
-   * them — the pair comes back in the right order from an array the handler built
-   * itself, whether or not the documents carry what the *next* `GET` needs.
+   * AC-4, D3, D4. **One document, not two.** The assistant turn is no longer
+   * written here at all — it is written by `/generate` at the stream's terminal
+   * event — so a `POST` that produced a reply would be producing one nothing
+   * asked for and nothing generated. The stored `seq` is asserted as well as the
+   * response, because it is the ordering mechanism and a response-shape
+   * assertion cannot see it.
    */
-  it('writes the pair, returns 201 with both, and stores seq 0 then 1', async () => {
+  it('writes one document, returns 201 with the user message alone, and stores seq 0', async () => {
     const res = await postJson(
       path('proj-1'),
       { content: 'build a contact dashboard' },
@@ -398,11 +405,9 @@ describe('POST /api/projects/:projectId/messages', () => {
     const messages = messagesOf(res.body)
 
     expect(res.status).toBe(201)
-    expect(messages).toHaveLength(2)
+    expect(messages).toHaveLength(1)
     expect(messages[0]?.['role']).toBe('user')
     expect(messages[0]?.['content']).toBe('build a contact dashboard')
-    expect(messages[1]?.['role']).toBe('assistant')
-    expect(messages[1]?.['content']).toBe(ECHO)
     for (const message of messages) {
       expect(Object.keys(message).sort()).toEqual([
         'content',
@@ -415,59 +420,60 @@ describe('POST /api/projects/:projectId/messages', () => {
       expect(new Date(message['createdAt'] as string).toISOString()).toBe(message['createdAt'])
     }
 
+    expect(await countMessages(aliceUid, 'proj-1')).toBe(1)
     const stored = await storedMessages(aliceUid, 'proj-1')
-    expect(stored.map((doc) => doc['seq'])).toEqual([0, 1])
-    expect(stored.map((doc) => doc['role'])).toEqual(['user', 'assistant'])
+    expect(stored.map((doc) => doc['seq'])).toEqual([0])
+    expect(stored.map((doc) => doc['role'])).toEqual(['user'])
+    expect(stored.map((doc) => doc['truncated'])).toEqual([false])
   })
 
   /*
-   * **R1's real assertion**, and the reason the seeded tie case above is not
-   * enough on its own. This one writes a pair through the actual `WriteBatch` and
-   * reads it back through the actual query, so the timestamps are whatever
-   * Firestore resolved the two sentinels to rather than whatever a test decided.
-   * If a commit ever stopped tying them, or the query stopped breaking the tie,
-   * this is the case that notices.
-   *
-   * Repeated across three turns because a single pair has a 50% chance of coming
-   * back the right way round by accident, and the loop also carries AC-3's
-   * separate-requests half: distinct commits, so `seq` is doing nothing here and
-   * the ordering across turns must still hold.
+   * AC-4's second clause: no assistant turn, from any of three angles at once —
+   * the response, the collection, and the absence of the echo's own text.
    */
-  it('reads a real batch-written pair back in order, across three turns', async () => {
+  it('writes no assistant message, and no "You said:" text reaches Firestore', async () => {
     for (const content of ['first', 'second', 'third']) {
       expect((await postJson(path('proj-1'), { content }, auth(aliceToken))).status).toBe(201)
     }
 
     const messages = messagesOf((await getJson(path('proj-1'), auth(aliceToken))).body)
 
-    expect(messages.map((message) => message['content'])).toEqual([
-      'first',
-      'You said: first',
-      'second',
-      'You said: second',
-      'third',
-      'You said: third',
-    ])
-
-    // The tie is real, not a hypothesis: both documents of a turn resolved to the
-    // same commit timestamp, which is exactly why `seq` has to exist.
-    const stored = await storedMessages(aliceUid, 'proj-1')
-    const at = (index: number) => (stored[index]?.['createdAt'] as Timestamp).toMillis()
-    expect(at(0)).toBe(at(1))
+    expect(messages.map((message) => message['content'])).toEqual(['first', 'second', 'third'])
+    expect(messages.every((message) => message['role'] === 'user')).toBe(true)
+    expect(JSON.stringify(await storedMessages(aliceUid, 'proj-1'))).not.toContain('You said')
   })
 
-  /** AC-1's ids are the server's, and the two documents are distinct. */
-  it('gives the two messages distinct auto-ids', async () => {
+  /*
+   * AC-3's separate-requests half, now genuinely separate (D35). Three `POST`s
+   * are three commits, so the timestamps differ rather than tying — which is
+   * what Slice 4's D8 predicted would happen the moment the assistant write
+   * moved out of the batch.
+   */
+  it('gives each turn its own commit timestamp, in order', async () => {
+    for (const content of ['first', 'second', 'third']) {
+      await postJson(path('proj-1'), { content }, auth(aliceToken))
+    }
+
+    const stored = await storedMessages(aliceUid, 'proj-1')
+    const at = (index: number) => (stored[index]?.['createdAt'] as Timestamp).toMillis()
+
+    expect(at(0)).toBeLessThanOrEqual(at(1))
+    expect(at(1)).toBeLessThanOrEqual(at(2))
+    expect(at(0)).not.toBe(at(2))
+  })
+
+  /** The id is the server's, minted locally as an auto-id. */
+  it('gives the message a server-minted id', async () => {
     const messages = messagesOf(
       (await postJson(path('proj-1'), { content: 'hi' }, auth(aliceToken))).body,
     )
 
-    expect(messages[0]?.['id']).not.toBe(messages[1]?.['id'])
     expect(typeof messages[0]?.['id']).toBe('string')
+    expect(messages[0]?.['id']).not.toBe('')
   })
 
-  /** AC-5. Trimmed in the store, on the wire, and inside the echo. */
-  it('trims content on the way in, including inside the echo', async () => {
+  /** AC-5 of Slice 4. Trimmed on the wire and in the store. */
+  it('trims content on the way in', async () => {
     const messages = messagesOf(
       (
         await postJson(
@@ -479,10 +485,9 @@ describe('POST /api/projects/:projectId/messages', () => {
     )
 
     expect(messages[0]?.['content']).toBe('build a contact dashboard')
-    expect(messages[1]?.['content']).toBe(ECHO)
 
     const stored = await storedMessages(aliceUid, 'proj-1')
-    expect(stored.map((doc) => doc['content'])).toEqual(['build a contact dashboard', ECHO])
+    expect(stored.map((doc) => doc['content'])).toEqual(['build a contact dashboard'])
   })
 
   /*
@@ -532,13 +537,14 @@ describe('POST /api/projects/:projectId/messages', () => {
     const res = await postJson(path('proj-1'), { content: 'a'.repeat(4000) }, auth(aliceToken))
 
     expect(res.status).toBe(201)
-    expect(await countMessages(aliceUid, 'proj-1')).toBe(2)
+    expect(await countMessages(aliceUid, 'proj-1')).toBe(1)
   })
 
   /*
-   * AC-13, D10. The cap is what makes the unpaginated transcript honest, and the
-   * refusal is about the *pair*: a `POST` is refused when storing both would
-   * cross 200, so 198 lands on exactly 200 and 199 is already too many.
+   * AC-13 of Slice 4, D10, and **still about the pair even though only one
+   * document is written now** (D4). The reply this `POST` is about to make the
+   * user trigger needs room: refusing at 199 is what stops a transcript ending
+   * on a prompt with nowhere to put its answer.
    */
   it('refuses a post that would take the project past the cap, writing nothing', async () => {
     await seedMany(aliceUid, 'proj-1', 200)
@@ -563,13 +569,13 @@ describe('POST /api/projects/:projectId/messages', () => {
     expect(await countMessages(aliceUid, 'proj-1')).toBe(199)
   })
 
-  it('accepts at 198, landing on exactly the cap', async () => {
+  it('accepts at 198, leaving exactly one slot for the reply', async () => {
     await seedMany(aliceUid, 'proj-1', 198)
 
     const res = await postJson(path('proj-1'), { content: 'the last turn' }, auth(aliceToken))
 
     expect(res.status).toBe(201)
-    expect(await countMessages(aliceUid, 'proj-1')).toBe(200)
+    expect(await countMessages(aliceUid, 'proj-1')).toBe(199)
   })
 
   /*

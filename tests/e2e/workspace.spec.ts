@@ -22,7 +22,6 @@ import { assertEmulatorBuild, signUpAndVerify } from './helpers'
  */
 
 const PROMPT = 'build a contact dashboard'
-const ECHO = 'You said: build a contact dashboard'
 
 test.describe('Slice 04 — workspace shell & chat persistence', () => {
   test.beforeEach(async ({ page }) => {
@@ -62,15 +61,17 @@ test.describe('Slice 04 — workspace shell & chat persistence', () => {
     await page.getByTestId('composer-input').fill(PROMPT)
     await page.getByTestId('composer-input').press('Enter')
 
-    // Two bubbles, prompt above echo. `nth` rather than a text search, because the
-    // *order* is the thing R1 is about: the two documents share a commit timestamp,
-    // and `seq` is what stops the reply rendering above the prompt.
+    /*
+     * One bubble, the user's own. The echo is gone and the reply does not exist
+     * yet — `POST /generate` arrives in T9/T10 and T19 extends this test to the
+     * streamed answer. Asserting one bubble is the literal truth of the app
+     * between those two points, which is what keeps this task reviewable on its
+     * own rather than leaving a suite red for a later one to fix.
+     */
     const bubbles = page.getByTestId('message-bubble')
-    await expect(bubbles).toHaveCount(2)
+    await expect(bubbles).toHaveCount(1)
     await expect(bubbles.nth(0)).toContainText(PROMPT)
     await expect(bubbles.nth(0)).toHaveAttribute('data-role', 'user')
-    await expect(bubbles.nth(1)).toContainText(ECHO)
-    await expect(bubbles.nth(1)).toHaveAttribute('data-role', 'assistant')
 
     // The composer cleared, so the next prompt starts from nothing.
     await expect(page.getByTestId('composer-input')).toHaveValue('')
@@ -82,9 +83,8 @@ test.describe('Slice 04 — workspace shell & chat persistence', () => {
      */
     await page.reload()
     await expect(page.getByTestId('workspace-name')).toHaveText('Contact dashboard')
-    await expect(bubbles).toHaveCount(2)
+    await expect(bubbles).toHaveCount(1)
     await expect(bubbles.nth(0)).toContainText(PROMPT)
-    await expect(bubbles.nth(1)).toContainText(ECHO)
 
     // And a third time, arriving through the dashboard rather than a reload — which
     // is a fresh store rather than a fresh page.
@@ -93,9 +93,8 @@ test.describe('Slice 04 — workspace shell & chat persistence', () => {
     await page.getByTestId('project-name').click()
 
     await expect(page.getByTestId('workspace-name')).toHaveText('Contact dashboard')
-    await expect(bubbles).toHaveCount(2)
+    await expect(bubbles).toHaveCount(1)
     await expect(bubbles.nth(0)).toContainText(PROMPT)
-    await expect(bubbles.nth(1)).toContainText(ECHO)
   })
 
   /*

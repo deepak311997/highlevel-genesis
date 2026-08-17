@@ -56,13 +56,15 @@ const USER_MESSAGE = {
   role: 'user' as const,
   content: 'build a contact dashboard',
   createdAt: '2026-08-17T09:00:00.000Z',
+  truncated: false,
 }
 
 const ASSISTANT_MESSAGE = {
   id: 'msg-2',
   role: 'assistant' as const,
-  content: 'You said: build a contact dashboard',
+  content: 'Here is a contact dashboard',
   createdAt: '2026-08-17T09:00:00.000Z',
+  truncated: false,
 }
 
 let fetchMock: ReturnType<typeof vi.fn>
@@ -316,7 +318,7 @@ describe('a response that arrives for a project that is no longer open', () => {
     fetchMock.mockResolvedValueOnce(response({ messages: [] }))
     await store.open('proj-2')
 
-    slow.settle(response({ messages: [USER_MESSAGE, ASSISTANT_MESSAGE] }, 201))
+    slow.settle(response({ messages: [USER_MESSAGE] }, 201))
     await sent
 
     expect(store.messages).toEqual([])
@@ -418,19 +420,26 @@ describe('loadMessages', () => {
 })
 
 describe('send', () => {
-  /** AC-31. One `POST`, both messages appended, the draft cleared — and no `GET`. */
-  it('posts the draft, appends the returned pair, and issues no GET', async () => {
+  /**
+   * One `POST`, the **one** returned message appended, the draft cleared — and
+   * no `GET` (D3, D4).
+   *
+   * The reply is not part of this request any more: `POST /generate` writes it,
+   * which is what makes a generation that dies before its first byte still leave
+   * a transcript the user recognises and a Retry that works (F8.2).
+   */
+  it('posts the draft, appends the returned user message, and issues no GET', async () => {
     respondOpenOk()
     const store = useWorkspaceStore()
     await store.open('proj-1')
     fetchMock.mockClear()
-    fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE, ASSISTANT_MESSAGE] }, 201))
+    fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }, 201))
     store.draft = 'build a contact dashboard'
 
     await store.send()
 
     expect(requests()).toEqual(['POST /api/projects/proj-1/messages'])
-    expect(store.messages).toEqual([USER_MESSAGE, ASSISTANT_MESSAGE])
+    expect(store.messages).toEqual([USER_MESSAGE])
     expect(store.draft).toBe('')
     expect(store.sendError).toBeNull()
     expect(store.sending).toBe(false)

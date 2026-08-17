@@ -15,12 +15,11 @@ import { firestoreTimestamp } from '../users/schema'
  *
  * **`role` is not in the body schema, and that is the security decision of the
  * slice** (D5). The server assigns it, so a body carrying one is a 400 under
- * `.strict()` rather than a key we happened not to read. It matters because from
- * Slice 5 on the transcript *is* the LLM's context: a client that could author an
- * assistant turn could write its own future prompt, into a context that also
- * carries HighLevel API knowledge and the user's project files. Today the reply
- * is an echo, so the same body is harmless — which is exactly why it has to be
- * refused now, while nothing depends on it being allowed.
+ * `.strict()` rather than a key we happened not to read. Slice 4 recorded that it
+ * would matter from Slice 5 on, and it now does: the transcript *is* the LLM's
+ * context, so a client that could author an assistant turn could write its own
+ * future prompt into a context that will also carry HighLevel API knowledge and
+ * the user's project files. Refused before anything depended on it being allowed.
  *
  * **The path is the ownership.** A message lives under its project, which lives
  * under its owner's uid — the one `withVerifiedUser` read off the ID token — so

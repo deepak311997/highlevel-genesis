@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express'
-import type { DocumentData, DocumentSnapshot, Query } from 'firebase-admin/firestore'
+import type { DocumentSnapshot, Query } from 'firebase-admin/firestore'
 import { FieldValue } from 'firebase-admin/firestore'
 
 import { HttpError } from '../lib/errors'
@@ -74,6 +74,26 @@ export function transcriptQuery(collection: Query): Query {
   return collection.orderBy('createdAt', 'asc').orderBy('seq', 'asc').limit(MESSAGE_LIMIT)
 }
 
+/**
+ * The transcript, parsed and ordered — **one definition, two readers.**
+ *
+ * `handleListMessages` answers with this and `/generate` builds the model's
+ * context from it, so the corrupt-document filtering the LLM sees is
+ * byte-identical to the one the browser sees. Two copies would be two answers to
+ * "what is in this transcript", and the one that drifted would be the one
+ * deciding what the model is told.
+ */
+export async function readTranscript(uid: string, projectId: string): Promise<Message[]> {
+  const snapshot = await transcriptQuery(getDb().collection(messagesPath(uid, projectId))).get()
+
+  return snapshot.docs
+    .map((doc) => {
+      const stored = parseStoredMessage(doc)
+      return stored === null ? null : toMessage(doc.id, stored)
+    })
+    .filter((message): message is Message => message !== null)
+}
+
 /** A project's messages, oldest first, capped — or the 404 the project earns. */
 export async function handleListMessages(req: Request, res: Response, uid: string): Promise<void> {
   const projectId = requireProjectId(req)
@@ -82,47 +102,63 @@ export async function handleListMessages(req: Request, res: Response, uid: strin
   // is not addressable without one, so there is nothing to read past this.
   if ((await readProject(uid, projectId)) === null) throw notFound()
 
-  const snapshot = await transcriptQuery(getDb().collection(messagesPath(uid, projectId))).get()
+  res.json({ messages: await readTranscript(uid, projectId) })
+}
 
-  const messages = snapshot.docs
-    .map((doc) => {
-      const stored = parseStoredMessage(doc)
-      return stored === null ? null : toMessage(doc.id, stored)
-    })
-    .filter((message): message is Message => message !== null)
+/** The user's turn is 0 and the assistant's is 1, within a turn. */
+const USER_SEQ = 0
+const ASSISTANT_SEQ = 1
 
-  res.json({ messages })
+/**
+ * Re-read a document just written, or fail closed.
+ *
+ * `serverTimestamp()` is a sentinel until it commits, so the committed document
+ * is the only place the real timestamp exists — answering from what we wrote
+ * would put a sentinel where an ISO-8601 string belongs. The `null` branch is
+ * unreachable: a complete document has just been written. It exists so a
+ * half-written turn is an error rather than a response describing a message that
+ * cannot be read back.
+ */
+function readBackOrFail(snapshot: DocumentSnapshot, detail: string): Message {
+  const stored = parseStoredMessage(snapshot)
+  if (stored === null) {
+    logAuthEvent('message.unreadable', { outcome: 'invalid', detail })
+    throw new HttpError(500, 'Internal error', 'internal')
+  }
+  return toMessage(snapshot.id, stored)
 }
 
 /**
- * The stub assistant, in full (D7).
+ * The assistant turn, written at the stream's terminal event.
  *
- * Deterministic, no LLM, no randomness: it has to be assertable byte-for-byte and
- * obviously not intelligence when a human looks at it. The chat panel says the
- * same thing out loud with an `Echo mode` badge, and the two disappear together in
- * Slice 5 — this function and the badge are the whole of what that slice deletes
- * from the reply path.
+ * Called by `/generate` and nowhere else, on every terminal path that produced
+ * text — `done`, a mid-stream failure carrying a partial, and a client that
+ * disconnected (D21, D22, D23). The `truncated` flag is the caller's to decide,
+ * because only the caller knows *why* the stream ended.
+ *
+ * `seq` is 1 (D35). Both halves of a turn are now written in requests of their
+ * own, so their `createdAt` values genuinely differ and `seq` is belt and braces
+ * rather than the tiebreak it was in Slice 4 — but the transcript query still
+ * reads it, and every transcript written before this slice still needs it.
  */
-export function echoFor(content: string): string {
-  return `You said: ${content}`
-}
+export async function appendAssistantMessage(
+  uid: string,
+  projectId: string,
+  content: string,
+  truncated: boolean,
+): Promise<Message> {
+  // Auto-id, minted locally: nothing is read to get it.
+  const ref = getDb().collection(messagesPath(uid, projectId)).doc()
 
-/**
- * The two documents of one turn.
- *
- * `now` is injected rather than read here, so this is pure and testable — and so
- * that the two documents demonstrably carry the *same* timestamp value. That
- * sharing is not a shortcut: a `WriteBatch` resolves every `serverTimestamp()`
- * sentinel in it to one commit timestamp whatever we pass, so writing it this way
- * makes the tie visible where it is created rather than a surprise where it is
- * read. `seq` is what orders them, and it is assigned here because the timestamps
- * cannot do it.
- */
-export function messagePair(content: string, now: FieldValue): [DocumentData, DocumentData] {
-  return [
-    { role: 'user', content, seq: 0, createdAt: now },
-    { role: 'assistant', content: echoFor(content), seq: 1, createdAt: now },
-  ]
+  await ref.set({
+    role: 'assistant',
+    content,
+    seq: ASSISTANT_SEQ,
+    createdAt: FieldValue.serverTimestamp(),
+    truncated,
+  })
+
+  return readBackOrFail(await ref.get(), 'after append')
 }
 
 /**
@@ -144,17 +180,23 @@ async function messageCount(uid: string, projectId: string): Promise<number> {
 }
 
 /**
- * Write the user's turn and the stub reply, and answer with both.
+ * Write the user's turn, and answer with it.
  *
  * In order: the id, then the body, then the project, then the count, then one
- * batch. **Parsing before reading** is `handleCreateProject`'s rule and it is
+ * write. **Parsing before reading** is `handleCreateProject`'s rule and it is
  * load-bearing twice over — a refused body costs no Firestore call, and a body
  * carrying `role` is refused before anything could have acted on it (D5).
  *
- * The pair is one `WriteBatch` (D6), so a user message can never be stranded
- * without its reply. This contract changes in Slice 5 and knowingly: the assistant
- * write moves to the stream's `done` handler, the user write stays exactly here,
- * and the response becomes the user message alone.
+ * **One document, and the reply is somebody else's job now** (D3). Slice 4 wrote
+ * the pair in one `WriteBatch` so a prompt could never be stranded without its
+ * echo; the reply is now a real generation, and it is written by `/generate` at
+ * the stream's terminal event. Splitting the turn across two requests is what
+ * gives F8.2 its property: the user's prompt is durable *before* the expensive,
+ * failure-prone half begins, so a generation that dies before producing a byte
+ * still leaves a transcript the user recognises and a Retry that works.
+ *
+ * The response keeps the array shape with one element in it (D4), so the store's
+ * append is unchanged.
  *
  * The project document is deliberately **not** touched (D15). `updatedAt` means
  * "the project's own fields changed", which is what the dashboard's ordering and
@@ -167,12 +209,13 @@ export async function handleCreateMessage(req: Request, res: Response, uid: stri
   if ((await readProject(uid, projectId)) === null) throw notFound()
 
   /*
-   * The refusal is about the *pair*, not about one message: storing both is what
-   * the request asks for, so 198 stored succeeds and lands on exactly the cap,
-   * and 199 is refused because only half a turn would fit. Read immediately
-   * before the write and not transactional, as `liveProjectCount` is — two
-   * simultaneous sends at 198 can both land, which is a guard-rail missing by one
-   * rather than a boundary being crossed.
+   * **Still `+ 2`, even though only one document is written here** (D4). The
+   * refusal is about the *pair*: the reply this `POST` is about to make the user
+   * trigger needs room, and refusing at 199 is what stops a transcript ending on
+   * a prompt with nowhere to put its answer. Read immediately before the write
+   * and not transactional, as `liveProjectCount` is — two simultaneous sends at
+   * 198 can both land, which is a guard-rail missing by one rather than a
+   * boundary being crossed.
    */
   if ((await messageCount(uid, projectId)) + 2 > MESSAGE_LIMIT) {
     throw new HttpError(
@@ -182,36 +225,16 @@ export async function handleCreateMessage(req: Request, res: Response, uid: stri
     )
   }
 
-  const collection = getDb().collection(messagesPath(uid, projectId))
-  // Auto-ids, minted locally: nothing is read to get them.
-  const userRef = collection.doc()
-  const assistantRef = collection.doc()
+  // Auto-id, minted locally: nothing is read to get it.
+  const ref = getDb().collection(messagesPath(uid, projectId)).doc()
 
-  const [userDoc, assistantDoc] = messagePair(body.content, FieldValue.serverTimestamp())
-  const batch = getDb().batch()
-  batch.set(userRef, userDoc)
-  batch.set(assistantRef, assistantDoc)
-  await batch.commit()
+  await ref.set({
+    role: 'user',
+    content: body.content,
+    seq: USER_SEQ,
+    createdAt: FieldValue.serverTimestamp(),
+    truncated: false,
+  })
 
-  /*
-   * Re-read rather than answer from what we wrote: `serverTimestamp()` is a
-   * sentinel until it commits, so the committed documents are the only place the
-   * real timestamps exist. `getAll` fetches both in one round trip.
-   */
-  const snapshots = await getDb().getAll(userRef, assistantRef)
-  const messages = snapshots
-    .map((snapshot) => {
-      const stored = parseStoredMessage(snapshot)
-      return stored === null ? null : toMessage(snapshot.id, stored)
-    })
-    .filter((message): message is Message => message !== null)
-
-  if (messages.length !== 2) {
-    // Unreachable: we have just written two complete documents. It fails closed
-    // rather than answering half a turn to a caller whose send actually succeeded.
-    logAuthEvent('message.unreadable', { outcome: 'invalid', detail: 'after create' })
-    throw new HttpError(500, 'Internal error', 'internal')
-  }
-
-  res.status(201).json({ messages })
+  res.status(201).json({ messages: [readBackOrFail(await ref.get(), 'after create')] })
 }
