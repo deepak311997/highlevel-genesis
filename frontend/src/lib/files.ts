@@ -1,13 +1,14 @@
 import type { FileMeta } from './filesApi'
 
 /**
- * The file tree's three decisions, made once and here.
+ * The file tree's decisions, made once and here.
  *
  * The store is one store (D24) and the components only reflect what it says, so
- * the sort, the merge and the byte count live in a pure module with their own
- * tests rather than inside a `computed` or a template. A rule that is testable
- * in isolation is a rule that can be argued with; the same rule spread across a
- * `.vue` file is one that gets re-derived slightly differently the next time.
+ * the sort, the merge, the byte count and the way a byte count is *said* live in
+ * a pure module with their own tests rather than inside a `computed` or a
+ * template. A rule that is testable in isolation is a rule that can be argued
+ * with; the same rule spread across a `.vue` file is one that gets re-derived
+ * slightly differently the next time.
  */
 
 /** One row of the tree: a filename, and whether this turn is still writing it. */
@@ -75,4 +76,30 @@ const encoder = new TextEncoder()
  */
 export function utf8Bytes(text: string): number {
   return encoder.encode(text).length
+}
+
+/**
+ * A byte count, as a screen says it — **decimal KB, matching the server** (P7).
+ *
+ * The unit is the one this codebase already speaks: `fileErrorCopy` renders the
+ * cap as `FILE_BYTES_MAX / 1000`, so 100,000 bytes is "100 KB" in the refusal a
+ * user reads when a save is rejected. Binary KiB here would call the same file
+ * "98 KB" while the server called the limit "100 KB", and nothing on screen
+ * would explain which number to believe.
+ *
+ * The `Math.max` is not decoration. `Math.round(1000 / 1000)` is 1, but
+ * `Math.round(1200 / 1000)` is 1 and `Math.round(1400 / 1000)` is 1 while
+ * anything the round sends below 1 — it cannot here, since the branch starts at
+ * 1000, but it could the moment the threshold moves — would render as "0 KB"
+ * for a file that plainly is not empty. The floor states the invariant rather
+ * than leaving it to the boundary two lines above.
+ *
+ * Bytes below the threshold, because a 512-byte file is more usefully 512 bytes
+ * than "1 KB". Counted in the same unit as {@link utf8Bytes}: both are UTF-8
+ * bytes, which is what Firestore's limit and the server's `Buffer.byteLength`
+ * count too.
+ */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1000) return `${String(bytes)} bytes`
+  return `${String(Math.max(1, Math.round(bytes / 1000)))} KB`
 }
