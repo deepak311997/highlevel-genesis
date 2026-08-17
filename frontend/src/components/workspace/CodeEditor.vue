@@ -248,7 +248,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div data-testid="code-editor" class="relative h-full min-h-0 w-full">
+  <!-- `flex-1` inside its parent's flex column, and a flex row itself, so no link
+       in this chain is a percentage of a flex-sized box — which does not resolve,
+       and leaves Monaco measuring a container with no height (D19, R4). The
+       wrapper's own `height: 100%` below is then belt-and-braces: as a flex item
+       it stretches to this box either way. `relative` is for the two overlays. -->
+  <div data-testid="code-editor" class="relative flex min-h-0 w-full flex-1">
     <VueMonacoEditor
       v-if="status === 'ready'"
       width="100%"

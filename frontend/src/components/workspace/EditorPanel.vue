@@ -25,7 +25,12 @@ import { Separator } from '@/components/ui/separator'
 </script>
 
 <template>
-  <section class="flex h-full min-h-0 flex-col" data-testid="editor-panel">
+  <!-- `h-full` **and** `flex-1`, because the two layouts hand this section its
+       height differently: the wide one puts it in a stretch-sized
+       `ResizablePanel` (a percentage resolves), the narrow one in a `TabsContent`
+       sized by `flex-grow` (a percentage does not — it collapses to content, and
+       Monaco to 5px). Each class is inert in the other layout. -->
+  <section class="flex h-full min-h-0 flex-1 flex-col" data-testid="editor-panel">
     <header class="flex shrink-0 items-center px-4 py-3">
       <h2 class="text-sm font-semibold">Code</h2>
     </header>

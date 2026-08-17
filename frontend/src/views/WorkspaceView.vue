@@ -163,7 +163,17 @@ watch(
         <TabsContent value="chat" class="mt-0 min-h-0 flex-1">
           <ChatPanel />
         </TabsContent>
-        <TabsContent value="code" class="mt-0 min-h-0 flex-1">
+        <!--
+          `flex flex-col` rather than a plain block, and it is load-bearing (D19,
+          R4). `TabsContent` gets its own height from `flex-1`, and a child's
+          `height: 100%` does **not** resolve against that — measured: the panel
+          fell back to its content height, 255px inside a 642px tab, and Monaco
+          rendered a 5px editor with no error. As a flex column it hands the panel
+          a real height through `flex-1` instead of a percentage of an auto box.
+          The wide layout does not need it: a `ResizablePanel` in a row group is
+          stretch-sized, which *is* definite.
+        -->
+        <TabsContent value="code" class="mt-0 flex min-h-0 flex-1 flex-col">
           <EditorPanel />
         </TabsContent>
         <TabsContent value="preview" class="mt-0 min-h-0 flex-1">

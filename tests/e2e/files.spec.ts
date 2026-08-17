@@ -1,7 +1,13 @@
 import { expect, test } from '@playwright/test'
 
 import { resetEmulators } from '../integration/helpers'
-import { assertEmulatorBuild, openNewProject, signUpAndVerify } from './helpers'
+import {
+  assertEmulatorBuild,
+  editorText,
+  openNewProject,
+  setEditorContent,
+  signUpAndVerify,
+} from './helpers'
 
 /**
  * AC-48 — the slice's demo line, walked in a browser.
@@ -22,6 +28,20 @@ import { assertEmulatorBuild, openNewProject, signUpAndVerify } from './helpers'
  * Playwright's Desktop Chrome viewport is 1280×720, so this walks the resizable
  * tree; the tabbed one is covered at L2 where the breakpoint can be set rather
  * than guessed at.
+ *
+ * **Slice 7 changed the widget under it and nothing it asserts** (D24). `fill()`
+ * and `toHaveValue()` stopped working the moment the textarea went, and the
+ * tempting fix — loosening or skipping this — is out of bounds. Instead it is
+ * driven through `setEditorContent` and `editorText`: the same claims, the same
+ * `edited` string with its trailing newline, read exactly from Monaco's model
+ * rather than scraped from virtualised DOM. Two assertions are phrased
+ * differently because the thing they named is gone: `toBeEnabled()` on a
+ * textarea becomes the read-only sentence being hidden *and* a write landing,
+ * which is the same claim made the way it now shows.
+ *
+ * Slice 7's own L5 is `editor.spec.ts`. Two specs, as in Slice 6's D32: this one
+ * stays the signal for "file operations broke", that one for "the editor broke",
+ * so a red run still names the culprit.
  */
 
 /** `__slow` makes the stream observable: 600 ms, then a token every 150 ms. */
@@ -80,14 +100,17 @@ test.describe('Slice 06 — file operations', () => {
 
     /* Movement three: open a file, edit it, save it. */
     await page.getByTestId('file-row').filter({ hasText: 'index.html' }).click()
-    const editor = page.getByTestId('file-editor-input')
-    await expect(editor).toBeVisible()
-    await expect(editor).not.toHaveValue('')
-    // Editable again: the read-only window is exactly the length of a stream (D21).
-    await expect(editor).toBeEnabled()
+    await expect(page.getByTestId('code-editor')).toBeVisible()
+    await expect.poll(() => editorText(page)).not.toBe('')
+    /*
+     * Editable again: the read-only window is exactly the length of a stream
+     * (D9). The textarea's `disabled` is gone with the textarea, so the claim is
+     * made the way it now shows: the reason is off screen, and a write lands.
+     */
+    await expect(page.getByTestId('file-editor-readonly')).toBeHidden()
 
     const edited = '<!doctype html>\n<title>Edited by the test</title>\n'
-    await editor.fill(edited)
+    await setEditorContent(page, edited)
     await expect(page.getByTestId('file-editor-save')).toBeEnabled()
 
     /*
@@ -112,9 +135,12 @@ test.describe('Slice 06 — file operations', () => {
      */
     await page.reload()
     await expect(page.getByTestId('file-row')).toHaveCount(GENERATED.length)
+    // A reload opens no tab (D12's set is per session), so the strip is empty.
+    await expect(page.getByTestId('editor-tab')).toHaveCount(0)
     await page.getByTestId('file-row').filter({ hasText: 'index.html' }).click()
 
-    await expect(page.getByTestId('file-editor-input')).toHaveValue(edited)
+    // Read from the model, so the trailing newline survives the assertion.
+    await expect.poll(() => editorText(page)).toBe(edited)
   })
 
   /**

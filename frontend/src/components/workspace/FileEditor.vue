@@ -24,6 +24,14 @@ import { useWorkspaceStore } from '@/stores/workspace'
  * tree for another, so anything held locally is eaten by a window resize. It is
  * now a buffer *per tab* (D14), and the fields this reads are the active one's.
  *
+ * **The editor's region is a flex column, and the editor fills it as a flex
+ * item** — never by `height: 100%` (D19, R4). Measured in a browser: a
+ * percentage height against a parent whose own height comes from `flex-grow`
+ * does not resolve, and Monaco, which measures its container and has no
+ * intrinsic height of its own, then renders a **5 px** editor with no error and
+ * no failing test at any level below L5. The textarea this replaced hid the same
+ * broken chain behind its own `min-h-40`.
+ *
  * **Read-only while a stream is open** (D9, R4). A generation's batch and this
  * editor are two writers for one document, and the collision is silent — the user
  * types, the batch commits, the refetch replaces the buffer, and the edit is gone
@@ -115,12 +123,10 @@ function save(): void {
         </Alert>
       </div>
 
-      <!-- `min-h-0 flex-1` down to an editor at `height: 100%` (D19). Monaco
-           measures its container, so a container sized by its own content
-           collapses it to 0 px and renders nothing at all — with no error, and
-           invisibly to every test level below L5. No padding: the editor's own
-           gutter is its margin. -->
-      <div class="min-h-0 flex-1">
+      <!-- A **flex column**, not a plain block, and the editor fills it as a flex
+           item rather than by `height: 100%` — see the header (D19, R4). No
+           padding: the editor's own gutter is its margin. -->
+      <div class="flex min-h-0 flex-1 flex-col">
         <CodeEditor />
       </div>
 

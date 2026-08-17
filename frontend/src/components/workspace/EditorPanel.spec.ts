@@ -119,10 +119,17 @@ describe('EditorPanel', () => {
     expect(editor.attributes('class')).toMatch(/min-h-0/)
     expect(editor.attributes('class')).toMatch(/flex-1/)
 
-    // And the panel it sits in is a column that may shrink below its content.
+    /*
+     * The panel carries **both** `h-full` and `flex-1`, because the two layouts
+     * hand it its height differently — a stretch-sized `ResizablePanel` (where a
+     * percentage resolves) and a `TabsContent` sized by `flex-grow` (where it
+     * does not, and the editor collapsed to 5px). Each is inert in the other
+     * layout; dropping either one breaks exactly one of them, silently.
+     */
     const panel = wrapper.find('[data-testid="editor-panel"]')
     expect(panel.attributes('class')).toMatch(/min-h-0/)
     expect(panel.attributes('class')).toMatch(/h-full/)
+    expect(panel.attributes('class')).toMatch(/flex-1/)
 
     // Nothing inside the panel opts back out of it.
     expect(wrapper.html()).not.toMatch(/\bh-auto\b/)
