@@ -3,6 +3,7 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import {
   adminDb,
+  deleteJson,
   getJson,
   idTokenFor,
   patchJson,
@@ -649,6 +650,129 @@ describe('PATCH /api/projects/:projectId', () => {
   /** AC-11. */
   it('refuses an unverified caller with 403', async () => {
     const res = await patchJson('/api/projects/anything', { name: 'A' }, auth(unverifiedToken))
+
+    expect(res.status).toBe(403)
+    expect(codeOf(res.body)).toBe('email_unverified')
+  })
+})
+
+describe('DELETE /api/projects/:projectId', () => {
+  /*
+   * AC-8. Soft, not hard: the document survives with a `deletedAt`, which is
+   * what a restore surface would read if one is ever wanted — and what makes
+   * "when was this deleted" answerable, which a boolean could not.
+   */
+  it('soft-deletes: the document remains, and the list and GET stop seeing it', async () => {
+    const created = projectOf(
+      (await postJson('/api/projects', { name: 'Contact dashboard' }, auth(aliceToken))).body,
+    )
+    const id = String(created['id'])
+
+    const res = await deleteJson(`/api/projects/${id}`, auth(aliceToken))
+
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ ok: true })
+
+    const stored = await adminDb().doc(`users/${aliceUid}/projects/${id}`).get()
+    expect(stored.exists).toBe(true)
+    expect(stored.get('deletedAt')).not.toBeNull()
+
+    expect(projectsOf((await getJson('/api/projects', auth(aliceToken))).body)).toEqual([])
+    expectNotFound(await getJson(`/api/projects/${id}`, auth(aliceToken)))
+  })
+
+  /*
+   * AC-9, D16. Idempotent because the UI cannot be certain of its own
+   * staleness — a second tab, a double click, a retry after a timeout — and
+   * answering 404 puts an error on screen for a user who already has what they
+   * asked for. The first `deletedAt` stands, so "when was this deleted" stays
+   * true.
+   */
+  it('is idempotent, and does not overwrite the first deletedAt', async () => {
+    const created = projectOf(
+      (await postJson('/api/projects', { name: 'Twice' }, auth(aliceToken))).body,
+    )
+    const id = String(created['id'])
+    await deleteJson(`/api/projects/${id}`, auth(aliceToken))
+    const first = (await adminDb().doc(`users/${aliceUid}/projects/${id}`).get()).get(
+      'deletedAt',
+    ) as { toMillis: () => number }
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const second = await deleteJson(`/api/projects/${id}`, auth(aliceToken))
+
+    expect(second.status).toBe(200)
+    expect(second.body).toEqual({ ok: true })
+    const after = (await adminDb().doc(`users/${aliceUid}/projects/${id}`).get()).get(
+      'deletedAt',
+    ) as { toMillis: () => number }
+    expect(after.toMillis()).toBe(first.toMillis())
+  })
+
+  /** AC-9's second half. */
+  it('answers 200 for an id that never existed, creating nothing', async () => {
+    const res = await deleteJson('/api/projects/neverExisted', auth(aliceToken))
+
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ ok: true })
+    expect(await countProjects(aliceUid)).toBe(0)
+  })
+
+  /*
+   * AC-12. 200 rather than 404 is not a leak: alice's request names
+   * `users/{alice}/projects/bob-1`, which does not exist, so the answer is the
+   * same one an id she made up would get. What matters is that bob's document is
+   * untouched and nothing was created under her own path.
+   */
+  it("answers 200 for bob's project id and leaves his document untouched", async () => {
+    await seedProject(bobUid, 'bob-1', { name: "Bob's" })
+    const before = (await adminDb().doc(`users/${bobUid}/projects/bob-1`).get()).data()
+
+    const res = await deleteJson('/api/projects/bob-1', auth(aliceToken))
+
+    expect(res.status).toBe(200)
+    expect((await adminDb().doc(`users/${bobUid}/projects/bob-1`).get()).data()).toEqual(before)
+    expect(await countProjects(aliceUid)).toBe(0)
+  })
+
+  /*
+   * P3. `DELETE` never parses the stored document, because a corrupt project
+   * must still be deletable — parsing would make D16's "always 200" a lie for
+   * exactly the projects a user most wants gone.
+   */
+  it('deletes a corrupt document rather than refusing to touch it', async () => {
+    await adminDb().doc(`users/${aliceUid}/projects/corrupt`).set({ description: 'no name here' })
+
+    const res = await deleteJson('/api/projects/corrupt', auth(aliceToken))
+
+    expect(res.status).toBe(200)
+    const stored = await adminDb().doc(`users/${aliceUid}/projects/corrupt`).get()
+    expect(stored.get('deletedAt')).not.toBeNull()
+    expect(stored.get('deletedAt')).not.toBeUndefined()
+  })
+
+  /** AC-17. */
+  it.each(['a'.repeat(65), 'bad!id', 'a%2Fb'])(
+    'refuses the malformed id %s with 400',
+    async (id) => {
+      const res = await deleteJson(`/api/projects/${id}`, auth(aliceToken))
+
+      expect(res.status).toBe(400)
+      expect(codeOf(res.body)).toBe('invalid_id')
+    },
+  )
+
+  /** AC-10. */
+  it('refuses an unauthenticated caller with 401', async () => {
+    const res = await deleteJson('/api/projects/anything')
+
+    expect(res.status).toBe(401)
+    expect(codeOf(res.body)).toBe('unauthenticated')
+  })
+
+  /** AC-11. */
+  it('refuses an unverified caller with 403', async () => {
+    const res = await deleteJson('/api/projects/anything', auth(unverifiedToken))
 
     expect(res.status).toBe(403)
     expect(codeOf(res.body)).toBe('email_unverified')
