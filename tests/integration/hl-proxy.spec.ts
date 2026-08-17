@@ -237,3 +237,143 @@ describe('the proxy boundary', () => {
     expect((res.body as { code?: string }).code).toBe('hl_not_connected')
   })
 })
+
+/**
+ * What actually crosses the boundary, in both directions.
+ *
+ * The upstream half is observed through the stub rather than argued about: it
+ * refuses any surface request that arrives without `Authorization` and
+ * `Version`, so reaching a 200 at all is the assertion that we attach them; and
+ * it filters its fixtures by the `locationId` it was given, so a proxy that
+ * forgot to inject ours returns **the wrong records** rather than failing a
+ * claim about an argument. That is what makes AC-11 a result and not a mock
+ * expectation.
+ *
+ * `__echo` is a marker id on an ordinary parameterised row — it matches the
+ * grammar like any other — and the stub answers it with the request headers it
+ * received. It lives on a marker rather than on every surface's body so the
+ * three fixtures keep answering unchanged, which is what AC-15's byte-identity
+ * assertion is measured against.
+ */
+interface EchoedRequest {
+  headers: Record<string, string>
+}
+
+describe('the upstream call', () => {
+  beforeEach(async () => {
+    await seedConnection(aliceUid)
+  })
+
+  it("returns HighLevel's body byte for byte, with its status and rate limits", async () => {
+    const res = await postJson('/api/hl/proxy/contacts/search', { pageLimit: 1 }, auth(aliceToken))
+
+    expect(res.status).toBe(200)
+
+    // The same request put to the stub directly. Comparing raw text against raw
+    // text is the only form of this assertion that would notice a re-serialised
+    // body — one that parses identically and is not the same bytes (D17).
+    const direct = await postJson(
+      '/__fake-hl/contacts/search',
+      { locationId: ALICE_LOCATION },
+      { Authorization: 'Bearer anything', Version: '2021-07-28' },
+    )
+    expect(res.raw).toBe(direct.raw)
+    expect((res.body as { total?: number }).total).toBe(5)
+
+    for (const name of [
+      'x-ratelimit-limit-daily',
+      'x-ratelimit-daily-remaining',
+      'x-ratelimit-interval-milliseconds',
+      'x-ratelimit-max',
+      'x-ratelimit-remaining',
+    ]) {
+      expect(res.headers.get(name)).toBe(direct.headers.get(name))
+      expect(res.headers.get(name)).not.toBeNull()
+    }
+  })
+
+  it('mirrors a 201 on a create rather than flattening it to 200', async () => {
+    const res = await postJson(
+      '/api/hl/proxy/contacts/',
+      { firstName: 'Casey' },
+      auth(aliceToken),
+    )
+
+    expect(res.status).toBe(201)
+  })
+
+  it('attaches our Authorization, the row’s Version and Accept', async () => {
+    const res = await getJson('/api/hl/proxy/contacts/__echo', auth(aliceToken))
+
+    expect(res.status).toBe(200)
+    const { headers } = res.body as EchoedRequest
+    expect(headers['authorization']).toBe(`Bearer ${ACCESS_TOKEN}`)
+    expect(headers['version']).toBe('2021-07-28')
+    expect(headers['accept']).toBe('application/json')
+  })
+
+  /*
+   * Per row, not per prefix (D13). The two surfaces genuinely disagree about
+   * which date they want, and a version taken from anywhere but the table is a
+   * version a caller could choose.
+   */
+  it("sends the row's own Version on each surface", async () => {
+    const contacts = await getJson('/api/hl/proxy/contacts/__echo', auth(aliceToken))
+    const calendars = await getJson('/api/hl/proxy/calendars/__echo', auth(aliceToken))
+
+    expect((contacts.body as EchoedRequest).headers['version']).toBe('2021-07-28')
+    expect((calendars.body as EchoedRequest).headers['version']).toBe('2021-04-15')
+  })
+
+  /*
+   * AC-13. A forwarded header is an input we did not decide to accept, and two
+   * of these are worse than untidy: a caller-supplied `Authorization` would be
+   * credential substitution, and a caller-supplied `Version` a way to reach
+   * undocumented behaviour. Asserting on the *values* rather than on the header
+   * names is what makes this hold however the runtime spells a header.
+   */
+  it('forwards no header the caller sent', async () => {
+    const res = await getJson('/api/hl/proxy/contacts/__echo', {
+      ...auth(aliceToken),
+      Version: 'v3',
+      Cookie: 'hl_session=caller-cookie-value',
+      'X-Forwarded-For': '10.9.8.7',
+    })
+
+    const { headers } = res.body as EchoedRequest
+    const seen = JSON.stringify(headers)
+
+    expect(headers['version']).toBe('2021-07-28')
+    expect(headers['authorization']).toBe(`Bearer ${ACCESS_TOKEN}`)
+    expect(seen).not.toContain('caller-cookie-value')
+    expect(seen).not.toContain('10.9.8.7')
+    // The caller's own ID token is a credential too, and it has no business
+    // upstream even in a header nobody reads.
+    expect(seen).not.toContain(aliceToken)
+  })
+
+  /*
+   * R1, made observable. Bob names alice's location in his own body; the proxy
+   * writes his over it, and the stub — which filters by the value it actually
+   * received — answers with nothing. A proxy that forgot to inject would return
+   * alice's five contacts here, which is the leak this slice exists to prevent.
+   */
+  it('gives each user only their own location’s records', async () => {
+    await seedConnection(bobUid, { locationId: BOB_LOCATION })
+
+    const alice = await postJson(
+      '/api/hl/proxy/contacts/search',
+      { pageLimit: 1 },
+      auth(aliceToken),
+    )
+    const bob = await postJson(
+      '/api/hl/proxy/contacts/search',
+      { pageLimit: 1, locationId: ALICE_LOCATION },
+      auth(bobToken),
+    )
+
+    expect((alice.body as { total: number }).total).toBe(5)
+    expect((bob.body as { total: number }).total).toBe(0)
+    expect((bob.body as { contacts: unknown[] }).contacts).toEqual([])
+  })
+})
