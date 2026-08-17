@@ -459,5 +459,53 @@ the machine rather than the branch.
 Confirming that: all six suites were re-run at `edccbfa` with the ports free, and every one is
 green at the counts in the table above — typecheck, lint, 1,388 unit, 36 rules, 292 integration,
 14 e2e. Both slice-06 e2e cases (`tests/e2e/files.spec.ts:39` and `:128`) are among the 14. No
-production code, test, lint rule or typecheck setting was changed to get there; there was nothing
-to change.
+production code was changed to get there; there was nothing to change.
+
+## The e2e flake the re-runs uncovered
+
+Re-running the suite to confirm the above turned up something the single green run had hidden.
+Four consecutive full e2e runs failed three times, and **every failure was the same wait**:
+`getByTestId('signup-sent')`, on Playwright's 5-second default, at a different test each time.
+
+| Run | Result | Failed at |
+|---|---|---|
+| 1 | 14 passed | — |
+| 2 | 1 failed | `auth.spec.ts:32` — the first test of the run |
+| 3 | 2 failed | `workspace.spec.ts:287` and `:306` — the last two |
+| 4 | 1 failed | `projects.spec.ts:79` — the middle |
+
+A failure that moves is not a defect in the code under it, and this one is not in slice 06 —
+none of the four failing tests belongs to this slice, and the two that do passed every run.
+Nor is it the endpoint. The emulator logs `POST /auth/register` finishing in **10–134ms in
+every observed case, including the failing ones**, and in run 3 logs no invocation at all
+before the five seconds were up: the request had not yet left the Vite dev server.
+
+The trigger was the machine. A second autopilot session was building slice 08 in the
+`genesis-slice08` worktree throughout, and a single-threaded dev server descheduled under that
+contention stalls for seconds at a time. But the load only *exposed* this; two things in the
+harness are what let it land on a test, and both are fixed in `fec1a66`.
+
+**A cold start, paid inside the first assertion.** The functions emulator boots no Node worker
+until something calls a function, so the first request of a run loads the entire bundle —
+measured at 3.2s against 10ms warm — inside whichever assertion is first. `tests/e2e/globalSetup.ts`
+now calls `GET /health` once before any test runs, so that cost is paid outside the assertions.
+`/health` is the right target: unauthenticated, so it needs no fixture, and it deletes the
+document it writes, so it leaves nothing for `resetEmulators` to find.
+
+**A wait with no headroom.** `signUpAndVerify` is the funnel every spec passes through, which
+makes register the most-repeated round trip in the suite — and it sat on the 5-second default
+while the two waits *immediately after it*, the verification headline and the action page,
+already carried an explicit `timeout: 15_000` for precisely this reason. Sign-up's confirmation
+is the one step of that flow that never got the same treatment. It carries the same now, from
+one exported constant, so the two copies of the assertion (`helpers.ts` and `auth.spec.ts`)
+cannot drift apart.
+
+**Neither change weakens anything, and that distinction matters here.** No test was skipped,
+deleted or made conditional; no lint rule or compiler option was touched. The assertions are
+byte-for-byte the same claims — submitting the sign-up form produces the confirmation screen —
+and none of them is a latency budget, which is why waiting longer for the same screen tests
+exactly what it tested before. Had the handler itself been slow, the fix would have had to be
+in the handler; it finishes in 10–134ms, so it was not.
+
+Verified by two further full e2e runs, both 14 passed, at a **higher** load average (6.9 and
+6.3) than the runs that failed (3.2 and 4.7).
