@@ -1,0 +1,115 @@
+import { z } from 'zod'
+
+import { projectsPath } from '../projects/schema'
+import { firestoreTimestamp } from '../users/schema'
+
+/**
+ * `users/{uid}/projects/{projectId}/messages/{messageId}` — a chat message, and
+ * the boundaries around it.
+ *
+ * The documents are written only by the Admin SDK inside
+ * `/api/projects/:projectId/messages`; `firestore.rules` denies the collection to
+ * every client, owner included. This file is where the shape of it is stated,
+ * from two directions: what a caller may send, and what the stored document must
+ * look like to be usable.
+ *
+ * **`role` is not in the body schema, and that is the security decision of the
+ * slice** (D5). The server assigns it, so a body carrying one is a 400 under
+ * `.strict()` rather than a key we happened not to read. It matters because from
+ * Slice 5 on the transcript *is* the LLM's context: a client that could author an
+ * assistant turn could write its own future prompt, into a context that also
+ * carries HighLevel API knowledge and the user's project files. Today the reply
+ * is an echo, so the same body is harmless — which is exactly why it has to be
+ * refused now, while nothing depends on it being allowed.
+ *
+ * **The path is the ownership.** A message lives under its project, which lives
+ * under its owner's uid — the one `withVerifiedUser` read off the ID token — so
+ * there is no `ownerUid` field here and no equality check anywhere. Another
+ * user's transcript is not addressable by a request rather than merely refused.
+ */
+
+export const MESSAGES = 'messages'
+
+/**
+ * The most messages one project may hold, and the most the list returns.
+ *
+ * The two are the same number on purpose, which is `PROJECT_LIMIT` /
+ * `LIST_LIMIT`'s rule one level down: an unpaginated list is only honest if it
+ * cannot truncate. 200 messages is 100 exchanges. It is a product limit the
+ * composer states out loud (AC-32), not a hidden truncation.
+ */
+export const MESSAGE_LIMIT = 200
+
+/** About a page of prose, which is what a considered prompt looks like. */
+export const CONTENT_MAX = 4000
+
+/**
+ * One place composes the path, from `projectsPath` rather than a second `'users'`
+ * literal, so the three segments cannot drift.
+ */
+export function messagesPath(uid: string, projectId: string): string {
+  return `${projectsPath(uid)}/${projectId}/${MESSAGES}`
+}
+
+/**
+ * The `POST` body — `content`, and nothing else.
+ *
+ * The trim happens before the limit, so padding cannot be smuggled past it, and
+ * `.min(1)` after the trim is what makes a whitespace-only prompt a 400 rather
+ * than an empty bubble. Enforced here and not in the composer, because the
+ * composer is not the boundary.
+ */
+export const createMessageBodySchema = z
+  .object({ content: z.string().trim().min(1).max(CONTENT_MAX) })
+  .strict()
+
+export type CreateMessageBody = z.infer<typeof createMessageBodySchema>
+
+/**
+ * The stored document, **parsed rather than asserted**.
+ *
+ * Nothing here carries a `.catch`, and that is the whole of D27: content is the
+ * message, `createdAt` is how it is ordered and dated, `seq` is what breaks the
+ * commit-timestamp tie, and a `role` outside the two has no side of the
+ * transcript to sit on. A document missing or corrupting any of them cannot be
+ * rendered in the right place, so it is *known* to be unusable and omitted —
+ * there is no by-id read of a message, so omission is the whole behaviour.
+ *
+ * **`content` deliberately carries no maximum** (D11), where the body schema has
+ * one. The echo of a 4,000-character prompt is longer than 4,000 characters, so a
+ * maximum here would make the server's own write unreadable on the way back out.
+ * A stored document is not a request body.
+ */
+export const storedMessageSchema = z.object({
+  role: z.enum(['user', 'assistant']),
+  content: z.string().min(1),
+  seq: z.number().int().min(0),
+  createdAt: firestoreTimestamp,
+})
+
+export type StoredMessage = z.infer<typeof storedMessageSchema>
+
+/**
+ * The wire shape. Timestamps are ISO-8601 strings — the project's convention
+ * since Slice 2.
+ *
+ * **`seq` is deliberately not here.** It is an ordering mechanism the server
+ * owns, and the array it produces is already in order, so the field has no wire
+ * representation at all — leaving it off the type is what stops it reaching one
+ * by accident.
+ */
+export interface Message {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  createdAt: string
+}
+
+export function toMessage(id: string, stored: StoredMessage): Message {
+  return {
+    id,
+    role: stored.role,
+    content: stored.content,
+    createdAt: stored.createdAt.toDate().toISOString(),
+  }
+}
