@@ -108,10 +108,6 @@ function save(): void {
       </Button>
     </div>
 
-    <div v-else-if="workspace.fileLoading" data-testid="file-editor-loading" class="p-3">
-      <div class="h-40 w-full animate-pulse rounded-md bg-secondary" />
-    </div>
-
     <template v-else>
       <!-- D22. The server's content won; saying so is the whole decision, since
            the alternative that was rejected is silence, not a merge UI. -->
@@ -125,12 +121,30 @@ function save(): void {
 
       <!-- A **flex column**, not a plain block, and the editor fills it as a flex
            item rather than by `height: 100%` — see the header (D19, R4). No
-           padding: the editor's own gutter is its margin. -->
-      <div class="flex min-h-0 flex-1 flex-col">
+           padding: the editor's own gutter is its margin. `relative` is for the
+           read's skeleton, which goes *over* the editor. -->
+      <div class="relative flex min-h-0 flex-1 flex-col">
         <CodeEditor />
+
+        <!-- A read in flight covers the editor rather than replacing it. A
+             `v-else-if` here would unmount `CodeEditor` on every open of a file
+             this session has not read — and on the re-read every generation ends
+             with — taking the Monaco instance and the whole model registry with
+             it: every *other* tab's undo history and scroll position, disposed
+             for a fetch that has nothing to do with them. -->
+        <div
+          v-if="workspace.fileLoading"
+          data-testid="file-editor-loading"
+          class="absolute inset-0 bg-background p-3"
+        >
+          <div class="h-40 w-full animate-pulse rounded-md bg-secondary" />
+        </div>
       </div>
 
-      <div class="flex flex-col gap-2 border-t border-border p-3">
+      <!-- Withheld while the read is in flight: there is nothing to count yet,
+           and a footer reading "0 bytes" over a file that is still arriving is a
+           number that is wrong rather than absent. -->
+      <div v-if="!workspace.fileLoading" class="flex flex-col gap-2 border-t border-border p-3">
         <Alert v-if="workspace.saveError" variant="destructive" data-testid="file-editor-error">
           <AlertDescription>{{ workspace.saveError }}</AlertDescription>
         </Alert>

@@ -221,6 +221,28 @@ describe('FileEditor', () => {
     expect(store.reloadFile).toHaveBeenCalledTimes(1)
   })
 
+  /**
+   * A read in flight is a **skeleton over the editor**, not instead of it.
+   *
+   * `v-else-if` on the loading flag would unmount `CodeEditor` on every open of a
+   * file this session has not read — and on the re-read every generation ends
+   * with — which tears down the Monaco instance and, with it, the model registry:
+   * every open tab's undo history and scroll position, disposed for a fetch that
+   * has nothing to do with them. The editor stays; the skeleton covers it.
+   */
+  it('keeps the editor mounted while a read is in flight', () => {
+    store.selectedPath = 'styles.css'
+    store.openTabs = ['index.html', 'styles.css']
+    store.fileLoading = true
+    const wrapper = mount(FileEditor)
+
+    expect(wrapper.find('[data-testid="file-editor-loading"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="code-editor"]').exists()).toBe(true)
+    // Nothing to count and nothing to save yet, so the footer stays off screen
+    // rather than reporting 0 bytes for a file that is still arriving.
+    expect(wrapper.find('[data-testid="file-editor-save"]').exists()).toBe(false)
+  })
+
   /*
    * The byte count reads `editorContent`, which prefers the streaming buffer —
    * so it is the arriving bytes that are counted for a file the server has never
