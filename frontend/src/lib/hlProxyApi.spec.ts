@@ -138,4 +138,43 @@ describe('hlProxy', () => {
 
     await expect(hlProxy('GET', '/calendars/')).rejects.toThrow(/connection/i)
   })
+
+  /*
+   * The path is glued onto `/api/hl/proxy`, and a relative URL is *resolved*
+   * before it is sent — `/api/hl/proxy` + `/../../projects` is `/api/projects`.
+   * Today every caller is a literal in `stores/hl.ts`, so nothing can reach
+   * that. But this function's own docblock states the plan: Slice 10's `srcdoc`
+   * shim mirrors this signature so generated code can call `hl(...)` unchanged,
+   * and D16 puts the fetch in the *parent* precisely because the sandbox cannot
+   * mint an App Check token. The moment the path argument comes from an LLM,
+   * `hl('GET', '/../../projects')` is an attested, authenticated call to an
+   * arbitrary Genesis route from inside the sandbox — the confused deputy the
+   * server-side allowlist exists to prevent, reintroduced one layer above it.
+   *
+   * The grammar is the server's own (`routes.ts`'s `PARAM`, segment by
+   * segment), so this refuses exactly what `matchRoute` would refuse and
+   * nothing a legal HighLevel path needs.
+   */
+  it.each([
+    ['a parent segment', '/../../projects'],
+    ['a parent segment mid-path', '/contacts/../../projects'],
+    ['an empty interior segment', '/contacts//search'],
+    ['an absolute URL', 'https://evil.test/contacts'],
+    ['a protocol-relative URL', '//evil.test/contacts'],
+    ['a path with no leading slash', 'contacts/search'],
+    ['a query smuggled into the path', '/contacts/search?locationId=theirs'],
+    ['an encoded separator', '/contacts/%2E%2E%2Foauth'],
+  ])('refuses %s without issuing a request', async (_name, path) => {
+    await expect(hlProxy('GET', path)).rejects.toThrow(/HighLevel path/i)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it.each(['/calendars/', '/contacts/search', '/contacts/2oKn7but6Q2WaHIu7pqC', '/calendars'])(
+    'allows the legal path %s',
+    async (path) => {
+      await hlProxy('GET', path)
+
+      expect(fetchMock).toHaveBeenCalled()
+    },
+  )
 })

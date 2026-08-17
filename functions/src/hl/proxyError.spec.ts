@@ -133,6 +133,27 @@ describe('detailFrom', () => {
   ])('returns nothing for %s', (_name, raw) => {
     expect(detailFrom(raw)).toBeUndefined()
   })
+
+  /*
+   * The failure path must not be the expensive one.
+   *
+   * `mapUpstreamStatus` hands this whatever came back, and the proxy's cap
+   * allows that to be 5 MiB — so an unguarded `JSON.parse` here would parse
+   * megabytes to read at most two hundred characters, on the one path whose
+   * size is chosen by upstream rather than by us. A real HighLevel error body
+   * is under a hundred bytes: `location-401-missing-scope.json` is 84.
+   */
+  it('does not parse an error body far larger than any message it could hold', () => {
+    const huge = JSON.stringify({ message: 'Invalid JWT', padding: 'x'.repeat(200_000) })
+
+    expect(detailFrom(huge)).toBeUndefined()
+  })
+
+  it('still reads a message from a body of a plausible size', () => {
+    const roomy = JSON.stringify({ message: 'Invalid JWT', padding: 'x'.repeat(2_000) })
+
+    expect(detailFrom(roomy)).toBe('Invalid JWT')
+  })
 })
 
 describe('mapTokenError', () => {
