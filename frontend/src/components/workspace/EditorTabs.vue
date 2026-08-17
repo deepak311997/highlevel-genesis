@@ -58,14 +58,15 @@ const workspace = useWorkspaceStore()
       >
         {{ path }}
         <!-- The dot is the whole of "you have unsaved work here" for a tab you
-             are not looking at, so it is text as well as a mark. -->
-        <span
-          v-if="workspace.dirtyPaths.includes(path)"
-          class="ml-1 text-primary"
-          aria-label="Unsaved changes"
-        >
-          •
-        </span>
+             are not looking at, so it is text as well as a mark — real text,
+             hidden from sight rather than from the accessibility tree. An
+             `aria-label` on the bullet would have named nothing: ARIA forbids an
+             accessible name on a generic element, so it is dropped and the tab
+             would announce the character, or silence. -->
+        <template v-if="workspace.dirtyPaths.includes(path)">
+          <span class="ml-1 text-primary" aria-hidden="true">•</span>
+          <span class="sr-only">Unsaved changes</span>
+        </template>
       </button>
 
       <!-- A sibling, not a child (D13). -->

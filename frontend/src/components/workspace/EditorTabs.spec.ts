@@ -76,6 +76,29 @@ describe('EditorTabs', () => {
     ])
   })
 
+  /**
+   * The dirty mark is **text**, not a labelled bullet.
+   *
+   * `aria-label` on a bare `<span>` names nothing: ARIA forbids an accessible
+   * name on a generic element, so the attribute was dropped and the mark reached
+   * a screen reader as the bullet character or as nothing at all — for the one
+   * thing a tab you are *not* looking at has to be able to say. Real text, hidden
+   * from sight rather than from the accessibility tree, with the dot decorative.
+   */
+  it('announces a dirty tab in text rather than by the dot alone', () => {
+    openThree()
+    store.dirtyPaths = ['app.js']
+    const wrapper = mount(EditorTabs)
+
+    const dirty = tabs(wrapper).find((tab) => tab.attributes('data-path') === 'app.js')
+    expect(dirty?.text()).toContain('Unsaved changes')
+    expect(dirty?.find('.sr-only').exists()).toBe(true)
+    expect(dirty?.find('[aria-hidden="true"]').text()).toBe('•')
+
+    const clean = tabs(wrapper).find((tab) => tab.attributes('data-path') === 'index.html')
+    expect(clean?.text()).not.toContain('Unsaved changes')
+  })
+
   it('activates a tab when it is clicked', async () => {
     openThree()
     const wrapper = mount(EditorTabs)
