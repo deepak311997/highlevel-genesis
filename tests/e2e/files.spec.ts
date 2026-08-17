@@ -117,12 +117,25 @@ test.describe('Slice 06 — file operations', () => {
      * and a HighLevel origin, which a generated page cannot reach anyway (D4).
      * Asserted here as well as at L1 because L1 reads the fixture directly; this
      * reads what the collector stored, the API served and Monaco rendered.
+     *
+     * Read through `editorText` for the reason the header gives: the textarea
+     * this was first written against is gone, so the claim is made against
+     * Monaco's model, which is the exact text — not virtualised DOM that renders
+     * only the visible lines and would make an absence assertion meaningless.
      */
     await page.getByTestId('file-row').filter({ hasText: 'app.js' }).click()
-    const generated = page.getByTestId('file-editor-input')
-    await expect(generated).toHaveValue(HL_CALL)
-    await expect(generated).not.toHaveValue(/locationId/)
-    await expect(generated).not.toHaveValue(/leadconnectorhq/)
+    await expect(page.getByTestId('code-editor')).toBeVisible()
+    await expect.poll(async () => (await editorText(page)) ?? '').toMatch(HL_CALL)
+
+    /*
+     * Captured once and asserted three times, rather than re-read per assertion:
+     * the two negatives are satisfied by an empty string, so they are only worth
+     * anything against a value that has been shown to hold `hl(`.
+     */
+    const generated = (await editorText(page)) ?? ''
+    expect(generated).toMatch(HL_CALL)
+    expect(generated).not.toMatch(/locationId/)
+    expect(generated).not.toMatch(/leadconnectorhq/)
 
     /* Movement four: open a file, edit it, save it. */
     await page.getByTestId('file-row').filter({ hasText: 'index.html' }).click()
