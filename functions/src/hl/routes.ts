@@ -1,3 +1,5 @@
+import { hlApiBase } from './config'
+
 /**
  * The HighLevel allowlist — one table, three consumers.
  *
@@ -269,4 +271,75 @@ export function matchRoute(
   }
 
   return { kind: 'matched', row: chosen.row, params }
+}
+
+/** The one query and body key we own on every row (P1). */
+const LOCATION_KEY = 'locationId'
+
+/**
+ * The upstream URL, assembled from **the matched row** and never from a string.
+ *
+ * The signature is the argument: it takes an `HlRoute`, which only
+ * {@link matchRoute} produces, plus parameters it re-checks against the grammar
+ * itself. There is no overload that accepts a path, so "the caller's path was
+ * concatenated onto the base" is not a mistake this module can make — which is
+ * the whole of D6.
+ *
+ * The re-check looks redundant next to `matchRoute`'s, and is not: a claim that
+ * holds only because the one caller today is careful is not a structural claim.
+ * It is also what keeps `URL` from silently normalising a `..` segment away.
+ *
+ * `locationId` is deleted from the caller's query on **every** row and re-added
+ * only where the row asks for it (P1, D8). A caller-supplied location therefore
+ * never reaches HighLevel, on any route, rather than being overridden on the
+ * rows we happened to think about.
+ */
+export function buildUpstreamUrl(
+  row: HlRoute,
+  params: Record<string, string>,
+  rawQuery: string,
+  locationId: string,
+): URL {
+  const pathname = row.pattern.replace(/:(\w+)/g, (_match, name: string) => {
+    const value = params[name]
+    if (value === undefined || !isLegalParam(value)) {
+      throw new Error(`Refusing to build an upstream URL from an illegal ${name}`)
+    }
+    return encodeURIComponent(value)
+  })
+
+  const url = new URL(`${hlApiBase()}${pathname}`)
+
+  // The raw query string, not `req.query`: qs parsing cannot round-trip a
+  // repeated parameter or bracket syntax back to what the caller sent, and D12
+  // promises verbatim forwarding.
+  const query = new URLSearchParams(rawQuery)
+  query.delete(LOCATION_KEY)
+  if (row.locationIn === 'query') query.set(LOCATION_KEY, locationId)
+  url.search = query.toString()
+
+  return url
+}
+
+/**
+ * The upstream body — the caller's, opaquely, with `locationId` ours (D11).
+ *
+ * Not validated against a schema. Parse-don't-validate governs *our* boundary;
+ * this body's boundary is HighLevel's, and a per-route Zod mirror of their
+ * filter DSL would be a second copy of an API we do not control, stale on their
+ * next release and rejecting valid fields a correct generated app used. The
+ * allowlist is the security control, and it has already decided this endpoint
+ * may be reached.
+ *
+ * A non-object body is forwarded untouched, arrays included: there is no
+ * top-level `locationId` to reserve on one, and re-serialising it would be the
+ * re-shaping D17 refuses.
+ */
+export function buildUpstreamBody(row: HlRoute, body: unknown, locationId: string): unknown {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return body
+
+  const out: Record<string, unknown> = { ...(body as Record<string, unknown>) }
+  Reflect.deleteProperty(out, LOCATION_KEY)
+  if (row.locationIn === 'body') out[LOCATION_KEY] = locationId
+  return out
 }
