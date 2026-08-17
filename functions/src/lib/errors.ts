@@ -31,18 +31,17 @@ export function asyncHandler(
 }
 
 /**
- * Terminal error handler.
+ * The JSON envelope, extracted so a non-Express handler can answer with it too.
+ *
+ * `/generate` is an `onRequest` function rather than a route on the `api` Express
+ * app, so it has no error-handling middleware to fall through to — but its
+ * refusals have to be byte-identical to every other route's, or a client would
+ * need two ways to read a failure. One function, two callers.
  *
  * Known `HttpError`s are surfaced verbatim; anything else becomes a generic 500
- * so an internal message never reaches a client. Express identifies an error
- * handler by its four-argument signature, so `next` must stay in the list.
+ * so an internal message never reaches a client.
  */
-export function errorHandler(
-  err: unknown,
-  _req: Request,
-  res: Response,
-  _next: NextFunction,
-): void {
+export function sendHttpError(err: unknown, res: Response): void {
   if (err instanceof HttpError) {
     res.status(err.status).json({ error: err.message, code: err.code })
     return
@@ -53,4 +52,19 @@ export function errorHandler(
   // is enough to put a plaintext password into Cloud Logging.
   console.error('Unhandled error', describeError(err))
   res.status(500).json({ error: 'Internal error', code: 'internal' })
+}
+
+/**
+ * Terminal error handler — the Express adapter for {@link sendHttpError}.
+ *
+ * Express identifies an error handler by its four-argument signature, so `next`
+ * must stay in the list even though nothing reads it.
+ */
+export function errorHandler(
+  err: unknown,
+  _req: Request,
+  res: Response,
+  _next: NextFunction,
+): void {
+  sendHttpError(err, res)
 }

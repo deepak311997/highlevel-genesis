@@ -146,3 +146,34 @@ and **exactly one terminal event, last**, over six different shapes.
 the mapper's input type and the mapper is the only thing that consumes it, so it belongs where it is
 used; `client.ts` imports it in T8. This also keeps T7 from having to create an untested `client.ts`
 just to hold an interface.
+
+## T8 — The client port, the fake, the fixtures and the secret script
+
+**Commit:** `1c47f09`
+
+**Tests added**
+
+| Level | File | What |
+|---|---|---|
+| L1 | `functions/src/llm/fake.spec.ts` | `buildFakeStream` rejects when `FUNCTIONS_EMULATOR` is unset, and for `false`/`TRUE`/`1`/`''` — the gate is an exact match; each of the six markers selects the documented behaviour, asserted by consuming the stream through `mapStream`; an unmarked prompt replays `reply.json` and its recorded **thinking delta does not become a token**; the marker is read from the *last* user message only; `abort()` really stops production |
+| L1 | `functions/src/llm/client.spec.ts` | The emulator path needs no key; a missing or blank key rejects with a message naming both `ANTHROPIC_API_KEY` and `functions:secrets:set`; the parameter is a `defineSecret` |
+| L1 | `functions/src/llm/params.spec.ts` | AC-6's scan: the scanner is tested on synthetic source (direct call, spaced members, generic call, and four things it must **not** fire on), then run over `functions/src` — `messages.create` nowhere, `messages.stream` somewhere |
+| L1 | `scripts/ensure-secret-local.spec.mjs` | Creates from the example when absent; **never** touches an existing file, empty ones included; throws when the committed example is missing |
+
+**Green:** `client.ts` (secret, lazy `await import`, emulator switch), `fake.ts`, three fixtures
+under `tests/fixtures/llm/`, `index.ts`, `scripts/ensure-secret-local.mjs`,
+`functions/.secret.local.example`, `functions/.env.example`'s rewritten `ANTHROPIC_API_KEY` block,
+and the four `package.json` scripts.
+
+**Verified beyond the suite**, because a fixture path that only works under Vitest is invisible
+until CI: `npm --prefix functions run build` then requiring `functions/lib/llm/fake.js` directly
+replays 14 events, so the `__dirname`-anchored `../../../tests/fixtures/llm` resolves from `lib/`
+as well as from `src/`. `node scripts/ensure-secret-local.mjs` creates the file, is a no-op on the
+second run, and the file stays gitignored.
+
+**Deviations from the plan.** The scan's needles are regexes anchored on the *call*
+(`/\.\s*messages\s*\.\s*create\s*[(<]/`) over comment-stripped source, not plain substrings — the
+substring version reported this repository's own documentation. `client.spec.ts` is new (the plan
+listed no spec for `client.ts`); the emulator gate and the missing-key message are both testable
+without a network, and leaving them untested would have made the key failure an opaque 401 in
+production with nothing pointing at the binding.

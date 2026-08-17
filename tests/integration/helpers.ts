@@ -39,6 +39,16 @@ const FUNCTIONS_PORT = process.env['FUNCTIONS_EMULATOR_PORT'] ?? '5001'
 
 export const API_BASE = `http://127.0.0.1:${FUNCTIONS_PORT}/${PROJECT_ID}/${REGION}/api`
 
+/**
+ * `/generate` is its **own function**, not a route on `api` (D1).
+ *
+ * It needs a 540-second timeout and 512 MiB, which the CRUD endpoints must not
+ * pay for, so it is reached at `.../generate` rather than `.../api/generate`.
+ * Pointing this at `API_BASE` would 404 against `api`'s terminal catch-all and
+ * the failure would read like a missing route.
+ */
+export const GENERATE_URL = `http://127.0.0.1:${FUNCTIONS_PORT}/${PROJECT_ID}/${REGION}/generate`
+
 function emulatorHost(name: 'FIREBASE_AUTH_EMULATOR_HOST' | 'FIRESTORE_EMULATOR_HOST'): string {
   const value = process.env[name]
   if (value === undefined || value === '') {
@@ -280,4 +290,105 @@ async function toJsonResponse(res: Response): Promise<JsonResponse> {
     parsed = raw
   }
   return { status: res.status, body: parsed, raw }
+}
+
+/**
+ * One parsed SSE frame. A comment frame carries neither an event nor data.
+ *
+ * `event` defaults to `'message'` per the SSE spec, which nothing here emits —
+ * a frame arriving with that name means the server wrote `data:` with no
+ * `event:`, and the tests should see that rather than silently coerce it.
+ */
+export interface SseFrame {
+  event: string
+  data: unknown
+  comment: string | null
+}
+
+/**
+ * Parse a whole SSE body into frames.
+ *
+ * Deliberately simple and deliberately *not* the client's parser: this is the
+ * oracle those tests are checked against, so sharing an implementation would let
+ * one bug agree with itself. Frames are separated by a blank line; within a
+ * frame, `data:` lines join with a newline and a leading `:` is a comment.
+ */
+export function readSseFrames(raw: string): SseFrame[] {
+  return raw
+    .split('\n\n')
+    .filter((block) => block.trim() !== '')
+    .map((block) => {
+      const lines = block.split('\n')
+      const comment = lines.find((line) => line.startsWith(':'))
+      if (comment !== undefined) {
+        return { event: '', data: undefined, comment: comment.slice(1).trim() }
+      }
+
+      const event = lines
+        .find((line) => line.startsWith('event:'))
+        ?.slice('event:'.length)
+        .trim()
+      const payload = lines
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice('data:'.length).trim())
+        .join('\n')
+
+      let data: unknown
+      try {
+        data = JSON.parse(payload)
+      } catch {
+        data = payload
+      }
+      return { event: event ?? 'message', data, comment: null }
+    })
+}
+
+export interface GenerateResponse {
+  status: number
+  contentType: string
+  raw: string
+  /** The parsed JSON body, for the refusals that never become a stream (D9). */
+  body: unknown
+  frames: SseFrame[]
+}
+
+/**
+ * `POST /generate`, read to completion.
+ *
+ * Both channels are returned every time, because the assertion that matters for
+ * a refusal is not only the status: it is that the response is **JSON and not an
+ * event stream**. Once headers are flushed the status line is spent, so a
+ * handler that opened the stream too early would answer 200 with an `error`
+ * frame — which a status-code assertion alone cannot see (D9, R6).
+ */
+export async function postGenerate(
+  body: unknown,
+  headers: Record<string, string> = {},
+): Promise<GenerateResponse> {
+  const res = await fetch(GENERATE_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+  })
+
+  const raw = await res.text()
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    parsed = raw
+  }
+
+  return {
+    status: res.status,
+    contentType: res.headers.get('content-type') ?? '',
+    raw,
+    body: parsed,
+    frames: readSseFrames(raw),
+  }
+}
+
+/** Every frame carrying the given event name, in order. */
+export function framesOf(frames: SseFrame[], event: string): SseFrame[] {
+  return frames.filter((frame) => frame.event === event)
 }

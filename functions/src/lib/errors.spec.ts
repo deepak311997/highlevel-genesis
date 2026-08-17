@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from 'express'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { errorHandler, HttpError } from './errors'
+import { errorHandler, HttpError, sendHttpError } from './errors'
 
 /**
  * Returns the spies alongside the response so assertions read them directly.
@@ -63,5 +63,49 @@ describe('errorHandler', () => {
     expect(logged).not.toContain('hunter2')
     expect(logged).not.toContain('ABC123')
     expect(logged).toContain('auth/internal-error')
+  })
+})
+
+/**
+ * The envelope, without Express.
+ *
+ * `/generate` is an `onRequest` function rather than a route on the `api` app,
+ * so it has no error-handling middleware to fall through to — and its refusals
+ * still have to be byte-identical to every other route's, or a client would need
+ * two ways to read a failure. These cases assert the sharing rather than
+ * assuming it.
+ */
+describe('sendHttpError', () => {
+  it('answers an HttpError with its own status and code', () => {
+    const { res, status, json } = mockResponse()
+
+    sendHttpError(new HttpError(404, 'That project no longer exists.', 'not_found'), res)
+
+    expect(status).toHaveBeenCalledWith(404)
+    expect(json).toHaveBeenCalledWith({
+      error: 'That project no longer exists.',
+      code: 'not_found',
+    })
+  })
+
+  it('reduces anything else to a generic 500', () => {
+    const { res, status, json } = mockResponse()
+
+    sendHttpError(new Error('connection string: postgres://user:pw@host'), res)
+
+    expect(status).toHaveBeenCalledWith(500)
+    expect(json).toHaveBeenCalledWith({ error: 'Internal error', code: 'internal' })
+  })
+
+  /* One implementation, so the two callers cannot drift. */
+  it('is what errorHandler answers with', () => {
+    const direct = mockResponse()
+    const viaExpress = mockResponse()
+
+    sendHttpError(new HttpError(409, 'Too many.', 'message_limit'), direct.res)
+    errorHandler(new HttpError(409, 'Too many.', 'message_limit'), req, viaExpress.res, next)
+
+    expect(direct.json.mock.calls).toEqual(viaExpress.json.mock.calls)
+    expect(direct.status.mock.calls).toEqual(viaExpress.status.mock.calls)
   })
 })
