@@ -97,3 +97,55 @@ describe('shiftPorts', () => {
     expect(new Set(ports).size).toBe(ports.length)
   })
 })
+
+/**
+ * A second checkout of this repo runs its own suite on the same machine — two
+ * autopilot tracks, one slice each. Ports are the only thing two clones
+ * genuinely share, and they shared them by construction: the offset was a
+ * constant, so every checkout computed the identical set and the second run to
+ * start died with "Could not start emulator hub, port taken". That reads as a
+ * red suite and says nothing about the code.
+ *
+ * The band is therefore selectable per checkout. Hub and logging are settings
+ * rather than arithmetic: their defaults were picked to clear a `npm run dev`
+ * session, and a tidy-looking formula would walk one band onto another's.
+ */
+describe('a second checkout gets its own band', () => {
+  it('shifts every declared port by the offset it is given', () => {
+    const { emulators } = shiftPorts(firebaseJson(), { offset: 300 })
+
+    expect(emulators.auth.port).toBe(9399)
+    expect(emulators.functions.port).toBe(5301)
+    expect(emulators.firestore.port).toBe(8380)
+    expect(emulators.ui.port).toBe(4300)
+    expect(emulators.firestore.websocketPort).toBe(DEFAULT_FIRESTORE_WEBSOCKET_PORT + 300)
+  })
+
+  it('takes hub and logging as their own settings', () => {
+    const { emulators } = shiftPorts(firebaseJson(), { hubPort: 4900, loggingPort: 5000 })
+
+    expect(emulators.hub.port).toBe(4900)
+    expect(emulators.logging.port).toBe(5000)
+  })
+
+  it('keeps the committed defaults when given nothing', () => {
+    const { emulators } = shiftPorts(firebaseJson())
+
+    expect(emulators.auth.port).toBe(9099 + OFFSET)
+    expect(emulators.hub.port).toBe(4700)
+    expect(emulators.logging.port).toBe(4800)
+  })
+
+  it('shares no port between two checkouts on different bands', () => {
+    const source = () => JSON.parse(readFileSync(join(ROOT, 'firebase.json'), 'utf8'))
+
+    const first = allPorts(shiftPorts(source()).emulators)
+    const second = allPorts(
+      shiftPorts(source(), { offset: 300, hubPort: 4900, loggingPort: 5000 }).emulators,
+    )
+
+    expect(first).not.toHaveLength(0)
+    expect(second).not.toHaveLength(0)
+    expect(first.filter((port) => second.includes(port))).toEqual([])
+  })
+})
