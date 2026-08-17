@@ -204,6 +204,12 @@ token, never from the request body**. Security rules stay and deny clients outri
 collection's L3 tests prove that denial. Liveness is a refetch after a mutation, or an SSE
 stream where one already exists.
 
+**No user identifier appears in a route** — not \`:uid\`, not \`me\`. The uid comes from the
+verified token and nowhere else, so a path segment naming the user is redundant at best and
+a second, forgeable source of identity at worst. Routes name the resource only:
+\`/api/profile\`, \`/api/projects\`, \`/api/projects/:projectId/files\`. A resource id in a path
+is fine — it gets an ownership check, and is never trusted for identity.
+
 If a slice's own PRD or plan contradicts this — including one written before the decision —
 this rule wins, and you note the contradiction in the slice's docs rather than following
 the stale document.

@@ -18,10 +18,10 @@ import {
  * The caller's own profile — read, and ensured.
  *
  * The uid is the one `withVerifiedUser` read off the ID token, and there is no
- * other source for it: the path is the literal `/users/me`, so a request has
- * nowhere to name a different user. That is the shape the whole API takes from
- * here on, and it is why `firestore.rules` can deny `users/{uid}` to every
- * client — a mistake in this file is a bug, not a breach.
+ * other source for it: the path is `/profile`, naming the resource and no user
+ * at all, so a request has nowhere to name a different one. That is the shape
+ * the whole API takes from here on, and it is why `firestore.rules` can deny
+ * `users/{uid}` to every client — a mistake in this file is a bug, not a breach.
  */
 
 /** What both routes answer with, so the two cannot drift in shape. */

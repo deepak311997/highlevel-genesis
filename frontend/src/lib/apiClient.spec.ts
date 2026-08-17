@@ -127,6 +127,6 @@ describe('request', () => {
   it('returns the parsed body on success', async () => {
     fetchMock.mockResolvedValue(response({ profile: null }))
 
-    await expect(request('/api/users/me')).resolves.toEqual({ profile: null })
+    await expect(request('/api/profile')).resolves.toEqual({ profile: null })
   })
 })

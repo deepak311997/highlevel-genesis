@@ -4,7 +4,7 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { adminDb, getJson, idTokenFor, putJson, resetEmulators, seedUser } from './helpers'
 
 /**
- * `GET` and `PUT /api/users/me` — the whole of the browser's access to its own
+ * `GET` and `PUT /api/profile` — the whole of the browser's access to its own
  * profile.
  *
  * `users/{uid}` used to be client-written under owner-scoped rules. It is now
@@ -66,12 +66,12 @@ beforeEach(async () => {
   await adminDb().doc(`users/${bobUid}`).delete()
 })
 
-describe('GET /api/users/me', () => {
+describe('GET /api/profile', () => {
   /** AC-3. */
   it('returns the profile once one exists, with ISO-8601 timestamps', async () => {
     await seedProfile(aliceUid, { displayName: 'Alice' })
 
-    const res = await getJson('/api/users/me', auth(aliceToken))
+    const res = await getJson('/api/profile', auth(aliceToken))
     const profile = profileOf(res.body)
 
     expect(res.status).toBe(200)
@@ -92,7 +92,7 @@ describe('GET /api/users/me', () => {
    * an error screen to a healthy account.
    */
   it('answers 200 with a null profile rather than 404 when there is none', async () => {
-    const res = await getJson('/api/users/me', auth(aliceToken))
+    const res = await getJson('/api/profile', auth(aliceToken))
 
     expect(res.status).toBe(200)
     expect(res.body).toEqual({ profile: null })
@@ -100,7 +100,7 @@ describe('GET /api/users/me', () => {
 
   /** AC-6. */
   it('refuses an unauthenticated caller with 401 and creates nothing', async () => {
-    const res = await getJson('/api/users/me')
+    const res = await getJson('/api/profile')
 
     expect(res.status).toBe(401)
     expect((res.body as { code?: string }).code).toBe('unauthenticated')
@@ -109,7 +109,7 @@ describe('GET /api/users/me', () => {
 
   /** AC-7. A router guard stops a browser; it does not stop a direct call. */
   it('refuses an unverified caller with 403', async () => {
-    const res = await getJson('/api/users/me', auth(unverifiedToken))
+    const res = await getJson('/api/profile', auth(unverifiedToken))
 
     expect(res.status).toBe(403)
     expect((res.body as { code?: string }).code).toBe('email_unverified')
@@ -123,7 +123,7 @@ describe('GET /api/users/me', () => {
   it('fails closed on a stored document with no email', async () => {
     await adminDb().doc(`users/${aliceUid}`).set({ displayName: 'Alice' })
 
-    const res = await getJson('/api/users/me', auth(aliceToken))
+    const res = await getJson('/api/profile', auth(aliceToken))
 
     expect(res.status).toBe(200)
     expect(res.body).toEqual({ profile: null })
@@ -133,17 +133,17 @@ describe('GET /api/users/me', () => {
   it('is repaired by a following PUT', async () => {
     await adminDb().doc(`users/${aliceUid}`).set({ displayName: 'Alice' })
 
-    await putJson('/api/users/me', {}, auth(aliceToken))
-    const profile = profileOf((await getJson('/api/users/me', auth(aliceToken))).body)
+    await putJson('/api/profile', {}, auth(aliceToken))
+    const profile = profileOf((await getJson('/api/profile', auth(aliceToken))).body)
 
     expect(profile?.['email']).toBe(ALICE)
   })
 })
 
-describe('PUT /api/users/me', () => {
+describe('PUT /api/profile', () => {
   /** AC-1. */
   it('creates the document and returns it, with the email from the Auth record', async () => {
-    const res = await putJson('/api/users/me', {}, auth(aliceToken))
+    const res = await putJson('/api/profile', {}, auth(aliceToken))
     const profile = profileOf(res.body)
 
     expect(res.status).toBe(200)
@@ -163,9 +163,9 @@ describe('PUT /api/users/me', () => {
    * make "strictly later" a flake rather than a bug.
    */
   it('preserves createdAt and advances updatedAt on a second call', async () => {
-    const first = profileOf((await putJson('/api/users/me', {}, auth(aliceToken))).body)
+    const first = profileOf((await putJson('/api/profile', {}, auth(aliceToken))).body)
     await new Promise((resolve) => setTimeout(resolve, 50))
-    const second = profileOf((await putJson('/api/users/me', {}, auth(aliceToken))).body)
+    const second = profileOf((await putJson('/api/profile', {}, auth(aliceToken))).body)
 
     expect(second?.['createdAt']).toBe(first?.['createdAt'])
     expect(String(second?.['updatedAt']) > String(first?.['updatedAt'])).toBe(true)
@@ -174,15 +174,15 @@ describe('PUT /api/users/me', () => {
   /** AC-5. Absent leaves the name alone; an explicit null clears it. */
   it('sets and then clears displayName', async () => {
     const set = profileOf(
-      (await putJson('/api/users/me', { displayName: 'Alice' }, auth(aliceToken))).body,
+      (await putJson('/api/profile', { displayName: 'Alice' }, auth(aliceToken))).body,
     )
     expect(set?.['displayName']).toBe('Alice')
 
-    const untouched = profileOf((await putJson('/api/users/me', {}, auth(aliceToken))).body)
+    const untouched = profileOf((await putJson('/api/profile', {}, auth(aliceToken))).body)
     expect(untouched?.['displayName']).toBe('Alice')
 
     const cleared = profileOf(
-      (await putJson('/api/users/me', { displayName: null }, auth(aliceToken))).body,
+      (await putJson('/api/profile', { displayName: null }, auth(aliceToken))).body,
     )
     expect(cleared?.['displayName']).toBeNull()
   })
@@ -197,7 +197,7 @@ describe('PUT /api/users/me', () => {
   it("rejects a body carrying another user's uid, writing nothing", async () => {
     await seedProfile(bobUid, { email: BOB })
 
-    const res = await putJson('/api/users/me', { uid: bobUid }, auth(aliceToken))
+    const res = await putJson('/api/profile', { uid: bobUid }, auth(aliceToken))
 
     expect(res.status).toBe(400)
     expect((res.body as { code?: string }).code).toBe('invalid_body')
@@ -206,7 +206,7 @@ describe('PUT /api/users/me', () => {
   })
 
   it('rejects a body carrying an email, writing nothing', async () => {
-    const res = await putJson('/api/users/me', { email: 'attacker@example.test' }, auth(aliceToken))
+    const res = await putJson('/api/profile', { email: 'attacker@example.test' }, auth(aliceToken))
 
     expect(res.status).toBe(400)
     expect((res.body as { code?: string }).code).toBe('invalid_body')
@@ -218,7 +218,7 @@ describe('PUT /api/users/me', () => {
     ['an over-length display name', { displayName: 'a'.repeat(81) }],
     ['a non-string display name', { displayName: 42 }],
   ])('rejects %s', async (_label, body) => {
-    const res = await putJson('/api/users/me', body, auth(aliceToken))
+    const res = await putJson('/api/profile', body, auth(aliceToken))
 
     expect(res.status).toBe(400)
     expect((res.body as { code?: string }).code).toBe('invalid_body')
@@ -226,7 +226,7 @@ describe('PUT /api/users/me', () => {
 
   /** AC-6. */
   it('refuses an unauthenticated caller with 401 and creates nothing', async () => {
-    const res = await putJson('/api/users/me', {})
+    const res = await putJson('/api/profile', {})
 
     expect(res.status).toBe(401)
     expect((res.body as { code?: string }).code).toBe('unauthenticated')
@@ -235,7 +235,7 @@ describe('PUT /api/users/me', () => {
 
   /** AC-7. */
   it('refuses an unverified caller with 403 and creates nothing', async () => {
-    const res = await putJson('/api/users/me', {}, auth(unverifiedToken))
+    const res = await putJson('/api/profile', {}, auth(unverifiedToken))
 
     expect(res.status).toBe(403)
     expect((res.body as { code?: string }).code).toBe('email_unverified')
@@ -247,14 +247,14 @@ describe('PUT /api/users/me', () => {
    * because this is the property the whole route shape exists to guarantee.
    */
   it("returns alice's profile to alice and never touches bob's", async () => {
-    await putJson('/api/users/me', {}, auth(bobToken))
+    await putJson('/api/profile', {}, auth(bobToken))
     const bobBefore = (await adminDb().doc(`users/${bobUid}`).get()).get('updatedAt') as {
       toMillis: () => number
     }
 
     await new Promise((resolve) => setTimeout(resolve, 50))
-    const put = profileOf((await putJson('/api/users/me', {}, auth(aliceToken))).body)
-    const got = profileOf((await getJson('/api/users/me', auth(aliceToken))).body)
+    const put = profileOf((await putJson('/api/profile', {}, auth(aliceToken))).body)
+    const got = profileOf((await getJson('/api/profile', auth(aliceToken))).body)
 
     expect(put?.['email']).toBe(ALICE)
     expect(got?.['email']).toBe(ALICE)

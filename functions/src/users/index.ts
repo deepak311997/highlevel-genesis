@@ -30,8 +30,12 @@ const attested = asyncHandler(requireAppCheck)
 // nothing against a caller who already holds a valid ID token. Mutations are —
 // one rule for the whole API, matching `GET` and `DELETE /hl/connection`.
 //
-// `PUT` rather than `POST /users/ensure`: create-if-absent, touch-if-present is
-// idempotent, which is exactly what the verb means, and a procedure wearing a
-// URL is not.
-usersRouter.get('/users/me', asyncHandler(withVerifiedUser(handleGetProfile)))
-usersRouter.put('/users/me', attested, asyncHandler(withVerifiedUser(handlePutProfile)))
+// `PUT` rather than `POST /profile/ensure`: create-if-absent, touch-if-present
+// is idempotent, which is exactly what the verb means, and a procedure wearing
+// a URL is not.
+//
+// `/profile`, not `/users/me`: the route names the resource and nothing else.
+// The uid comes from the verified token, so a segment naming the user would be
+// a second source of identity — redundant here, forgeable somewhere else.
+usersRouter.get('/profile', asyncHandler(withVerifiedUser(handleGetProfile)))
+usersRouter.put('/profile', attested, asyncHandler(withVerifiedUser(handlePutProfile)))

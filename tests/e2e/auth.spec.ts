@@ -109,7 +109,7 @@ test.describe('Slice 01 — account and session', () => {
     await expect(page).toHaveURL(/\/dashboard/)
 
     /*
-     * AC-28. The address on this card came from `PUT /api/users/me` — there is
+     * AC-28. The address on this card came from `PUT /api/profile` — there is
      * no Firestore client in the bundle at all — so reading it means the
      * refreshed ID token satisfied `withVerifiedUser`'s `email_verified` check
      * on the profile route. `account-member-since` is asserted alongside it
