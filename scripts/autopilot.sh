@@ -277,6 +277,53 @@ a named passing test and the full suite is green: typecheck, lint, test:unit, te
 test:integration, test:e2e. If the plan turns out to be wrong, write the amendment and its
 reasoning into the build log, follow the corrected route, and flag it clearly in your
 final message.
+
+**The last thing you do, once every task is done and the full suite is green, is append
+the line \`<!-- build-complete -->\` to 04-build-log.md on its own line.** Write it at no
+other point. The orchestrator treats it as the only evidence this stage finished, because
+the log itself grows from task one and a session that dies at task sixteen leaves a log
+that looks exactly like a finished one. If you stop early for any reason, leave it out —
+an unfinished build that says so is resumable; one that claims completion is not.
+
+### Parallelism — fan out where the plan lets you
+
+The task list is ordered, but it is rarely a single chain. Before writing anything, read the
+file map and the task list together and work out which tasks touch disjoint sets of files.
+Those are independent lanes, and you should run them concurrently with the Agent tool rather
+than one after another. Dispatch every lane you can justify in a single message so they run
+at once; token cost is not a constraint on this run, so the only reasons to keep a task for
+yourself are dependency and contention, never expense.
+
+Five rules make that safe. They are not optional:
+
+- **You own git. A subagent never runs it.** No commit, no branch, no checkout, no stash
+  inside a lane. Lanes write tests and implementation; you commit. Concurrent writers on one
+  index corrupt it, and a lane that commits its own half-finished idea is unreviewable.
+- **A lane owns its files exclusively.** Hand each subagent the explicit list of paths it may
+  create or modify, and tell it plainly that anything outside that list is out of bounds — if
+  it needs a change there, it reports the need rather than making it. Two lanes sharing one
+  file is not a lane split; it is a conflict you have chosen in advance.
+- **Test-first survives the split.** Each lane works its own tasks in red-green order and
+  reports, per task, the failing test it wrote and the change that made it pass. You commit
+  per task, in plan order, with those messages — so the history still reads as one disciplined
+  build rather than a heap of parallel drops.
+- **Contracts come from the plan, never from a sibling.** Lanes cannot see each other's work.
+  Where two lanes meet at an interface, that interface is whatever the plan pinned. If the
+  plan did not pin it, keep that task for yourself instead of letting two lanes guess at it.
+- **A chain stays a chain.** Anything genuinely sequential — one module refined across several
+  tasks, a task whose test needs the previous task's code, a task the plan flags as a hazard —
+  stays with you. Splitting a chain to look parallel buys rework, not speed.
+
+Run the suite yourself after each lane lands, not only at the end. A lane that goes red is
+cheapest to fix while you still know which lane it was.
+
+Your wall clock is the longest single lane, so balance them by weight rather than by count:
+one lane holding three heavy tasks while four lanes hold one trivial task each is barely
+faster than working in order. Split the heavy lane if its tasks permit it; if they do not,
+start it first so the light lanes finish underneath it.
+
+If the plan has no independent lanes worth the coordination, say so in the build log and work
+the tasks in order. Sequential is a legitimate conclusion of this analysis, not a failure of it.
 EOF
       ;;
     review)
@@ -298,6 +345,30 @@ started at all. The output is in .autopilot/logs/$nn/, in the gate-post-build lo
 highest attempt number. Read it, and take the counts for the review's suite table from it.
 A full run costs twenty minutes and answers a question already answered; the sessions that
 did it anyway are the ones that ran out of time before writing a review.
+
+### Parallelism — one reviewer per axis, then you judge
+
+Read the diff yourself first, in full, so you have your own picture before anyone else's. Then
+dispatch the axes concurrently with the Agent tool, in a single message: correctness, security,
+architecture, performance, readability, and one agent whose only job is to audit the PRD's
+acceptance criteria against the tests that claim to cover them. Give each the same diff range
+and its axis alone — an agent asked for everything returns the obvious.
+
+You are the judge, not a collator:
+
+- **A reported finding is a claim, not a fact.** Verify each one against the actual code before
+  it reaches 05-review.md. Agents reviewing in isolation produce plausible findings about code
+  that does not do what they assumed — the ones you cannot reproduce get dropped, and dropping
+  them is the work, not a shortfall of it.
+- **You write every fix.** Lanes report; they do not edit. Fixes are yours, test-first where the
+  fix is behavioural, so the failing test still precedes the change.
+- **Severity is yours too.** An axis agent has no view of the slice's PRD decisions and will rank
+  a deliberate trade-off as a defect. Check each finding against the PRD's decisions table before
+  you call it Required.
+
+The two findings this stage exists to catch are the ones that cost money or corrupt state while
+every test passes. Weight the correctness and security lanes accordingly, and give the AC-audit
+lane the explicit instruction to open the tests it is checking rather than trusting the matrix.
 
 Run only the specific tests your own fixes touch. The orchestrator re-runs everything
 after you stop, so a fix that breaks something else is caught regardless.
@@ -368,8 +439,16 @@ stage_artefacts_ok() {
   case "$stage" in
     prd)    [[ -s "$d/02-prd.md" ]] ;;
     plan)   [[ -s "$d/03-plan.md" ]] ;;
+    # The build log is written incrementally on purpose — that is what makes it a
+    # handoff a fresh session can resume from — so its existence can never mean
+    # "finished". Slice 06 proved it: a session killed at task 16 of 24 left a
+    # branch, a long build log and nineteen commits, passed all three of those
+    # tests, and minted a build.done marker over a tree whose tests did not
+    # compile. Every re-run then skipped the build and looped on the same red
+    # gate. The sentinel is the session's own terminal statement, written last.
     build)  git rev-parse --verify "slice/$nn-$slug" >/dev/null 2>&1 \
               && [[ -s "$d/04-build-log.md" ]] \
+              && grep -q '<!-- build-complete -->' "$d/04-build-log.md" \
               && [[ $(git rev-list --count "main..slice/$nn-$slug" 2>/dev/null || echo 0) -gt 0 ]] ;;
     review) [[ -s "$d/05-review.md" ]] ;;
     ship)   gh pr view "slice/$nn-$slug" --json url -q .url >/dev/null 2>&1 ;;
@@ -390,6 +469,19 @@ hit_usage_limit() {
   [[ -f "${1:-}" ]] || return 1
   grep -o '"result":"[^"]*"' "$1" 2>/dev/null | tail -1 \
     | grep -qiE "hit your (session|usage) limit|usage limit reached|limit . resets"
+}
+
+# An expired or invalid token is the same kind of event as a usage limit — a
+# session that never ran and tells us nothing about the stage — with one
+# difference that matters: it does not heal on its own. Waiting is wasted and
+# retrying spends the remaining attempts in seconds. Slice 06 died this way: the
+# build was cut off at task 16 of 24, and the three fix sessions that were meant
+# to repair the red suite each exited in three seconds on the same 401, so the
+# run ended blaming the suite for a failure that was entirely about credentials.
+hit_auth_failure() {
+  [[ -f "${1:-}" ]] || return 1
+  grep -o '"result":"[^"]*"' "$1" 2>/dev/null | tail -1 \
+    | grep -qiE "OAuth access token is invalid|Failed to authenticate|API Error: 401"
 }
 
 run_stage() {
@@ -413,6 +505,15 @@ working tree, such as a failing test written without its implementation. Continu
 there, or undo it deliberately and say why."
     fi
     run_claude "$stage" "$nn" "$slug" "$name" "$mode" "$p" "$timeout" "$attempt"
+
+    # Checked before the artefact test, not after: a stage whose artefact grows
+    # incrementally can look complete when the session died halfway through it.
+    if hit_auth_failure "$LAST_RAW"; then
+      die "slice $nn: authentication failed at the '$stage' stage — the session never ran.
+Re-authenticate, then re-run; state is preserved in .autopilot/. Check the branch
+for a half-finished cycle (a failing test with no implementation) before resuming."
+    fi
+
     if stage_artefacts_ok "$stage" "$nn" "$slug"; then
       mark_done "$nn" "$stage"; say "✓ slice $nn · $stage complete"; return 0
     fi
@@ -440,6 +541,38 @@ there, or undo it deliberately and say why."
 # The orchestrator runs the suite itself. A model reporting green is a claim; this
 # is the evidence. Red suite → fresh fix session pointed at the actual output.
 
+# The suite binds fixed ports: scripts/test-emulator-config.mjs derives them from
+# firebase.json by a fixed +100, and package.json names the results (8180, 5101,
+# 5273, 9199, hub 4700, logging 4800). Every checkout on this machine therefore
+# computes the *same* set, so two autopilot runs in two clones share one set of
+# sockets however isolated their git state is. Making the offset configurable
+# would work, but it means editing the harness every slice's gate depends on.
+# A gate is two minutes of a ninety-minute slice, so letting the runs queue is
+# both cheaper and safer.
+#
+# mkdir is the atomic primitive — macOS has no flock. The holder's pid goes
+# inside so a run killed mid-gate is reclaimed rather than deadlocking its
+# sibling forever, which this run has already seen happen from another cause.
+GATE_LOCK="${AUTOPILOT_GATE_LOCK:-/tmp/genesis-suite-gate.lock}"
+
+gate_lock_acquire() {
+  local waited=0 holder
+  until mkdir "$GATE_LOCK" 2>/dev/null; do
+    holder="$(cat "$GATE_LOCK/pid" 2>/dev/null || true)"
+    if [[ -n "$holder" ]] && ! kill -0 "$holder" 2>/dev/null; then
+      say "· gate lock held by dead pid $holder — reclaiming"
+      rm -rf "$GATE_LOCK"; continue
+    fi
+    (( waited % 60 == 0 )) && say "· waiting for the suite gate (held by pid ${holder:-unknown})"
+    sleep 10; waited=$(( waited + 10 ))
+  done
+  echo $$ >"$GATE_LOCK/pid"
+}
+
+gate_lock_release() { [[ -f "$GATE_LOCK/pid" ]] && [[ "$(cat "$GATE_LOCK/pid")" == "$$" ]] && rm -rf "$GATE_LOCK"; return 0; }
+
+trap gate_lock_release EXIT
+
 suite_gate() {
   local nn="$1" slug="$2" name="$3" mode="$4" phase="$5"
   (( SKIP_LOCAL_GATE )) && { say "· local suite gate skipped by flag"; return 0; }
@@ -448,11 +581,16 @@ suite_gate() {
   while (( attempt <= AUTOPILOT_FIX_ATTEMPTS + 1 )); do
     local out="$LOG_DIR/$nn/gate-$phase.$attempt.log"
     say "· suite gate ($phase, attempt $attempt) — typecheck · lint · unit · rules · integration · e2e"
+    gate_lock_acquire
     if { npm run typecheck && npm run lint && npm run test:unit \
          && npm run test:rules && npm run test:integration && npm run test:e2e; } \
          >"$out" 2>&1; then
+      gate_lock_release
       say "✓ suite green"; return 0
     fi
+    # A red gate hands the ports back too — the fix session that follows is pure
+    # model time and must not block the sibling run from gating behind it.
+    gate_lock_release
     say "✗ suite red — see ${out#$ROOT/}"
     (( attempt > AUTOPILOT_FIX_ATTEMPTS )) && \
       die "slice $nn: suite still red after $AUTOPILOT_FIX_ATTEMPTS fix attempts ($phase). Logs: ${out#$ROOT/}"
