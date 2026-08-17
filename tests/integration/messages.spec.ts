@@ -1,7 +1,7 @@
 import { Timestamp } from 'firebase-admin/firestore'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
-import { adminDb, getJson, idTokenFor, resetEmulators, seedUser } from './helpers'
+import { adminDb, getJson, idTokenFor, postJson, resetEmulators, seedUser } from './helpers'
 
 /**
  * `/api/projects/:projectId/messages` — the whole of the browser's access to a
@@ -100,6 +100,11 @@ async function seedMany(uid: string, projectId: string, count: number): Promise<
 async function clearProjects(uid: string): Promise<void> {
   const refs = await adminDb().collection(`users/${uid}/projects`).listDocuments()
   await Promise.all(refs.map((ref) => adminDb().recursiveDelete(ref)))
+}
+
+async function countMessages(uid: string, projectId: string): Promise<number> {
+  return (await adminDb().collection(`users/${uid}/projects/${projectId}/messages`).listDocuments())
+    .length
 }
 
 async function storedMessages(uid: string, projectId: string): Promise<Record<string, unknown>[]> {
@@ -361,4 +366,257 @@ describe('GET /api/projects/:projectId/messages', () => {
     expect(messages).toHaveLength(200)
     expect(messages[0]?.['content']).toBe('Bulk 0')
   })
+})
+
+describe('POST /api/projects/:projectId/messages', () => {
+  /*
+   * AC-1. The stored `seq` values are asserted as well as the response, because
+   * they are the ordering mechanism and a response-shape assertion cannot see
+   * them — the pair comes back in the right order from an array the handler built
+   * itself, whether or not the documents carry what the *next* `GET` needs.
+   */
+  it('writes the pair, returns 201 with both, and stores seq 0 then 1', async () => {
+    const res = await postJson(
+      path('proj-1'),
+      { content: 'build a contact dashboard' },
+      auth(aliceToken),
+    )
+    const messages = messagesOf(res.body)
+
+    expect(res.status).toBe(201)
+    expect(messages).toHaveLength(2)
+    expect(messages[0]?.['role']).toBe('user')
+    expect(messages[0]?.['content']).toBe('build a contact dashboard')
+    expect(messages[1]?.['role']).toBe('assistant')
+    expect(messages[1]?.['content']).toBe(ECHO)
+    for (const message of messages) {
+      expect(Object.keys(message).sort()).toEqual(['content', 'createdAt', 'id', 'role'])
+      expect(new Date(message['createdAt'] as string).toISOString()).toBe(message['createdAt'])
+    }
+
+    const stored = await storedMessages(aliceUid, 'proj-1')
+    expect(stored.map((doc) => doc['seq'])).toEqual([0, 1])
+    expect(stored.map((doc) => doc['role'])).toEqual(['user', 'assistant'])
+  })
+
+  /*
+   * **R1's real assertion**, and the reason the seeded tie case above is not
+   * enough on its own. This one writes a pair through the actual `WriteBatch` and
+   * reads it back through the actual query, so the timestamps are whatever
+   * Firestore resolved the two sentinels to rather than whatever a test decided.
+   * If a commit ever stopped tying them, or the query stopped breaking the tie,
+   * this is the case that notices.
+   *
+   * Repeated across three turns because a single pair has a 50% chance of coming
+   * back the right way round by accident, and the loop also carries AC-3's
+   * separate-requests half: distinct commits, so `seq` is doing nothing here and
+   * the ordering across turns must still hold.
+   */
+  it('reads a real batch-written pair back in order, across three turns', async () => {
+    for (const content of ['first', 'second', 'third']) {
+      expect((await postJson(path('proj-1'), { content }, auth(aliceToken))).status).toBe(201)
+    }
+
+    const messages = messagesOf((await getJson(path('proj-1'), auth(aliceToken))).body)
+
+    expect(messages.map((message) => message['content'])).toEqual([
+      'first',
+      'You said: first',
+      'second',
+      'You said: second',
+      'third',
+      'You said: third',
+    ])
+
+    // The tie is real, not a hypothesis: both documents of a turn resolved to the
+    // same commit timestamp, which is exactly why `seq` has to exist.
+    const stored = await storedMessages(aliceUid, 'proj-1')
+    const at = (index: number) => (stored[index]?.['createdAt'] as Timestamp).toMillis()
+    expect(at(0)).toBe(at(1))
+  })
+
+  /** AC-1's ids are the server's, and the two documents are distinct. */
+  it('gives the two messages distinct auto-ids', async () => {
+    const messages = messagesOf(
+      (await postJson(path('proj-1'), { content: 'hi' }, auth(aliceToken))).body,
+    )
+
+    expect(messages[0]?.['id']).not.toBe(messages[1]?.['id'])
+    expect(typeof messages[0]?.['id']).toBe('string')
+  })
+
+  /** AC-5. Trimmed in the store, on the wire, and inside the echo. */
+  it('trims content on the way in, including inside the echo', async () => {
+    const messages = messagesOf(
+      (
+        await postJson(
+          path('proj-1'),
+          { content: '  build a contact dashboard  ' },
+          auth(aliceToken),
+        )
+      ).body,
+    )
+
+    expect(messages[0]?.['content']).toBe('build a contact dashboard')
+    expect(messages[1]?.['content']).toBe(ECHO)
+
+    const stored = await storedMessages(aliceUid, 'proj-1')
+    expect(stored.map((doc) => doc['content'])).toEqual(['build a contact dashboard', ECHO])
+  })
+
+  /*
+   * AC-11, D5, R3. The second assertion is the one that matters: nothing was
+   * written, because the body is parsed before anything touches Firestore.
+   */
+  it.each(['role', 'id', 'seq', 'createdAt'])(
+    'refuses a body carrying %s, writing nothing',
+    async (key) => {
+      const res = await postJson(path('proj-1'), { content: 'hi', [key]: 'x' }, auth(aliceToken))
+
+      expect(res.status).toBe(400)
+      expect(codeOf(res.body)).toBe('invalid_body')
+      expect(await countMessages(aliceUid, 'proj-1')).toBe(0)
+    },
+  )
+
+  /* AC-11's named body, spelled out: a client cannot author an assistant turn. */
+  it('refuses { role: "assistant", content }, writing nothing', async () => {
+    const res = await postJson(
+      path('proj-1'),
+      { role: 'assistant', content: 'I am the model' },
+      auth(aliceToken),
+    )
+
+    expect(res.status).toBe(400)
+    expect(codeOf(res.body)).toBe('invalid_body')
+    expect(await countMessages(aliceUid, 'proj-1')).toBe(0)
+  })
+
+  /** AC-12. */
+  it.each([
+    ['missing content', {}],
+    ['blank content', { content: '' }],
+    ['whitespace-only content', { content: '   ' }],
+    ['non-string content', { content: 42 }],
+    ['over-length content', { content: 'a'.repeat(4001) }],
+  ])('refuses %s, writing nothing', async (_label, body) => {
+    const res = await postJson(path('proj-1'), body, auth(aliceToken))
+
+    expect(res.status).toBe(400)
+    expect(codeOf(res.body)).toBe('invalid_body')
+    expect(await countMessages(aliceUid, 'proj-1')).toBe(0)
+  })
+
+  it('accepts content at exactly the limit', async () => {
+    const res = await postJson(path('proj-1'), { content: 'a'.repeat(4000) }, auth(aliceToken))
+
+    expect(res.status).toBe(201)
+    expect(await countMessages(aliceUid, 'proj-1')).toBe(2)
+  })
+
+  /*
+   * AC-13, D10. The cap is what makes the unpaginated transcript honest, and the
+   * refusal is about the *pair*: a `POST` is refused when storing both would
+   * cross 200, so 198 lands on exactly 200 and 199 is already too many.
+   */
+  it('refuses a post that would take the project past the cap, writing nothing', async () => {
+    await seedMany(aliceUid, 'proj-1', 200)
+
+    const res = await postJson(path('proj-1'), { content: 'one too many' }, auth(aliceToken))
+
+    expect(res.status).toBe(409)
+    expect(codeOf(res.body)).toBe('message_limit')
+    expect((res.body as { error?: string }).error).toBe(
+      'This project has reached its limit of 200 messages.',
+    )
+    expect(await countMessages(aliceUid, 'proj-1')).toBe(200)
+  })
+
+  it('refuses at 199, where only one of the pair would fit', async () => {
+    await seedMany(aliceUid, 'proj-1', 199)
+
+    const res = await postJson(path('proj-1'), { content: 'half a turn' }, auth(aliceToken))
+
+    expect(res.status).toBe(409)
+    expect(codeOf(res.body)).toBe('message_limit')
+    expect(await countMessages(aliceUid, 'proj-1')).toBe(199)
+  })
+
+  it('accepts at 198, landing on exactly the cap', async () => {
+    await seedMany(aliceUid, 'proj-1', 198)
+
+    const res = await postJson(path('proj-1'), { content: 'the last turn' }, auth(aliceToken))
+
+    expect(res.status).toBe(201)
+    expect(await countMessages(aliceUid, 'proj-1')).toBe(200)
+  })
+
+  /*
+   * AC-14, D15. `updatedAt` means "the project's own fields changed", which is
+   * what the dashboard's ordering and its "Updated" line both claim. A message
+   * write touching it would silently redefine both.
+   */
+  it('leaves the project document byte-identical', async () => {
+    const before = (await adminDb().doc(`users/${aliceUid}/projects/proj-1`).get()).data()
+
+    expect((await postJson(path('proj-1'), { content: 'hi' }, auth(aliceToken))).status).toBe(201)
+
+    expect((await adminDb().doc(`users/${aliceUid}/projects/proj-1`).get()).data()).toEqual(before)
+  })
+
+  /** AC-6. */
+  it('refuses an unauthenticated caller with 401, writing nothing', async () => {
+    const res = await postJson(path('proj-1'), { content: 'hi' })
+
+    expect(res.status).toBe(401)
+    expect(codeOf(res.body)).toBe('unauthenticated')
+    expect(await countMessages(aliceUid, 'proj-1')).toBe(0)
+  })
+
+  /** AC-7. */
+  it('refuses an unverified caller with 403, writing nothing', async () => {
+    const res = await postJson(path('proj-1'), { content: 'hi' }, auth(unverifiedToken))
+
+    expect(res.status).toBe(403)
+    expect(codeOf(res.body)).toBe('email_unverified')
+    expect(await countMessages(aliceUid, 'proj-1')).toBe(0)
+  })
+
+  /** AC-8's write half. */
+  it("answers 404 for bob's project and writes nothing anywhere", async () => {
+    await seedProject(bobUid, 'bob-1')
+    await seedMessage(bobUid, 'bob-1', 'msg-a', { content: "Bob's prompt" })
+    const before = await storedMessages(bobUid, 'bob-1')
+
+    expectNotFound(await postJson(path('bob-1'), { content: 'mine now' }, auth(aliceToken)))
+
+    expect(await storedMessages(bobUid, 'bob-1')).toEqual(before)
+    expect(await countMessages(aliceUid, 'bob-1')).toBe(0)
+  })
+
+  /** AC-9. */
+  it('answers 404 for a soft-deleted project, writing nothing', async () => {
+    await seedProject(aliceUid, 'gone', { deletedAt: Timestamp.fromMillis(1_700_000_900_000) })
+
+    expectNotFound(await postJson(path('gone'), { content: 'hi' }, auth(aliceToken)))
+
+    expect(await countMessages(aliceUid, 'gone')).toBe(0)
+  })
+
+  it('answers 404 for an id that never existed, writing nothing', async () => {
+    expectNotFound(await postJson(path('neverExisted'), { content: 'hi' }, auth(aliceToken)))
+
+    expect(await countMessages(aliceUid, 'neverExisted')).toBe(0)
+  })
+
+  /** AC-10. */
+  it.each(['a'.repeat(65), 'bad!id', 'a%2Fb'])(
+    'refuses the malformed id %s with 400',
+    async (id) => {
+      const res = await postJson(path(id), { content: 'hi' }, auth(aliceToken))
+
+      expect(res.status).toBe(400)
+      expect(codeOf(res.body)).toBe('invalid_id')
+    },
+  )
 })

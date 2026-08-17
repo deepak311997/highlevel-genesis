@@ -1,8 +1,8 @@
-import type { DocumentSnapshot, Query } from 'firebase-admin/firestore'
+import type { DocumentSnapshot, FieldValue, Query } from 'firebase-admin/firestore'
 import { Timestamp } from 'firebase-admin/firestore'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { parseStoredMessage, transcriptQuery } from './handlers'
+import { echoFor, messagePair, parseStoredMessage, transcriptQuery } from './handlers'
 import { MESSAGE_LIMIT } from './schema'
 
 /**
@@ -90,6 +90,74 @@ describe('transcriptQuery', () => {
     const { query } = recordingQuery()
 
     expect(transcriptQuery(query)).toBe(query)
+  })
+})
+
+describe('echoFor', () => {
+  /*
+   * AC-5, D7. Deterministic, no LLM and no randomness — it has to be assertable
+   * byte-for-byte and obviously not intelligence when a human looks at it. The
+   * chat panel says so out loud with an `Echo mode` badge, and both disappear
+   * together in Slice 5.
+   */
+  it('is exactly "You said: <content>"', () => {
+    expect(echoFor('build a contact dashboard')).toBe('You said: build a contact dashboard')
+  })
+
+  /* Trimming is the body schema's job, done before this is ever called, so the
+   * echo quotes whatever it was handed rather than trimming a second time. */
+  it('quotes the content it was given without touching it', () => {
+    expect(echoFor('a  b')).toBe('You said: a  b')
+  })
+})
+
+describe('messagePair', () => {
+  /** A sentinel stands in for `FieldValue.serverTimestamp()`; purity is the point. */
+  const now = { sentinel: true } as unknown as FieldValue
+
+  /*
+   * AC-1, D8. `seq` 0 then 1 is the ordering the transcript is read back by, and
+   * it is assigned here rather than derived from anything — the two documents
+   * commit at the same instant, so their *position* cannot come from their
+   * timestamps.
+   */
+  it('returns the user turn then the assistant turn, seq 0 then 1', () => {
+    const [user, assistant] = messagePair('build a contact dashboard', now)
+
+    expect(user).toEqual({
+      role: 'user',
+      content: 'build a contact dashboard',
+      seq: 0,
+      createdAt: now,
+    })
+    expect(assistant).toEqual({
+      role: 'assistant',
+      content: 'You said: build a contact dashboard',
+      seq: 1,
+      createdAt: now,
+    })
+  })
+
+  /*
+   * Both documents carry the *same* timestamp value. Not a shortcut — it is what
+   * a `WriteBatch` produces whatever we pass, so writing it this way makes the
+   * tie visible in the code that creates it rather than a surprise in the read.
+   */
+  it('stamps both documents with the one timestamp it was handed', () => {
+    const [user, assistant] = messagePair('hi', now)
+
+    expect(user['createdAt']).toBe(now)
+    expect(assistant['createdAt']).toBe(now)
+  })
+
+  /** `role` appears in the document and never in a request body (D5). */
+  it('assigns role server-side, one of each', () => {
+    // Annotated because `DocumentData` indexes to `any`, and an unannotated
+    // callback would launder that into the assertion.
+    expect(messagePair('hi', now).map((doc): unknown => doc['role'])).toEqual([
+      'user',
+      'assistant',
+    ])
   })
 })
 
