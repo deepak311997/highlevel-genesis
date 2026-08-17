@@ -53,19 +53,33 @@ import { SYSTEM_PROMPT } from './prompt'
  * review: the thing being protected is not the array but the habit of not
  * touching it.
  *
- * ## Effort is `low` for this slice, and Slice 9 re-tunes it (D15)
+ * ## Effort is `high` — the re-tune Slice 5 D15 promised (D17)
  *
- * `low` on `claude-opus-5` is documented as unusually strong; it keeps thinking
- * short and keeps a whole turn well inside the window a Hosting rewrite is known
- * to tolerate (R2). The caveat, recorded so the change reads as planned rather
- * than as churn: **this slice generates prose, not code.** Slice 9 owns
- * generation quality and will re-tune this against real HighLevel prompts, where
- * `high` or `xhigh` is the documented starting point.
+ * `low` was the right answer when this endpoint generated **prose**. It now
+ * generates code against a fifteen-hundred-token HighLevel cheat-sheet, and
+ * `high` is the documented minimum for intelligence-sensitive work as well as
+ * the API's own default. So this is a change the earlier decision named in
+ * advance, not churn.
+ *
+ * `xhigh` — which the docs name as the starting point for coding — was
+ * considered and rejected. It lengthens the pause before the first token, and
+ * the visible thing in this project's demo is *tokens appearing*; R2, the
+ * Hosting-rewrite window, is still argued rather than measured. Choosing
+ * properly between `high`, `xhigh` and `max` needs an effort sweep against real
+ * generations, which needs credentials this session does not have — so the sweep
+ * is a named manual check in the definition of done rather than a guess made
+ * here.
+ *
+ * **This is only safe because D14 left thinking on.** `thinking: { type:
+ * 'disabled' }` is rejected outright above effort `high` on `claude-opus-5`, so
+ * the two decisions hold each other up: disabling thinking would now be an API
+ * error rather than merely a bad idea. `max_tokens` stays 64,000, which the docs
+ * call the floor for `high` and above.
  */
 
 export const MODEL = 'claude-opus-5'
 export const MAX_TOKENS = 64_000
-export const EFFORT = 'low' as const
+export const EFFORT = 'high' as const
 
 export function buildParams(
   context: MessageParam[],
