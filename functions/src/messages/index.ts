@@ -1,8 +1,9 @@
 import { Router } from 'express'
 
 import { asyncHandler } from '../lib/errors'
+import { requireAppCheck } from '../auth/appCheck'
 import { withVerifiedUser } from '../auth/requireUser'
-import { handleListMessages } from './handlers'
+import { handleCreateMessage, handleListMessages } from './handlers'
 
 /**
  * A project's chat transcript.
@@ -24,6 +25,8 @@ import { handleListMessages } from './handlers'
  */
 export const messagesRouter: Router = Router()
 
+const attested = asyncHandler(requireAppCheck)
+
 // Reading is not attested: a plain authenticated read, and App Check buys nothing
 // against a caller who already holds a valid ID token. Mutations are — one rule
 // for the whole API, unchanged since Slice 2 (D28).
@@ -34,4 +37,9 @@ export const messagesRouter: Router = Router()
 messagesRouter.get(
   '/projects/:projectId/messages',
   asyncHandler(withVerifiedUser(handleListMessages)),
+)
+messagesRouter.post(
+  '/projects/:projectId/messages',
+  attested,
+  asyncHandler(withVerifiedUser(handleCreateMessage)),
 )

@@ -87,3 +87,36 @@ it is a function rather than an inline chain.
 3. `clearProjects` in this file uses `recursiveDelete`, not `listDocuments().delete()` as
    `projects.spec.ts` does — a project now has a subcollection, and deleting the parent document
    would leave its messages orphaned and visible to the next test.
+
+## T4 — `POST /api/projects/:projectId/messages`
+
+**Red, L1.** `handlers.spec.ts` gains `echoFor` (exactly `You said: <content>`, and it does not
+re-trim what the body schema already trimmed) and `messagePair` — user then assistant, `seq` 0
+then 1, the second's content the echo of the first's, both documents carrying the *same* injected
+timestamp value, and `role` assigned in the document. 5 new cases, all red.
+
+**Red, L4.** The `POST` describe block, 27 cases: the pair at 201 with `seq` 0 and 1 stored
+(AC-1); distinct auto-ids; whitespace trimmed in the store, on the wire and inside the echo
+(AC-5); each of `role`/`id`/`seq`/`createdAt` and the named `{role: 'assistant', content}` → 400
+with nothing written (AC-11); five bad `content` shapes → 400 with nothing written, and 4,000
+exactly accepted (AC-12); 200 seeded → 409 `message_limit` with the verbatim copy, 199 → 409,
+198 → 201 landing on exactly 200 (AC-13); the project document byte-identical before and after
+(AC-14); 401, 403, cross-tenant 404 with bob's transcript unchanged, soft-deleted and
+never-existed 404, three malformed ids (AC-6..AC-10).
+
+**Green.** `echoFor`, `messagePair`, `messageCount`, `handleCreateMessage`, and the `attested`
+`POST` route. Order inside the handler is id → body → project → count → batch: parsing before
+reading means a body carrying `role` is refused before anything could have acted on it.
+
+**Refactor.** The 409 message is `This project has reached its limit of 200 messages.` — asserted
+verbatim at L4 because the composer renders it. One test-side fix: `messagePair(...).map()`
+needed an explicit `unknown` return, since `DocumentData` indexes to `any` and
+`no-unsafe-return` rightly caught the laundering.
+
+**Deviation from the plan:** one addition. Alongside the plan's cases, `POST` gets a
+**round-trip** case — three turns written through the real batch and read back through the real
+query, asserting both the interleaved order and that the two documents of a turn genuinely
+resolved to the *same* commit timestamp. The plan put AC-3 in T3; the seeded version lives there,
+and this is the one R1 actually turns on ("the L4 one is the assertion that matters, because it
+exercises the actual commit"). A single pair would come back right half the time by luck, so it
+runs three.
