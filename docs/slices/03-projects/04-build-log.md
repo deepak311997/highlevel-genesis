@@ -228,3 +228,30 @@ and lint are clean; the whole frontend suite (313) still passes.
 
 **Committed as `build:`, on its own,** so a reviewer can diff the vendored code against
 upstream without slice code mixed in.
+
+---
+
+## T11 — `ProjectFormDialog.vue`
+
+**Red:** `frontend/src/components/ProjectFormDialog.spec.ts` — 15 cases across creating,
+renaming and reopening. Failed on the missing component.
+
+Reka UI teleports dialog content to `document.body`, so the spec queries the document through
+a `DOMWrapper` rather than the mounted wrapper. That is recorded here because it is the first
+component in the codebase where `wrapper.find` is the wrong tool.
+
+**Green:** `frontend/src/components/ProjectFormDialog.vue`, with `patchPayload()` as a
+computed from the start (the plan's refactor step), so "only the changed fields" is one
+expression rather than two branches — and the same expression is what disables submit when
+nothing has changed, which is how the empty-patch 400 is never issued from the UI.
+
+**One correction during green:** `data-testid` on `<DialogContent>` never reached the DOM.
+That component's root is `DialogPortal`, which renders an overlay *and* the content — a
+multi-root fragment, so Vue drops fallthrough attributes on it. The id moved to an inner
+`<div>`, with a comment saying why.
+
+**ACs:** AC-29, AC-30, AC-31.
+
+**Deviations from the plan:** none. Two cases beyond the plan's list: an empty description is
+sent as `null` rather than `''`, and reopening clears a previous error as well as re-seeding
+the fields.
