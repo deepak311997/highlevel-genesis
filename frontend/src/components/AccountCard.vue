@@ -58,23 +58,35 @@ const memberSince = computed(() => {
     </CardHeader>
 
     <CardContent class="flex flex-col gap-4">
-      <!-- Loading: first load only, so a refetch does not blank the card. -->
-      <div v-if="profile.loading" data-testid="account-loading" class="flex flex-col gap-2">
-        <div class="h-5 w-48 animate-pulse rounded bg-secondary" />
-        <div class="h-4 w-32 animate-pulse rounded bg-secondary" />
-      </div>
-
       <!--
-        Error before content. Rendering a profile beside a failure notice leaves
-        the user unable to tell which of the two is current.
+        Error first, and before content. Rendering a profile beside a failure
+        notice leaves the user unable to tell which of the two is current, and a
+        failed first request leaves `loaded` false — so anything testing for "no
+        answer yet" has to come after this, or the error is never shown.
       -->
-      <div v-else-if="profile.error" data-testid="account-error" class="flex flex-col gap-3">
+      <div v-if="profile.error" data-testid="account-error" class="flex flex-col gap-3">
         <Alert variant="destructive">
           <AlertDescription>{{ profile.error }}</AlertDescription>
         </Alert>
         <Button variant="outline" data-testid="account-retry" @click="profile.ensure()">
           Try again
         </Button>
+      </div>
+
+      <!--
+        No answer yet — the request is in flight, or has not started. `loading`
+        alone cannot say the second: it is first-load-only, so a refetch does not
+        blank a card that already has content, and it is still false in the tick
+        between this component mounting and its parent asking for the profile.
+        `loaded` is what separates that from "we asked, and there is nothing".
+      -->
+      <div
+        v-else-if="profile.loading || !profile.loaded"
+        data-testid="account-loading"
+        class="flex flex-col gap-2"
+      >
+        <div class="h-5 w-48 animate-pulse rounded bg-secondary" />
+        <div class="h-4 w-32 animate-pulse rounded bg-secondary" />
       </div>
 
       <div v-else-if="profile.profile" data-testid="account-loaded" class="flex flex-col gap-1">

@@ -23,6 +23,8 @@ export interface ProfileStore {
   error: Ref<string | null>
   ensure: () => Promise<void>
   load: () => Promise<void>
+  /** Forget everything fetched for the session that just ended. */
+  reset: () => void
 }
 
 export const useProfileStore = defineStore('profile', (): ProfileStore => {
@@ -72,5 +74,19 @@ export const useProfileStore = defineStore('profile', (): ProfileStore => {
     return run(getProfile)
   }
 
-  return { profile, loading, loaded, error, ensure, load }
+  /**
+   * Everything here belongs to one signed-in user, and signing out is a route
+   * change rather than a page load — so without this the next person to sign in
+   * on the same browser sees the last one's address in the account card until
+   * their own ensure lands. `loaded` matters as much as `profile`: left true, it
+   * suppresses the loading state that would otherwise hide the stale value.
+   */
+  function reset(): void {
+    profile.value = null
+    loading.value = false
+    loaded.value = false
+    error.value = null
+  }
+
+  return { profile, loading, loaded, error, ensure, load, reset }
 })

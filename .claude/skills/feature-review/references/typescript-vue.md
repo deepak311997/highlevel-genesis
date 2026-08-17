@@ -115,8 +115,13 @@ quoted attribute values · directive shorthands (`:`, `@`, `#`) used consistentl
 
 - **`<script setup lang="ts">` throughout**, with typed `defineProps` / `defineEmits`.
 - **Composables own reusable logic**, named `useX`, returning refs rather than reactive objects.
-- **Pinia stores hold client state only** — server state belongs to Firestore listeners. A store
-  that mirrors a Firestore collection is a cache that will disagree with the database.
+- **Genesis — a Pinia store holding server state is a snapshot, and must be treated as one.**
+  Data access is API-only (`CLAUDE.md`), so there are no Firestore listeners to own it: a store
+  is filled by a fetch and goes stale the moment the server moves. Two things follow. Refetch
+  after every mutation rather than patching the store to match what you think the server did.
+  And **clear it when the session ends** — Pinia survives sign-out, which is a route change and
+  not a page load, so a store left populated renders one user's data to the next one who signs
+  in on the same browser. `stores/auth.ts`'s `signOutNow` is where that clearing lives.
 
 ---
 

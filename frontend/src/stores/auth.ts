@@ -3,6 +3,8 @@ import { defineStore } from 'pinia'
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
 
 import { auth } from '@/lib/firebase'
+import { useHlStore } from '@/stores/hl'
+import { useProfileStore } from '@/stores/profile'
 
 /**
  * Session state, and the one thing the router cannot work without: a promise
@@ -67,8 +69,26 @@ export const useAuthStore = defineStore('auth', (): AuthStore => {
     await signInWithEmailAndPassword(auth, address, password)
   }
 
+  /**
+   * End the session, and empty what the session filled.
+   *
+   * Signing out is a route change, not a page load, so Pinia survives it along
+   * with everything the previous user fetched. The next person to sign in on the
+   * same browser would otherwise get a dashboard rendered from the last one's
+   * data — their address in the account card, their CRM location in the
+   * connection panel — until each refetch lands.
+   *
+   * This is lifecycle, not data access: the auth store still knows nothing about
+   * how a profile or a connection is loaded, only that both belong to a session
+   * that has just ended. Doing it here rather than in each view is what stops
+   * the next sign-out button, and the next resource store, from having to
+   * remember. A store added later joins this list; there is nowhere else it can
+   * be forgotten.
+   */
   async function signOutNow(): Promise<void> {
     await signOut(auth)
+    useProfileStore().reset()
+    useHlStore().reset()
   }
 
   /**

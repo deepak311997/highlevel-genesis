@@ -92,6 +92,22 @@ describe('AccountCard', () => {
     expect(wrapper.find('[data-testid="account-error"]').exists()).toBe(false)
   })
 
+  /*
+   * AC-19's other half, and what makes the case above load-bearing.
+   *
+   * "We asked and there is nothing yet" and "we have not asked" both have a null
+   * profile, and only `loaded` tells them apart. A card that branches on the
+   * profile alone shows "Setting up your profile…" to anyone rendering it before
+   * a request has started — which is every mount, for the tick between this
+   * component's own `onMounted` and its parent's.
+   */
+  it('shows the loading state, not the empty one, before anything has been fetched', () => {
+    const wrapper = mountWith({ profile: null, loaded: false })
+
+    expect(wrapper.find('[data-testid="account-loading"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="account-empty"]').exists()).toBe(false)
+  })
+
   /** AC-20. */
   it("shows the server's message with a Retry button on a failure", () => {
     const wrapper = mountWith({ error: 'Verify your email address first.', loaded: true })
