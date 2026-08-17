@@ -752,32 +752,41 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
       if (buffers.value[path] !== undefined) dropBuffer(path)
     }
 
-    /*
-     * The tab this generation opened for itself, on a turn that did not write it
-     * (P1). Two shapes, and the second is the dangerous one:
-     *
-     * - a path that streamed but was never stored — a refused op set, or an
-     *   unterminated block — which leaves a filename with no file behind it;
-     * - a path the project **already holds**, whose bytes were never read,
-     *   because `file_start` opens a tab and does not fetch. Left open it shows
-     *   an empty editor over a file with content, and the first keystroke would
-     *   make it dirty enough for **Save** to offer to replace that file with
-     *   what was typed.
-     *
-     * Both close the tab, which is where the panel was before the generation
-     * borrowed one — and no request is issued (AC-24).
-     *
-     * A tab the **user** opened is never touched here, dirty included: closing
-     * it would discard an edit for a reason they cannot see and the server never
-     * asked for. `selectFile` clears `autoSelected` when the user clicks that
-     * very tab, which is them adopting it.
-     */
+    closeAutoSelected(written)
+  }
+
+  /**
+   * Hand back the tab this generation opened for itself, unless the turn stored
+   * the file behind it (P1). Two shapes, and the second is the dangerous one:
+   *
+   * - a path that streamed but was never stored — a refused op set, or an
+   *   unterminated block — which leaves a filename with no file behind it;
+   * - a path the project **already holds**, whose bytes were never read,
+   *   because `file_start` opens a tab and does not fetch. Left open it shows
+   *   an empty editor over a file with content, its keystrokes go nowhere —
+   *   `editContent` has no buffer to write to — and the byte count reads 0.
+   *
+   * Both close the tab, which is where the panel was before the generation
+   * borrowed one, and no request is issued (AC-24).
+   *
+   * Called from **two** places, because a generation has two ways to end. `done`
+   * passes the files it wrote; the `finally` passes nothing, because a turn that
+   * never reached `done` — interrupted, refused before the first byte, dropped —
+   * stored nothing by construction. `done` runs first and leaves `autoSelected`
+   * null, so the second call is a no-op rather than a double close.
+   *
+   * A tab the **user** opened is never touched, dirty included: closing it would
+   * discard an edit for a reason they cannot see and the server never asked for.
+   * `selectFile` clears `autoSelected` when the user clicks that very tab, which
+   * is them adopting it.
+   */
+  function closeAutoSelected(written: string[]): void {
     const opened = autoSelected
     autoSelected = null
-    if (opened !== null && !written.includes(opened)) {
-      closeTab(opened)
-      dropBuffer(opened)
-    }
+    if (opened === null || written.includes(opened)) return
+
+    closeTab(opened)
+    dropBuffer(opened)
   }
 
   /** Every file field back to its initial value — shared by `open` and `reset`. */
@@ -917,6 +926,9 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
          */
         streamingFiles.value = {}
         generating.value = false
+        // A turn that never reached `done` stored nothing, so the tab it opened
+        // for itself goes back — see `closeAutoSelected`.
+        closeAutoSelected([])
       }
       if (controller === ours) controller = null
     }

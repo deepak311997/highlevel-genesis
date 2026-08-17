@@ -1675,14 +1675,21 @@ describe('saveFile', () => {
   })
 
   /**
-   * A tab with **no buffer** — reachable, and worth a guard.
+   * A file the session has never read can never be saved over — end to end.
    *
-   * `file_start` opens a tab and creates no buffer (P1). A stream that then ends
-   * in an `error` rather than a `done` never reaches `applyGenerationFiles`, so
-   * that tab is left open over a file the session has never read. Saving from it
-   * would `PUT` an empty string over whatever the server holds.
+   * `file_start` opens a tab and creates no buffer (P1), and a stream that ends
+   * in an `error` rather than a `done` never reaches `applyGenerationFiles`. That
+   * used to leave the tab open over a file whose bytes were never fetched, and a
+   * save from it would have `PUT` an empty string over whatever the server holds.
+   * The tab is now handed back when the stream ends whichever way it ended, so
+   * this walks the whole route rather than the guard alone: the tab goes, and
+   * there is nothing left to save from.
+   *
+   * `saveFile`'s own `buffer === undefined` guard stays as defence in depth —
+   * the two claims are "no path reaches this state" and "the state would be
+   * refused anyway", and only the first one can regress silently.
    */
-  it('issues no request for a tab whose file has never been read', async () => {
+  it('cannot save a file the session never read, after an interrupted stream', async () => {
     const store = await openedOnIndex()
     store.closeTab('index.html')
     fetchMock.mockResolvedValueOnce(
@@ -1693,7 +1700,8 @@ describe('saveFile', () => {
       ),
     )
     await store.retryGeneration()
-    expect(store.selectedPath).toBe('app.js')
+    expect(store.openTabs).toEqual([])
+    expect(store.selectedPath).toBeNull()
     expect(store.buffers['app.js']).toBeUndefined()
     fetchMock.mockClear()
 
@@ -2401,6 +2409,76 @@ describe('the stream — files', () => {
     expect(store.streamingFiles).toEqual({})
     expect(store.files).toEqual([INDEX_FILE, APP_FILE])
     expect(store.generateError).toBe('The reply was interrupted.')
+  })
+
+  /**
+   * The same rule the `done` path already applies (P1), for the turn that never
+   * reaches `done`.
+   *
+   * `file_start` opens a tab and creates **no buffer**, and only `done` runs
+   * `applyGenerationFiles`. So a stream interrupted after its first file left a
+   * tab over a file this session has never read: an empty editor above a file
+   * with content, whose keystrokes go nowhere — `editContent` has no buffer to
+   * write to — while the byte count reads 0 and **Save** stays dead. Closing it
+   * puts the panel back where the generation borrowed it from.
+   */
+  it('closes a tab the generation opened when the stream ends in an error', async () => {
+    const store = await openedWithFiles()
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+
+    stream.push(frame('file_start', { path: 'app.js' }))
+    stream.push(frame('file_chunk', { path: 'app.js', text: 'const a = 1' }))
+    await vi.waitFor(() => {
+      expect(store.selectedPath).toBe('app.js')
+    })
+    fetchMock.mockClear()
+
+    stream.push(
+      frame('error', {
+        error: 'The reply was interrupted.',
+        code: 'upstream_error',
+        message: null,
+      }),
+    )
+    stream.close()
+    await running
+
+    expect(store.openTabs).toEqual([])
+    expect(store.selectedPath).toBeNull()
+    expect(store.buffers).toEqual({})
+    expect(store.editorContent).toBe('')
+    // Nothing was read on the way out: the tab goes, it is not repaired.
+    expect(requests()).toEqual([])
+  })
+
+  /**
+   * And the tab the **user** opened survives the same failure, dirty included.
+   * Closing that one would discard an edit for a reason they cannot see, on a
+   * turn that changed nothing about the file.
+   */
+  it('keeps the user’s own tab through a stream that ends in an error', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(response({ file: { ...APP_FILE, content: 'const a = 1\n' } }))
+    await store.selectFile('app.js')
+    store.editContent('my unsaved edit')
+
+    fetchMock.mockResolvedValueOnce(
+      cannedStream(
+        frame('error', {
+          error: 'The reply was interrupted.',
+          code: 'upstream_error',
+          message: null,
+        }),
+      ),
+    )
+    await store.retryGeneration()
+
+    expect(store.openTabs).toEqual(['app.js'])
+    expect(store.selectedPath).toBe('app.js')
+    expect(store.editorContent).toBe('my unsaved edit')
+    expect(store.fileDirty).toBe(true)
   })
 
   /** AC-43's second half, over every field this task added. */
