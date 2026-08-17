@@ -155,6 +155,29 @@ export const useHlStore = defineStore('hl', (): HlStore => {
   const probe = ref<ProbeState>('idle')
   const probeResult = ref<ProbeResult | null>(null)
 
+  /**
+   * Which session a request belongs to.
+   *
+   * **Every write that lands after an `await` is guarded by this.** Signing out
+   * is a route change rather than a page load, so this store outlives the
+   * session — `reset()` exists for exactly that reason — and a request still in
+   * flight when the session ends resolves against the *next* person's screen.
+   * For the probe that is not merely stale, it is the previous account's CRM
+   * counts rendered under someone else's connection, with `probe` left at
+   * `ready` so nothing ever clears them: the new user never ran a probe, so
+   * nothing overwrites the old one's.
+   *
+   * A counter rather than a comparison against the uid, and not a `ref`:
+   * nothing renders it, and making it reactive would invalidate every computed
+   * that reads this store for no gain. `workspace.ts` carries the same
+   * mechanism for the same reason.
+   */
+  let generation = 0
+
+  function current(gen: number): boolean {
+    return gen === generation
+  }
+
   const isConnected = computed(() => status.value?.connected === true)
   // Narrowed rather than optional-chained: `needsReconnect` exists only on a
   // connected status, and the union is what makes that a compile error instead
@@ -179,14 +202,18 @@ export const useHlStore = defineStore('hl', (): HlStore => {
   })
 
   async function refresh(): Promise<void> {
+    const gen = generation
     if (status.value === null) loading.value = true
     error.value = null
     try {
-      status.value = await getConnection()
+      const next = await getConnection()
+      if (current(gen)) status.value = next
     } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Could not load the connection status.'
+      if (current(gen)) {
+        error.value = err instanceof Error ? err.message : 'Could not load the connection status.'
+      }
     } finally {
-      loading.value = false
+      if (current(gen)) loading.value = false
     }
   }
 
@@ -232,6 +259,7 @@ export const useHlStore = defineStore('hl', (): HlStore => {
    * blank the others".
    */
   async function checkDataAccess(): Promise<void> {
+    const gen = generation
     probe.value = 'loading'
     probeResult.value = null
 
@@ -254,6 +282,11 @@ export const useHlStore = defineStore('hl', (): HlStore => {
       ] as const
     })
 
+    // The session that asked for this may have ended while it was in flight,
+    // and these two lines are the ones that would show its data to whoever
+    // signed in next.
+    if (!current(gen)) return
+
     probeResult.value = Object.fromEntries(rows) as unknown as ProbeResult
     probe.value = rows.every(([, row]) => row.error !== null) ? 'error' : 'ready'
   }
@@ -268,8 +301,12 @@ export const useHlStore = defineStore('hl', (): HlStore => {
    * same browser sees the last one's CRM location named in the panel until their
    * own refresh lands. `status` matters as much as the rest: left non-null, it
    * suppresses the loading state that would otherwise hide the stale value.
+   *
+   * Clearing the refs is only half of it: a request already in flight would
+   * refill them a moment later. Bumping `generation` is the other half.
    */
   function reset(): void {
+    generation += 1
     status.value = null
     loading.value = false
     busy.value = false
