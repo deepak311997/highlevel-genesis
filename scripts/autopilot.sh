@@ -31,6 +31,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# A sleeping Mac kills a streaming session mid-response, and the CLI reports it
+# as "your computer went to sleep mid-response" hours into a stage. Three review
+# attempts on slice 02b died that way — this machine has `pmset sleep 1`. Re-exec
+# under caffeinate so the run holds the machine awake for exactly as long as it
+# is running, and releases it the moment it exits.
+if [[ "$(uname)" == "Darwin" && -z "${AUTOPILOT_CAFFEINATED:-}" ]] && command -v caffeinate >/dev/null 2>&1; then
+  export AUTOPILOT_CAFFEINATED=1
+  exec caffeinate -ims "$0" "$@"
+fi
+
 STATE_DIR="$ROOT/.autopilot/state"
 LOG_DIR="$ROOT/.autopilot/logs"
 RUN_LOG="$ROOT/.autopilot/autopilot.log"
@@ -270,9 +280,19 @@ You are reviewing code you cannot remember writing, which is the right frame —
 as another author's PR. Read the diff against main in full.
 
 There is no human reviewer after you. You are the last gate before this merges, so the
-findings you skip are findings nobody makes. Run the suite yourself and record the real
-counts. Fix what you find, test-first where the fix is behavioural. Step 9's dead-code
-question has no one to answer it: decide it yourself and record the call in 05-review.md.
+findings you skip are findings nobody makes. Fix what you find, test-first where the fix
+is behavioural. Step 9's dead-code question has no one to answer it: decide it yourself
+and record the call in 05-review.md.
+
+**Do not re-run the full suite to establish the baseline.** The orchestrator ran all six
+suites on this exact commit minutes ago and gated on the result — that is why this stage
+started at all. The output is in .autopilot/logs/$nn/, in the gate-post-build log with the
+highest attempt number. Read it, and take the counts for the review's suite table from it.
+A full run costs twenty minutes and answers a question already answered; the sessions that
+did it anyway are the ones that ran out of time before writing a review.
+
+Run only the specific tests your own fixes touch. The orchestrator re-runs everything
+after you stop, so a fix that breaks something else is caught regardless.
 
 Do not write a review that finds nothing on a slice-sized diff. If the diff is genuinely
 clean, say what you checked to be able to claim that.
@@ -359,10 +379,14 @@ run_stage() {
     if (( attempt > 1 )); then
       p="$prompt
 
-The previous attempt at this stage did not finish — its expected output is missing or
-incomplete. Its transcript is at .autopilot/logs/$nn/$stage.$((attempt - 1)).jsonl and its
-stderr at .autopilot/logs/$nn/$stage.$((attempt - 1)).err. Read enough of them to see how far
-it got, then continue from there rather than starting over."
+A previous attempt at this stage did not finish — its expected output is missing or
+incomplete. **Do not read its transcript.** Those .jsonl files run to hundreds of
+kilobytes and reading one costs more context than redoing the work.
+
+Read the repository instead: \`git status\`, \`git log --oneline main..HEAD\`, and this
+slice's docs show exactly how far it got — including any half-finished cycle left in the
+working tree, such as a failing test written without its implementation. Continue from
+there, or undo it deliberately and say why."
     fi
     run_claude "$stage" "$nn" "$slug" "$name" "$mode" "$p" "$timeout" "$attempt"
     if stage_artefacts_ok "$stage" "$nn" "$slug"; then
