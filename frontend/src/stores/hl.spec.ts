@@ -401,4 +401,49 @@ describe('checkDataAccess', () => {
     expect(hl.probe).toBe('idle')
     expect(hl.probeResult).toBeNull()
   })
+
+  /*
+   * The PRD's edge case — "the user signs out while a probe is in flight" —
+   * and the half `reset()` alone cannot deliver.
+   *
+   * Signing out is a route change rather than a page load, so Pinia survives it
+   * (`auth.ts`'s `signOutNow` exists for exactly that reason). Three proxy
+   * calls left in flight resolve *after* `reset()` has run, and a store that
+   * writes them unconditionally puts the previous account's contact,
+   * conversation and calendar counts into the panel the next person to sign in
+   * on this browser sees — with `probe` at `ready`, so nothing ever clears it,
+   * because they never ran a probe of their own.
+   *
+   * `workspace.ts` already carries the answer and says so in as many words: a
+   * generation counter that `reset()` bumps, so a request in flight when the
+   * session ends cannot repopulate the store afterwards.
+   */
+  it('drops a probe that lands after the session ended', async () => {
+    let release = (): void => {}
+    const held = new Promise<unknown>((resolve) => {
+      release = () => {
+        resolve(CONTACTS)
+      }
+    })
+    hlProxy.mockReturnValue(held)
+    const hl = useHlStore()
+
+    const pending = hl.checkDataAccess()
+    hl.reset()
+    release()
+    await pending
+
+    expect(hl.probe).toBe('idle')
+    expect(hl.probeResult).toBeNull()
+  })
+
+  it('still records a probe the session did not interrupt', async () => {
+    answerEachSurface()
+    const hl = useHlStore()
+
+    await hl.checkDataAccess()
+
+    expect(hl.probe).toBe('ready')
+    expect(hl.probeResult?.contacts.count).toBe(20)
+  })
 })
