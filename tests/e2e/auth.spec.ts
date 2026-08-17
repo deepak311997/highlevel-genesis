@@ -1,7 +1,13 @@
 import { expect, test } from '@playwright/test'
 
 import { resetEmulators } from '../integration/helpers'
-import { activationLinkFor, assertEmulatorBuild, freshEmail, PASSWORD } from './helpers'
+import {
+  activationLinkFor,
+  assertEmulatorBuild,
+  freshEmail,
+  PASSWORD,
+  REGISTER_TIMEOUT_MS,
+} from './helpers'
 
 /**
  * The slice's one end-to-end test, covering the demo path.
@@ -46,7 +52,9 @@ test.describe('Slice 01 — account and session', () => {
 
     // Non-committal by design — the same screen an already-registered address
     // would produce, and it promises no email, because registration sends none.
-    await expect(page.getByTestId('signup-sent')).toContainText('You can sign in now')
+    await expect(page.getByTestId('signup-sent')).toContainText('You can sign in now', {
+      timeout: REGISTER_TIMEOUT_MS,
+    })
 
     // Sign-in prefills the address from sign-up, so it should already be there.
     await page.goto('/signin')

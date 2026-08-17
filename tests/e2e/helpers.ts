@@ -18,6 +18,31 @@ import { latestCodeFor } from '../integration/helpers'
 
 export const PASSWORD = 'Correct-Horse-9'
 
+/**
+ * How long the sign-up confirmation gets to appear.
+ *
+ * Every spec funnels through `signUpAndVerify`, so `POST /auth/register` is the
+ * most-repeated server round trip in the suite — and on Playwright's 5-second
+ * default it was the *only* wait that ever failed. Four consecutive runs of the
+ * full suite failed three times, on this assertion every time, at a different
+ * test each time: first `auth.spec.ts`, then the last two of `workspace.spec.ts`,
+ * then one in the middle of `projects.spec.ts`.
+ *
+ * It is not the endpoint being slow. The emulator logs the handler finishing in
+ * 10–134ms in every observed case including the failing ones, and in the worst
+ * of them no invocation is logged at all before the 5 seconds are up — the
+ * request had not yet left the dev server. The stall is the machine descheduling
+ * a single-threaded Vite process, and it lands here because this is where the
+ * suite waits on a round trip with the least headroom.
+ *
+ * 15 seconds, matching what the two waits immediately below already carry for
+ * the same reason — the verification headline and the action page. Sign-up's
+ * confirmation is the one step of that flow that never got the same treatment.
+ * The assertion is unchanged and nothing here asserts a latency budget: the
+ * claim is still that submitting the form produces the confirmation screen.
+ */
+export const REGISTER_TIMEOUT_MS = 15_000
+
 /** Unique per run, so a re-run does not collide with a previous account. */
 export function freshEmail(prefix = 'e2e'): string {
   return `${prefix}-${String(Date.now())}-${String(Math.floor(Math.random() * 10_000))}@example.test`
@@ -50,7 +75,7 @@ export async function signUpAndVerify(page: Page, prefix = 'e2e'): Promise<strin
   await page.fill('#signup-email', email)
   await page.fill('#signup-password', PASSWORD)
   await page.click('button[type="submit"]')
-  await expect(page.getByTestId('signup-sent')).toBeVisible()
+  await expect(page.getByTestId('signup-sent')).toBeVisible({ timeout: REGISTER_TIMEOUT_MS })
 
   await page.goto('/signin')
   await page.fill('#signin-password', PASSWORD)
