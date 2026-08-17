@@ -338,3 +338,76 @@ existing one; the cross-tenant injection case now uses the truncated shape too.
 
 **Green:** none. **No rules change** (D35) — a rule that denies a document denies it whatever fields
 it has. 28 cases, all `assertFails`, no `assertSucceeds` import.
+
+## T14 — The client-side SSE parser
+
+**Commit:** `7c6d558`
+
+**Tests added:** L1 `frontend/src/lib/sse.spec.ts` — a known stream **split at every offset**, in two
+chunks and in three, yields identical events (AC-28); one character at a time; incomplete frames
+yield nothing; two frames in one chunk yield two; a comment yields nothing and an unknown name is
+returned (AC-29); a frame whose data will not parse is dropped and **the frame after it still
+parses**, asserted at every split too; newlines, multi-byte characters, multiple `data:` lines and a
+missing space after the colon.
+
+**Green:** `frontend/src/lib/sse.ts`.
+
+## T15 — `authHeaders()` and the stream client
+
+**Commit:** `960fc42`
+
+**Tests added:** L1 `apiClient.spec.ts` — `authHeaders()` returns both headers, reads a fresh token
+each time, rejects 401 when signed out, and is what `request` sends. L1 `generateApi.spec.ts` — the
+request is a `POST` to `/generate` with a body of exactly `{"projectId":"proj-1"}`, both credentials,
+a JSON content type and the signal (AC-30); tokens then `done` in order; an `error` event carrying
+the persisted partial, and one carrying `null`; a frame split across chunks reassembles; unknown and
+malformed events are skipped; **a non-ok response rejects with an `ApiError` carrying the server's
+message and status and yields nothing** (AC-31); a 429 says to wait; a network failure maps to status
+0; a body-less 200 rejects.
+
+**Green:** `authHeaders()` exported and used by `request`; `frontend/src/lib/generateApi.ts`.
+
+## T16 — The store
+
+**Commit:** `f72ef8a`
+
+**Tests added:** L1 `workspace.spec.ts` — `send()` issues the message `POST` then `POST /generate`
+and no `GET` (AC-32); a failed write opens no stream, appends nothing, keeps the draft (AC-33);
+tokens accumulate into `streamingText` **while `messages` is asserted unchanged between them**, then
+`done` appends and clears (AC-34); `error` with a message appends the server's copy, `error` with
+`null` appends nothing, both clear (AC-35); a *rejection* from `/generate` reaches the same error
+state; `retryGeneration()` issues `POST /generate` and no message write (AC-36); `reset()` and
+opening a second project both abort, and a frame delivered afterwards mutates nothing (AC-37);
+`canSend` is false while generating.
+
+**Green:** `generating`, `streamingText`, `generateError`, the store-held `AbortController`,
+`runGeneration()`, and `send()` sequencing the two requests.
+
+**Deviation from the plan.** `open()` aborts an in-flight generation **always**, not only when the
+project id changes. `open()` re-reads the whole transcript, so a stream still appending into
+`messages` is stale by construction — and one left running goes on spending money for a screen
+nobody is looking at. Two Slice-4 store cases encoded the one-request contract and were updated.
+
+## T17 — The chat panel
+
+**Commit:** `11e020e`
+
+**Tests added:** L2 `ChatPanel.spec.ts` — a `Generating…` badge and a `streaming-bubble` carrying
+`streamingText` (AC-38); the placeholder is the last `<li>` of the transcript list; it wins over the
+empty state; neither renders when no stream is open (AC-39); `truncated: true` renders
+`message-interrupted` and `false` does not, and the marker says "interrupted" rather than showing a
+bare icon (AC-40); `generate-error` shows the server's message with a `generate-retry` that calls
+`retryGeneration` exactly once, and the transcript stays visible beside it (AC-41); growing
+`streamingText` sets `scrollTop` to `scrollHeight` (AC-43). Plus AC-38's second clause as a **source
+scan** over `frontend/src`, not only a render check.
+
+**Green:** `ChatPanel.vue`.
+
+## T18 — The composer
+
+**Commit:** `603b127`
+
+**Tests added:** L2 `MessageComposer.spec.ts` — with `generating` true the textarea and the button
+are disabled and Enter issues nothing; with it false both work again (AC-42).
+
+**Green:** `:disabled="workspace.atLimit || workspace.sending || workspace.generating"`.

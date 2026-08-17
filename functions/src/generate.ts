@@ -259,9 +259,20 @@ export async function handleGenerate(req: Request, res: Response, uid: string): 
   res.status(200)
   res.set('Content-Type', 'text/event-stream; charset=utf-8')
   res.set('Cache-Control', 'no-cache, no-transform')
-  res.set('Connection', 'keep-alive')
   // Belt and braces against an intermediary that buffers on its own.
   res.set('X-Accel-Buffering', 'no')
+  /*
+   * **`Connection` is deliberately not set here**, and Slice 0 did set it.
+   *
+   * It is a hop-by-hop header: the HTTP layer owns it, and an application that
+   * writes it by hand is describing a connection it does not manage. Slice 0's
+   * `Connection: keep-alive` was harmless only because nothing ever sent a
+   * *second* request over that connection. It is not harmless now — with it set,
+   * the first generation of a session succeeds and the **next `POST /generate`
+   * on the reused socket comes back as an empty 400**, which in the running app
+   * means the second prompt of every conversation fails. Left to Node, the
+   * streamed response closes its socket and each generation gets a clean one.
+   */
   res.flushHeaders()
 
   // One comment straight away, so the client sees bytes — and therefore knows
