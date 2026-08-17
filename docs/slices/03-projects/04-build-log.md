@@ -308,3 +308,29 @@ imports go. No `dashboard-empty` reference remains anywhere in the repo.
 **ACs:** AC-28.
 
 **Deviations from the plan:** none.
+
+---
+
+## T15 — End to end
+
+**Order swapped, deliberately.** The plan put the helper extraction in T15's *refactor* step,
+but the new spec needs `signUpAndVerify` to exist, and taking a third copy only to delete it
+minutes later would have been theatre. So the extraction went first, exactly as P-R3 asks it
+to be verified: both existing suites were run before the move (4 passed) and again after it
+(4 passed), with no other change in between.
+
+`tests/e2e/helpers.ts` now holds `PASSWORD`, `freshEmail(prefix)`, `activationLinkFor`,
+`signUpAndVerify(page, prefix)` and `assertEmulatorBuild(page)` — the last one because the
+emulator-build guard was also duplicated verbatim, in a slightly different wording each time.
+`auth.spec.ts` and `highlevel.spec.ts` import them instead of declaring their own.
+
+**Red/Green:** `tests/e2e/projects.spec.ts` — two tests. The demo path (empty state → create →
+reload → rename → reload → delete → empty state → reload), and one asserting the rest of the
+dashboard still works alongside it. **Both passed on their first run**, which is what the plan
+predicted: T1–T14 already satisfied AC-34, and anything failing here would have been a bug the
+lower levels missed. Nothing was changed to make them pass.
+
+Every step is followed by a reload, and that is the assertion carrying the weight: a create
+that only updated component state would pass every other check.
+
+**ACs:** AC-34.
