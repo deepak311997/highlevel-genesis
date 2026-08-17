@@ -1,0 +1,1372 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Slice 11 — Snapshots &amp; restore · design companion</title>
+    <style>
+      /* ---------------------------------------------------------------
+         Identity: this slice is about *versions of a thing over time*, so
+         the page is a timeline. A spine runs down the left of each
+         section, versions are discs on it, and the accent pair is
+         archival — ink on paper for what is, and a single warm "restore"
+         colour for the one action that reaches back. Deliberately not
+         Slice 7's syntax-token palette: a different subject should not
+         wear the last slice's clothes.
+
+         No webfonts: the artifact CSP blocks font CDNs and a silent
+         fallback wrecks the hierarchy.
+         --------------------------------------------------------------- */
+      :root {
+        color-scheme: light dark;
+
+        --bg: #faf9f6;
+        --surface: #ffffff;
+        --surface-2: #f2f0ea;
+        --ink: #1a1916;
+        --muted: #5f5c53;
+        --line: #dcd8cd;
+        --line-soft: #eae7de;
+
+        /* the spine and the four semantic accents */
+        --spine: #b6b0a0;
+        --now: #1f6f5c; /* what the project currently is */
+        --past: #4a5b8c; /* a stored copy */
+        --restore: #b1631a; /* the one action that reaches back */
+        --bad: #a8232f; /* refused, denied, deleted */
+
+        --now-wash: #e4f1ec;
+        --past-wash: #e7ebf6;
+        --restore-wash: #fbeedd;
+        --bad-wash: #fbe8e9;
+        --neutral-wash: #f2f0ea;
+
+        --radius: 10px;
+        --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+          "Liberation Mono", monospace;
+        --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #14140f;
+          --surface: #1c1c17;
+          --surface-2: #242420;
+          --ink: #eceada;
+          --muted: #a3a08f;
+          --line: #34342c;
+          --line-soft: #27271f;
+
+          --spine: #55534a;
+          --now: #63c9a8;
+          --past: #9db0e6;
+          --restore: #e8a45c;
+          --bad: #f0868f;
+
+          --now-wash: #13302a;
+          --past-wash: #1c2438;
+          --restore-wash: #362413;
+          --bad-wash: #35181b;
+          --neutral-wash: #242420;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--sans);
+        font-size: 16px;
+        line-height: 1.65;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .wrap {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 56px 24px 96px;
+      }
+
+      /* --- masthead ------------------------------------------------- */
+
+      header.masthead {
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 28px;
+        margin-bottom: 12px;
+      }
+
+      .eyebrow {
+        font-family: var(--mono);
+        font-size: 12px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin: 0 0 10px;
+      }
+
+      h1 {
+        font-size: 38px;
+        line-height: 1.15;
+        margin: 0 0 14px;
+        letter-spacing: -0.02em;
+      }
+
+      .lede {
+        font-size: 18px;
+        color: var(--muted);
+        max-width: 62ch;
+        margin: 0 0 20px;
+      }
+
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .chip {
+        font-family: var(--mono);
+        font-size: 12px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      .chip.now {
+        color: var(--now);
+        border-color: var(--now);
+        background: var(--now-wash);
+      }
+      .chip.past {
+        color: var(--past);
+        border-color: var(--past);
+        background: var(--past-wash);
+      }
+      .chip.restore {
+        color: var(--restore);
+        border-color: var(--restore);
+        background: var(--restore-wash);
+      }
+      .chip.bad {
+        color: var(--bad);
+        border-color: var(--bad);
+        background: var(--bad-wash);
+      }
+
+      /* --- the timeline spine --------------------------------------- */
+
+      section.step {
+        position: relative;
+        padding: 40px 0 8px 56px;
+      }
+
+      section.step::before {
+        content: "";
+        position: absolute;
+        left: 15px;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: var(--line-soft);
+      }
+
+      section.step:last-of-type::before {
+        bottom: auto;
+        height: 68px;
+      }
+
+      section.step > .disc {
+        position: absolute;
+        left: 0;
+        top: 44px;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 2px solid var(--spine);
+        background: var(--surface);
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 13px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      h2 {
+        font-size: 24px;
+        margin: 0 0 8px;
+        letter-spacing: -0.01em;
+      }
+
+      h3 {
+        font-size: 16px;
+        margin: 28px 0 8px;
+        letter-spacing: 0.01em;
+      }
+
+      p {
+        max-width: 72ch;
+      }
+
+      p.claim {
+        color: var(--muted);
+        margin: 0 0 20px;
+        max-width: 72ch;
+      }
+
+      code {
+        font-family: var(--mono);
+        font-size: 0.9em;
+        background: var(--surface-2);
+        border: 1px solid var(--line-soft);
+        border-radius: 5px;
+        padding: 1px 5px;
+      }
+
+      /* --- figures --------------------------------------------------- */
+
+      figure {
+        margin: 24px 0 8px;
+        padding: 0;
+      }
+
+      .scroller {
+        overflow-x: auto;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+        padding: 18px;
+      }
+
+      figure svg {
+        display: block;
+        max-width: 100%;
+        height: auto;
+      }
+
+      figcaption {
+        font-size: 14px;
+        color: var(--muted);
+        margin-top: 10px;
+        max-width: 72ch;
+      }
+
+      /* SVG theming — every stroke and fill goes through the tokens. */
+      .s-line {
+        stroke: var(--line);
+      }
+      .s-spine {
+        stroke: var(--spine);
+      }
+      .s-now {
+        stroke: var(--now);
+      }
+      .s-past {
+        stroke: var(--past);
+      }
+      .s-restore {
+        stroke: var(--restore);
+      }
+      .s-bad {
+        stroke: var(--bad);
+      }
+      .s-muted {
+        stroke: var(--muted);
+      }
+
+      .f-surface {
+        fill: var(--surface);
+      }
+      .f-surface2 {
+        fill: var(--surface-2);
+      }
+      .f-now {
+        fill: var(--now-wash);
+      }
+      .f-past {
+        fill: var(--past-wash);
+      }
+      .f-restore {
+        fill: var(--restore-wash);
+      }
+      .f-bad {
+        fill: var(--bad-wash);
+      }
+      .f-none {
+        fill: none;
+      }
+
+      .t {
+        fill: var(--ink);
+        font-family: var(--sans);
+        font-size: 13px;
+      }
+      .t.mono {
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+      .t.small {
+        font-size: 11.5px;
+        fill: var(--muted);
+      }
+      .t.head {
+        font-size: 13.5px;
+        font-weight: 600;
+      }
+      .t.now {
+        fill: var(--now);
+      }
+      .t.past {
+        fill: var(--past);
+      }
+      .t.restore {
+        fill: var(--restore);
+      }
+      .t.bad {
+        fill: var(--bad);
+      }
+      .t.mid {
+        text-anchor: middle;
+      }
+      .t.end {
+        text-anchor: end;
+      }
+
+      /* One marker per colour, filled by class. `context-stroke` renders
+         black where unsupported, which is invisible on paper and wrong on
+         the dark ground — so each arrowhead is its own element. */
+      .m-muted {
+        fill: var(--muted);
+      }
+      .m-now {
+        fill: var(--now);
+      }
+      .m-past {
+        fill: var(--past);
+      }
+      .m-restore {
+        fill: var(--restore);
+      }
+      .m-bad {
+        fill: var(--bad);
+      }
+
+      .dash {
+        stroke-dasharray: 5 4;
+      }
+
+      /* --- tables ---------------------------------------------------- */
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 18px 0;
+        font-size: 14.5px;
+      }
+
+      th,
+      td {
+        text-align: left;
+        vertical-align: top;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line-soft);
+      }
+
+      th {
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        border-bottom: 1px solid var(--line);
+        font-weight: 600;
+      }
+
+      tbody tr:last-child td {
+        border-bottom: none;
+      }
+
+      td.mono,
+      th.mono {
+        font-family: var(--mono);
+        font-size: 12.5px;
+        white-space: nowrap;
+      }
+
+      /* --- endpoint cards -------------------------------------------- */
+
+      .cards {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        margin: 20px 0 8px;
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+        padding: 16px 18px;
+      }
+
+      .card .verb {
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        padding: 2px 8px;
+        border-radius: 5px;
+      }
+
+      .verb.get {
+        color: var(--past);
+        background: var(--past-wash);
+      }
+      .verb.post {
+        color: var(--restore);
+        background: var(--restore-wash);
+      }
+
+      .card .path {
+        font-family: var(--mono);
+        font-size: 12.5px;
+        margin-top: 10px;
+        word-break: break-all;
+      }
+
+      .card dl {
+        margin: 12px 0 0;
+        display: grid;
+        grid-template-columns: 74px 1fr;
+        gap: 6px 12px;
+        font-size: 13.5px;
+      }
+
+      .card dt {
+        font-family: var(--mono);
+        font-size: 11.5px;
+        color: var(--muted);
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        padding-top: 2px;
+      }
+
+      .card dd {
+        margin: 0;
+      }
+
+      .card dd code {
+        background: none;
+        border: none;
+        padding: 0;
+      }
+
+      /* --- AC distribution ------------------------------------------- */
+
+      .levels {
+        display: grid;
+        gap: 10px;
+        margin: 18px 0 6px;
+      }
+
+      .level {
+        display: grid;
+        grid-template-columns: 128px 1fr 44px;
+        align-items: center;
+        gap: 12px;
+        font-size: 14px;
+      }
+
+      .level .name {
+        font-family: var(--mono);
+        font-size: 12.5px;
+        color: var(--muted);
+      }
+
+      .bar {
+        height: 14px;
+        border-radius: 4px;
+        background: var(--surface-2);
+        border: 1px solid var(--line-soft);
+        overflow: hidden;
+      }
+
+      .bar span {
+        display: block;
+        height: 100%;
+      }
+
+      .bar span.a {
+        background: var(--past);
+      }
+      .bar span.b {
+        background: var(--now);
+      }
+      .bar span.c {
+        background: var(--restore);
+      }
+      .bar span.d {
+        background: var(--spine);
+      }
+
+      .level .count {
+        font-family: var(--mono);
+        font-size: 12.5px;
+        color: var(--muted);
+        text-align: right;
+      }
+
+      .note {
+        border-left: 3px solid var(--restore);
+        background: var(--restore-wash);
+        padding: 12px 16px;
+        border-radius: 0 var(--radius) var(--radius) 0;
+        margin: 20px 0;
+        font-size: 14.5px;
+      }
+
+      .note strong {
+        color: var(--restore);
+      }
+
+      footer {
+        margin-top: 56px;
+        padding-top: 20px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 13.5px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="wrap">
+      <header class="masthead">
+        <p class="eyebrow">Genesis · Slice 11 · design companion</p>
+        <h1>Snapshots &amp; restore</h1>
+        <p class="lede">
+          Every generation overwrites the project's files in place. This slice stores a
+          point-in-time copy of the <em>whole</em> file set on the same commit, lists the copies in
+          a sheet, and puts any one of them back — exactly, including deleting what came after.
+        </p>
+        <div class="meta">
+          <span class="chip">F5.2 · F5.3 · F6.6</span>
+          <span class="chip">depends on Slice 6</span>
+          <span class="chip">mode: fast</span>
+          <span class="chip now">now — the project's files</span>
+          <span class="chip past">past — a stored copy</span>
+          <span class="chip restore">restore — the one way back</span>
+          <span class="chip bad">refused / deleted</span>
+        </div>
+        <p class="claim" style="margin-top: 18px">
+          The acceptance criteria, the decisions table and the test matrix live in
+          <code>02-prd.md</code>, which is the contract the build is graded against. This page draws
+          the four things prose makes a reader assemble in their head.
+        </p>
+      </header>
+
+      <!-- ============================================================ -->
+      <section class="step">
+        <div class="disc">1</div>
+        <h2>What a snapshot copies</h2>
+        <p class="claim">
+          The whole slice turns on this. A generation rewrites <em>some</em> files and leaves the
+          rest — Slice 6's D18 — so the copy that is easy to write is a copy of part of an app, and
+          the failure only shows up later, in a restore that looks like it worked.
+        </p>
+
+        <figure>
+          <div class="scroller">
+            <svg
+              viewBox="0 0 940 384"
+              width="940"
+              height="384"
+              role="img"
+              aria-label="Comparison: snapshotting only the turn's writes yields a two-file copy that restores a broken app, while snapshotting the project's whole post-turn set yields a four-file copy that restores the app as it was."
+            >
+              <defs>
+                <marker
+                  id="ar-muted"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="7"
+                  markerHeight="7"
+                  orient="auto-start-reverse"
+                >
+                  <path d="M 0 0 L 10 5 L 0 10 z" class="m-muted" />
+                </marker>
+                <marker
+                  id="ar-bad"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="7"
+                  markerHeight="7"
+                  orient="auto-start-reverse"
+                >
+                  <path d="M 0 0 L 10 5 L 0 10 z" class="m-bad" />
+                </marker>
+                <marker
+                  id="ar-past"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="7"
+                  markerHeight="7"
+                  orient="auto-start-reverse"
+                >
+                  <path d="M 0 0 L 10 5 L 0 10 z" class="m-past" />
+                </marker>
+              </defs>
+
+              <!-- shared premise -->
+              <rect
+                x="16"
+                y="16"
+                width="908"
+                height="70"
+                rx="10"
+                class="f-surface2 s-line"
+                stroke-width="1"
+              />
+              <text x="32" y="40" class="t head">The turn</text>
+              <text x="32" y="60" class="t small">
+                The project holds index.html, styles.css, app.js. The generation rewrites
+                index.html and adds about.html. It touches neither styles.css nor app.js.
+              </text>
+              <text x="32" y="76" class="t small">
+                Slice 6, D18 — generations create and update; they never delete.
+              </text>
+
+              <!-- LEFT: the writes alone -->
+              <rect
+                x="16"
+                y="104"
+                width="440"
+                height="264"
+                rx="10"
+                class="f-none s-bad dash"
+                stroke-width="1.5"
+              />
+              <text x="36" y="130" class="t head bad">Snapshot = the turn's writes</text>
+              <text x="36" y="148" class="t small">the shorter implementation — the plan already holds them</text>
+
+              <rect x="36" y="164" width="180" height="96" rx="8" class="f-bad s-bad" stroke-width="1" />
+              <text x="48" y="184" class="t mono bad">snapshot seq 2</text>
+              <text x="48" y="204" class="t mono">index.html</text>
+              <text x="48" y="222" class="t mono">about.html</text>
+              <text x="48" y="246" class="t small">2 files</text>
+
+              <line
+                x1="224"
+                y1="212"
+                x2="266"
+                y2="212"
+                class="s-bad"
+                stroke-width="1.5"
+                marker-end="url(#ar-bad)"
+              />
+              <text x="245" y="202" class="t small mid">restore</text>
+
+              <rect x="274" y="164" width="164" height="96" rx="8" class="f-surface s-line" stroke-width="1" />
+              <text x="286" y="184" class="t mono">index.html</text>
+              <text x="286" y="202" class="t mono">about.html</text>
+              <text x="286" y="222" class="t mono bad">styles.css — gone</text>
+              <text x="286" y="240" class="t mono bad">app.js — gone</text>
+
+              <text x="36" y="290" class="t bad">An app whose &lt;script src="app.js"&gt; names nothing.</text>
+              <text x="36" y="310" class="t small">
+                The tree shows two tidy rows. Nothing is red. The failure appears in
+              </text>
+              <text x="36" y="326" class="t small">
+                the preview, one slice later, and reads as a restore bug.
+              </text>
+              <text x="36" y="352" class="t small">R1 — and it passes every test that generates once.</text>
+
+              <!-- RIGHT: the project's set -->
+              <rect
+                x="484"
+                y="104"
+                width="440"
+                height="264"
+                rx="10"
+                class="f-none s-past"
+                stroke-width="1.5"
+              />
+              <text x="504" y="130" class="t head past">Snapshot = the project after the turn</text>
+              <text x="504" y="148" class="t small">D1 — stored files, with the turn's writes applied over them</text>
+
+              <rect x="504" y="164" width="180" height="116" rx="8" class="f-past s-past" stroke-width="1" />
+              <text x="516" y="184" class="t mono past">snapshot seq 2</text>
+              <text x="516" y="204" class="t mono">index.html</text>
+              <text x="516" y="222" class="t mono">about.html</text>
+              <text x="516" y="240" class="t mono">styles.css</text>
+              <text x="516" y="258" class="t mono">app.js</text>
+              <text x="516" y="274" class="t small">4 files · fileCount 4</text>
+
+              <line
+                x1="692"
+                y1="222"
+                x2="734"
+                y2="222"
+                class="s-past"
+                stroke-width="1.5"
+                marker-end="url(#ar-past)"
+              />
+              <text x="713" y="212" class="t small mid">restore</text>
+
+              <rect x="742" y="164" width="164" height="116" rx="8" class="f-surface s-line" stroke-width="1" />
+              <text x="754" y="184" class="t mono">index.html</text>
+              <text x="754" y="202" class="t mono">about.html</text>
+              <text x="754" y="220" class="t mono">styles.css</text>
+              <text x="754" y="238" class="t mono">app.js</text>
+              <text x="754" y="262" class="t small now">the app, as it was</text>
+
+              <text x="504" y="310" class="t past">The copy is of the project, not of the turn.</text>
+              <text x="504" y="330" class="t small">
+                One read of the file documents answers both the FILE_LIMIT
+              </text>
+              <text x="504" y="346" class="t small">check and the copy — D14, one round trip, not two.</text>
+              <text x="504" y="368" class="t small">AC-1 pins the merge · AC-7 pins it over the wire.</text>
+            </svg>
+          </div>
+          <figcaption>
+            <strong>Figure 1.</strong> The decision the slice turns on. The left-hand model is
+            smaller code and passes any test that generates exactly once; it produces an app missing
+            the files nobody rewrote. AC-7 exists to assert the <em>untouched</em> file is in the
+            copy, on a second generation, over the wire.
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- ============================================================ -->
+      <section class="step">
+        <div class="disc">2</div>
+        <h2>One batch, one commit</h2>
+        <p class="claim">
+          The assistant message says <code>[file: index.html]</code>, the file document says what
+          <code>index.html</code> contains, and the snapshot claims to be a copy of that moment. All
+          three are one turn or the history describes a state that never existed.
+        </p>
+
+        <figure>
+          <div class="scroller">
+            <svg
+              viewBox="0 0 940 330"
+              width="940"
+              height="330"
+              role="img"
+              aria-label="Sequence: the generation terminal stages the assistant message, the file writes, the snapshot document, its file copies and any prune onto one WriteBatch, then commits once. A second commit would leave a crash window in which the files moved and the history did not."
+            >
+              <defs>
+                <marker
+                  id="ar2-muted"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="7"
+                  markerHeight="7"
+                  orient="auto-start-reverse"
+                >
+                  <path d="M 0 0 L 10 5 L 0 10 z" class="m-muted" />
+                </marker>
+                <marker
+                  id="ar2-now"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="7"
+                  markerHeight="7"
+                  orient="auto-start-reverse"
+                >
+                  <path d="M 0 0 L 10 5 L 0 10 z" class="m-now" />
+                </marker>
+                <marker
+                  id="ar2-bad"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="7"
+                  markerHeight="7"
+                  orient="auto-start-reverse"
+                >
+                  <path d="M 0 0 L 10 5 L 0 10 z" class="m-bad" />
+                </marker>
+              </defs>
+
+              <!-- the batch container -->
+              <rect
+                x="16"
+                y="52"
+                width="596"
+                height="236"
+                rx="10"
+                class="f-surface s-now"
+                stroke-width="1.5"
+              />
+              <text x="32" y="40" class="t head now">one WriteBatch — nothing is committed until the end</text>
+
+              <!-- staged rows -->
+              <g>
+                <rect x="36" y="72" width="72" height="30" rx="6" class="f-surface2 s-line" />
+                <text x="72" y="92" class="t mono mid">stage</text>
+                <rect x="120" y="72" width="472" height="30" rx="6" class="f-past s-past" />
+                <text x="134" y="92" class="t mono">assistant message · seq 1 · truncated flag</text>
+
+                <rect x="36" y="110" width="72" height="30" rx="6" class="f-surface2 s-line" />
+                <text x="72" y="130" class="t mono mid">stage</text>
+                <rect x="120" y="110" width="472" height="30" rx="6" class="f-now s-now" />
+                <text x="134" y="130" class="t mono">≤ 20 file documents — id is the path (Slice 6, D13)</text>
+
+                <rect x="36" y="148" width="72" height="30" rx="6" class="f-surface2 s-line" />
+                <text x="72" y="168" class="t mono mid">stage</text>
+                <rect x="120" y="148" width="472" height="30" rx="6" class="f-past s-past" />
+                <text x="134" y="168" class="t mono">snapshot · seq N · origin generation · fileCount · totalBytes</text>
+
+                <rect x="36" y="186" width="72" height="30" rx="6" class="f-surface2 s-line" />
+                <text x="72" y="206" class="t mono mid">stage</text>
+                <rect x="120" y="186" width="472" height="30" rx="6" class="f-past s-past" />
+                <text x="134" y="206" class="t mono">≤ 20 snapshot file copies — subcollection, not a map (D3)</text>
+
+                <rect x="36" y="224" width="72" height="30" rx="6" class="f-surface2 s-line" />
+                <text x="72" y="244" class="t mono mid">stage</text>
+                <rect x="120" y="224" width="472" height="30" rx="6" class="f-bad s-bad" />
+                <text x="134" y="244" class="t mono">delete the oldest snapshot + its files, past SNAPSHOT_LIMIT (D6)</text>
+              </g>
+
+              <text x="36" y="278" class="t small">worst case 1 + 20 + 1 + 20 + 21 = 63 writes · Firestore's limit is 500</text>
+
+              <line
+                x1="612"
+                y1="170"
+                x2="668"
+                y2="170"
+                class="s-now"
+                stroke-width="1.8"
+                marker-end="url(#ar2-now)"
+              />
+              <text x="640" y="160" class="t small mid">commit()</text>
+
+              <rect x="676" y="120" width="248" height="100" rx="10" class="f-now s-now" stroke-width="1.5" />
+              <text x="692" y="146" class="t head now">all of it, or none of it</text>
+              <text x="692" y="168" class="t small">The tree and the history cannot disagree,</text>
+              <text x="692" y="184" class="t small">because there is no instant between them.</text>
+              <text x="692" y="206" class="t mono small">AC-9 — asserted on a recording batch</text>
+
+              <!-- the rejected shape -->
+              <rect
+                x="676"
+                y="240"
+                width="248"
+                height="72"
+                rx="10"
+                class="f-bad s-bad dash"
+                stroke-width="1.3"
+              />
+              <text x="692" y="264" class="t head bad">two commits</text>
+              <text x="692" y="284" class="t small">One line shorter, and it opens a window</text>
+              <text x="692" y="300" class="t small">where the files moved and the history did not.</text>
+            </svg>
+          </div>
+          <figcaption>
+            <strong>Figure 2.</strong> <code>appendAssistantMessage</code> stays the single owner of
+            the batch (D4). The tempting refactor — write the snapshot in its own commit after the
+            plan resolves — is shorter and leaves a crash window whose symptom is a history missing
+            exactly the version a user would open the sheet to recover.
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- ============================================================ -->
+      <section class="step">
+        <div class="disc">3</div>
+        <h2>Restore, step by step</h2>
+        <p class="claim">
+          Restore is the only operation in the product that deletes a file document, and the only
+          one that can destroy a manual edit. Both facts are visible in the order of its steps.
+        </p>
+
+        <figure>
+          <div class="scroller">
+            <svg
+              viewBox="0 0 940 430"
+              width="940"
+              height="430"
+              role="img"
+              aria-label="Numbered restore sequence: verify the project, read the snapshot whole and refuse if it is short, read the current files, compare for a no-op, stage a safety snapshot of the pre-restore state, stage writes for every snapshot file, stage deletes for every current file the snapshot lacks, commit once, and answer with the resulting file list."
+            >
+              <defs>
+                <marker
+                  id="ar3-restore"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="7"
+                  markerHeight="7"
+                  orient="auto-start-reverse"
+                >
+                  <path d="M 0 0 L 10 5 L 0 10 z" class="m-restore" />
+                </marker>
+                <marker
+                  id="ar3-bad"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="7"
+                  markerHeight="7"
+                  orient="auto-start-reverse"
+                >
+                  <path d="M 0 0 L 10 5 L 0 10 z" class="m-bad" />
+                </marker>
+                <marker
+                  id="ar3-past"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="7"
+                  markerHeight="7"
+                  orient="auto-start-reverse"
+                >
+                  <path d="M 0 0 L 10 5 L 0 10 z" class="m-past" />
+                </marker>
+              </defs>
+
+              <!-- spine -->
+              <line x1="60" y1="40" x2="60" y2="392" class="s-spine dash" stroke-width="2" />
+
+              <g>
+                <!-- 1 -->
+                <circle cx="60" cy="52" r="13" class="f-surface s-restore" stroke-width="1.6" />
+                <text x="60" y="57" class="t mono mid restore">1</text>
+                <text x="88" y="50" class="t head">POST …/snapshots/:snapshotId/restore</text>
+                <text x="88" y="68" class="t small">
+                  App Check · ID token with email_verified · ids parsed before any Firestore call
+                </text>
+
+                <!-- 2 -->
+                <circle cx="60" cy="104" r="13" class="f-surface s-restore" stroke-width="1.6" />
+                <text x="60" y="109" class="t mono mid restore">2</text>
+                <text x="88" y="102" class="t head">read the project</text>
+                <text x="88" y="120" class="t small">
+                  absent · soft-deleted · unreadable · someone else's → one 404 (Slice 3, D14)
+                </text>
+
+                <!-- 3 -->
+                <circle cx="60" cy="156" r="13" class="f-surface s-restore" stroke-width="1.6" />
+                <text x="60" y="161" class="t mono mid restore">3</text>
+                <text x="88" y="154" class="t head">read the snapshot — whole</text>
+                <text x="88" y="172" class="t small">
+                  its files subcollection parsed, and counted against the stored fileCount
+                </text>
+                <line
+                  x1="640"
+                  y1="160"
+                  x2="700"
+                  y2="160"
+                  class="s-bad"
+                  stroke-width="1.5"
+                  marker-end="url(#ar3-bad)"
+                />
+                <rect x="708" y="140" width="216" height="40" rx="8" class="f-bad s-bad" />
+                <text x="720" y="156" class="t mono bad">409 snapshot_unreadable</text>
+                <text x="720" y="172" class="t small">nothing written (D8)</text>
+
+                <!-- 4 -->
+                <circle cx="60" cy="208" r="13" class="f-surface s-restore" stroke-width="1.6" />
+                <text x="60" y="213" class="t mono mid restore">4</text>
+                <text x="88" y="206" class="t head">read the project's current files, and compare</text>
+                <text x="88" y="224" class="t small">
+                  byte-identical sets mean the project already <tspan class="t past">is</tspan> this version
+                </text>
+                <line
+                  x1="640"
+                  y1="212"
+                  x2="700"
+                  y2="212"
+                  class="s-past"
+                  stroke-width="1.5"
+                  marker-end="url(#ar3-past)"
+                />
+                <rect x="708" y="192" width="216" height="40" rx="8" class="f-past s-past" />
+                <text x="720" y="208" class="t mono past">200 changed: false</text>
+                <text x="720" y="224" class="t small">no write at all (D10)</text>
+
+                <!-- 5 -->
+                <circle cx="60" cy="260" r="13" class="f-surface s-restore" stroke-width="1.6" />
+                <text x="60" y="265" class="t mono mid restore">5</text>
+                <text x="88" y="258" class="t head restore">stage a safety snapshot of the pre-restore state</text>
+                <text x="88" y="276" class="t small">
+                  origin: restore — this is the only copy of a manual edit anything ever makes (D9,
+                  D23). Skipped when the project holds no files.
+                </text>
+
+                <!-- 6 -->
+                <circle cx="60" cy="312" r="13" class="f-surface s-restore" stroke-width="1.6" />
+                <text x="60" y="317" class="t mono mid restore">6</text>
+                <text x="88" y="310" class="t head">stage a write for every file in the snapshot</text>
+                <text x="88" y="328" class="t small">
+                  …and <tspan class="t bad">a delete for every current file the snapshot does not
+                  hold</tspan> (D7)
+                </text>
+
+                <!-- 7 -->
+                <circle cx="60" cy="364" r="13" class="f-surface s-restore" stroke-width="1.6" />
+                <text x="60" y="369" class="t mono mid restore">7</text>
+                <text x="88" y="362" class="t head">commit once → 200 with the resulting file list</text>
+                <text x="88" y="380" class="t small">
+                  the response <tspan class="t restore">is</tspan> the refetch (D12) · the sheet then reloads, because the
+                  safety snapshot is new
+                </text>
+              </g>
+
+              <rect x="88" y="396" width="836" height="26" rx="6" class="f-restore s-restore" />
+              <text x="102" y="414" class="t small">
+                Steps 5–7 are one batch. A restore that half-lands is the same failure as a
+                half-applied op set — refused by construction, not by care.
+              </text>
+            </svg>
+          </div>
+          <figcaption>
+            <strong>Figure 3.</strong> The two exits above the fold are the ones worth drawing: a
+            copy that cannot be read whole is refused rather than partially applied (AC-16), and a
+            restore of the version the project already is writes nothing at all (AC-14) — without
+            which D9's safety snapshot turns a double-click into a new version.
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- ============================================================ -->
+      <section class="step">
+        <div class="disc">4</div>
+        <h2>The boundary</h2>
+        <p class="claim">
+          Two new collections, and the nested one is the easy miss: rules do not cascade, so a block
+          on <code>snapshots/{snapshotId}</code> says nothing about the documents that hold the
+          actual code.
+        </p>
+
+        <figure>
+          <div class="scroller">
+            <svg
+              viewBox="0 0 940 340"
+              width="940"
+              height="340"
+              role="img"
+              aria-label="Trust boundary: the browser reaches only two Cloud Function routes, which take the uid from the verified ID token and compose every Firestore path from it. Both the snapshots collection and its nested files subcollection are denied to every client by security rules."
+            >
+              <defs>
+                <marker
+                  id="ar4-muted"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="7"
+                  markerHeight="7"
+                  orient="auto-start-reverse"
+                >
+                  <path d="M 0 0 L 10 5 L 0 10 z" class="m-muted" />
+                </marker>
+                <marker
+                  id="ar4-bad"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="7"
+                  markerHeight="7"
+                  orient="auto-start-reverse"
+                >
+                  <path d="M 0 0 L 10 5 L 0 10 z" class="m-bad" />
+                </marker>
+                <marker
+                  id="ar4-now"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="7"
+                  markerHeight="7"
+                  orient="auto-start-reverse"
+                >
+                  <path d="M 0 0 L 10 5 L 0 10 z" class="m-now" />
+                </marker>
+              </defs>
+
+              <!-- browser -->
+              <rect x="16" y="60" width="212" height="180" rx="10" class="f-surface s-line" stroke-width="1.2" />
+              <text x="32" y="86" class="t head">Browser · Vue SPA</text>
+              <text x="32" y="110" class="t small">SnapshotSheet.vue</text>
+              <text x="32" y="130" class="t small">stores/workspace.ts</text>
+              <text x="32" y="150" class="t small">lib/snapshotsApi.ts</text>
+              <rect x="32" y="164" width="180" height="56" rx="8" class="f-bad s-bad dash" stroke-width="1.2" />
+              <text x="44" y="184" class="t mono bad">no firebase/firestore</text>
+              <text x="44" y="202" class="t small">no getDoc · no onSnapshot</text>
+
+              <line
+                x1="228"
+                y1="150"
+                x2="300"
+                y2="150"
+                class="s-muted"
+                stroke-width="1.5"
+                marker-end="url(#ar4-muted)"
+              />
+              <text x="264" y="140" class="t small mid">ID token</text>
+
+              <!-- functions -->
+              <rect x="308" y="40" width="290" height="252" rx="10" class="f-surface s-now" stroke-width="1.5" />
+              <text x="324" y="66" class="t head now">Cloud Functions · asia-south1</text>
+
+              <rect x="324" y="82" width="258" height="54" rx="8" class="f-past s-past" />
+              <text x="336" y="102" class="t mono past">GET /api/projects/:id/snapshots</text>
+              <text x="336" y="122" class="t small">token · email_verified</text>
+
+              <rect x="324" y="146" width="258" height="66" rx="8" class="f-restore s-restore" />
+              <text x="336" y="166" class="t mono restore">POST …/snapshots/:sid/restore</text>
+              <text x="336" y="186" class="t small">token · email_verified · App Check</text>
+              <text x="336" y="204" class="t small">strict empty body</text>
+
+              <rect x="324" y="222" width="258" height="54" rx="8" class="f-now s-now" />
+              <text x="336" y="242" class="t head now">uid comes from the token</text>
+              <text x="336" y="262" class="t small">no path segment names a user</text>
+
+              <line
+                x1="598"
+                y1="150"
+                x2="668"
+                y2="150"
+                class="s-now"
+                stroke-width="1.5"
+                marker-end="url(#ar4-now)"
+              />
+              <text x="633" y="140" class="t small mid">Admin SDK</text>
+
+              <!-- firestore -->
+              <rect x="676" y="40" width="248" height="252" rx="10" class="f-surface s-line" stroke-width="1.2" />
+              <text x="692" y="66" class="t head">Firestore · hl-genesis</text>
+
+              <rect x="692" y="82" width="216" height="40" rx="8" class="f-surface2 s-line" />
+              <text x="702" y="98" class="t mono">users/{uid}/projects/{pid}</text>
+              <text x="702" y="114" class="t mono">  /files/{path}</text>
+
+              <rect x="692" y="132" width="216" height="42" rx="8" class="f-past s-past" />
+              <text x="702" y="150" class="t mono past">  /snapshots/{sid}</text>
+              <text x="702" y="166" class="t small">new · deny-all</text>
+
+              <rect x="692" y="184" width="216" height="42" rx="8" class="f-past s-past" />
+              <text x="702" y="202" class="t mono past">    /files/{path}</text>
+              <text x="702" y="218" class="t small">new · deny-all · rules do not cascade</text>
+
+              <rect x="692" y="238" width="216" height="40" rx="8" class="f-bad s-bad" />
+              <text x="702" y="256" class="t mono bad">allow read, write: if false</text>
+              <text x="702" y="272" class="t small">AC-20 · both blocks, every operation</text>
+
+              <!-- denied client path -->
+              <path
+                d="M 122 250 C 122 316, 500 316, 780 300"
+                class="f-none s-bad dash"
+                stroke-width="1.5"
+                marker-end="url(#ar4-bad)"
+              />
+              <text x="430" y="330" class="t small bad mid">
+                a client reaching Firestore directly — denied by rules, and unreachable anyway: the SDK is not in the bundle
+              </text>
+            </svg>
+          </div>
+          <figcaption>
+            <strong>Figure 4.</strong> The backstop, not the enforcement. Enforcement is the uid the
+            route reads off the verified token; the rules exist so that a mistake in a route is a bug
+            rather than a breach — and these documents <em>are</em> the generated application, so a
+            client that could write here could plant JavaScript for Slice 10's preview to run.
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- ============================================================ -->
+      <section class="step">
+        <div class="disc">5</div>
+        <h2>Contracts</h2>
+        <p class="claim">
+          Two routes, neither naming a user. A resource id in a path is fine — it is checked for
+          ownership and never trusted for identity.
+        </p>
+
+        <div class="cards">
+          <div class="card">
+            <span class="verb get">GET</span>
+            <div class="path">/api/projects/:projectId/snapshots</div>
+            <dl>
+              <dt>auth</dt>
+              <dd>ID token · <code>email_verified</code> · not attested</dd>
+              <dt>200</dt>
+              <dd>
+                <code
+                  >{ snapshots: [{ id, seq, createdAt, origin, fileCount, totalBytes }] }</code
+                >
+                — <code>seq</code> descending, ≤ 20 entries, no file content anywhere
+              </dd>
+              <dt>200</dt>
+              <dd><code>{ snapshots: [] }</code> — never generated</dd>
+              <dt>errors</dt>
+              <dd>
+                400 <code>invalid_id</code> · 404 <code>not_found</code> · 401
+                <code>unauthenticated</code> · 403 <code>email_unverified</code>
+              </dd>
+            </dl>
+          </div>
+
+          <div class="card">
+            <span class="verb post">POST</span>
+            <div class="path">/api/projects/:projectId/snapshots/:snapshotId/restore</div>
+            <dl>
+              <dt>auth</dt>
+              <dd>ID token · <code>email_verified</code> · <strong>App Check</strong></dd>
+              <dt>body</dt>
+              <dd>none — <code>z.object({}).strict()</code>, so any body is a 400</dd>
+              <dt>200</dt>
+              <dd><code>{ files: FileMeta[], changed: true }</code> — the project's list as it now stands</dd>
+              <dt>200</dt>
+              <dd><code>{ files, changed: false }</code> — already this version; nothing written</dd>
+              <dt>errors</dt>
+              <dd>
+                400 <code>invalid_id</code> · 400 <code>invalid_body</code> · 404
+                <code>not_found</code> · <strong>409 <code>snapshot_unreadable</code></strong> · 401 ·
+                403
+              </dd>
+            </dl>
+          </div>
+        </div>
+
+        <div class="note">
+          <strong>Unchanged:</strong> <code>POST /generate</code> gains no frame, no field and no
+          payload (D21). The client learns a version exists by asking when the sheet opens — a
+          <code>snapshotId</code> on <code>done</code> would touch the wire protocol, the parser and
+          every fixture to save one request per session.
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <section class="step">
+        <div class="disc">6</div>
+        <h2>Where the risk sits</h2>
+        <p class="claim">
+          Thirty-two acceptance criteria. Their distribution is a design statement: this slice's
+          risk is in what actually reaches Firestore, so most of it is proven against the emulators
+          rather than against a mock.
+        </p>
+
+        <div class="levels">
+          <div class="level">
+            <span class="name">L1 unit</span>
+            <span class="bar"><span class="a" style="width: 40.6%"></span></span>
+            <span class="count">13</span>
+          </div>
+          <div class="level">
+            <span class="name">L2 component</span>
+            <span class="bar"><span class="b" style="width: 9.4%"></span></span>
+            <span class="count">3</span>
+          </div>
+          <div class="level">
+            <span class="name">L3 rules</span>
+            <span class="bar"><span class="c" style="width: 6.3%"></span></span>
+            <span class="count">2</span>
+          </div>
+          <div class="level">
+            <span class="name">L4 integration</span>
+            <span class="bar"><span class="a" style="width: 40.6%"></span></span>
+            <span class="count">13</span>
+          </div>
+          <div class="level">
+            <span class="name">L5 e2e</span>
+            <span class="bar"><span class="d" style="width: 3.1%"></span></span>
+            <span class="count">1</span>
+          </div>
+        </div>
+
+        <p class="claim" style="margin-top: 14px">
+          The pure half — the resulting-set merge, the next <code>seq</code>, the prune plan, the
+          set-equality check — is deliberately large, because each of those is a decision that would
+          otherwise live as an expression inside a handler where it cannot be asserted.
+        </p>
+
+        <table>
+          <thead>
+            <tr>
+              <th class="mono">#</th>
+              <th>Risk</th>
+              <th>Mitigation</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="mono">R1</td>
+              <td>Snapshotting the turn's writes rather than the project's set — smaller code, passes any single-generation test.</td>
+              <td>D1 as a pure function with its own tests (AC-1); AC-7 asserts the untouched file over the wire.</td>
+            </tr>
+            <tr>
+              <td class="mono">R2</td>
+              <td>Files inline in one document: 20 × 100,000 &gt; 1,048,576, so it fails only on the projects with the most code.</td>
+              <td>D3's subcollection, with the arithmetic in the decision so a reviewer cannot simplify it back by accident.</td>
+            </tr>
+            <tr>
+              <td class="mono">R3</td>
+              <td>A restore that does not delete leaves a hybrid of two versions, invisible in the tree.</td>
+              <td>D7; AC-12 asserts the negative, and <code>__alt_files</code> exists so the negative can be asserted at all.</td>
+            </tr>
+            <tr>
+              <td class="mono">R4</td>
+              <td>Unbounded growth — the safety snapshot means exploring history multiplies storage.</td>
+              <td>D6's cap and prune in the same batch; AC-10 asserts the pruned snapshot's <em>file documents</em> are gone too.</td>
+            </tr>
+            <tr>
+              <td class="mono">R5</td>
+              <td>Committing the snapshot separately — one line shorter, and it opens a crash window.</td>
+              <td>D4 keeps one batch owner; AC-9 asserts it against a recording batch rather than a reviewer's attention.</td>
+            </tr>
+            <tr>
+              <td class="mono">R7</td>
+              <td>Two writers for one file document again: a restore landing mid-generation would silently undo itself.</td>
+              <td>D18 — disabled for the length of a stream, re-checked in the store because a keyboard path skips the button.</td>
+            </tr>
+            <tr>
+              <td class="mono">R8</td>
+              <td>The nested rules block forgotten: one block reads like coverage, and the code lives one level below it.</td>
+              <td>D15 names both; AC-20 tests both; the definition of done asks for both by name.</td>
+            </tr>
+            <tr>
+              <td class="mono">R9</td>
+              <td><code>npx shadcn-vue add sheet</code> needs the network, which an unattended session may not have.</td>
+              <td>Vendor from the pinned upstream source with the deviation comment §7.2 requires, and say so in the build log.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p class="claim">
+          R6 (a missing composite index — this project's recurring production-only failure) and R10
+          (the <code>appendAssistantMessage</code> signature change) and R11 (the extra read) are in
+          <code>02-prd.md</code>; they are argued rather than drawn, which is the right medium for
+          each.
+        </p>
+      </section>
+
+      <footer>
+        <p>
+          Genesis · Slice 11 — Snapshots &amp; restore · design companion to
+          <code>docs/slices/11-snapshots-restore/02-prd.md</code>, which remains the contract. Both
+          themes are driven from one set of CSS custom properties; every figure carries its claim as
+          its <code>aria-label</code>.
+        </p>
+      </footer>
+    </div>
+  </body>
+</html>
