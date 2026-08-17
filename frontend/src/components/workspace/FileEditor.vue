@@ -1,30 +1,36 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import CodeEditor from '@/components/workspace/CodeEditor.vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
 import { utf8Bytes } from '@/lib/files'
 import { FILE_BYTES_MAX } from '@/lib/filesApi'
 import { useWorkspaceStore } from '@/stores/workspace'
 
 /**
- * One file, editable — a textarea in this slice, Monaco in Slice 7.
+ * One file, editable — **Monaco since Slice 7, and the widget was the whole of
+ * the change.**
  *
- * That swap is why every rule lives in the store and none of it here: what
- * changes in Slice 7 is the widget, not when a save is allowed or what the
- * buffer is.
+ * Slice 6's header said the swap "touches `FileEditor.vue` and nothing here",
+ * and this file is where that claim was cashed. Every rule lives in the store —
+ * the byte count, the cap, the disabled states, the read-only guard — so the
+ * diff was `<Textarea>` out, `<CodeEditor>` in, plus the **Try again** the tab
+ * model made possible. Its spec is the record: all but two cases are byte-for-
+ * byte Slice 6's, and they pass over a completely different editor.
  *
  * **The buffer is the store's, not this component's**, the same reason the
  * composer's draft is (Slice 4's D17): the `lg` breakpoint swaps one component
- * tree for another, so anything held locally is eaten by a window resize.
+ * tree for another, so anything held locally is eaten by a window resize. It is
+ * now a buffer *per tab* (D14), and the fields this reads are the active one's.
  *
- * **Read-only while a stream is open** (D21, R4). A generation's batch and this
+ * **Read-only while a stream is open** (D9, R4). A generation's batch and this
  * editor are two writers for one document, and the collision is silent — the user
  * types, the batch commits, the refetch replaces the buffer, and the edit is gone
- * with nothing to blame. The window is closed at its source, for the seconds it
- * exists, and the reason is on screen: a disabled control with no explanation is
- * what this project already rules out for the composer's message cap.
+ * with nothing to blame. The lock itself is Monaco's `readOnly` option now, set
+ * by `CodeEditor`; what stays here is withholding **Save** and putting the reason
+ * on screen, because a disabled control with no explanation is what this project
+ * already rules out for the composer's message cap.
  */
 const workspace = useWorkspaceStore()
 
@@ -69,13 +75,29 @@ function save(): void {
       </p>
     </div>
 
-    <!-- A file that would not load has nothing to edit, so the textarea goes.
+    <!-- A file that would not load has nothing to edit, so the editor goes.
          Its own testid: a read failure and a save failure are different states,
-         and one selector matching both would let a test pass on the wrong one. -->
-    <div v-else-if="workspace.fileError" data-testid="file-editor-read-error" class="p-3">
+         and one selector matching both would let a test pass on the wrong one.
+
+         The tab stays open (D12), which is what gives the retry somewhere to
+         live — `reloadFile()` rather than `selectFile()`, because the tab is
+         already open and selecting an already-buffered path issues nothing. -->
+    <div
+      v-else-if="workspace.fileError"
+      data-testid="file-editor-read-error"
+      class="flex flex-col gap-2 p-3"
+    >
       <Alert variant="destructive">
         <AlertDescription>{{ workspace.fileError }}</AlertDescription>
       </Alert>
+      <Button
+        variant="outline"
+        size="sm"
+        data-testid="file-editor-retry"
+        @click="workspace.reloadFile()"
+      >
+        Try again
+      </Button>
     </div>
 
     <div v-else-if="workspace.fileLoading" data-testid="file-editor-loading" class="p-3">
@@ -93,16 +115,13 @@ function save(): void {
         </Alert>
       </div>
 
-      <div class="min-h-0 flex-1 p-3">
-        <Textarea
-          :model-value="workspace.editorContent"
-          data-testid="file-editor-input"
-          class="h-full min-h-40 resize-none font-mono text-xs"
-          spellcheck="false"
-          :disabled="workspace.generating"
-          :aria-label="workspace.selectedPath"
-          @update:model-value="workspace.editContent(String($event))"
-        />
+      <!-- `min-h-0 flex-1` down to an editor at `height: 100%` (D19). Monaco
+           measures its container, so a container sized by its own content
+           collapses it to 0 px and renders nothing at all — with no error, and
+           invisibly to every test level below L5. No padding: the editor's own
+           gutter is its margin. -->
+      <div class="min-h-0 flex-1">
+        <CodeEditor />
       </div>
 
       <div class="flex flex-col gap-2 border-t border-border p-3">
