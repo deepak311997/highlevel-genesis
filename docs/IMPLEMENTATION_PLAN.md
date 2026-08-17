@@ -22,8 +22,8 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 | 4 — Workspace shell & chat persistence | ✅ merged to `main` |
 | 5 — Streaming generation | ✅ merged to `main` |
 | 6 — File operations | ✅ merged to `main` |
-| 7 | not started |
-| 8 — HighLevel API proxy | ✅ built, reviewed, PR open from `slice/08-highlevel-proxy` |
+| 7 — Monaco editor | ✅ built on `slice/07-monaco-editor` |
+| 8 — HighLevel API proxy | ✅ merged to `main` |
 | 9–13 | not started |
 
 **Slice 8 ran ahead of 7**, which §4's dependency line permits: it depends on 2 alone,
@@ -41,9 +41,13 @@ been red since Slice 1: `vite.config.ts` threw at config load on any checkout wi
 8080 — the *development* emulator — so off CI it "passed" by finding a dev session, loading
 its rules over that session's and calling `clearFirestore()` on it.
 
-**Suite, re-run in full on `slice/08-highlevel-proxy` at ship time, rebased on `main`
-(2026-08-18):** typecheck 0 · lint 0 · **1,627 unit** (922 functions · 684 frontend ·
-21 scripts) · **38 rules** · **325 integration** · **14 e2e**. All six green — 2,004 cases.
+**Suite, re-run in full on `slice/07-monaco-editor` (2026-08-18):** typecheck 0 · lint 0 ·
+**1,501 unit** (750 functions · 732 frontend · 19 scripts) · **36 rules** ·
+**292 integration** · **16 e2e**. All six green — 1,845 cases.
+
+Slice 7 added 97 frontend unit cases and 2 e2e cases, and **nothing anywhere else**: no
+route, no collection, no rules block, no index, no fixture. It is `frontend/` plus three
+files under `tests/e2e/` plus these two documents.
 
 Slice 8 added 223 unit cases (172 functions · 49 frontend · 2 scripts), 2 rules cases and
 33 integration cases. Thirty-three of the unit cases are its review's own, written test-first
@@ -60,21 +64,26 @@ item R6 rests on, and it is called out in the PR rather than left in a checklist
 Slice 6 added 447 unit cases (326 functions · 121 frontend), 8 rules cases, 60 integration
 cases and 2 e2e cases — twelve of the unit cases are its review's own, written test-first
 for the three defects that review found. The scripts suite went 15 → 19 on `main` rather
-than in this slice: `99e3f2d` made the emulator port band selectable so two autopilot
+than in that slice: `99e3f2d` made the emulator port band selectable so two autopilot
 checkouts can run the suite at once, and brought four cases with it.
 
-**Two findings from Slice 6 that Slice 7 inherits:**
+**Both findings Slice 6 handed to Slice 7 are closed.**
 
-- **A scroll cap must be set on the element that scrolls.** `EditorPanel.vue` capped the file
-  tree with `max-h-56 … overflow-hidden` while the scroller lived one level in, inside a
-  container sized by its own content — so it never overflowed and never scrolled, and thirteen
-  of twenty rows were on the page and unreachable. Invisible at every level this project tests
-  at: jsdom computes no layout, and the L4/L5 fixtures write three files, which fit. Slice 7
-  puts Monaco in this panel and inherits the same geometry.
-- **`stores/workspace.ts` is ~850 lines** and Slice 7 adds Monaco's state to it. D24's "one
-  store, not two" is still right and its mitigation held — the pure parts went to `lib/files.ts`
-  — but the file half is now a coherent unit that could become a `useProjectFiles` composable
-  the store consumes, which is not a second store. Decided in Slice 7, with Monaco in hand.
+- **The scroll cap is on the element that scrolls**, and `EditorPanel.spec.ts` pins the two
+  classes to one element. Monaco made the second half of that finding much sharper, and L5
+  caught a live instance of it: `EditorPanel`'s `h-full` resolves inside a stretch-sized
+  `ResizablePanel` but **not** inside a `TabsContent` sized by `flex-grow`, so in the narrow
+  layout the panel fell back to its content height and Monaco — which measures its container
+  and has no intrinsic height — rendered a **5 px** editor with no error. Slice 6's textarea
+  had hidden the same broken chain behind its own `min-h-40`. The chain is now flex the whole
+  way down rather than a percentage of a flex-sized box.
+- **`useProjectFiles` is deliberately not extracted** (Slice 7, D22), and the reason is
+  recorded rather than deferred by omission: Slice 7 *rewrote* the file half — one buffer
+  became a map keyed by path, one selection became a tab list — so extracting it in the same
+  PR would have produced a diff in which everything both moved and changed, which is the shape
+  a review misses things in. Three of the four new modules (`editorLanguage`, `editorContent`,
+  `editorModels`) are pure and live outside the store regardless, so the store lands near where
+  it started. **Revisit in Slice 12's audit.**
 
 Slice 5 added 205 unit cases (138 functions · 63 frontend · 4 scripts), 2 rules cases,
 34 integration cases and 3 e2e cases. Five of those cases are the review's own, written
@@ -478,22 +487,37 @@ Two things the build learned that the plan had not:
 
 ---
 
-### Slice 7 — Monaco editor
-**Spec:** F6.3 · **Depends on:** 6 · **Mode:** fast · **Day 3**
+### Slice 7 — Monaco editor ✅
+**Spec:** F6.3 · **Depends on:** 6 · **Mode:** fast · **Day 3** · **Built 2026-08-18**
 
-Swap the textarea for `@guolao/vue-monaco-editor`. Tabbed editing, clickable file tree,
+Swapped the textarea for `@guolao/vue-monaco-editor`. Tabbed editing, clickable file tree,
 tokens appear live in the editor during generation, read-only while streaming.
 
-**Libraries:** **`@guolao/vue-monaco-editor`** — the exact package the brief names — plus
-its `monaco-editor` peer. The brief permits "or equivalent"; we are not taking it, because
-matching the named package removes a question a reviewer would otherwise have to ask. Watch
-the Monaco instance trap in
-`.claude/skills/feature-review/references/typescript-vue.md`: the editor instance must never
-be made reactive (`ref`/`reactive` over it deep-proxies a large third-party object and will
-wreck performance) — hold it in `shallowRef` or a plain closure variable.
-**Key tests:** L2 read-only during stream, tab switching preserves unsaved state, L5
-golden path in the real editor.
-**Demo:** watch code stream into Monaco, switch tabs, edit after the stream ends.
+**Libraries:** **`@guolao/vue-monaco-editor`** ^1.6.0 — the exact package the brief names —
+with `monaco-editor` **pinned to `0.52.2`**, not caretted: 0.55 added an `exports` map and
+0.56 restructured the ESM tree, so the deep path the wrapper's own `.d.ts` imports stops
+resolving, which is a typecheck failure inside a package the brief requires. Monaco is
+bundled locally and handed to the loader (`loader.config({ monaco })`), so nothing is
+fetched from a CDN and the app runs from a fresh clone with the network unplugged.
+
+**What was decided rather than merely built.** Streamed chunks reach the document as
+`applyEdits` **appends**, never `setValue` — the naive version passes every test below L5
+while snapping the viewport to line 1 on each chunk and re-tokenizing the whole file, so
+the rule is a pure module with its own tests. Models are **ours**, keyed
+`inmemory://genesis/<projectId>/<path>`, because the wrapper keys them in monaco's *global*
+registry and two projects would share one `index.html` with one undo stack. No language
+services (`edcore.main` plus four `basic-languages` contributions), because they put red
+squiggles on LLM-generated code. The editor instance lives in a `shallowRef` — the trap
+`.claude/skills/feature-review/references/typescript-vue.md` names — and AC-28 asserts
+identity rather than commenting on it.
+
+**Tests:** 97 frontend unit cases and 2 e2e. Monaco itself never runs below L5 (jsdom has
+no layout and no canvas metrics), so everything decidable was pushed into pure modules with
+a hand-written fake monaco, and L5 was left proving what genuinely needs a browser —
+colouring, layout, and `readOnly` actually refusing a keystroke. It earned its keep: it
+caught the narrow-layout collapse described in §0.
+**Demo:** code streams coloured into a locked editor; a second tab; an unsaved edit
+surviving a tab switch; Save; a reload.
 
 ---
 
@@ -787,12 +811,12 @@ read. `PRODUCT_SPEC.md` §7 holds the package-level version of this.
 | Project CRUD incl. soft-delete, scoped per user by the API | F2.1–2.3 | 3 | ✅ |
 | Server-side generation: bounded context → stream → validated file ops → persist | F3.1–3.4 | 5, 6, 9 | 🟡 all four shipped — context, stream and persist in 5; **validated file ops in 6**, parsed as they stream and refused as one set. Only the HighLevel knowledge in the context is owed, in 9 |
 | SSE endpoint; protocol covers tokens, file boundaries, completion, errors | F4.1–4.3 | 5, 6 | ✅ `POST /generate` — `token`, `file_start`, `file_chunk`, `file_end`, `done` and `error` frames, both error channels, keep-alives |
-| File tree, read file, save manual edits | F5.1 | 6 | ✅ shipped — three routes (list without content, read one, `PUT` an edit), a tree that fills in as the reply streams, and a textarea that Slice 7 swaps for Monaco |
+| File tree, read file, save manual edits | F5.1 | 6, 7 | ✅ shipped — three routes (list without content, read one, `PUT` an edit), a tree that fills in as the reply streams, and Monaco over it since 7 |
 | Snapshot per generation; list and restore | F5.2–5.3 | 11 | ⏭ |
 | shadcn-vue as the primary component library | F6.1 | 0–12 | 🟡 `button`/`input`/`label`/`card`/`alert`/`dialog`/`tabs`/`badge`/`resizable`/`scroll-area`/`separator`/`textarea` in; only `sheet` (11) and `skeleton`/`sonner` (12) owed |
-| Three-panel workspace: chat · editor · preview | F6.1 | 4 | 🟡 shell shipped — resizable at ≥1024px, tabbed below; editor and preview are labelled placeholders until 6/7 and 10 |
+| Three-panel workspace: chat · editor · preview | F6.1 | 4, 6, 7 | 🟡 shell shipped — resizable at ≥1024px, tabbed below; the code panel is a real screen since 6 and Monaco since 7. Only the preview is still a labelled placeholder, until 10 |
 | Chat panel with history and input | F6.2 | 4, 5 | ✅ history, input and persistence in 4; the echo and its badge deleted in 5, replaced by a real streamed reply, a `Generating…` status, an interrupted marker and a Retry |
-| Monaco via `@guolao/vue-monaco-editor`, tabs, live tokens, read-only while streaming | F6.3 | 7 | ⏭ |
+| Monaco via `@guolao/vue-monaco-editor`, tabs, live tokens, read-only while streaming | F6.3 | 7 | ✅ shipped — the named package with `monaco-editor` pinned `0.52.2` and bundled locally (no CDN); a hand-rolled tab strip over one buffer per path, so an unsaved edit survives a tab switch; chunks applied as **append edits** with the view following the tail; `readOnly` with a message for the length of a stream |
 | iframe preview showing **real** HL data, refreshes after generation | F6.4 | 10 | ⏭ — the money shot |
 | SSE client handles all event types, survives disconnects | F6.5 | 5 | 🟡 all three event types handled and chunk-split-safe by construction (the parser is driven split at every offset); the client's own abort is proven, and the **server**-side disconnect is L1-proven but undeliverable from the emulator — a Slice 13 hand-check |
 | Snapshot history in a sheet/dialog with Restore | F6.6 | 11 | ⏭ |
