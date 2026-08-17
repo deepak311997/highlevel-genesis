@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
 
+import { ApiError } from '@/lib/api'
 import { listMessages, sendMessage, MESSAGE_LIMIT, type Message } from '@/lib/messagesApi'
 import { getProject, type Project } from '@/lib/projectsApi'
 
@@ -80,12 +81,41 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
   /**
    * A 404 is a different state from any other failure, so it gets its own flag.
    *
-   * `ApiError` carries the status, which is what lets "that project no longer
-   * exists" render with a Back link while a 500 renders with a Retry. Collapsing
-   * the two would offer a retry for something that will never succeed.
+   * `ApiError` is the only thing `apiClient.request` rejects with, and it carries
+   * the status — which is what lets "that project no longer exists" render with a
+   * Back link while a 500 renders with a Retry. Collapsing the two would offer a
+   * retry for something that will never succeed. Narrowed on the class rather than
+   * reaching for a `status` property through a cast: the type exists to carry this,
+   * and a cast would also match any unrelated `Error` that happened to have one.
    */
   function isMissing(err: unknown): boolean {
-    return err instanceof Error && (err as { status?: number }).status === 404
+    return err instanceof ApiError && err.status === 404
+  }
+
+  /**
+   * Which open a request belongs to.
+   *
+   * **Every write that lands after an `await` is guarded by this**, because the store
+   * is a singleton the route outlives: opening a project, going back, and opening
+   * another leaves the first one's requests in flight against the second one's
+   * screen. A response for a project that is no longer open is not merely stale, it
+   * is wrong — it would put one project's name over another's transcript, blank the
+   * view by clearing a loading flag belonging to the newer request, or append a send
+   * to the wrong conversation.
+   *
+   * A counter rather than a comparison against `projectId`, because leaving a project
+   * and coming back to it makes the id equal again while the first request's response
+   * is still owed — and appending that turn a second time to a transcript that has
+   * since been refetched puts a duplicate in the list. `reset()` bumps it too, so a
+   * request in flight when the session ends cannot repopulate the store afterwards.
+   *
+   * Not a `ref`: nothing renders it, and making it reactive would invalidate every
+   * computed that reads the store on each navigation for no gain.
+   */
+  let generation = 0
+
+  function current(gen: number): boolean {
+    return gen === generation
   }
 
   /**
@@ -98,6 +128,20 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
    * region on the happy path, which is the cheaper of the two prices.
    */
   async function open(id: string): Promise<void> {
+    /*
+     * The draft and the send error are the two things a *different* project clears
+     * and a re-open of the same one keeps. `open` is also what the workspace's Retry
+     * button calls (AC-22), and throwing away what the user has typed is no part of
+     * retrying a failed project fetch — but a draft written for one conversation, or
+     * an error raised by it, has no business appearing under another's composer.
+     */
+    if (projectId.value !== id) {
+      draft.value = ''
+      sendError.value = null
+    }
+
+    const gen = ++generation
+
     // Everything belonging to whatever was open before, cleared up front — a
     // second project must not render the first one's transcript while it loads.
     projectId.value = id
@@ -110,8 +154,11 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     projectLoading.value = true
 
     try {
-      project.value = await getProject(id)
+      const fetched = await getProject(id)
+      if (!current(gen)) return
+      project.value = fetched
     } catch (err) {
+      if (!current(gen)) return
       if (isMissing(err)) {
         projectMissing.value = true
       } else {
@@ -119,7 +166,9 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
       }
       return
     } finally {
-      projectLoading.value = false
+      // Only the request still on screen may say the loading is over. A stale one
+      // clearing this leaves the view with no project and no failure to render.
+      if (current(gen)) projectLoading.value = false
     }
 
     await loadMessages()
@@ -130,17 +179,21 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     const id = projectId.value
     if (id === null) return
 
+    const gen = generation
     messagesLoading.value = true
     messagesError.value = null
     try {
-      messages.value = await listMessages(id)
+      const fetched = await listMessages(id)
+      if (!current(gen)) return
+      messages.value = fetched
       messagesLoaded.value = true
     } catch (err) {
+      if (!current(gen)) return
       // The list is left alone: a failed refetch should not empty a transcript
       // that already has messages in it.
       messagesError.value = err instanceof Error ? err.message : 'Could not load this conversation.'
     } finally {
-      messagesLoading.value = false
+      if (current(gen)) messagesLoading.value = false
     }
   }
 
@@ -158,22 +211,37 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     // boundary a keyboard shortcut cannot go around.
     if (id === null || content === '') return
 
+    const gen = generation
     sending.value = true
     sendError.value = null
     try {
       const pair = await sendMessage(id, content)
+      // The turn belongs to the project it was sent to. If the route has moved on it
+      // is already stored and will be read back on the way in — appending it here
+      // would put one conversation's messages inside another's.
+      if (!current(gen)) return
       messages.value = [...messages.value, ...pair]
       // Cleared only on success, and only after the append, so a failure leaves
       // the textarea exactly as the user left it.
       draft.value = ''
     } catch (err) {
+      if (!current(gen)) return
       sendError.value = err instanceof Error ? err.message : 'Could not send that message.'
     } finally {
+      /*
+       * Unconditionally, unlike the loading flags above: there is only ever one send
+       * in flight — `canSend` is false while this is true — so nothing newer owns
+       * this flag, and leaving it set would disable the composer of whatever project
+       * the user landed on until a reload.
+       */
       sending.value = false
     }
   }
 
   function reset(): void {
+    // Bumped first: a request in flight when the session ends must not repopulate a
+    // store that has just been emptied, which is the whole point of emptying it.
+    generation += 1
     projectId.value = null
     project.value = null
     projectLoading.value = false
