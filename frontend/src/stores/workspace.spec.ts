@@ -1504,16 +1504,26 @@ describe('tabs and their buffers', () => {
 })
 
 /**
- * Saving an edit (AC-38's second half).
+ * Saving an edit, **scoped to the active tab** (AC-19 – AC-21, D26).
  *
  * The response replaces the buffer rather than the buffer being trusted. The
  * server owns `size` and both timestamps and is free to store something other
  * than exactly what was sent; taking its answer is the same liveness rule the
  * rest of the app follows, and it is what stops the editor from showing a
  * document that disagrees with the server until a reload.
+ *
+ * What Slice 7 adds is the scope. With one buffer, "the buffer" was unambiguous;
+ * with a map, a save that reached past the active tab would store one file's
+ * bytes under another's name, or clear a dirty mark on a tab nobody saved. So
+ * every case here that could touch a second tab asserts that it did not.
+ *
+ * `saving` and `saveError` stay top-level rather than joining the buffer: the
+ * save is single-flight across the whole panel, and the PRD's data-model table
+ * leaves them out deliberately.
  */
 describe('saveFile', () => {
   const stored = { ...INDEX_FILE, content: '<h1>Contacts</h1>\n' }
+  const storedApp = { ...APP_FILE, content: 'console.log(1)' }
 
   async function openedOnIndex(): Promise<ReturnType<typeof useWorkspaceStore>> {
     fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
@@ -1526,6 +1536,53 @@ describe('saveFile', () => {
     fetchMock.mockClear()
     return store
   }
+
+  /**
+   * AC-19. Two tabs, the **inactive** one dirty: the save takes the server's
+   * answer into the active buffer and leaves the other byte-identical.
+   *
+   * With one buffer this case could not be written at all, which is why it is the
+   * first one here.
+   */
+  it('PUTs the active buffer and takes the server’s answer back into that tab only', async () => {
+    const store = await openedOnIndex()
+    fetchMock.mockResolvedValueOnce(response({ file: storedApp }))
+    await store.selectFile('app.js')
+    store.editContent('const untouched = true')
+    await store.selectFile('index.html')
+    store.editContent('<h1>People</h1>\n')
+    fetchMock.mockClear()
+
+    const saved = {
+      ...stored,
+      content: '<h1>People</h1>\n',
+      size: 16,
+      updatedAt: '2026-08-17T10:00:00.000Z',
+    }
+    fetchMock.mockResolvedValueOnce(response({ file: saved }))
+
+    await store.saveFile()
+
+    expect(requests()).toEqual(['PUT /api/projects/proj-1/files/index.html'])
+    expect(store.editorContent).toBe('<h1>People</h1>\n')
+    expect(store.fileDirty).toBe(false)
+
+    // The other tab is exactly as it was left — content and dirty mark both.
+    expect(store.dirtyPaths).toEqual(['app.js'])
+    expect(store.buffers['app.js']).toEqual({
+      content: 'const untouched = true',
+      saved: 'console.log(1)',
+      loading: false,
+      error: null,
+      replaced: false,
+    })
+
+    // And the list entry carries the server's new size and timestamp.
+    expect(store.files).toEqual([
+      { path: 'index.html', size: 16, createdAt: INDEX_FILE.createdAt, updatedAt: saved.updatedAt },
+      APP_FILE,
+    ])
+  })
 
   it('PUTs the buffer and takes the server’s answer back', async () => {
     const store = await openedOnIndex()
@@ -1615,6 +1672,35 @@ describe('saveFile', () => {
     await store.saveFile()
 
     expect(requests()).toEqual([])
+  })
+
+  /**
+   * A tab with **no buffer** — reachable, and worth a guard.
+   *
+   * `file_start` opens a tab and creates no buffer (P1). A stream that then ends
+   * in an `error` rather than a `done` never reaches `applyGenerationFiles`, so
+   * that tab is left open over a file the session has never read. Saving from it
+   * would `PUT` an empty string over whatever the server holds.
+   */
+  it('issues no request for a tab whose file has never been read', async () => {
+    const store = await openedOnIndex()
+    store.closeTab('index.html')
+    fetchMock.mockResolvedValueOnce(
+      cannedStream(
+        frame('file_start', { path: 'app.js' }),
+        frame('file_chunk', { path: 'app.js', text: 'const a = 1' }),
+        frame('error', { error: 'The reply was interrupted.', code: 'upstream', message: null }),
+      ),
+    )
+    await store.retryGeneration()
+    expect(store.selectedPath).toBe('app.js')
+    expect(store.buffers['app.js']).toBeUndefined()
+    fetchMock.mockClear()
+
+    await store.saveFile()
+
+    expect(requests()).toEqual([])
+    expect(store.saveError).toBeNull()
   })
 
   it('issues no second request while a save is already in flight', async () => {
