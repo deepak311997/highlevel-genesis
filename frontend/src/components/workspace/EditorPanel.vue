@@ -27,8 +27,14 @@ import { Separator } from '@/components/ui/separator'
     <Separator />
 
     <!-- Capped rather than free-growing: a project at the 20-file limit would
-         otherwise take the whole panel and leave the editor a sliver. -->
-    <div class="max-h-56 shrink-0 overflow-hidden">
+         otherwise take the whole panel and leave the editor a sliver.
+
+         **The cap scrolls.** `max-height` alone leaves the tree its content
+         height, so `FileTree`'s own scroller never overflows and never scrolls —
+         and `overflow-hidden` here would then clip the rows past 14rem with
+         nothing to reach them by. The scrolling belongs on the element that
+         imposes the limit, which is this one. -->
+    <div class="max-h-56 shrink-0 overflow-y-auto">
       <FileTree />
     </div>
 

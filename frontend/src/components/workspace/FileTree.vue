@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { useWorkspaceStore } from '@/stores/workspace'
 
 /**
@@ -53,7 +52,10 @@ const workspace = useWorkspaceStore()
       <div class="h-6 w-1/2 animate-pulse rounded-md bg-secondary" />
     </div>
 
-    <ScrollArea v-else-if="workspace.fileTree.length > 0" class="min-h-0 flex-1">
+    <!-- No scroller of its own: the panel caps this tree's height and therefore
+         owns the scrolling (`EditorPanel.vue`). A second one here would sit in a
+         box the height of its own content and could never overflow. -->
+    <div v-else-if="workspace.fileTree.length > 0" class="min-h-0 flex-1">
       <ul class="flex flex-col gap-0.5 p-2">
         <li v-for="row in workspace.fileTree" :key="row.path">
           <button
@@ -83,7 +85,7 @@ const workspace = useWorkspaceStore()
           </button>
         </li>
       </ul>
-    </ScrollArea>
+    </div>
 
     <!-- Asked, and there is nothing — for a project that has never generated. -->
     <div v-else data-testid="file-tree-empty" class="p-3">
