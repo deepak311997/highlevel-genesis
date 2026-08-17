@@ -1,4 +1,4 @@
-import { ApiError, apiUrl, messageForResponse } from './api'
+import { ApiError, apiUrl, errorForResponse } from './api'
 import { appCheckHeader } from './appCheck'
 import { auth } from './firebase'
 
@@ -58,6 +58,6 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
     throw new ApiError('Something went wrong. Check your connection and try again.', 0)
   }
 
-  if (!res.ok) throw new ApiError(await messageForResponse(res), res.status)
+  if (!res.ok) throw await errorForResponse(res)
   return (await res.json()) as T
 }

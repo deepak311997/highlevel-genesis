@@ -1,4 +1,4 @@
-import { ApiError, apiUrl, messageForResponse } from './api'
+import { ApiError, apiUrl, errorForResponse } from './api'
 import { appCheckHeader } from './appCheck'
 
 /**
@@ -33,9 +33,8 @@ async function post(path: string, body: unknown): Promise<void> {
 
   if (res.ok) return
 
-  throw new ApiError(await messageForResponse(res), res.status)
+  throw await errorForResponse(res)
 }
-
 
 export function register(email: string, password: string): Promise<void> {
   return post('/api/auth/register', { email, password })

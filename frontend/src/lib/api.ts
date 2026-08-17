@@ -14,13 +14,37 @@ export function apiUrl(path: string): string {
   return `${BASE}${path.startsWith('/') ? path : `/${path}`}`
 }
 
+/**
+ * A failed API call, as the app's own error type.
+ *
+ * `code` and `detail` mirror the server's error envelope
+ * (`functions/src/lib/errors.ts`): `code` is the machine-readable reason a
+ * caller may branch on — `hl_reconnect_required` is the one that matters — and
+ * `detail` is upstream's own text about the request, which the HighLevel proxy
+ * passes through so a preview can say what was actually wrong with the call
+ * rather than only that something was.
+ *
+ * Both are declared `string | undefined` rather than optional (`?:`): under
+ * `exactOptionalPropertyTypes` an optional property and one that may hold
+ * `undefined` are different types, and the constructor assigns unconditionally
+ * from optional parameters. Declaring them this way is what lets the assignment
+ * stay unconditional and every existing two-argument `new ApiError(...)` keep
+ * compiling.
+ */
 export class ApiError extends Error {
+  readonly code: string | undefined
+  readonly detail: string | undefined
+
   constructor(
     message: string,
     readonly status: number,
+    code?: string,
+    detail?: string,
   ) {
     super(message)
     this.name = 'ApiError'
+    this.code = code
+    this.detail = detail
   }
 }
 
@@ -50,7 +74,7 @@ export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> 
 }
 
 /**
- * The message to show for a failed response.
+ * The typed error for a failed response.
  *
  * Canonical, and shared by every caller: it was briefly duplicated per client
  * and the copies had already diverged — one had lost the 429 case, so a
@@ -58,23 +82,41 @@ export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> 
  * to wait.
  *
  * Prefers the server's own message, since that carries the field error a form
- * needs, and falls back to something a person can act on.
+ * needs, and falls back to something a person can act on. It returns the error
+ * rather than the message alone because the envelope's `code` and `detail` are
+ * part of what a caller needs — the preview bridge reports both back to the
+ * generated app, and a store branching on `hl_reconnect_required` reads `code`.
+ *
+ * The body is read **once**, before any branch: a 429 still carries an envelope
+ * worth lifting even though its message is fixed, and `Response.json()` can only
+ * be called once.
  */
-export async function messageForResponse(res: Response): Promise<string> {
-  if (res.status === 429) {
-    return 'Too many attempts. Try again in a few minutes.'
-  }
+export async function errorForResponse(res: Response): Promise<ApiError> {
+  let serverMessage: string | undefined
+  let code: string | undefined
+  let detail: string | undefined
 
   try {
     const body: unknown = await res.json()
     if (typeof body === 'object' && body !== null) {
-      const { error } = body as { error?: unknown }
-      if (typeof error === 'string' && error !== '') return error
+      const envelope = body as { error?: unknown; code?: unknown; detail?: unknown }
+      if (typeof envelope.error === 'string' && envelope.error !== '') {
+        serverMessage = envelope.error
+      }
+      if (typeof envelope.code === 'string') code = envelope.code
+      if (typeof envelope.detail === 'string') detail = envelope.detail
     }
   } catch {
     // A non-JSON body means the request never reached a Cloud Function — the
     // Hosting rewrite or the dev proxy sent it to the SPA fallback instead.
   }
 
-  return 'Something went wrong. Please try again.'
+  // The one message that overrides the server's: throttling is the only failure
+  // where what the user should do next is knowable here and not there.
+  const message =
+    res.status === 429
+      ? 'Too many attempts. Try again in a few minutes.'
+      : (serverMessage ?? 'Something went wrong. Please try again.')
+
+  return new ApiError(message, res.status, code, detail)
 }

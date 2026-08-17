@@ -1,4 +1,4 @@
-import { ApiError, apiUrl, messageForResponse } from './api'
+import { ApiError, apiUrl, errorForResponse } from './api'
 import { authHeaders } from './apiClient'
 import type { Message } from './messagesApi'
 import { createSseParser } from './sse'
@@ -162,7 +162,7 @@ export async function* streamGeneration(
   }
 
   // Before a single event is yielded (AC-31).
-  if (!res.ok) throw new ApiError(await messageForResponse(res), res.status)
+  if (!res.ok) throw await errorForResponse(res)
 
   const reader = res.body?.getReader()
   if (reader === undefined) {
