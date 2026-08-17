@@ -10,7 +10,7 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 
 ---
 
-## 0. Where we are — 2026-08-17
+## 0. Where we are — 2026-08-18
 
 | Slice | State |
 |---|---|
@@ -21,7 +21,7 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 | 3 — Projects | ✅ merged to `main` |
 | 4 — Workspace shell & chat persistence | ✅ merged to `main` |
 | 5 — Streaming generation | ✅ merged to `main` |
-| 6 — File operations | ✅ built on `slice/06-file-operations` |
+| 6 — File operations | ✅ built, reviewed, PR open from `slice/06-file-operations` |
 | 7–13 | not started |
 
 **Slices from here run unattended.** `scripts/autopilot.sh` drives the five-stage loop
@@ -36,12 +36,28 @@ been red since Slice 1: `vite.config.ts` threw at config load on any checkout wi
 8080 — the *development* emulator — so off CI it "passed" by finding a dev session, loading
 its rules over that session's and calling `clearFirestore()` on it.
 
-**Suite, re-run in full on `slice/06-file-operations` at build end (2026-08-17):**
-typecheck 0 · lint 0 · **1,388 unit** (742 functions · 631 frontend · 15 scripts) ·
-**36 rules** · **292 integration** · **14 e2e**. All six green — 1,730 cases.
+**Suite, re-run in full on `slice/06-file-operations` at ship time, rebased on `main`
+(2026-08-18):** typecheck 0 · lint 0 · **1,404 unit** (750 functions · 635 frontend ·
+19 scripts) · **36 rules** · **292 integration** · **14 e2e**. All six green — 1,746 cases.
 
-Slice 6 added 435 unit cases (318 functions · 117 frontend), 8 rules cases, 60 integration
-cases and 2 e2e cases. Two of its findings are recorded below.
+Slice 6 added 447 unit cases (326 functions · 121 frontend), 8 rules cases, 60 integration
+cases and 2 e2e cases — twelve of the unit cases are its review's own, written test-first
+for the three defects that review found. The scripts suite went 15 → 19 on `main` rather
+than in this slice: `99e3f2d` made the emulator port band selectable so two autopilot
+checkouts can run the suite at once, and brought four cases with it.
+
+**Two findings from Slice 6 that Slice 7 inherits:**
+
+- **A scroll cap must be set on the element that scrolls.** `EditorPanel.vue` capped the file
+  tree with `max-h-56 … overflow-hidden` while the scroller lived one level in, inside a
+  container sized by its own content — so it never overflowed and never scrolled, and thirteen
+  of twenty rows were on the page and unreachable. Invisible at every level this project tests
+  at: jsdom computes no layout, and the L4/L5 fixtures write three files, which fit. Slice 7
+  puts Monaco in this panel and inherits the same geometry.
+- **`stores/workspace.ts` is ~850 lines** and Slice 7 adds Monaco's state to it. D24's "one
+  store, not two" is still right and its mitigation held — the pure parts went to `lib/files.ts`
+  — but the file half is now a coherent unit that could become a `useProjectFiles` composable
+  the store consumes, which is not a second store. Decided in Slice 7, with Monaco in hand.
 
 Slice 5 added 205 unit cases (138 functions · 63 frontend · 4 scripts), 2 rules cases,
 34 integration cases and 3 e2e cases. Five of those cases are the review's own, written
