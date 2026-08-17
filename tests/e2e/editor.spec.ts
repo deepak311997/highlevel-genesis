@@ -37,6 +37,20 @@ import {
 /** `__slow` makes the stream observable: 600 ms, then a token every 150 ms. */
 const PROMPT = '__slow build a contact dashboard'
 
+/**
+ * AC-25's runtime half — **the editor never reaches for a CDN** (D2).
+ *
+ * `no-cdn.spec.ts` proves nobody wrote one of these hosts into `frontend/src`,
+ * which is a claim about the source and not about the running app:
+ * `@monaco-editor/loader`'s own default — `cdn.jsdelivr.net/npm/monaco-editor@…`
+ * — is inside the bundle whatever our source says, and what makes it inert is
+ * `loader.config({ monaco })` having run before the first `init()`. Only a
+ * browser can be asked whether that held. A regression here is invisible on a
+ * developer's machine and fatal on a locked-down network, which is exactly the
+ * shape of failure this suite exists to catch.
+ */
+const CDN_HOST = /cdn\.jsdelivr\.net|unpkg\.com|cdnjs\.cloudflare\.com/
+
 test.describe('Slice 07 — Monaco editor', () => {
   test.beforeEach(async ({ page }) => {
     await resetEmulators()
@@ -46,6 +60,13 @@ test.describe('Slice 07 — Monaco editor', () => {
   test('code streams coloured into a locked editor, and tabs keep their edits', async ({
     page,
   }) => {
+    // Registered before the first navigation, so it sees every request this test
+    // makes — including the ones the reload at the end issues.
+    const cdn: string[] = []
+    page.on('request', (request) => {
+      if (CDN_HOST.test(request.url())) cdn.push(request.url())
+    })
+
     await signUpAndVerify(page, 'editor')
     await openNewProject(page)
 
@@ -129,6 +150,11 @@ test.describe('Slice 07 — Monaco editor', () => {
 
     await page.getByTestId('file-row').filter({ hasText: 'styles.css' }).click()
     await expect.poll(() => editorText(page)).toBe(edited)
+
+    /* AC-25, at the only level that can answer it — see `CDN_HOST`. Monaco
+       mounted, coloured, streamed, saved and reloaded above this line, and not
+       one byte of it came off a CDN. */
+    expect(cdn).toEqual([])
   })
 
   /**
