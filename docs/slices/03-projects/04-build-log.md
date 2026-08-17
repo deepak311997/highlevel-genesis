@@ -255,3 +255,17 @@ multi-root fragment, so Vue drops fallthrough attributes on it. The id moved to 
 **Deviations from the plan:** none. Two cases beyond the plan's list: an empty description is
 sent as `null` rather than `''`, and reopening clears a previous error as well as re-seeding
 the fields.
+
+---
+
+## T12 — `ProjectDeleteDialog.vue`
+
+**Red:** `frontend/src/components/ProjectDeleteDialog.spec.ts` — 6 cases.
+
+**Green:** `frontend/src/components/ProjectDeleteDialog.vue`. Same portal/test-id note as T11.
+
+**ACs:** AC-32.
+
+**Deviations from the plan:** none. One case beyond the plan's list — `project: null` renders
+nothing to confirm — because the card nulls its selection as the dialog closes, so the
+component sees `null` for at least one render.
