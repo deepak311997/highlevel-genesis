@@ -19,8 +19,9 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 | 2 — HighLevel connection | ✅ merged to `main` |
 | 2b — API-only data access | ✅ merged to `main` |
 | 3 — Projects | ✅ merged to `main` |
-| 4 — Workspace shell & chat persistence | 🟡 reviewed — PR open, awaiting merge |
-| 5–13 | not started |
+| 4 — Workspace shell & chat persistence | ✅ merged to `main` |
+| 5 — Streaming generation | 🟡 built — awaiting review |
+| 6–13 | not started |
 
 **Slices from here run unattended.** `scripts/autopilot.sh` drives the five-stage loop
 one slice at a time — a fresh session per stage, the suite run by the orchestrator rather
@@ -34,9 +35,27 @@ been red since Slice 1: `vite.config.ts` threw at config load on any checkout wi
 8080 — the *development* emulator — so off CI it "passed" by finding a dev session, loading
 its rules over that session's and calling `clearFirestore()` on it.
 
-**Suite, re-run in full on `slice/04-workspace-shell` at ship time (2026-08-17):**
-typecheck 0 · lint 0 · **748 unit** (286 functions · 451 frontend · 11 scripts) ·
-**26 rules** · **198 integration** · **9 e2e**. All six green.
+**Suite, re-run in full on `slice/05-streaming-generation` at build time (2026-08-17):**
+typecheck 0 · lint 0 · **952 unit** (424 functions · 513 frontend · 15 scripts) ·
+**28 rules** · **231 integration** · **12 e2e**. All six green.
+
+Slice 5 added 204 unit cases (138 functions · 62 frontend · 4 scripts), 2 rules cases,
+33 integration cases and 3 e2e cases.
+
+**Two findings from Slice 5 worth carrying**, both measured rather than assumed:
+
+- **`Connection` must not be set by hand on the SSE response.** It is a hop-by-hop header the
+  HTTP layer owns. Slice 0's stub set `Connection: keep-alive` and it was harmless only because
+  nothing ever sent a second request over that socket. With it set, the first generation of a
+  session succeeded and the **next `POST /generate` on the reused connection came back as an
+  empty 400** — the second prompt of every conversation failed in the running app, with nothing
+  in the logs. Every single-turn test passed at all five levels. "Two prompts in a row" is now a
+  permanent e2e case.
+- **The functions emulator does not propagate a client disconnect to the function runtime.**
+  Instrumenting `req`/`res` `close` and `aborted` and then aborting a real `fetch` mid-stream
+  produces no event until after the turn completes. `res.on('close')` is the right listener on
+  Cloud Run (`req` has already ended, because `express.json()` drained it); it simply cannot be
+  exercised here, so AC-17 and AC-18 are L1 and the platform half is a Slice 13 hand-check.
 
 Slice 4 added 112 unit cases (14 functions · 98 frontend), 7 rules cases, 43 integration cases
 and 3 e2e cases. The previous full run, at Slice 3's ship time, was 636 unit · 19 rules ·
@@ -316,11 +335,11 @@ two-key `orderBy` is the fix, and Slice 5 keeps both: when the assistant write m
 stream's `done` handler the timestamps genuinely differ, so `seq` costs nothing and the query
 does not change.
 
-**What Slice 5 changes here, planned rather than churn** (PRD D6): the assistant write moves to
-the stream's `done` handler, the user write stays in the `POST`, and the response becomes the
-user message alone. The frontend does not change at all — the store already appends what the
-server returned, which is the shape a streamed reply needs. `echoFor()` and the `Echo mode`
-badge are what Slice 5 deletes.
+**What Slice 5 changed here, as planned** (PRD D6): the assistant write moved to `/generate`'s
+terminal handler, the user write stayed in the `POST`, and the response became the user message
+alone — kept as a one-element array, so the store's append was untouched. `echoFor()`,
+`messagePair()` and the stub badge are gone. The 409 still checks `count + 2`, deliberately: the
+reply the `POST` is about to make the user trigger needs room.
 
 ---
 
@@ -347,6 +366,37 @@ a stubbed LLM including mid-stream abort, L5 prompt → tokens visibly appear �
 unbuffered from `asia-south1` through a Hosting rewrite, which was §8's open item. What
 remains is the SDK's stream shape and the accumulation trap in
 `.claude/skills/feature-review/references/typescript-vue.md`.
+
+**Built 2026-08-17** on `slice/05-streaming-generation`. A new `functions/src/llm/` module —
+body schema, system prompt with its `cache_control` breakpoint, the transcript → context
+builder, the request parameters, the SDK-event mapper, the narrow `LlmStream` port and the
+emulator-only fake — plus `POST /generate` rewritten as its own small Express app on its own
+function, `truncated` on the message schema, `readTranscript` and `appendAssistantMessage`,
+`frontend/src/lib/sse.ts` and `generateApi.ts`, the store's `generating` / `streamingText` /
+`generateError` and its `AbortController`, and the chat panel's badge, placeholder, interrupted
+marker and Retry.
+
+**Three decisions a later slice revisits**, recorded so they read as planned rather than as
+churn:
+
+- **D6 — trailing assistant turns are dropped when the context is assembled.** A trailing
+  assistant message *is* a prefill, and prefill is a 400 on `claude-opus-5`. It is exactly what
+  Retry after an interruption produces, so untreated the failure lands on the recovery path.
+  Slice 6 must keep the drop when file operations join the context.
+- **D15 — `output_config: { effort: 'low' }`.** This slice generates prose. **Slice 9 owns
+  generation quality** and re-tunes effort against real HighLevel prompts, where `high` or
+  `xhigh` is the documented starting point.
+- **D16 — the `cache_control` breakpoint is declared and is a no-op until Slice 9.**
+  `claude-opus-5`'s minimum cacheable prefix is 512 tokens and this slice's system prompt is far
+  shorter, so `cache_creation_input_tokens` and `cache_read_input_tokens` both read `0` and
+  nothing errors. The `generation.complete` log line is where that becomes a real cache read once
+  the cheat-sheet is added above the breakpoint.
+
+**Deferred to Slice 13's checklist:** the README gains an `ANTHROPIC_API_KEY` setup step —
+Secret Manager for a deploy, `functions/.secret.local` (created automatically by
+`scripts/ensure-secret-local.mjs`) for emulator runs. And R2's hand-check, that a real
+generation survives the Hosting rewrite end to end, together with the client-disconnect path the
+emulator cannot deliver.
 
 ---
 

@@ -411,3 +411,48 @@ scan** over `frontend/src`, not only a render check.
 are disabled and Enter issues nothing; with it false both work again (AC-42).
 
 **Green:** `:disabled="workspace.atLimit || workspace.sending || workspace.generating"`.
+
+## T19 — End to end
+
+**Commit:** `e9dd26f`
+
+**Tests added / changed:** L5 `tests/e2e/workspace.spec.ts` — four tests where Slice 4 had one.
+
+1. **A failed generation, a Retry, and a reply that arrives progressively** (AC-44). The first
+   `POST /generate` is intercepted and refused; the user bubble is on screen anyway (D3, F8.2), with
+   a `generate-error` and a `generate-retry` and no `Generating…` badge. The interception is
+   withdrawn and Retry clicked: the badge appears, the `streaming-bubble` is visible **holding part
+   of the reply**, then the finished assistant bubble is longer than what the placeholder held —
+   **which is R3's answer**, since a buffering dev proxy would take the placeholder from empty
+   straight to replaced. Then reload, and back through the dashboard.
+2. **An interrupted reply is preserved, marked, and offers a Retry** — `__fail_midstream`, a real
+   mid-stream upstream failure. The partial bubble carries `message-interrupted`, the error carries
+   a Retry, and re-entering through the dashboard (a fresh store) still shows the marked partial
+   with no stale error.
+3. **A second prompt in the same conversation also gets a reply** — see below.
+4. **A refusal** — `__refuse` leaves the transcript at one message and explains itself.
+
+### A real bug this stage found
+
+`/generate` set `Connection: keep-alive` by hand, inherited from Slice 0. It is a **hop-by-hop**
+header the HTTP layer owns. With it set, the first generation of a session succeeded and the **next
+`POST /generate` on the reused socket came back as an empty 400** — so the second prompt of every
+conversation failed in the running app, with nothing in the logs to say why. Every single-turn test
+passed throughout, at all five levels.
+
+Removing it lets Node close the streamed response's socket, and each generation gets a clean one.
+"Two prompts in a row" is now a permanent e2e test, because one turn only proves the transport works
+once and the first thing a real user does is send a second.
+
+### Two amendments to the plan's e2e
+
+- **The interruption movement does not navigate away.** The plan had the user click *Back to
+  dashboard* mid-stream and expected the server to persist the partial. The functions emulator never
+  propagates a client disconnect (T11's measurement), so the server would run to completion and
+  persist a *complete* reply — the assertion would fail for a reason that has nothing to do with the
+  product. `__fail_midstream` produces the same user-visible outcome by a failure mode that is
+  reachable here.
+- **The refusal is `route.fulfill`, not `route.abort`.** Aborting a request mid-flight leaves the
+  functions emulator's pooled upstream socket dirty, and the *next test's* `POST /generate` comes
+  back as an empty 400 — the same symptom as the bug above, from a different cause. A fulfilled
+  refusal exercises the identical client path without poisoning the connection.
