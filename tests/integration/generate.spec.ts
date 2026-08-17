@@ -4,8 +4,11 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   adminDb,
   framesOf,
+  GENERATE_URL,
+  getJson,
   idTokenFor,
   postGenerate,
+  postJson,
   resetEmulators,
   seedUser,
   type GenerateResponse,
@@ -232,7 +235,11 @@ describe('POST /generate — the boundary, before a byte is streamed', () => {
    */
   it('answers 400 empty_context for a transcript of assistant turns only', async () => {
     await seedProject(aliceUid, 'echoes')
-    await seedMessage(aliceUid, 'echoes', 'bot-a', { role: 'assistant', content: 'a reply', seq: 1 })
+    await seedMessage(aliceUid, 'echoes', 'bot-a', {
+      role: 'assistant',
+      content: 'a reply',
+      seq: 1,
+    })
 
     const res = await postGenerate({ projectId: 'echoes' }, auth(aliceToken))
 
@@ -255,28 +262,144 @@ describe('POST /generate — the boundary, before a byte is streamed', () => {
   })
 })
 
+/** The `done` frame's payload, narrowed for assertions. */
+function doneMessage(res: GenerateResponse): Record<string, unknown> {
+  const frame = framesOf(res.frames, 'done')[0]
+  const payload = frame?.data as { message?: Record<string, unknown> } | undefined
+  if (payload?.message === undefined) throw new Error('no done frame carrying a message')
+  return payload.message
+}
+
+const tokenText = (res: GenerateResponse): string =>
+  framesOf(res.frames, 'token')
+    .map((frame) => (frame.data as { text: string }).text)
+    .join('')
+
 describe('POST /generate — a turn that streams', () => {
-  /*
-   * The smoke test for the other side of the boundary: this is the case that
-   * proves the flush happens and the stream is real, which is what stops the
-   * boundary work above being a handler that only ever refuses. The detailed
-   * assertions — the persisted document, the transcript order, the log line and
-   * the keep-alive — are the next task's.
-   */
-  it('answers 200 with an event stream, tokens and one done frame', async () => {
+  /** AC-1. The frame sequence, and the headers that make it a stream at all. */
+  it('answers 200 with the streaming headers, tokens, then exactly one done', async () => {
     const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
 
     expect(res.status).toBe(200)
-    expect(res.contentType).toContain('text/event-stream')
+    expect(res.contentType).toBe('text/event-stream; charset=utf-8')
     expect(framesOf(res.frames, 'token').length).toBeGreaterThan(0)
     expect(framesOf(res.frames, 'done')).toHaveLength(1)
     expect(framesOf(res.frames, 'error')).toHaveLength(0)
     expect(res.frames.at(-1)?.event).toBe('done')
+  })
 
-    // Not merely "a frame named done": Slice 0's placeholder emitted one of
-    // those carrying `{ ok: true }`. The payload is the persisted assistant
-    // message, which is the whole of D9.
-    const done = framesOf(res.frames, 'done')[0]?.data as { message?: { role?: string } }
-    expect(done.message?.role).toBe('assistant')
+  it('sets the headers that stop an intermediary buffering the stream', async () => {
+    const res = await fetch(GENERATE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...auth(aliceToken) },
+      body: JSON.stringify({ projectId: 'proj-1' }),
+    })
+    await res.text()
+
+    expect(res.headers.get('cache-control')).toBe('no-cache, no-transform')
+    expect(res.headers.get('x-accel-buffering')).toBe('no')
+  })
+
+  /*
+   * AC-2. The document, not merely the response: the `done` frame's message has
+   * to *be* what was persisted, because the client replaces its placeholder
+   * bubble with it and the next page load reads the document.
+   */
+  it('persists exactly one assistant message equal to the concatenated tokens', async () => {
+    const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+
+    const stored = await storedMessages(aliceUid, 'proj-1')
+    expect(stored).toHaveLength(2)
+    const assistant = stored[1] as Record<string, unknown>
+    expect(assistant['role']).toBe('assistant')
+    expect(assistant['content']).toBe(tokenText(res))
+    expect(assistant['seq']).toBe(1)
+    expect(assistant['truncated']).toBe(false)
+  })
+
+  it('describes that document in the done frame, in wire shape', async () => {
+    const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+    const message = doneMessage(res)
+
+    const snapshot = await adminDb()
+      .collection(`users/${aliceUid}/projects/proj-1/messages`)
+      .where('role', '==', 'assistant')
+      .get()
+    const doc = snapshot.docs[0]
+
+    expect(message['id']).toBe(doc?.id)
+    expect(message['content']).toBe(doc?.get('content'))
+    expect(message['createdAt']).toBe((doc?.get('createdAt') as Timestamp).toDate().toISOString())
+    // The wire shape, and `seq` is still not part of it.
+    expect(Object.keys(message).sort()).toEqual(['content', 'createdAt', 'id', 'role', 'truncated'])
+  })
+
+  /* AC-11 end to end: `reply.json` carries a recorded thinking delta, and it
+   * must not have become a token. */
+  it('forwards no thinking text as a token', async () => {
+    const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+
+    expect(tokenText(res)).not.toContain('The user wants')
+    expect(tokenText(res)).toContain('Here is a contact dashboard.')
+  })
+
+  /** AC-3. The transcript, read back the way the browser reads it. */
+  it('returns the user message before the assistant one, both untruncated', async () => {
+    await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+
+    const res = await getJson(`/api/projects/proj-1/messages`, auth(aliceToken))
+    const messages = (res.body as { messages: Record<string, unknown>[] }).messages
+
+    expect(messages.map((message) => message['role'])).toEqual(['user', 'assistant'])
+    expect(messages.map((message) => message['truncated'])).toEqual([false, false])
+  })
+
+  /*
+   * AC-19, D28. The `__slow` fake pauses 600 ms before its first token, and the
+   * suite runs with `GENERATE_TEST_KEEPALIVE_MS=250` — so a keep-alive comment
+   * has to arrive first. Without it an intermediary that closes an idle
+   * connection would kill the request during the model's most productive moment.
+   */
+  it('writes a comment frame before the first token on a slow generation', async () => {
+    await seedProject(aliceUid, 'slow')
+    await seedMessage(aliceUid, 'slow', 'msg-a', { content: '__slow build a contact dashboard' })
+
+    const res = await postGenerate({ projectId: 'slow' }, auth(aliceToken))
+
+    const firstToken = res.frames.findIndex((frame) => frame.event === 'token')
+    const comments = res.frames.filter((frame) => frame.comment !== null)
+    expect(comments.length).toBeGreaterThan(0)
+    expect(res.frames.findIndex((frame) => frame.comment !== null)).toBeLessThan(firstToken)
+    // More than the one written at the flush: the interval really is ticking.
+    expect(comments.length).toBeGreaterThan(1)
+  })
+
+  /*
+   * The whole two-request turn, twice — D3 executed. The second prompt goes
+   * through the real `POST` route rather than being seeded, so the commit
+   * timestamps are Firestore's own and the ordering is the one a browser sees.
+   *
+   * It is also R1 end to end: the second `/generate` reads a transcript that
+   * ends `user → assistant → user`, and the first `/generate` read one ending
+   * `user`. A trailing assistant would be a prefill and a 400; neither call is.
+   */
+  it('answers a second turn, so the transcript grows rather than being replaced', async () => {
+    await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+    expect(
+      (
+        await postJson(
+          '/api/projects/proj-1/messages',
+          { content: 'and add a search box' },
+          auth(aliceToken),
+        )
+      ).status,
+    ).toBe(201)
+
+    const second = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+
+    expect(second.status).toBe(200)
+    expect(framesOf(second.frames, 'done')).toHaveLength(1)
+    const stored = await storedMessages(aliceUid, 'proj-1')
+    expect(stored.map((doc) => doc['role'])).toEqual(['user', 'assistant', 'user', 'assistant'])
   })
 })

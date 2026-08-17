@@ -75,9 +75,30 @@ export function redact(value: unknown, seen = new WeakSet()): unknown {
 
   const out: Record<string, unknown> = {}
   for (const [key, item] of Object.entries(value)) {
-    out[key] = SENSITIVE_KEY.test(key) ? REDACTED : redact(item, seen)
+    out[key] = isSecret(key, item) ? REDACTED : redact(item, seen)
   }
   return out
+}
+
+/**
+ * A sensitive *name* over a value that could actually be a credential.
+ *
+ * `SENSITIVE_KEY` matches substrings on purpose, so that `newPassword`,
+ * `X-Api-Key` and `refreshToken` are all caught without enumerating spellings.
+ * That breadth has one false positive worth excluding: **token counts**.
+ * `inputTokens` and `cacheReadInputTokens` match `token`, and redacting them
+ * would empty the generation log line of the only numbers it exists to carry
+ * (D25) — with no warning, because a redacted field still looks deliberate.
+ *
+ * Excluding by *type* rather than by name is what keeps the net intact: every
+ * credential this codebase handles is a string — access and refresh tokens,
+ * passwords, out-of-band codes, API keys, the sealed OAuth state. A number under
+ * a sensitive name is a count or an expiry. Narrowing by name instead would mean
+ * a list to maintain, and the next field somebody adds would not be on it.
+ */
+function isSecret(key: string, value: unknown): boolean {
+  if (!SENSITIVE_KEY.test(key)) return false
+  return typeof value !== 'number' && typeof value !== 'boolean'
 }
 
 /**
@@ -128,6 +149,48 @@ export interface AuthLogContext {
  * the redaction pass has one place to run rather than one per field.
  */
 export function logAuthEvent(event: string, context: AuthLogContext = {}): void {
+  const safe = redact(context) as Record<string, unknown>
+  console.info(JSON.stringify({ event, ...safe }))
+}
+
+/**
+ * Context a generation log line may carry — F3.4's metadata, in a log (D25).
+ *
+ * **A second typed context rather than a widening of {@link AuthLogContext}**,
+ * and the reason is that interface's own comment: it is narrow on purpose, with
+ * no free-form body. A generation line that could carry an arbitrary string
+ * would be one refactor away from carrying a prompt — and a prompt, or a reply,
+ * is the user's own prose, which a log sink retains for longer than the request
+ * that produced it.
+ *
+ * There is deliberately no `content`, no `text`, no `projectId` and no uid.
+ * Nothing here identifies a conversation; it describes a call.
+ *
+ * `cacheReadInputTokens` is the field worth naming. It is how D16's declared
+ * no-op becomes observable: this slice's system prompt is far shorter than
+ * `claude-opus-5`'s 512-token minimum cacheable prefix, so it will read `0` and
+ * nothing will error. Slice 9 adds the HighLevel cheat-sheet above the
+ * breakpoint, and this line is where the cache read shows up.
+ */
+export interface GenerationLogContext {
+  model: string
+  stopReason: string | null
+  truncated: boolean
+  durationMs: number
+  inputTokens: number
+  outputTokens: number
+  cacheCreationInputTokens: number
+  cacheReadInputTokens: number
+}
+
+/**
+ * Emit one structured line for a generation.
+ *
+ * Same shape as {@link logAuthEvent}: JSON on a single `console.info` so Cloud
+ * Logging parses it as structured data, through the same `redact` pass so a
+ * value arriving despite the typed context is still scrubbed.
+ */
+export function logGenerationEvent(event: string, context: GenerationLogContext): void {
   const safe = redact(context) as Record<string, unknown>
   console.info(JSON.stringify({ event, ...safe }))
 }

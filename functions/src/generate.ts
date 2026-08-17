@@ -6,6 +6,7 @@ import { originAllowlist } from './api'
 import { requireAppCheck } from './auth/appCheck'
 import { withVerifiedUser } from './auth/requireUser'
 import { asyncHandler, errorHandler, HttpError } from './lib/errors'
+import { logGenerationEvent, type GenerationLogContext } from './lib/log'
 import { parseBody } from './lib/parse'
 import { encodeSse, encodeSseComment } from './lib/sse'
 import {
@@ -78,6 +79,40 @@ function writeTerminalFrame(res: Response, frame: string): void {
   if (res.destroyed || res.writableEnded) return
   res.write(frame)
   res.end()
+}
+
+/**
+ * The one line per turn — F3.4's generation metadata, in a log (D25).
+ *
+ * Exported so it has an L1 test that needs no emulator, and because the negative
+ * is the assertion that matters: `GenerationLogContext` has no field for message
+ * content, so nothing the user wrote and nothing the model wrote can reach Cloud
+ * Logging through here.
+ *
+ * Called once on **every** path — completion, refusal, mid-stream failure and
+ * client disconnect alike — and before the frame is written, so a turn is
+ * accounted for even if the socket dies while it is being told about.
+ */
+export function logGeneration(context: GenerationLogContext): void {
+  /*
+   * Projected field by field rather than passed through, and that is the point
+   * of the function existing at all. The call site builds this from an
+   * `LlmEvent`, which carries the reply's `text` — one `...event` spread there
+   * and every conversation on the platform would be in Cloud Logging. Naming the
+   * eight fields means the leak is impossible rather than merely against the
+   * rules; the type would catch it at the call site, and this catches it if the
+   * type is ever widened.
+   */
+  logGenerationEvent('generation.complete', {
+    model: context.model,
+    stopReason: context.stopReason,
+    truncated: context.truncated,
+    durationMs: context.durationMs,
+    inputTokens: context.inputTokens,
+    outputTokens: context.outputTokens,
+    cacheCreationInputTokens: context.cacheCreationInputTokens,
+    cacheReadInputTokens: context.cacheReadInputTokens,
+  })
 }
 
 /**
@@ -191,6 +226,7 @@ export async function handleGenerate(req: Request, res: Response, uid: string): 
     )
   }
 
+  const startedAt = Date.now()
   const stream = await openStream(buildParams(context))
 
   res.status(200)
@@ -205,21 +241,51 @@ export async function handleGenerate(req: Request, res: Response, uid: string): 
   // the request was accepted — before the model has thought of anything.
   res.write(encodeSseComment())
 
-  for await (const event of mapStream(stream)) {
-    // `res.destroyed` is the socket's own state, so there is no flag to keep in
-    // sync — Slice 0's check, unchanged.
-    if (res.destroyed) break
-
-    if (event.kind === 'token') {
-      res.write(encodeSse('token', { text: event.text }))
-      continue
-    }
-
-    if (event.kind === 'end') {
-      const message = await appendAssistantMessage(uid, projectId, event.text, event.truncated)
-      writeTerminalFrame(res, encodeSse('done', { message }))
+  /*
+   * D28. Adaptive thinking (D14) means the first token can be seconds away, and
+   * an intermediary that closes an idle connection would kill the request during
+   * the model's most productive moment. `wroteSinceTick` is what keeps the
+   * comment out of a stream that is already flowing: a keep-alive between every
+   * token would double the frame count for nothing.
+   */
+  let wroteSinceTick = true
+  const keepAlive = setInterval(() => {
+    if (res.destroyed || res.writableEnded) return
+    if (wroteSinceTick) {
+      wroteSinceTick = false
       return
     }
+    res.write(encodeSseComment())
+  }, keepAliveMs())
+
+  try {
+    for await (const event of mapStream(stream)) {
+      // `res.destroyed` is the socket's own state, so there is no flag to keep in
+      // sync — Slice 0's check, unchanged.
+      if (res.destroyed) break
+
+      if (event.kind === 'token') {
+        wroteSinceTick = true
+        res.write(encodeSse('token', { text: event.text }))
+        continue
+      }
+
+      logGeneration({
+        model: event.model,
+        stopReason: event.stopReason,
+        truncated: event.kind === 'end' && event.truncated,
+        durationMs: Date.now() - startedAt,
+        ...event.usage,
+      })
+
+      if (event.kind === 'end') {
+        const message = await appendAssistantMessage(uid, projectId, event.text, event.truncated)
+        writeTerminalFrame(res, encodeSse('done', { message }))
+        return
+      }
+    }
+  } finally {
+    clearInterval(keepAlive)
   }
 
   if (!res.writableEnded) res.end()

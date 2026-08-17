@@ -177,3 +177,51 @@ substring version reported this repository's own documentation. `client.spec.ts`
 listed no spec for `client.ts`); the emulator gate and the missing-key message are both testable
 without a network, and leaving them untested would have made the key failure an opaque 401 in
 production with nothing pointing at the binding.
+
+## T9 — `POST /generate`, the boundary
+
+**Commit:** `8bfcb70`
+
+**Tests added**
+
+| Level | File | What |
+|---|---|---|
+| L1 | `functions/src/lib/errors.spec.ts` | `sendHttpError` answers an `HttpError` with its own status and code, reduces anything else to a generic 500, and produces byte-identical calls to what `errorHandler` produces |
+| L4 | `tests/integration/generate.spec.ts` | No `Authorization` → 401 (AC-20); a malformed one → 401; unverified → 403 (AC-21); alice posting bob's id → 404 with **bob's transcript byte-identical** (AC-22); soft-deleted, never-existed and unparseable → 404 (AC-23); eight malformed bodies → 400 `invalid_body` writing nothing (AC-24); an assistant-only transcript and an empty one → 400 `empty_context` (AC-10). **Every one of these also asserts the `content-type` is not `text/event-stream`.** Plus a smoke test: 200, event stream, tokens, exactly one `done`, and the `done` payload is an assistant message |
+| — | `tests/integration/helpers.ts` | `GENERATE_URL` (the `generate` function, not `api`), `postGenerate`, `readSseFrames`, `framesOf` |
+
+**Green:** `sendHttpError` extracted; `functions/src/generate.ts` rewritten.
+
+### Amendment: `/generate` is its own Express app, not a hand-rolled wrapper
+
+The plan specified `onRequest(opts, async (req, res) => { … })` composing `applyCors`,
+`requireAppCheck`, `withVerifiedUser` and `sendHttpError` by hand. **That cannot compile.**
+`onRequest`'s callback receives `firebase-functions`' own request/response types, which come from
+its bundled `@types/express@5.0.6`; this package depends on `@types/express@4.17.25`. Passing that
+response to any of the three helpers is `TS2379` — v5's `Response` is missing `sendfile`, which v4
+declares as required. Four errors, at every composition point.
+
+Three fixes were considered and two rejected:
+
+- **A cast at the boundary** — forbidden by the code standards (`satisfies` over `as`), and it would
+  be a cast between two genuinely different types rather than a narrowing.
+- **An npm `overrides` entry forcing v4 types on `firebase-functions`** — attempted; npm kept the
+  nested copy, and it would in any case be telling a library its own declared types are wrong.
+- **Its own Express app**, taken. `onRequest` already accepts an `Express` application — that is
+  exactly how `api` is mounted — and inside the app every helper composes unchanged, `asyncHandler`
+  and `errorHandler` included. The function keeps `timeoutSeconds: 540`, `memory: '512MiB'` and its
+  own secret binding, which is what the plan's rejection of "mount it on the `api` app" was actually
+  about: the *function*, not the *app*. Mounted at `/` and `/generate`, the same both-prefixes note
+  every router in this codebase carries.
+
+`terminalErrorHandler` is the four-argument Express adapter that picks D9's channel: JSON before the
+flush, an `error` frame after it.
+
+### Amendment: the happy-path smoke test lands here, not in T10
+
+The plan ended T9's implementation at `openStream`, before the flush. That would commit an endpoint
+that answers every refusal correctly and **hangs** on success — holding a Cloud Run instance for its
+full 540-second timeout. So T9 also carries one streaming assertion (200, event stream, tokens, one
+`done` whose payload is an assistant message), and the `token`/`end` handling that satisfies it. The
+detailed stream assertions — the persisted document, transcript order, the log line, the keep-alive
+— stay in T10, and failure handling stays in T11.
