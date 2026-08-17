@@ -330,3 +330,57 @@ the terminal `error` branch back to a fall-through now that the other five varia
 above — exhaustion, so the compiler is what keeps it honest if a seventh event is ever added.
 
 Commit: `2dd95cb`.
+
+## T19 — `FileTree.vue` (AC-44)
+
+9 L2 cases. Loading, rows, empty and error-with-retry on a screen that had none of them because
+it had no data. Error first, `ProjectsCard`'s branch order: a failed first request leaves
+`filesLoaded` false, so a loading branch above it renders a skeleton that never resolves.
+
+The rows key off `fileTree` rather than `files`, which is what lets a generation streaming into
+a brand-new project replace the empty state instead of rendering beside it — its own case.
+
+Commit: `0c9a3e4`.
+
+## T20 — `FileEditor.vue` (AC-45)
+
+14 L2 cases. A textarea until Slice 7 swaps in Monaco, which is why every rule is the store's
+and the component only reflects it. Read-only while a stream is open (D21, R4) with the reason
+on screen; the byte count is bytes; over the cap Save goes and the limit is named.
+
+**Deviation (small).** A failed *read* gets `data-testid="file-editor-read-error"` rather than
+sharing the plan's `file-editor-error` with a failed *save*. They are different states, and one
+selector matching both lets a test pass on the wrong one.
+
+Commit: `f511f11`.
+
+## T21 — The code panel becomes a screen (AC-47)
+
+`EditorPanel.vue` composes the tree above the editor; the placeholder goes. The tree is
+height-capped, because a project at the 20-file limit would otherwise leave the editor a sliver.
+
+Both changed assertions are the acceptance criterion rather than a test bent to fit, and both
+layouts are asserted — they are two component trees rather than one tree with CSS on it, so a
+placeholder left in the tabbed one would be invisible to a test that only looks at the wide one.
+
+**Deviation.** AC-47's negative half scans `.vue` **templates**, not whole files. `sse.ts`,
+`sse.spec.ts` and `generateApi.spec.ts` name Slice 6 in doc comments — correctly, permanently —
+and a whole-file scan would either fail forever or have to be weakened until it proved nothing.
+"In the app" means what is rendered.
+
+Commits: `7c7c381` (and `tests/e2e/workspace.spec.ts:87`, P9).
+
+## T22 — Chips in the transcript (AC-46)
+
+7 further L2 cases.
+
+**Deviation.** The plan called for "one small sub-template used by both"; this is a
+`MessageBody.vue` component instead. The persisted bubble and the streaming placeholder render
+the same string (D7), and two copies of the markup are free to drift — a chip that appears only
+after a reload is the kind of inconsistency nobody notices until a demo. A component makes the
+drift impossible rather than unlikely, at the cost of one file.
+
+`generateFileError` renders with **no Retry**: the reply succeeded and is in the transcript, so
+the action belonging to a failed generation is the wrong action here.
+
+Commit: `7c96247`.
