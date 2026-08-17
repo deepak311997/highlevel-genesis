@@ -437,3 +437,117 @@ Playwright's Desktop Chrome viewport is 1280×720, so this walks the **resizable
 tree is covered at L2, where the breakpoint is controllable rather than guessed at.
 
 **Refactor.** `locator.type()` → `locator.pressSequentially()`, its non-deprecated equivalent.
+
+## T16 — Documentation
+
+**Green.** `docs/IMPLEMENTATION_PLAN.md`: §0's status table (Slice 3 → merged, Slice 4 → built,
+awaiting review) and its suite line with this slice's numbers; §4's Slice 4 entry records what
+actually shipped, the `textarea` addition, the batch-timestamp hazard and why `seq` survives into
+Slice 5, and exactly what Slice 5 changes about the `POST` contract (D6) so that change reads as
+planned; §9's four conformance rows — F6.1's shadcn inventory (only `sheet`, `skeleton` and
+`sonner` still owed), the three-panel workspace, chat history and input, and F3.4's persistence
+half. `docs/PRODUCT_SPEC.md` §7.2: `tabs`, `badge`, `resizable`, `scroll-area` and `separator`
+marked shipped, `textarea` recorded as a departure with D21 as its reason, and a note that the
+vendored blocks carry deviation comments as §7.2's own rule requires.
+
+**README delta: none**, as the plan predicted. No setup step changes — no new dependency, no new
+env var, no new script; `npm run dev` covers the workspace as it stood.
+
+---
+
+## Acceptance criteria → the test that proves each
+
+Every AC has a named passing test. Levels: L1 unit, L2 component, L3 rules, L4 integration, L5 e2e.
+
+| AC | Level | Test |
+|---|---|---|
+| AC-1 | L4 | `messages.spec.ts` › `writes the pair, returns 201 with both, and stores seq 0 then 1`, `gives the two messages distinct auto-ids` |
+| AC-2 | L4 | `messages.spec.ts` › `returns the user message before its assistant reply when the two share a timestamp`, `puts the wire shape on the wire, carrying no seq` |
+| AC-2 | L1 | `messages/handlers.spec.ts` › `orders by createdAt then seq, both ascending, and caps the read`; `messages/schema.spec.ts` › `never emits a seq key` |
+| AC-3 | L4 | `messages.spec.ts` › `returns turns oldest-first across turns as well as within them`, and `reads a real batch-written pair back in order, across three turns` |
+| AC-4 | L4 | `messages.spec.ts` › `answers 200 with an empty array rather than 404 when there are none` |
+| AC-5 | L4 | `messages.spec.ts` › `trims content on the way in, including inside the echo` |
+| AC-5 | L1 | `messages/handlers.spec.ts` › `is exactly "You said: <content>"`; `messages/schema.spec.ts` › `trims content, so padding cannot be smuggled past the limit` |
+| AC-6 | L4 | `messages.spec.ts` › `refuses an unauthenticated caller with 401` (GET) and `… writing nothing` (POST) |
+| AC-7 | L4 | `messages.spec.ts` › `refuses an unverified caller with 403` (GET) and `… writing nothing` (POST) |
+| AC-8 | L4 | `messages.spec.ts` › `answers 404 for bob's project and leaves his transcript untouched` (GET), `answers 404 for bob's project and writes nothing anywhere` (POST) |
+| AC-9 | L4 | `messages.spec.ts` › `answers 404 for a soft-deleted project`, `… for an id that never existed`, `… for a project document that cannot be parsed` (GET); the two `… writing nothing` variants (POST) |
+| AC-10 | L4 | `messages.spec.ts` › `refuses the malformed id %s with 400` (4 cases GET, 3 POST) |
+| AC-10 | L1 | `projects/schema.spec.ts` › `projectIdSchema` rejects `..`, `.`, `a/b`, 65 chars (existing, and the only place `..` is testable) |
+| AC-11 | L4 | `messages.spec.ts` › `refuses a body carrying %s, writing nothing` (role/id/seq/createdAt), `refuses { role: "assistant", content }, writing nothing` |
+| AC-11 | L1 | `messages/schema.spec.ts` › `rejects a body carrying %s`, `rejects { role: "assistant", content } — a client cannot author an assistant turn` |
+| AC-12 | L4 | `messages.spec.ts` › `refuses %s, writing nothing` (5 shapes), `accepts content at exactly the limit` |
+| AC-12 | L1 | `messages/schema.spec.ts` › `rejects %s`, `rejects content longer than 4000 characters and accepts one at the limit` |
+| AC-13 | L4 | `messages.spec.ts` › `refuses a post that would take the project past the cap, writing nothing`, `refuses at 199, where only one of the pair would fit`, `accepts at 198, landing on exactly the cap` |
+| AC-14 | L4 | `messages.spec.ts` › `leaves the project document byte-identical` |
+| AC-15 | L4 | `messages.spec.ts` › `omits documents that cannot be parsed, and returns their siblings` |
+| AC-15 | L1 | `messages/handlers.spec.ts` › `logs message.unreadable and returns null for a document with %s` (3 cases), `puts no field of the document in the log line`; `messages/schema.spec.ts` › `rejects a document with no %s`, `rejects the role %s` |
+| AC-16 | L3 | `firestore.spec.ts` › `denies a verified owner reading one of their own messages`, `… listing their own transcript`, `… creating a message, user or assistant`, `… updating …`, `… deleting …` |
+| AC-17 | L3 | `firestore.spec.ts` › `denies a different signed-in user, however verified they are`, `denies an unauthenticated client` (messages describe) |
+| AC-18 | L3 | `firestore.spec.ts` › the `users/{uid}`, `users/{uid}/projects/{projectId}`, `server-only collections` and `unknown collections` describes, re-run unchanged (19 pre-existing cases) |
+| AC-19 | L2 | `ProjectsCard.spec.ts` › `makes the project name a link to its workspace, leaving the actions as buttons`, `puts no link in a row beyond the name`, `does not make the row itself a link` |
+| AC-20 | L2 | `WorkspaceView.spec.ts` › `shows the loading state and no panels while the project is in flight` |
+| AC-21 | L2 | `WorkspaceView.spec.ts` › `says the project is gone, links back to the dashboard, and loads no transcript`, `offers no retry for a project that no longer exists`; `workspace.spec.ts` (L1) › `records a 404 as missing and issues no transcript request` |
+| AC-21 | L5 | `e2e/workspace.spec.ts` › `a project deleted elsewhere reads as gone, with a way back` |
+| AC-22 | L2 | `WorkspaceView.spec.ts` › `shows the server's message with a retry that re-opens the project` |
+| AC-23 | L2 | `WorkspaceView.spec.ts` › `renders all three panels side by side at 1024px and wider` (also asserts the placeholders name Slices 6, 7 and 10, and that the tabbed tree is not mounted) |
+| AC-24 | L2 | `WorkspaceView.spec.ts` › `renders tabs below 1024px, with Chat selected and Preview reachable` |
+| AC-25 | L1 | `stores/workspace.spec.ts` › `survives a component lifecycle, because it lives here` |
+| AC-25 | L2 | `MessageComposer.spec.ts` › `renders the draft from the store`, `writes what is typed back to the store` |
+| AC-26 | L2 | `WorkspaceView.spec.ts` › `reads %s from the project's locationId` (2 cases) |
+| AC-27 | L2 | `ChatPanel.spec.ts` › `shows a loading state and no bubbles while the transcript is in flight`, `shows the loading state before the request has started` |
+| AC-28 | L2 | `ChatPanel.spec.ts` › `shows the empty state, no error, and the composer when the transcript is empty` |
+| AC-29 | L2 | `ChatPanel.spec.ts` › `renders one bubble per message, distinguishing user from assistant`, `renders each message's time, derived from createdAt`, `renders content with no time when createdAt will not parse` |
+| AC-29 | L1 | `date.spec.ts` › `formatTime` (4 cases) |
+| AC-30 | L2 | `ChatPanel.spec.ts` › `shows the server's message with a retry that reloads the transcript`, `shows the error rather than the loading state when the first request failed`; `WorkspaceView.spec.ts` › `keeps the header, the badge and the other panels when the transcript fails` |
+| AC-31 | L2 | `MessageComposer.spec.ts` › `disables submit and sends nothing on Enter for %s` (2), `sends exactly once when Enter is pressed on a non-empty draft` |
+| AC-31 | L1 | `stores/workspace.spec.ts` › `posts the draft, appends the returned pair, and issues no GET`, `appends to an existing transcript rather than replacing it` |
+| AC-32 | L2 | `MessageComposer.spec.ts` › `disables the textarea and the button at the limit, and states it`, `does not state a limit that has not been reached` |
+| AC-32 | L1 | `stores/workspace.spec.ts` › `is at the limit at 200 messages, and sendable at 199` |
+| AC-33 | L2 | `MessageComposer.spec.ts` › `does not send on Shift+Enter, and does not clear the draft`, `does not send on %s+Enter` (3) |
+| AC-33 | L5 | `e2e/workspace.spec.ts` › `Shift+Enter writes a newline instead of sending` |
+| AC-34 | L2 | `MessageComposer.spec.ts` › `shows the server's message on a failed send and keeps the draft`, `still sends after a failure` |
+| AC-34 | L1 | `stores/workspace.spec.ts` › `keeps the draft and appends nothing when the send fails, and retries` |
+| AC-35 | L2 | `ChatPanel.spec.ts` › `scrolls the viewport to the bottom when a message is appended`, `scrolls to the bottom on mount` |
+| AC-36 | L1 | `stores/workspace.spec.ts` › `fetches the project and then the transcript, in that order` (asserts both headers on both requests); `messagesApi.spec.ts` (10 cases); `lib/no-firestore.spec.ts` (existing, unchanged — no `firebase/firestore` import under `frontend/src`) |
+| AC-37 | L5 | `e2e/workspace.spec.ts` › `open a project, send a prompt, and find the exchange still there` |
+
+## Definition of done
+
+- [x] Every acceptance criterion maps to a named, passing test — table above
+- [x] Full suite green: typecheck 0 · lint 0 · **742 unit** (286 functions · 445 frontend · 11
+      scripts) · **26 rules** · **198 integration** · **9 e2e**
+- [x] The messages subcollection has a deny-all rules block **and** L3 tests proving every client
+      operation is denied — and the tests were checked against a scratch recursive grant, since the
+      default denial makes them pass either way
+- [x] The `createdAt` + `seq` composite index is declared, and read against `transcriptQuery()`'s
+      two `orderBy` calls at build time (R2 — no test can catch it)
+- [x] Every failure mode in the PRD's table has a user-facing message
+- [x] Loading, empty and error states exist for the workspace route and the chat panel
+- [x] All six components added with the CLI, not hand-written — and **no new runtime dependency**:
+      `git diff frontend/package.json` is empty (the CLI's spurious `@lucide/vue` was removed)
+- [x] No secrets in source; no `.env` change
+- [x] No `firebase/firestore` import anywhere under `frontend/src` (`no-firestore.spec.ts`)
+- [x] `IMPLEMENTATION_PLAN.md` §0, §4 and §9 updated; `PRODUCT_SPEC.md` §7.2 updated
+- [x] README delta: none needed — no setup step changed
+- [ ] Runs clean on `npm run dev` from a fresh clone — **not verified in this session**; the
+      emulator-backed suites (`test:rules`, `test:integration`, `test:e2e`) all run against the same
+      emulators and are green, but the PRD's manual-verification walkthrough needs a human at a
+      browser. Carried to review.
+- [ ] PR opened with demo evidence; human approves before merge — Stage 5
+
+## Deferred
+
+Things noticed while building that this slice deliberately did not do:
+
+- **`main` is not Prettier-clean.** `npm --prefix frontend run format` reformats four files this
+  slice does not touch: `stores/hl.ts`, `components/ConnectionPanel.vue`, `lib/authApi.ts`,
+  `lib/hlApi.spec.ts`. Reverted every time so the slice's diff stays reviewable. Prettier is not in
+  the CI gate (`lint` is ESLint), so nothing is failing — but the next slice to run `format` will
+  hit the same four files. Worth one commit of its own on `main`.
+- **A stale heading in `IMPLEMENTATION_PLAN.md` §4**: `### Slice 1 — Account & session 🔵 in review`
+  still says "in review" though §0 records it merged. Left alone; not this slice's text.
+- **The `POST` cap is not transactional.** `messageCount` is read immediately before the batch, so
+  two simultaneous sends at 198 can both land and take a project to 202. This is `liveProjectCount`'s
+  existing trade-off, stated in the handler's comment: a guard-rail missing by one rather than a
+  boundary being crossed. Not worth a transaction on every turn.

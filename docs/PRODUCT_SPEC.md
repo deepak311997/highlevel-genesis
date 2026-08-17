@@ -206,10 +206,28 @@ layout primitives", plus "a ShadCN sheet or dialog" for snapshot history:
 | Component | Brief calls for it | Slice |
 |---|---|---|
 | `button`, `input`, `label`, `card`, `alert` | ✅ | ✅ Slices 0–1 |
-| `dialog`, `tabs`, `badge` | ✅ named explicitly | Slice 3 (dialog), 4 (tabs, badge) |
+| `dialog` | ✅ named explicitly | ✅ Slice 3 |
+| `tabs`, `badge` | ✅ named explicitly | ✅ Slice 4 |
+| `resizable`, `scroll-area`, `separator` | layout primitives, three-panel workspace | ✅ Slice 4 |
+| `textarea` | not named — see below | ✅ Slice 4 |
 | `sheet` | ✅ snapshot history | Slice 11 |
-| `resizable`, `scroll-area`, `separator` | layout primitives, three-panel workspace | Slice 4 |
 | `sonner` or `toast`, `skeleton` | error + loading states (F8, DoD) | Slice 12 |
+
+**`textarea` is a departure from the list, recorded rather than decided at the keyboard**
+(Slice 4, D21). The brief names "inputs" and `IMPLEMENTATION_PLAN.md` §4 named five
+components for Slice 4; the chat composer needs a sixth, because "build a contact dashboard
+with search and a list of upcoming appointments" does not belong in a single-line `Input`.
+It is an input primitive in the same family as the ones the brief lists, and it was added
+by the CLI like every other one so its provenance stays diffable against upstream.
+
+**Slice 4's vendored blocks carry deviation comments**, as the rule above requires. Nine of
+the seventeen generated files failed this project's `strictTypeChecked` /
+`exactOptionalPropertyTypes` on one shared cause — upstream forwards props with
+`reactiveOmit` / `useForwardProps(Emits)`, whose result carries keys whose value is
+`undefined`, which the compiler treats as different from absent. Each is fixed the way
+`ui/label/Label.vue` documents, and says so in its own header. No new runtime dependency
+was added: all six blocks sit on `reka-ui`, `class-variance-authority`, `clsx`,
+`@vueuse/core` and the already-present `lucide-vue-next`.
 
 ### 7.3 Ours, not mandated — recorded so the choice is visible
 
