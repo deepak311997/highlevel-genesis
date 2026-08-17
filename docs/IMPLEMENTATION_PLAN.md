@@ -20,7 +20,7 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 | 2b — API-only data access | ✅ merged to `main` |
 | 3 — Projects | ✅ merged to `main` |
 | 4 — Workspace shell & chat persistence | ✅ merged to `main` |
-| 5 — Streaming generation | 🟡 built — awaiting review |
+| 5 — Streaming generation | ✅ merged to `main` |
 | 6–13 | not started |
 
 **Slices from here run unattended.** `scripts/autopilot.sh` drives the five-stage loop
@@ -35,12 +35,16 @@ been red since Slice 1: `vite.config.ts` threw at config load on any checkout wi
 8080 — the *development* emulator — so off CI it "passed" by finding a dev session, loading
 its rules over that session's and calling `clearFirestore()` on it.
 
-**Suite, re-run in full on `slice/05-streaming-generation` at build time (2026-08-17):**
-typecheck 0 · lint 0 · **952 unit** (424 functions · 513 frontend · 15 scripts) ·
-**28 rules** · **231 integration** · **12 e2e**. All six green.
+**Suite, re-run in full on `slice/05-streaming-generation` at ship time (2026-08-17):**
+typecheck 0 · lint 0 · **953 unit** (424 functions · 514 frontend · 15 scripts) ·
+**28 rules** · **232 integration** · **12 e2e**. All six green — 1,225 cases.
 
-Slice 5 added 204 unit cases (138 functions · 62 frontend · 4 scripts), 2 rules cases,
-33 integration cases and 3 e2e cases.
+Slice 5 added 205 unit cases (138 functions · 63 frontend · 4 scripts), 2 rules cases,
+34 integration cases and 3 e2e cases. Five of those cases are the review's own, written
+test-first for the two behavioural findings it raised — three L1 plus one L4 for `/generate`
+writing past the 200-message cap, one L1 for `send()`'s guard not checking `generating`. The
+functions count did not move, because deleting `sendHttpError` took three redundant cases
+with it.
 
 **Two findings from Slice 5 worth carrying**, both measured rather than assumed:
 
