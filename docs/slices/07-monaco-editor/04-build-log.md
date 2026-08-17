@@ -83,3 +83,93 @@ where this suite would pass over code that hands out disposed models.
 Four cases beyond the plan's four: adopting a model monaco already holds (a breakpoint
 remount builds a fresh registry over live models), re-activating the active path being a
 no-op, disposing with a `null` host, and a disposal forgetting the active path.
+
+## T6 — local monaco, no CDN (AC-25)
+
+**Commit:** `f1fac80` · **Tests added:** `frontend/src/lib/monacoSetup.spec.ts` (L1, 4 cases),
+`frontend/src/lib/no-cdn.spec.ts` (L1, 8 cases).
+
+**The plan's `?worker` fallback was not needed.** Vitest mocks
+`monaco-editor/esm/vs/editor/editor.worker?worker` cleanly, so the case asserts `getWorker`
+**returns** a worker rather than merely existing — recorded here because the plan asked for
+whichever was used to be written down.
+
+Two assertions had to be phrased around Vitest's failure formatter. A module namespace is a
+Proxy that throws on unknown property reads, and the formatter walks whatever it is given, so
+`expect(namespace).toBe(other)` reports a `PrettyFormatPluginError` instead of the
+comparison. Both identity checks go through `Object.is(...)` into a boolean instead.
+
+One case beyond the plan: *"imports edcore.main rather than another entry point"*. The mock
+stands in for `edcore.main` alone, so a module importing `editor.api` or `editor.main` would
+load the real thing and export far more than the one key the mock has — which is a cheap
+runtime proof of D3.
+
+`no-cdn.spec.ts` passes on the day it is written, exactly as `no-firestore.spec.ts` did; its
+`describe('the scan itself')` cases are the red-able half, and they are what makes
+`offenders).toEqual([])` worth anything.
+
+## T7 — the store: tabs and per-path buffers (AC-13 – AC-17)
+
+**Commit:** `93da4d8` · **Tests added/rewritten:** `frontend/src/stores/workspace.spec.ts` —
+`describe('selectFile')` replaced by `describe('tabs and their buffers')` (16 cases).
+
+**Deviation from the plan, in method rather than outcome: there was no ordinary red step.**
+The store's file half and its spec change atomically — the spec cannot reference `openTabs`,
+`editContent` or `closeTab` before they exist, and `FileEditor.vue` cannot compile against a
+store that has both `fileContent` and `buffers`. So the three new rules were **mutation-
+checked** after the fact instead, which is the same evidence in the other order:
+
+| Mutation | Cases that went red |
+|---|---|
+| `selectFile` fetches even when the path is already buffered | AC-14, AC-15, AC-17 |
+| `closeTab` deletes the buffer | AC-17 |
+
+**Two further deviations, both forced and both small.**
+
+- `FileEditor.vue`'s one write of `workspace.fileContent` became
+  `workspace.editContent(...)`, because the buffer a keystroke writes now depends on which
+  tab is active. The plan puts `FileEditor.vue` in T12; this is one line of it, and the
+  alternative was leaving the suite red across two commits. The widget swap is still T12.
+- `FileEditor.spec.ts`'s *"writes edits back to the store"* now asserts the action was called
+  rather than that a ref changed, for the same reason.
+
+`dropBuffer` rebuilds the record rather than using `delete`, because `no-dynamic-delete` is
+on. It runs once per generation per closed rewritten file, not once per chunk, so the
+whole-object replacement `streamingFiles`' comment warns about is not a cost here.
+
+## T8 — the store: save, scoped to the active tab (AC-19 – AC-21)
+
+**Commit:** `3423df5` · **Tests added:** two cases in `describe('saveFile')`.
+
+Both passed against T7's implementation, so they were mutation-checked rather than observed
+red: writing every buffer on a save fails *"PUTs the active buffer … into that tab only"*,
+and defaulting a missing buffer fails *"issues no request for a tab whose file has never been
+read"*.
+
+**A finding, recorded rather than fixed here.** That second case is reachable, not
+hypothetical: `file_start` opens a tab and creates no buffer (P1), and a stream ending in
+`error` rather than `done` never reaches `applyGenerationFiles` — so the tab is left open
+over a file the session has never read, with `generating` back to false. Saving from it would
+`PUT` an empty string over whatever the server holds. The store's guard closes that, and the
+test pins it. **Whether the tab itself should be closed on a failed stream is out of this
+slice's scope** — the PRD's D11 and P1 both speak only about `done` — so it is listed under
+*Deferred* below rather than decided at the keyboard.
+
+## T9 — the store: what a generation does to the tabs (AC-18, AC-22 – AC-24)
+
+**Commit:** `217103f` · **Tests added/rewritten:** 7 cases in `describe('the stream —
+files')`.
+
+Red first, on the three genuinely new behaviours: the per-tab re-read fan-out, the dropped
+closed buffer, and AC-24's whole-map equality.
+
+**One Slice 6 test was replaced rather than ported**, and it is a deliberate behaviour
+change: *"clears the replaced notice when another file is selected"* is no longer true.
+D16 moves the trigger to the next edit in that tab, or closing it, because with tabs
+"selecting another file" no longer implies leaving this buffer behind. The replacement pair
+is *"…the next edit in that tab clears its notice, and no other's"* and *"keeps the replaced
+notice across a tab switch"*.
+
+The fan-out is sequential rather than `Promise.all`: there are at most a handful of open tabs,
+and one order is easier to reason about — and to assert — than a race between reads that each
+write a different buffer.
