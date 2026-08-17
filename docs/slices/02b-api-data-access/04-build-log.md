@@ -198,6 +198,39 @@ has to declare a config of its own purely to defend itself. The alternative — 
   being proved: the refreshed ID token satisfied `withVerifiedUser`'s `email_verified` check on
   the profile route.
 
+## Gate fix — the test Firestore websocket port
+
+The post-build gate went red at `test:integration`, and **not because of anything this slice
+changed**: `firestore-debug.log` showed the emulator dying with
+`java.net.BindException: Address already in use` while binding its long-poll socket.
+
+`scripts/test-emulator-config.mjs` shifts every emulator port `firebase.json` declares by +100,
+which is what lets the suite run beside a `npm run dev` session. Firestore's websocket is the one
+port `firebase.json` never declares — the CLI defaults it to 9150 — so it was the one port that
+rule could not reach. Worse, an undeclared value is passed to the port allocator as
+`portFixed: false`, so the CLI *hunts* for a free neighbour, and that hunt races: it probed 9151
+moments after the `test:rules` emulator released it, found it free, handed it to Firestore, and
+Firestore could not bind it. One emulator failing to start stops the whole set, so all 86
+integration tests were lost to a port.
+
+- **Tests (L1, root project):** `scripts/test-emulator-config.spec.mjs` — 7 cases over a new
+  exported `shiftPorts(config)`: the declared ports move, the non-port settings survive, the hub
+  and logging keep their own range, an undeclared websocket port is moved off the 9150 default, a
+  declared one is moved from its own value, the input is not mutated, and — the invariant that
+  would have caught this — the repo's real `firebase.json` yields a **distinct port for every
+  emulator**, counting any key ending in `port`.
+- **Code:** `scripts/test-emulator-config.mjs` — the body became a pure `shiftPorts` behind an
+  `import.meta.url` CLI guard, matching `check-no-firestore.mjs`; it now emits
+  `emulators.firestore.websocketPort: 9250`. Declaring it also makes it fixed, so there is no
+  hunt left to race — a genuine conflict on 9250 now fails loudly instead of sliding sideways.
+- **Verified with the offending dev session still running.** A `npm run dev` emulator set from the
+  previous evening still held 9150 throughout; `test:integration` went from dead-at-startup to 86
+  passing without touching it.
+
+**No test was weakened, skipped or deleted, and no lint or typecheck rule was relaxed.** The
+defect was in the harness that generates the test config, not in a test and not in this slice's
+implementation, so the slice's own code is unchanged by this fix.
+
 ## Deferred
 
 Nothing. Every task in the plan landed, and no work was found that the plan did not cover.
