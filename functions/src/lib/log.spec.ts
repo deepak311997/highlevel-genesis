@@ -4,10 +4,12 @@ import {
   describeError,
   logAuthEvent,
   logGenerationEvent,
+  logProxyEvent,
   redact,
   REDACTED,
   type AuthLogContext,
   type GenerationLogContext,
+  type ProxyLogContext,
 } from './log'
 
 describe('redact', () => {
@@ -302,5 +304,70 @@ describe('logGenerationEvent', () => {
     logGenerationEvent('generation.complete', { ...context, apiKey: 'sk-leaked' } as never)
 
     expect(String(info.mock.calls[0]?.[0])).not.toContain('sk-leaked')
+  })
+})
+
+/**
+ * A third narrow context, not a widening of either of the other two (P9).
+ *
+ * The precedent is explicit in `log.ts`: one typed context per event family is
+ * what makes "no body, no token, no contact id" a property of the type rather
+ * than of whoever remembered. Nothing here would survive being widened — a
+ * proxy line that could carry a free-form string would be one refactor away
+ * from carrying a CRM record.
+ */
+describe('logProxyEvent', () => {
+  let info: ReturnType<typeof vi.fn>
+
+  const context: ProxyLogContext = {
+    pattern: '/conversations/:conversationId/messages',
+    status: 200,
+    durationMs: 96,
+    rateLimitRemaining: '9997',
+  }
+
+  beforeEach(() => {
+    info = vi.fn()
+    vi.stubGlobal('console', { ...console, info })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('carries the event and the four fields, and nothing else', () => {
+    logProxyEvent('hl.proxy', context)
+
+    expect(JSON.parse(String(info.mock.calls[0]?.[0]))).toEqual({ event: 'hl.proxy', ...context })
+  })
+
+  it('has no field for a request or response body', () => {
+    const widened: ProxyLogContext = { ...context }
+    // @ts-expect-error — `body` is not part of ProxyLogContext, deliberately.
+    widened.body = '{"contacts":[{"email":"someone@example.test"}]}'
+
+    logProxyEvent('hl.proxy', context)
+
+    expect(String(info.mock.calls[0]?.[0])).not.toContain('someone@example.test')
+  })
+
+  /*
+   * No field of ProxyLogContext matches SENSITIVE_KEY, so nothing useful is
+   * redacted away — but a value arriving despite the type still goes through
+   * the same scrub, which is what makes the sink the defence rather than the
+   * call site.
+   */
+  it('redacts a secret that reaches it despite the typed context', () => {
+    logProxyEvent('hl.proxy', { ...context, accessToken: 'live-token' } as never)
+
+    expect(String(info.mock.calls[0]?.[0])).not.toContain('live-token')
+  })
+
+  it('keeps the four fields it exists to carry out of the redaction net', () => {
+    logProxyEvent('hl.proxy', context)
+
+    const line = JSON.parse(String(info.mock.calls[0]?.[0])) as Record<string, unknown>
+    expect(line['pattern']).toBe(context.pattern)
+    expect(line['rateLimitRemaining']).toBe('9997')
   })
 })
