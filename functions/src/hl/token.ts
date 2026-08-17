@@ -31,6 +31,36 @@ export class HlNotConnectedError extends Error {
   }
 }
 
+/**
+ * The connection is marked dead and only the user can fix it.
+ *
+ * Raised without touching HighLevel — either because the document already
+ * carries `needsReconnect` (D24) or because a refresh came back
+ * `invalid_grant` (D26). Both are answered by reconnecting, which is what the
+ * panel already offers.
+ */
+export class HlReconnectRequiredError extends Error {
+  constructor() {
+    super('Your HighLevel connection expired.')
+    this.name = 'HlReconnectRequiredError'
+  }
+}
+
+/**
+ * A refresh failed in a way that says nothing about the connection — a 5xx, a
+ * network error, a timeout.
+ *
+ * Distinct from {@link HlReconnectRequiredError} because the *persistence* rule
+ * differs, and that asymmetry is the whole of D26: a blip must not be recorded
+ * as a dead connection, and a dead connection must not be retried forever.
+ */
+export class HlRefreshUnavailableError extends Error {
+  constructor() {
+    super('HighLevel is not responding. Try again.')
+    this.name = 'HlRefreshUnavailableError'
+  }
+}
+
 export interface ConnectionSnapshot {
   accessToken: string
   expiresAtMs: number
