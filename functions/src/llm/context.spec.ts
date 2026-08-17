@@ -1,21 +1,33 @@
+import type { MessageParam } from '@anthropic-ai/sdk/resources/messages'
 import { describe, expect, it } from 'vitest'
 
 import type { Message } from '../messages/schema'
+import { TRANSCRIPT_BUDGET } from './budget'
 import { buildContext } from './context'
 
 /**
- * The transcript as the model sees it — and the slice's one real hazard (D6, R1).
+ * The transcript as the model sees it — and the two hazards it exists to close.
  *
  * **A trailing assistant message is a prefill, and prefill is a 400 on
- * `claude-opus-5`.** It is not a theoretical shape: it is exactly what Retry
- * after an interruption produces (user → assistant-truncated → Retry), and it is
- * what every project still carrying Slice 4's echoes looks like. Untreated, the
- * failure lands on the recovery path — the one thing that has to work when
- * something has already gone wrong.
+ * `claude-opus-5`** (Slice 5 D6, R1). It is not a theoretical shape: it is
+ * exactly what Retry after an interruption produces (user → assistant-truncated
+ * → Retry), and it is what every project still carrying Slice 4's echoes looks
+ * like. Untreated, the failure lands on the recovery path — the one thing that
+ * has to work when something has already gone wrong.
  *
- * So the drop is a loop with tests over one, three and all-of-them, and an
- * assistant in the *middle* has its own case: dropping those would throw away
- * the conversation, which is the whole reason the transcript is sent at all.
+ * **A *leading* assistant message is the same 400 from the other end** (Slice 9
+ * D15, R3), and it is the one the budget trim manufactures: cutting from the
+ * oldest end lands on an assistant turn roughly half the time. It appears only
+ * on long conversations, so no fixture-sized transcript would ever reach it —
+ * which is why the trimming cases below state their arithmetic in characters and
+ * build the shape that lands on the boundary deliberately, rather than hoping a
+ * realistic corpus wanders into it.
+ *
+ * So the drop is a loop with tests over one, three and all-of-them; an assistant
+ * in the *middle* has its own case, because dropping those would throw away the
+ * conversation the transcript is sent for; and the three steps' **order** has a
+ * case of its own too, since running the trim before the trailing drop would
+ * empty the context on the recovery path (AC-20).
  */
 
 function message(role: 'user' | 'assistant', content: string, index: number): Message {
@@ -33,6 +45,37 @@ function transcript(shape: readonly ('u' | 'a')[]): Message[] {
   return shape.map((letter, index) =>
     message(letter === 'u' ? 'user' : 'assistant', `${letter}${String(index)}`, index),
   )
+}
+
+/**
+ * A turn of **exactly** `size` characters, still labelled with its index.
+ *
+ * The label is padded rather than appended, so the number written in a test is
+ * the number the budget measures — an off-by-three between the two would move a
+ * boundary and quietly turn a boundary case into an ordinary one.
+ */
+function sized(role: 'user' | 'assistant', index: number, size: number): Message {
+  const label = `${role === 'user' ? 'u' : 'a'}${String(index)}:`
+  return message(role, label.padEnd(size, 'x'), index)
+}
+
+/** `u a u a … ` of `count` turns, every one exactly `size` characters. */
+function alternating(count: number, size: number): Message[] {
+  return Array.from({ length: count }, (_unused, index) =>
+    sized(index % 2 === 0 ? 'user' : 'assistant', index, size),
+  )
+}
+
+/** Indexed reads that fail loudly rather than asserting against `undefined`. */
+function contentOf(messages: readonly Message[], index: number): string {
+  const found = messages[index]
+  if (found === undefined) throw new Error(`no message at index ${String(index)}`)
+  return found.content
+}
+
+/** What the budget measures: the sum of the kept turns' content lengths. */
+function totalLength(context: readonly MessageParam[]): number {
+  return context.reduce((total, element) => total + element.content.length, 0)
 }
 
 describe('buildContext', () => {
@@ -110,6 +153,115 @@ describe('buildContext', () => {
    * transcript that is about to be rendered. */
   it('leaves the transcript it was given untouched', () => {
     const messages = transcript(['u', 'a', 'a'])
+    const before = JSON.stringify(messages)
+
+    buildContext(messages)
+
+    expect(JSON.stringify(messages)).toBe(before)
+  })
+
+  /*
+   * AC-18, D12, D13. Forty-one turns of exactly 3,800 characters — 155,800 in
+   * all, against an 80,000-character budget. 3,800 is just under `CONTENT_MAX`,
+   * so this is a realistic transcript rather than a synthetic one.
+   *
+   * The arithmetic is picked so the boundary is unambiguous *and* lands on a
+   * user turn, which keeps this case about the budget alone: 21 × 3,800 = 79,800
+   * fits and 22 × 3,800 = 83,600 does not, so the cut falls between turn 19 and
+   * turn 20 — and turn 20 is even, hence a user turn, so the leading-assistant
+   * drop has nothing to do here. AC-19 has its own shape for that.
+   */
+  it('keeps the newest turns, drops the oldest, and stays within the budget', () => {
+    const messages = alternating(41, 3_800)
+
+    const context = buildContext(messages)
+
+    expect(context).toHaveLength(21)
+    expect(context[0]?.content).toBe(contentOf(messages, 20))
+    expect(context.at(-1)?.content).toBe(contentOf(messages, 40))
+    expect(totalLength(context)).toBe(79_800)
+    expect(totalLength(context)).toBeLessThanOrEqual(TRANSCRIPT_BUDGET)
+
+    // The oldest are gone — the first turn, and the last one to fall outside.
+    const kept = context.map((element) => element.content)
+    expect(kept).not.toContain(contentOf(messages, 0))
+    expect(kept).not.toContain(contentOf(messages, 19))
+  })
+
+  /*
+   * AC-19, D15, R3. The shape is `u a a u a u` and the sizes are chosen so the
+   * cut is arithmetic rather than luck: the five newest turns come to 50,000
+   * characters, and turn 0 is 60,000 on its own, so the walk backwards reaches
+   * 110,000 > 80,000 and stops. The boundary therefore falls between turn 0 and
+   * turn 1 — and turn 1 is an assistant turn, which is exactly the first message
+   * the Messages API refuses with `400 invalid_request_error`.
+   *
+   * Both leading assistants go, not just the first; turn 3 onward is a genuine
+   * `user → assistant → user` conversation and survives whole.
+   */
+  it('drops the leading assistant turns the budget cut lands on', () => {
+    const messages = [
+      sized('user', 0, 60_000),
+      sized('assistant', 1, 10_000),
+      sized('assistant', 2, 10_000),
+      sized('user', 3, 10_000),
+      sized('assistant', 4, 10_000),
+      sized('user', 5, 10_000),
+    ]
+
+    const context = buildContext(messages)
+
+    expect(context[0]?.role).toBe('user')
+    expect(context).toEqual([
+      { role: 'user', content: contentOf(messages, 3) },
+      { role: 'assistant', content: contentOf(messages, 4) },
+      { role: 'user', content: contentOf(messages, 5) },
+    ])
+  })
+
+  /*
+   * AC-20, and the reason the three steps run in the order they do. The newest
+   * turn here is a 200,000-character assistant message — an interrupted reply,
+   * which is precisely what Retry re-opens the stream against.
+   *
+   * In this order the trailing assistant goes first, and the user turn behind it
+   * is what D16's floor then protects, so the result is non-empty. Reversed, the
+   * floor would protect the *assistant* turn (it is the newest), the
+   * 1,000-character user turn behind it would not fit beside 200,000, and
+   * dropping the trailing assistant afterwards would leave nothing — a permanent
+   * `400 empty_context` on the recovery path.
+   */
+  it('drops a trailing assistant turn before trimming, so the result is non-empty', () => {
+    const asked = sized('user', 0, 1_000)
+    const interrupted = sized('assistant', 1, 200_000)
+
+    const context = buildContext([asked, interrupted])
+
+    expect(context).toEqual([{ role: 'user', content: asked.content }])
+  })
+
+  /*
+   * AC-21, D16. The newest user turn is kept whatever the budget says, and it is
+   * returned alone. `CONTENT_MAX` caps one stored message at 4,000 characters
+   * against an 80,000-character budget, so this cannot arise today — but the
+   * guarantee is one line and the alternative is a project that answers
+   * `400 empty_context` forever, because `handleGenerate` refuses an empty
+   * context before any LLM call (Slice 5 D7).
+   */
+  it('keeps the newest user turn even when it alone exceeds the whole budget', () => {
+    const oversized = sized('user', 2, 200_000)
+    const messages = [sized('user', 0, 1_000), sized('assistant', 1, 1_000), oversized]
+
+    const context = buildContext(messages)
+
+    expect(context).toEqual([{ role: 'user', content: oversized.content }])
+    expect(context.length).toBeGreaterThan(0)
+  })
+
+  /* Purity again, on the path that actually slices: trimming must copy, never
+   * splice the caller's array in place. */
+  it('leaves an over-budget transcript untouched', () => {
+    const messages = alternating(41, 3_800)
     const before = JSON.stringify(messages)
 
     buildContext(messages)
