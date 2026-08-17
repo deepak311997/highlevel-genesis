@@ -1,14 +1,20 @@
+import type { Request, Response } from 'express'
 import type { DocumentReference, DocumentSnapshot, WriteBatch } from 'firebase-admin/firestore'
 import { FieldValue } from 'firebase-admin/firestore'
 
 import { getDb } from '../lib/firebase'
 import { logAuthEvent } from '../lib/log'
+import { notFound, readProject, requireProjectId } from '../projects/handlers'
 import type { FileWrite } from '../files/schema'
 import { planSnapshotPrune, planSnapshotSeq, type SnapshotHead } from './plan'
 import {
   SNAPSHOT_FILES,
+  SNAPSHOT_LIMIT,
   snapshotsPath,
   storedSnapshotFileSchema,
+  storedSnapshotSchema,
+  toSnapshotMeta,
+  type SnapshotMeta,
   type SnapshotOrigin,
   type StoredSnapshotFile,
 } from './schema'
@@ -199,4 +205,62 @@ export function stageSnapshot(batch: WriteBatch, plan: SnapshotPlan): void {
     for (const fileRef of pruned.fileRefs) batch.delete(fileRef)
     batch.delete(pruned.ref)
   }
+}
+
+/**
+ * The version list — newest first, capped, **metadata only**.
+ *
+ * Newest first because a version list is read from the top: the version a user
+ * wants back is nearly always the one they just left. The cap matches
+ * `SNAPSHOT_LIMIT`, which is also the prune's cap, so "you are seeing every
+ * version" is a guarantee rather than a hope — `LIST_LIMIT` / `MESSAGE_LIMIT` /
+ * `FILE_LIMIT`'s rule.
+ *
+ * `orderBy('seq','desc')` on a single field is served by Firestore's automatic
+ * index (D16, D30), so this adds nothing to `firestore.indexes.json` — stated
+ * because Slices 3 and 4 both paid for a missing composite index and the
+ * emulator does not enforce them.
+ *
+ * A document that will not parse is omitted and logged, exactly as a corrupt
+ * file is: from outside, a version nobody can read is indistinguishable from one
+ * that was never taken, and the log line is the only warning anybody gets.
+ */
+export async function readSnapshotList(uid: string, projectId: string): Promise<SnapshotMeta[]> {
+  const snapshot = await getDb()
+    .collection(snapshotsPath(uid, projectId))
+    .orderBy('seq', 'desc')
+    .limit(SNAPSHOT_LIMIT)
+    .get()
+
+  return snapshot.docs
+    .map((doc) => {
+      const parsed = storedSnapshotSchema.safeParse(doc.data())
+      if (!parsed.success) {
+        logAuthEvent('snapshot.unreadable', { outcome: 'invalid' })
+        return null
+      }
+      return toSnapshotMeta(doc.id, parsed.data)
+    })
+    .filter((meta): meta is SnapshotMeta => meta !== null)
+}
+
+/**
+ * A project's version history — or the 404 the project earns.
+ *
+ * The id, then the project, and the project's answer is the whole of "gone"
+ * (D14): absent, soft-deleted, unreadable and somebody else's collapse into one
+ * response. A history is not addressable without a project, so there is nothing
+ * to read past this — and the path is composed from the token's uid, so another
+ * user's versions are not addressable by a request rather than merely refused.
+ */
+export async function handleListSnapshots(
+  req: Request,
+  res: Response,
+  uid: string,
+): Promise<void> {
+  const projectId = requireProjectId(req)
+
+  if ((await readProject(uid, projectId)) === null) throw notFound()
+
+  res.json({ snapshots: await readSnapshotList(uid, projectId) })
 }

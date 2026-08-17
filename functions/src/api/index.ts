@@ -7,6 +7,7 @@ import { errorHandler } from '../lib/errors'
 import { hlRouter } from '../hl'
 import { messagesRouter } from '../messages'
 import { projectsRouter } from '../projects'
+import { snapshotsRouter } from '../snapshots'
 import { RATE_LIMIT_HEADERS } from '../hl/proxy'
 import { usersRouter } from '../users'
 import { healthRouter } from './health'
@@ -78,6 +79,8 @@ export function createApiApp(): Express {
   app.use('/api', messagesRouter)
   app.use('/', filesRouter)
   app.use('/api', filesRouter)
+  app.use('/', snapshotsRouter)
+  app.use('/api', snapshotsRouter)
 
   app.use((_req, res) => {
     res.status(404).json({ error: 'Not found', code: 'not_found' })
