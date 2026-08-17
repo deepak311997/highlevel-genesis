@@ -7,6 +7,8 @@ import {
   isDefinitiveRefreshFailure,
   mapTokenError,
   mapUpstreamStatus,
+  proxyError,
+  PROXY_ERROR_CODES,
 } from './proxyError'
 import { HlNotConnectedError, HlReconnectRequiredError, HlRefreshUnavailableError } from './token'
 
@@ -206,5 +208,58 @@ describe('isDefinitiveRefreshFailure', () => {
     ['a network failure', new TypeError('fetch failed')],
   ])('treats %s as transient', (_name, err) => {
     expect(isDefinitiveRefreshFailure(err)).toBe(false)
+  })
+})
+
+/**
+ * The code set, exported as **data** — Slice 9's one addition here.
+ *
+ * The cheat-sheet in the system prompt has to name every code a rejected `hl()`
+ * call can carry (Slice 9 D5, AC-7), and the only honest way to assert that is to
+ * read the set rather than restate it. A hand-written list in the prompt would
+ * drift on the first code added, and the failure mode is the bad one: generated
+ * code branching on a `code` string that no longer exists, silently never running
+ * that branch.
+ *
+ * `MESSAGES` itself stays private — its values are user-facing copy, not a
+ * contract — so the array is the export and every member of it is checked to
+ * build a real failure with real copy.
+ */
+describe('PROXY_ERROR_CODES', () => {
+  /** The twelve names the PRD's `hl()` contract lists, and no thirteenth. */
+  it('is exactly the twelve codes the contract names', () => {
+    expect([...PROXY_ERROR_CODES].sort()).toEqual(
+      [
+        'route_not_allowed',
+        'route_disabled',
+        'invalid_path',
+        'hl_reconnect_required',
+        'hl_not_connected',
+        'hl_forbidden',
+        'hl_not_found',
+        'hl_rate_limited',
+        'hl_bad_request',
+        'hl_unavailable',
+        'hl_timeout',
+        'hl_too_large',
+      ].sort(),
+    )
+  })
+
+  /*
+   * The array cannot disagree with the copy table, because every member of it is
+   * used to look one up. A code in the array with no message would answer an
+   * empty string to a user; a message with no code would be unreachable copy.
+   */
+  it('carries a non-empty user-facing message for every member', () => {
+    for (const code of PROXY_ERROR_CODES) {
+      expect(proxyError(400, code).message).not.toBe('')
+      expect(proxyError(400, code).code).toBe(code)
+    }
+  })
+
+  /* No duplicates: it is the key set of an object, and a scan over it is a scan. */
+  it('names each code once', () => {
+    expect(new Set(PROXY_ERROR_CODES).size).toBe(PROXY_ERROR_CODES.length)
   })
 })

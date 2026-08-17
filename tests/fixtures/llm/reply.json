@@ -210,7 +210,7 @@
     "index": 1,
     "delta": {
       "type": "text_delta",
-      "text": "const rows = document.getElementById('rows')\nconst q = document.getElementById('q')\n\nasync function load() {\n  const res = await fetch('/api/hl/contacts')\n  const { contacts } = await res.json()\n  render(contacts)\n"
+      "text": "const rows = document.getElementById('rows')\nconst q = document.getElementById('q')\n\n// Your calendar's id - Settings > Calendars in the CRM.\nconst calendarId = 'CALENDAR_ID'\n\nlet contacts = []\nlet events = []\n"
     }
   },
   {
@@ -218,7 +218,7 @@
     "index": 1,
     "delta": {
       "type": "text_delta",
-      "text": "}\n\nfunction render(contacts) {\n  rows.innerHTML = ''\n  for (const contact of contacts) {\n    const li = document.createElement('li')\n    li.textContent = contact.name\n"
+      "text": "\nasync function load() {\n  try {\n    const page = await hl('POST', '/contacts/search', { pageLimit: 20 })\n    contacts = page.contacts || []\n\n    const startTime = Date.now()\n    const endTime = startTime + 7 * 24 * 60 * 60 * 1000\n    const upcoming = await hl('GET', '/calendars/events', { startTime, endTime, calendarId })\n    events = upcoming.events || []\n\n    render()\n  } catch (err) {\n    rows.textContent = err.message\n  }\n}\n"
     }
   },
   {
@@ -226,7 +226,7 @@
     "index": 1,
     "delta": {
       "type": "text_delta",
-      "text": "    rows.append(li)\n  }\n}\n\nq.addEventListener('input', load)\nload()\n"
+      "text": "\nfunction render() {\n  const term = q.value.trim().toLowerCase()\n  rows.innerHTML = ''\n  for (const contact of contacts) {\n    if (term && !contact.contactName.toLowerCase().includes(term)) continue\n    const li = document.createElement('li')\n    li.textContent = contact.contactName + ' - ' + contact.email\n    rows.append(li)\n  }\n  for (const event of events) {\n    const li = document.createElement('li')\n    li.textContent = event.title + ' - ' + new Date(event.startTime).toLocaleString()\n    rows.append(li)\n  }\n}\n\nq.addEventListener('input', render)\nload()\n"
     }
   },
   {

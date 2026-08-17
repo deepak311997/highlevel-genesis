@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events'
 
 import type { Request, Response } from 'express'
+import { Timestamp } from 'firebase-admin/firestore'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const readProject = vi.hoisted(() => vi.fn())
@@ -38,7 +39,7 @@ vi.mock('./lib/firebase', () => ({ getDb }))
 
 import { handleGenerate, keepAliveMs, logGeneration } from './generate'
 import { HttpError } from './lib/errors'
-import type { LlmStream } from './llm'
+import { SYSTEM_PROMPT, type LlmStream } from './llm'
 import { MESSAGE_LIMIT } from './messages/schema'
 
 /**
@@ -156,6 +157,55 @@ function fakeResponse() {
 
 const fakeRequest = (): Request => ({ body: { projectId: 'proj-1' } }) as unknown as Request
 
+/** A stored file document, shaped so `storedFileSchema` accepts it. */
+function storedFile(path: string, content: string): { id: string; data: () => unknown } {
+  return {
+    id: path,
+    data: () => ({
+      path,
+      content,
+      size: Buffer.byteLength(content, 'utf8'),
+      createdAt: Timestamp.fromMillis(1_700_000_000_000),
+      updatedAt: Timestamp.fromMillis(1_700_000_100_000),
+    }),
+  }
+}
+
+/**
+ * A Firestore stand-in answering **both** reads a turn makes of the files
+ * collection, told apart by the call shape rather than by a flag:
+ *
+ * - `readFilePaths` — `.limit(n).select().get()`, ids only, for the cap check;
+ * - `readProjectFiles` — `.orderBy('path').limit(n).get()`, whole documents, for
+ *   the context (Slice 9 T9).
+ *
+ * Keeping them distinguishable by shape is what lets `rejectProjectFiles` fail
+ * exactly one of the two, which is the whole of AC-28: the *context* read
+ * failing must be an ordinary pre-flush 500, and a fake that could only fail
+ * both would not tell us which one the handler was waiting on.
+ */
+function fakeFilesDb(
+  options: {
+    files?: readonly { id: string; data: () => unknown }[]
+    rejectProjectFiles?: true
+  } = {},
+): unknown {
+  const files = options.files ?? []
+  return {
+    collection: () => ({
+      limit: () => ({ select: () => ({ get: () => Promise.resolve({ docs: [] }) }) }),
+      orderBy: () => ({
+        limit: () => ({
+          get: () =>
+            options.rejectProjectFiles === true
+              ? Promise.reject(new Error('Firestore is unavailable'))
+              : Promise.resolve({ docs: files }),
+        }),
+      }),
+    }),
+  }
+}
+
 const OUTCOME = {
   model: 'claude-opus-5',
   stopReason: 'end_turn',
@@ -165,6 +215,8 @@ const OUTCOME = {
   outputTokens: 638,
   cacheCreationInputTokens: 0,
   cacheReadInputTokens: 11,
+  hlCallsKnown: 2,
+  hlCallsUnknown: 1,
 }
 
 const REAL_EMULATOR = process.env['FUNCTIONS_EMULATOR']
@@ -213,6 +265,15 @@ describe('logGeneration', () => {
     ['outputTokens', 638],
     ['cacheCreationInputTokens', 0],
     ['cacheReadInputTokens', 11],
+    /*
+     * Slice 9, D19, AC-24. The one metric that says whether F3.2 landed: how
+     * many `hl()` calls the turn generated that reach an allowlisted route, and
+     * how many do not. Two integers, which is why they are allowed to join a
+     * context that deliberately has no free-form body — a count cannot carry a
+     * contact, a path or a sentence somebody wrote.
+     */
+    ['hlCallsKnown', 2],
+    ['hlCallsUnknown', 1],
   ])('carries %s', (key, value) => {
     logGeneration(OUTCOME)
 
@@ -249,12 +310,86 @@ describe('logGeneration', () => {
       'cacheReadInputTokens',
       'durationMs',
       'event',
+      'hlCallsKnown',
+      'hlCallsUnknown',
       'inputTokens',
       'model',
       'outputTokens',
       'stopReason',
       'truncated',
     ])
+  })
+})
+
+/**
+ * AC-24 from the other end — **the counters are computed from the turn's file
+ * blocks, not from its chat text** (D19).
+ *
+ * Asserting the projection alone would leave the interesting half untested: a
+ * wiring that counted the reply's prose would emit two perfectly plausible
+ * integers and be wrong about what they mean. The metric is about *generated
+ * code*, so the source has to be the collected file ops.
+ *
+ * The stream below writes one file holding an allowlisted call and one the proxy
+ * would refuse, and mentions a third call in the prose that must not be counted
+ * — which is what tells the two possible wirings apart.
+ */
+describe('handleGenerate — the hl() counters', () => {
+  function loggedLine(info: ReturnType<typeof vi.fn>): Record<string, unknown> {
+    const line = info.mock.calls
+      .map((call) => String(call[0]))
+      .find((raw) => raw.includes('generation.complete'))
+    if (line === undefined) throw new Error('no generation.complete line was written')
+    return JSON.parse(line) as Record<string, unknown>
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    readProject.mockResolvedValue({ id: 'proj-1' })
+    getDb.mockReturnValue(fakeFilesDb())
+    readTranscript.mockResolvedValue([
+      { id: 'm1', role: 'user', content: 'build a dashboard', createdAt: '', truncated: false },
+    ])
+    appendAssistantMessage.mockImplementation((_uid, _projectId, content, truncated) =>
+      Promise.resolve({ id: 'a1', role: 'assistant', content, createdAt: '', truncated }),
+    )
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('counts the calls in the generated files, allowlisted apart from refused', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    openStream.mockResolvedValue(
+      scriptedStream([
+        // Prose. Its call must not be counted: it is not code the app will run.
+        "I will call hl('GET', '/conversations/search') too.\n\n",
+        '<genesis:file path="app.js">\n',
+        "await hl('POST', '/contacts/search', { pageLimit: 20 })\n",
+        "await hl('DELETE', '/contacts/abc123')\n",
+        '</genesis:file>\n',
+      ]),
+    )
+
+    await handleGenerate(fakeRequest(), fakeResponse().express, 'alice')
+
+    const line = loggedLine(info)
+    expect(line['hlCallsKnown']).toBe(1)
+    expect(line['hlCallsUnknown']).toBe(1)
+  })
+
+  /* A prose-only turn generated no code, so both counters are zero rather than
+   * absent — a missing field and a zero read very differently in a log sink. */
+  it('reports zero and zero for a turn that wrote no file', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    openStream.mockResolvedValue(scriptedStream(['Here is what I could build for you.']))
+
+    await handleGenerate(fakeRequest(), fakeResponse().express, 'alice')
+
+    const line = loggedLine(info)
+    expect(line['hlCallsKnown']).toBe(0)
+    expect(line['hlCallsUnknown']).toBe(0)
   })
 })
 
@@ -325,11 +460,7 @@ describe('handleGenerate — the client goes away', () => {
     vi.spyOn(console, 'info').mockImplementation(() => undefined)
     readProject.mockResolvedValue({ id: 'proj-1' })
     // The project holds no files yet, so every write is a creation.
-    getDb.mockReturnValue({
-      collection: () => ({
-        limit: () => ({ select: () => ({ get: () => Promise.resolve({ docs: [] }) }) }),
-      }),
-    })
+    getDb.mockReturnValue(fakeFilesDb())
     readTranscript.mockResolvedValue([
       {
         id: 'm1',
@@ -472,6 +603,7 @@ describe('handleGenerate — the message cap', () => {
     vi.clearAllMocks()
     vi.spyOn(console, 'info').mockImplementation(() => undefined)
     readProject.mockResolvedValue({ id: 'proj-1' })
+    getDb.mockReturnValue(fakeFilesDb())
     openStream.mockResolvedValue(scriptedStream(['one ']))
     appendAssistantMessage.mockResolvedValue({
       id: 'a1',
@@ -519,5 +651,93 @@ describe('handleGenerate — the message cap', () => {
 
     expect(openStream).toHaveBeenCalledTimes(1)
     expect(appendAssistantMessage).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * The project's own files reach the request — T12, and **AC-28 at L1 rather than
+ * L4**, which is a deviation the plan records rather than absorbs.
+ *
+ * There is no honest way to make an Admin SDK read fail against the Firestore
+ * emulator. A corrupt document is *parsed and skipped*, not a read failure, and
+ * forcing a genuine one would mean adding a fault-injection path to production
+ * code — a backdoor whose only purpose is to prove an error message. Here `getDb`
+ * is already mocked and `res.headersSent` is directly observable, so the property
+ * that actually matters is assertable: **the read happens before the flush**, so
+ * its failure is an ordinary JSON 500 with a real status line rather than an
+ * `error` frame on a 200 that has already gone out (D9, R8).
+ *
+ * The neighbouring *real* behaviour — a corrupt file document does not break a
+ * generation — is asserted at L4 in `tests/integration/generate-context.spec.ts`,
+ * on the same file. Together they are a stronger assertion on the property and a
+ * weaker one on the wiring, and the wiring is covered by AC-27 next door.
+ */
+describe('handleGenerate — the project’s files', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    readProject.mockResolvedValue({ id: 'proj-1' })
+    openStream.mockResolvedValue(scriptedStream(['one ']))
+    readTranscript.mockResolvedValue([
+      { id: 'm1', role: 'user', content: 'add a search box', createdAt: '', truncated: false },
+    ])
+    appendAssistantMessage.mockResolvedValue({
+      id: 'a1',
+      role: 'assistant',
+      content: 'one ',
+      createdAt: '',
+      truncated: false,
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  /** AC-14's wiring: the block exists, is last, and names the files it was given. */
+  it('sends the project’s files as one extra system block, after the prefix', async () => {
+    getDb.mockReturnValue(
+      fakeFilesDb({
+        files: [
+          storedFile('app.js', "console.log('hi')\n"),
+          storedFile('index.html', '<!doctype html>\n'),
+        ],
+      }),
+    )
+
+    await handleGenerate(fakeRequest(), fakeResponse().express, 'alice')
+
+    const params = openStream.mock.calls[0]?.[0] as { system: { text: string }[] }
+    expect(params.system).toHaveLength(SYSTEM_PROMPT.length + 1)
+    expect(params.system.at(-1)?.text).toContain('app.js')
+    expect(params.system.at(-1)?.text).toContain("console.log('hi')")
+  })
+
+  /* AC-13 through the handler: a project with no files sends the prefix itself. */
+  it('sends the stable prefix and nothing else for a project holding no files', async () => {
+    getDb.mockReturnValue(fakeFilesDb())
+
+    await handleGenerate(fakeRequest(), fakeResponse().express, 'alice')
+
+    expect((openStream.mock.calls[0]?.[0] as { system: unknown }).system).toBe(SYSTEM_PROMPT)
+  })
+
+  /*
+   * AC-28. The three assertions are one claim seen three ways: it rejects, so the
+   * terminal handler renders the ordinary JSON envelope; `headersSent` is false,
+   * so the status line is still spendable; and `openStream` was never reached, so
+   * the failure cost nothing at Anthropic.
+   */
+  it('answers a pre-flush error when the file read fails, and never opens a stream', async () => {
+    getDb.mockReturnValue(fakeFilesDb({ rejectProjectFiles: true }))
+    const res = fakeResponse()
+
+    await expect(handleGenerate(fakeRequest(), res.express, 'alice')).rejects.toThrow(
+      /unavailable/i,
+    )
+
+    expect(res.express.headersSent).toBe(false)
+    expect(openStream).not.toHaveBeenCalled()
+    expect(res.frames).toEqual([])
   })
 })

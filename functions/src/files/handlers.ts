@@ -1,6 +1,12 @@
 import type { Request, Response } from 'express'
-import type { DocumentReference, DocumentSnapshot, WriteBatch } from 'firebase-admin/firestore'
+import type {
+  DocumentReference,
+  DocumentSnapshot,
+  QueryDocumentSnapshot,
+  WriteBatch,
+} from 'firebase-admin/firestore'
 import { FieldValue } from 'firebase-admin/firestore'
+import type { ZodType } from 'zod'
 
 import { HttpError } from '../lib/errors'
 import { getDb } from '../lib/firebase'
@@ -23,6 +29,7 @@ import {
   type FileRejection,
   type FileWrite,
   type StoredFile,
+  type StoredFileMeta,
 } from './schema'
 
 /**
@@ -233,6 +240,45 @@ export async function planFileWrites(
 }
 
 /**
+ * One document a query returned, parsed — or `null`, logged, and skipped (D13).
+ *
+ * Shared by the two readers below because both fail closed the same two ways,
+ * and the reason they must not drift is concrete: the file tree and the model's
+ * view of the project would otherwise disagree about which files exist. The
+ * **schema is the parameter**, because the schema is the entire difference
+ * between them — `readFileList` parses a projection with no `content`,
+ * `readProjectFiles` parses the whole document.
+ *
+ * Deliberately not folded into {@link parseStoredFile}, which additionally
+ * answers for an *absent* document. A query never returns one, so sharing that
+ * function would give both list readers a branch neither can reach.
+ *
+ * **No field of the document goes in the log line** — a file is the user's own
+ * application, and a log sink is a disclosure channel like any other. The line is
+ * also the only warning anybody gets, because from outside a corrupt file is
+ * indistinguishable from one that was never generated.
+ */
+function parseQueriedFile<T extends { path: string }>(
+  doc: QueryDocumentSnapshot,
+  schema: ZodType<T>,
+): T | null {
+  const parsed = schema.safeParse(doc.data())
+  if (!parsed.success) {
+    logAuthEvent('file.unreadable', { outcome: 'invalid' })
+    return null
+  }
+
+  // The id *is* the path (D13), so a document filed under a name it does not
+  // claim cannot be shown in the right row of a tree or sent as the right file.
+  if (parsed.data.path !== doc.id) {
+    logAuthEvent('file.unreadable', { outcome: 'invalid', detail: 'id mismatch' })
+    return null
+  }
+
+  return parsed.data
+}
+
+/**
  * The list, parsed and ordered — metadata only.
  *
  * `orderBy('path')` on a single field is served by Firestore's automatic index,
@@ -253,19 +299,41 @@ export async function readFileList(uid: string, projectId: string): Promise<File
     .get()
 
   return snapshot.docs
-    .map((doc) => {
-      const parsed = storedFileMetaSchema.safeParse(doc.data())
-      if (!parsed.success) {
-        logAuthEvent('file.unreadable', { outcome: 'invalid' })
-        return null
-      }
-      if (parsed.data.path !== doc.id) {
-        logAuthEvent('file.unreadable', { outcome: 'invalid', detail: 'id mismatch' })
-        return null
-      }
-      return toFileMeta(parsed.data)
-    })
-    .filter((file): file is FileMeta => file !== null)
+    .map((doc) => parseQueriedFile(doc, storedFileMetaSchema))
+    .filter((meta): meta is StoredFileMeta => meta !== null)
+    .map(toFileMeta)
+}
+
+/**
+ * The same list, **with the content** — what a generation is shown (Slice 9 D26).
+ *
+ * A second reader beside `readFileList`, not a widening of it. `readFileList` is
+ * deliberately a projection with no `content`, and widening it would ship
+ * 20 × 100 KB of code to every workspace that merely opens a file tree — a cost
+ * paid on every page load to serve one caller that runs once per generation.
+ * Rejected for the same reason: a `withContent` flag, which is the same widening
+ * with a boolean in front of it, and leaves the expensive read one default away.
+ *
+ * What it *does* share is everything that could drift: the collection, the
+ * `orderBy('path')`, the `FILE_LIMIT` cap and the fail-closed handling of a
+ * document that cannot describe a file. Two different reads answering two
+ * different questions — "what files does this project hold" and "what is in
+ * them" — never two different answers to either.
+ *
+ * The stored documents come back rather than the wire shape: the caller is
+ * `buildProjectState`, which wants `path` and `content` and has no use for
+ * ISO-8601 timestamps.
+ */
+export async function readProjectFiles(uid: string, projectId: string): Promise<StoredFile[]> {
+  const snapshot = await getDb()
+    .collection(filesPath(uid, projectId))
+    .orderBy('path')
+    .limit(FILE_LIMIT)
+    .get()
+
+  return snapshot.docs
+    .map((doc) => parseQueriedFile(doc, storedFileSchema))
+    .filter((file): file is StoredFile => file !== null)
 }
 
 /** One file's document reference. The id *is* the path (D13). */

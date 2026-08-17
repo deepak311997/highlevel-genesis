@@ -7,7 +7,14 @@ const getDb = vi.hoisted(() => vi.fn())
 // Hoisted above the imports below by Vitest, so `handlers` closes over the fake.
 vi.mock('../lib/firebase', () => ({ getDb }))
 
-import { parseStoredFile, requireFilePath, stageFileWrites, type FileWritePlan } from './handlers'
+import {
+  parseStoredFile,
+  readProjectFiles,
+  requireFilePath,
+  stageFileWrites,
+  type FileWritePlan,
+} from './handlers'
+import { FILE_LIMIT } from './schema'
 
 /**
  * The write path's document shape, and the two fail-closed reads around it.
@@ -255,5 +262,144 @@ describe('requireFilePath', () => {
   /* A malformed path and a stranger's file read the same to the caller. */
   it('describes the outcome rather than the rule', () => {
     expect(() => requireFilePath(req('A.html'))).toThrow('That file could not be found.')
+  })
+})
+
+/** What one query asked Firestore for, so the shape of the read is assertable. */
+interface RecordedQuery {
+  collection: string | null
+  orderBy: string | null
+  limit: number | null
+}
+
+/**
+ * A Firestore whose one collection answers `orderBy(...).limit(n).get()` with the
+ * documents it was handed, recording the query it was asked for.
+ *
+ * It deliberately carries **no `select`** (D26). `readProjectFiles` is the reader
+ * that must *not* project — the content is the whole point of it — so a
+ * `select(...)` creeping in fails here as a missing method rather than as a
+ * silently thinner document that would only show up as a Zod failure.
+ */
+function fakeFileQuery(docs: readonly DocumentSnapshot[]): RecordedQuery {
+  const recorded: RecordedQuery = { collection: null, orderBy: null, limit: null }
+
+  getDb.mockReturnValue({
+    collection: (path: string) => {
+      recorded.collection = path
+      return {
+        orderBy: (field: string) => {
+          recorded.orderBy = field
+          return {
+            limit: (count: number) => {
+              recorded.limit = count
+              return { get: () => Promise.resolve({ docs }) }
+            },
+          }
+        },
+      } as unknown as CollectionReference
+    },
+  })
+
+  return recorded
+}
+
+/** A storable document, sized the way the writer would have sized it. */
+function storedFile(path: string, content: string): Record<string, unknown> {
+  return {
+    path,
+    content,
+    size: Buffer.byteLength(content, 'utf8'),
+    createdAt: Timestamp.fromMillis(1_700_000_000_000),
+    updatedAt: Timestamp.fromMillis(1_700_000_100_000),
+  }
+}
+
+/**
+ * The second reader — the one that carries `content` (D26, AC-14, AC-27).
+ *
+ * `readFileList` is a projection on purpose, so widening it would ship 20 × 100 KB
+ * of code to every workspace that merely opens a file tree. This is a separate
+ * read answering a separate question: what the model is shown as the project's
+ * current state. What it must share with the list is the ordering, the cap and
+ * the fail-closed handling of a document that cannot describe a file — asserted
+ * here, because the two drifting apart would mean the tree and the prompt
+ * disagreeing about which files a project holds.
+ */
+describe('readProjectFiles', () => {
+  it('returns each file with its content, ordered by path under the project', async () => {
+    const recorded = fakeFileQuery([
+      snapshot('app.js', true, storedFile('app.js', 'const a = 1\n')),
+      snapshot('index.html', true, storedFile('index.html', '<h1>x</h1>\n')),
+      snapshot('styles.css', true, storedFile('styles.css', 'body{}\n')),
+    ])
+
+    const files = await readProjectFiles('alice', 'proj-1')
+
+    expect(files.map((file) => file.path)).toEqual(['app.js', 'index.html', 'styles.css'])
+    expect(files.map((file) => file.content)).toEqual(['const a = 1\n', '<h1>x</h1>\n', 'body{}\n'])
+    expect(recorded.collection).toBe('users/alice/projects/proj-1/files')
+    expect(recorded.orderBy).toBe('path')
+  })
+
+  /*
+   * The same cap as the list, and for the same reason: `FILE_LIMIT` is the most
+   * a project may hold, so "you are seeing every file" is a guarantee rather than
+   * a hope — and the prompt cannot be handed a page of a project.
+   */
+  it('asks for at most FILE_LIMIT documents', async () => {
+    const recorded = fakeFileQuery([snapshot('app.js', true, storedFile('app.js', 'x\n'))])
+
+    await readProjectFiles('alice', 'proj-1')
+
+    expect(recorded.limit).toBe(FILE_LIMIT)
+  })
+
+  /*
+   * D13, fail closed. Two ways a document stops describing a file: it does not
+   * parse, or its id and its `path` disagree — the second is this collection's
+   * own invariant, since the id *is* the path. Either way the document is known
+   * to be unusable, so it is omitted and logged once, and the rest of the project
+   * still reaches the model. The alternative — refusing the whole read — would
+   * let one corrupt document take a project's generations down with it.
+   */
+  it('skips and logs an unparseable document and an id/path mismatch, returning the rest', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    fakeFileQuery([
+      snapshot('app.js', true, storedFile('app.js', 'const a = 1\n')),
+      // Missing `size`, so `storedFileSchema` refuses it outright.
+      snapshot('broken.js', true, { ...storedFile('broken.js', 'x\n'), size: undefined }),
+      // Parses, but is filed under a name it does not claim.
+      snapshot('elsewhere.js', true, storedFile('styles.css', 'body{}\n')),
+      snapshot('index.html', true, storedFile('index.html', '<h1>x</h1>\n')),
+    ])
+
+    const files = await readProjectFiles('alice', 'proj-1')
+
+    expect(files.map((file) => file.path)).toEqual(['app.js', 'index.html'])
+    expect(info).toHaveBeenCalledTimes(2)
+    const events = info.mock.calls.map(
+      (call) => (JSON.parse(String(call[0])) as Record<string, unknown>)['event'],
+    )
+    expect(events).toEqual(['file.unreadable', 'file.unreadable'])
+  })
+
+  /* A file is the user's own application, so no field of it reaches a log sink —
+   * `parseStoredFile`'s rule, restated on the reader that carries content. */
+  it('puts no field of an unreadable document in the log line', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    fakeFileQuery([snapshot('elsewhere.js', true, storedFile('app.js', 'const key = "sk-secret"'))])
+
+    await readProjectFiles('alice', 'proj-1')
+
+    expect(String(info.mock.calls[0]?.[0])).not.toContain('sk-secret')
+  })
+
+  /* An empty project is not an error: it is the first prompt in a new project,
+   * and it is what makes `buildProjectState` return no block at all (AC-13). */
+  it('returns an empty list for a project holding no files', async () => {
+    fakeFileQuery([])
+
+    expect(await readProjectFiles('alice', 'proj-1')).toEqual([])
   })
 })

@@ -13,7 +13,9 @@ import {
   ANTHROPIC_API_KEY,
   buildContext,
   buildParams,
+  countHlCalls,
   createFileCollector,
+  extractHlCalls,
   generateBodySchema,
   mapStream,
   openStream,
@@ -22,7 +24,7 @@ import {
   type GenerateErrorCode,
   type LlmEvent,
 } from './llm'
-import { planFileWrites } from './files/handlers'
+import { planFileWrites, readProjectFiles } from './files/handlers'
 import { fileErrorCopy } from './files/schema'
 import { appendAssistantMessage, readTranscript } from './messages/handlers'
 import { MESSAGE_LIMIT } from './messages/schema'
@@ -127,7 +129,7 @@ export function logGeneration(context: GenerationLogContext): void {
    * of the function existing at all. The call site builds this from an
    * `LlmEvent`, which carries the reply's `text` — one `...event` spread there
    * and every conversation on the platform would be in Cloud Logging. Naming the
-   * eight fields means the leak is impossible rather than merely against the
+   * ten fields means the leak is impossible rather than merely against the
    * rules; the type would catch it at the call site, and this catches it if the
    * type is ever widened.
    */
@@ -140,6 +142,8 @@ export function logGeneration(context: GenerationLogContext): void {
     outputTokens: context.outputTokens,
     cacheCreationInputTokens: context.cacheCreationInputTokens,
     cacheReadInputTokens: context.cacheReadInputTokens,
+    hlCallsKnown: context.hlCallsKnown,
+    hlCallsUnknown: context.hlCallsUnknown,
   })
 }
 
@@ -236,7 +240,10 @@ export const generate = onRequest(
  * 3. the 200-message cap, which this route writes into and so has to honour;
  * 4. the context, with trailing assistant turns dropped (D6);
  * 5. an empty context, which is a 400 before any LLM call (D7);
- * 6. the upstream stream — a missing API key throws here, and it is still an
+ * 6. the project's files, which become the system block after the breakpoint
+ *    (Slice 9 D11) — capped at `FILE_LIMIT`, and a failure here is still an
+ *    ordinary 500 rather than a mid-stream frame (Slice 9 AC-28);
+ * 7. the upstream stream — a missing API key throws here, and it is still an
  *    ordinary 500 with the reason logged rather than surfaced.
  *
  * Only then do headers go out.
@@ -280,8 +287,20 @@ export async function handleGenerate(req: Request, res: Response, uid: string): 
     )
   }
 
+  /*
+   * The project's own files, which become the system block appended after the
+   * `cache_control` breakpoint (Slice 9 D11, D26).
+   *
+   * **Before the flush, deliberately.** It is the third Firestore read on this
+   * path and so the third way it can fail; sitting here, a failure is an
+   * ordinary JSON 500 with a real status line rather than an `error` frame on a
+   * 200 that has already gone out (D9, R8, AC-28). It is capped at `FILE_LIMIT`
+   * documents, so the cost is bounded by the same number that bounds a project.
+   */
+  const files = await readProjectFiles(uid, projectId)
+
   const startedAt = Date.now()
-  const stream = await openStream(buildParams(context))
+  const stream = await openStream(buildParams(context, files))
 
   /*
    * D21, AC-17, AC-18. Aborting rather than letting the generation run to
@@ -444,6 +463,32 @@ async function finishTurn(
    */
   const truncated = clientGone || (event.kind === 'end' ? event.truncated : true)
 
+  /*
+   * The end-of-input flush, moved **above** the log line by Slice 9 so the
+   * counters have something to count. It emits no frames of its own — the frame
+   * loop below is unchanged and still runs before the terminal frame — so the
+   * only thing this reordering changes is that `collected` exists in time.
+   *
+   * A delimiter line may end at end of input as well as at a newline, so a reply
+   * whose last bytes are `</genesis:file>` resolves its close here — and that
+   * file's tail chunk and its `file_end` are owed to the client.
+   */
+  const collected = collector.finish()
+
+  /*
+   * D19, AC-24. **The source is the file blocks, not the chat text**, because
+   * the metric is about generated *code*: a call the model merely described in
+   * prose is not something the app will ever run, and counting it would make the
+   * number mean "mentions" rather than "calls".
+   *
+   * `process.env` rather than a captured value, so a flagged row counts as known
+   * exactly when the proxy would actually forward it.
+   */
+  const hlCalls = countHlCalls(
+    extractHlCalls(collected.ops.map((op) => op.content).join('\n')),
+    process.env,
+  )
+
   // Once per turn, on every path, and before the frame — so a turn is accounted
   // for even if the socket dies while it is being told about.
   logGeneration({
@@ -451,16 +496,11 @@ async function finishTurn(
     stopReason: event.stopReason,
     truncated,
     durationMs,
+    hlCallsKnown: hlCalls.known,
+    hlCallsUnknown: hlCalls.unknown,
     ...event.usage,
   })
 
-  /*
-   * The end-of-input flush, and its frames go out **before** the terminal one.
-   * A delimiter line may end at end of input as well as at a newline, so a reply
-   * whose last bytes are `</genesis:file>` resolves its close here — and that
-   * file's tail chunk and its `file_end` are owed to the client.
-   */
-  const collected = collector.finish()
   if (!res.destroyed) {
     for (const frame of collected.frames) res.write(encodeFrame(frame))
   }

@@ -22,9 +22,10 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 | 4 — Workspace shell & chat persistence | ✅ merged to `main` |
 | 5 — Streaming generation | ✅ merged to `main` |
 | 6 — File operations | ✅ merged to `main` |
-| 7 — Monaco editor | ✅ built, reviewed, PR open from `slice/07-monaco-editor` |
+| 7 — Monaco editor | ✅ merged to `main` |
 | 8 — HighLevel API proxy | ✅ merged to `main` |
-| 9–13 | not started |
+| 9 — HighLevel knowledge injection | ✅ built, reviewed, PR open from `slice/09-highlevel-knowledge` |
+| 10–13 | not started |
 
 **Slice 8 ran ahead of 7**, which §4's dependency line permits: it depends on 2 alone,
 and 2 merged on day 1. Nothing in 7 is owed to it.
@@ -41,10 +42,40 @@ been red since Slice 1: `vite.config.ts` threw at config load on any checkout wi
 8080 — the *development* emulator — so off CI it "passed" by finding a dev session, loading
 its rules over that session's and calling `clearFirestore()` on it.
 
-**Suite, re-run in full on `slice/07-monaco-editor` at ship time, rebased on `main`
-(2026-08-18):** typecheck 0 · lint 0 · **1,729 unit** (922 functions · 786 frontend ·
-21 scripts) · **38 rules** · **325 integration** · **16 e2e**. All six green — 2,108 cases.
+**Suite, re-run in full on `slice/09-highlevel-knowledge` at ship time, rebased on `main`
+(2026-08-18):** typecheck 0 · lint 0 · **1,858 unit** (1,051 functions · 786 frontend ·
+21 scripts) · **38 rules** · **329 integration** · **16 e2e**. All six green — 2,241 cases.
+
+Slice 9 added 129 functions unit cases and 4 integration cases, and **nothing anywhere
+else**: no frontend file, no route, no collection, no rules block, no new dependency. It is
+`functions/src/llm/` plus five files it touches around it, one fixture, and its four slice
+documents. The rules count not moving is the correct outcome rather than an omission — the
+slice adds no collection, and that was verified against `main` rather than assumed. The e2e
+count does not move either: AC-26 extends Slice 6's existing walk in `tests/e2e/files.spec.ts`,
+so the differentiator is read out of the editor inside the run that generated it.
+
+**A clean rebase is not a safe one, and Slice 9 is the case for saying so.** Slice 7 merged
+to `main` while Slice 9 was in review, and took the file editor's textarea with it. The
+rebase produced no conflict — the two slices edited different hunks of
+`tests/e2e/files.spec.ts` — and the result was still wrong: Slice 9's AC-26 assertion still
+reached for `file-editor-input`, a testid that no longer exists, and failed on a missing
+element rather than on anything it claims. Nothing but the L5 run could have caught it;
+typecheck, lint and the other 2,240 cases were green either side of it. **The full suite is
+re-run after the ship-time rebase, not before it** — that ordering is the whole reason this
+was found before the PR rather than in CI.
+
+Slice 7's ship-time run, for comparison: **1,729 unit** (922 functions · 786 frontend ·
+21 scripts) · **38 rules** · **325 integration** · **16 e2e** — 2,108 cases.
 `npm run build` clean, entry chunk 10.76 kB with monaco in its own chunks.
+
+**The three things Slice 9 could not discharge**, all needing a real `ANTHROPIC_API_KEY` the
+unattended sessions do not have: one credentialed generation with the produced `app.js` read
+by eye, a two-generation cache confirmation (`cacheCreationInputTokens > 0`, then
+`cacheReadInputTokens > 0`), and the `high` vs `xhigh` effort sweep. Per D20 no automated
+test in this repository can assert what the model *does*, so these are called out in the PR
+rather than left in a checklist. The sweep inherits a constraint from the review:
+`thinking: {type:'disabled'}` becomes a `400` at `xhigh` and above, so effort and thinking
+have to move together.
 
 The rebase put Slice 7 on top of Slice 8, so the functions, rules and integration counts
 are Slice 8's, unchanged. Slice 7 added 102 frontend unit cases and 2 e2e cases, and
@@ -800,7 +831,7 @@ still open gets settled in the discovery interview of the slice that first needs
 | File storage: Firestore vs Cloud Storage | Slice 6 | ✅ **Settled: Firestore.** Snapshots and restore stay trivial; the brief also says snapshots live in Firestore |
 | Generated app format: single-file vs multi-file | Slice 6 | ✅ **Settled: multi-file plain HTML/JS/CSS**, flat, `index.html` the entry point (Slice 6 D1). Extensions allowlisted, no directories, 20 files and 100 KB each. See `docs/slices/06-file-operations/02-prd.md` |
 | File-op wire format from the LLM | Slice 6 | ✅ **Settled: a `<genesis:file path="…">` tag pair, each tag alone on its line** (Slice 6 D2) — *not* fenced blocks, which the model emits inside generated markdown and which have no unambiguous close. Split as it streams so F4.2's boundaries are live; the resulting op set is parsed by Zod and refused whole (D9) |
-| HL knowledge: cheat-sheet vs tool-calling | Slice 9 | 🟡 Open, leaning cheat-sheet — simpler, deterministic, and cacheable |
+| HL knowledge: cheat-sheet vs tool-calling | Slice 9 | ✅ **Settled: cheat-sheet** (Slice 9, D1). Rendered at module load from `HL_ROUTES` — one table, three consumers — into the system prompt's stable prefix, behind the `cache_control` breakpoint. Tool-calling would have the model *call* HighLevel during generation; what the artefact needs is code that calls HighLevel *later*, from a browser. See `docs/slices/09-highlevel-knowledge/02-prd.md` |
 | HL API version: date-pinned vs `v3` | Slice 2 | ✅ **Settled: date-pinned** (`2021-07-28` / `2021-04-15`). v3 migration is a named README follow-up |
 
 ---

@@ -1,6 +1,8 @@
 import type { MessageParam } from '@anthropic-ai/sdk/resources/messages'
 import type { MessageStreamParams } from '@anthropic-ai/sdk/resources/messages/messages'
 
+import { buildProjectState } from './projectState'
+import type { ProjectFile } from './projectState'
 import { SYSTEM_PROMPT } from './prompt'
 
 /**
@@ -32,27 +34,75 @@ import { SYSTEM_PROMPT } from './prompt'
  * The cost of leaving thinking on is a pause before the first token. `EFFORT`
  * shortens it and the `Generating…` badge makes it legible.
  *
- * ## Effort is `low` for this slice, and Slice 9 re-tunes it (D15)
+ * ## `system` is copied only when there is something volatile to append (D11)
  *
- * `low` on `claude-opus-5` is documented as unusually strong; it keeps thinking
- * short and keeps a whole turn well inside the window a Hosting rewrite is known
- * to tolerate (R2). The caveat, recorded so the change reads as planned rather
- * than as churn: **this slice generates prose, not code.** Slice 9 owns
- * generation quality and will re-tune this against real HighLevel prompts, where
- * `high` or `xhigh` is the documented starting point.
+ * The project's own files go in as a second kind of `system` block, appended
+ * **after** the `cache_control` breakpoint. Both halves of that sentence are
+ * load-bearing.
+ *
+ * *After the breakpoint*, because render order is `tools` → `system` →
+ * `messages` and a change anywhere in the cached prefix invalidates everything
+ * following it. A block that changes whenever the project changes, placed one
+ * element earlier, would turn every generation into a cache write — with no
+ * error, no frame and the bill as the only symptom.
+ *
+ * *Only when there is something to append*, because a project holding no files
+ * must send the `SYSTEM_PROMPT` array **itself**, by identity (AC-13). An
+ * unconditional `[...SYSTEM_PROMPT]` would be harmless to the cache and would
+ * quietly make that guarantee unassertable, which is how it would survive
+ * review: the thing being protected is not the array but the habit of not
+ * touching it.
+ *
+ * ## Effort is `high` — the re-tune Slice 5 D15 promised (D17)
+ *
+ * `low` was the right answer when this endpoint generated **prose**. It now
+ * generates code against a fifteen-hundred-token HighLevel cheat-sheet, and
+ * `high` is the documented minimum for intelligence-sensitive work as well as
+ * the API's own default. So this is a change the earlier decision named in
+ * advance, not churn.
+ *
+ * `xhigh` — which the docs name as the starting point for coding — was
+ * considered and rejected. It lengthens the pause before the first token, and
+ * the visible thing in this project's demo is *tokens appearing*; R2, the
+ * Hosting-rewrite window, is still argued rather than measured. Choosing
+ * properly between `high`, `xhigh` and `max` needs an effort sweep against real
+ * generations, which needs credentials this session does not have — so the sweep
+ * is a named manual check in the definition of done rather than a guess made
+ * here.
+ *
+ * **A constraint the sweep inherits, stated precisely because the boundary is
+ * one level away.** On `claude-opus-5`, `thinking: { type: 'disabled' }` is
+ * accepted at effort `high` *or below* and returns a `400` at `xhigh` and `max`.
+ * At the `high` this file sets, the two settings are therefore still
+ * independent: disabling thinking would be a bad idea (D14 — the documented
+ * failure mode is `<thinking>` tags leaking into visible output, which from
+ * Slice 6 is parsed into files) but it would not be an API error. Raise `EFFORT`
+ * to `xhigh` or `max` and it becomes one, which is the thing the effort sweep in
+ * the definition of done must not discover the hard way.
+ *
+ * `max_tokens` stays 64,000. The docs name that figure as the floor to leave for
+ * `xhigh` and `max`, not for `high` — so it is headroom here rather than a
+ * requirement, and it is already the ceiling `CLAUDE.md` fixes for streaming
+ * calls.
  */
 
 export const MODEL = 'claude-opus-5'
 export const MAX_TOKENS = 64_000
-export const EFFORT = 'low' as const
+export const EFFORT = 'high' as const
 
-export function buildParams(context: MessageParam[]): MessageStreamParams {
+export function buildParams(
+  context: MessageParam[],
+  files: readonly ProjectFile[] = [],
+): MessageStreamParams {
+  const projectState = buildProjectState(files)
+
   return {
     model: MODEL,
     max_tokens: MAX_TOKENS,
-    // The array itself, not a copy: nothing is appended per call, so the cached
-    // prefix is byte-identical on every request.
-    system: SYSTEM_PROMPT,
+    // The array itself when there is nothing volatile to add, so the cached
+    // prefix is byte-identical on every request; a copy with the project state
+    // appended *after* the breakpoint when there is (D11).
+    system: projectState === null ? SYSTEM_PROMPT : [...SYSTEM_PROMPT, projectState],
     output_config: { effort: EFFORT },
     messages: context,
   }

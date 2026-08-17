@@ -255,6 +255,8 @@ describe('logGenerationEvent', () => {
     outputTokens: 638,
     cacheCreationInputTokens: 0,
     cacheReadInputTokens: 0,
+    hlCallsKnown: 0,
+    hlCallsUnknown: 0,
   }
 
   beforeEach(() => {

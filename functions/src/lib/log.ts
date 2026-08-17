@@ -166,11 +166,28 @@ export function logAuthEvent(event: string, context: AuthLogContext = {}): void 
  * There is deliberately no `content`, no `text`, no `projectId` and no uid.
  * Nothing here identifies a conversation; it describes a call.
  *
- * `cacheReadInputTokens` is the field worth naming. It is how D16's declared
- * no-op becomes observable: this slice's system prompt is far shorter than
- * `claude-opus-5`'s 512-token minimum cacheable prefix, so it will read `0` and
- * nothing will error. Slice 9 adds the HighLevel cheat-sheet above the
- * breakpoint, and this line is where the cache read shows up.
+ * `cacheReadInputTokens` is the field worth naming. It is how Slice 5 D16's
+ * declared no-op becomes observable: that slice's system prompt was far shorter
+ * than `claude-opus-5`'s 512-token minimum cacheable prefix, so it read `0` and
+ * nothing errored. **Slice 9 put the HighLevel cheat-sheet above the breakpoint
+ * and this line is now where the cache read shows up** — the confirmation is
+ * `cacheReadInputTokens > 0` on the second generation of a session, which is a
+ * named manual check because no automated test in this repository calls the real
+ * model.
+ *
+ * ## The two `hlCalls*` counters, and why a narrow context may carry them
+ *
+ * Slice 9 D19, AC-24. They are how many `hl()` calls the generated code makes
+ * that reach an allowlisted route, and how many do not — the one metric that
+ * says whether F3.2 landed at all. The rejected alternative was keeping the
+ * extractor test-only, which leaves the project with no signal outside a
+ * fixture.
+ *
+ * They are admitted to this deliberately body-less context because they are
+ * **integers**, and an integer cannot carry a contact id, a file path or a
+ * sentence somebody wrote. That is the whole of the argument, and it is the
+ * argument this interface will need again the next time something wants to join
+ * it: the bar is not "is it useful?" but "can it hold user content?".
  */
 export interface GenerationLogContext {
   model: string
@@ -181,6 +198,10 @@ export interface GenerationLogContext {
   outputTokens: number
   cacheCreationInputTokens: number
   cacheReadInputTokens: number
+  /** Extracted `hl()` calls that reach an enabled allowlist row. */
+  hlCallsKnown: number
+  /** Extracted `hl()` calls that do not — a route the proxy would refuse. */
+  hlCallsUnknown: number
 }
 
 /**

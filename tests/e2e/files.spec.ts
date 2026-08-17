@@ -50,6 +50,16 @@ const PROMPT = '__slow build a contact dashboard'
 /** What `reply.json` writes, in the tree's order (entry point first). */
 const GENERATED = ['index.html', 'app.js', 'styles.css']
 
+/**
+ * Slice 9 AC-26 — the one function the generated code reaches HighLevel through.
+ *
+ * Beside `GENERATED` because both are facts about the same fixture, and the
+ * fixture is hand-authored (`tests/fixtures/llm/README.md`, D20): this asserts
+ * that HighLevel-shaped code reaches the editor through the whole pipeline, not
+ * that the real model writes it.
+ */
+const HL_CALL = /hl\(/
+
 test.describe('Slice 06 — file operations', () => {
   test.beforeEach(async ({ page }) => {
     await resetEmulators()
@@ -98,7 +108,36 @@ test.describe('Slice 06 — file operations', () => {
     await expect(reply.getByTestId('file-chip')).toHaveCount(GENERATED.length)
     await expect(reply).not.toContainText('<h1')
 
-    /* Movement three: open a file, edit it, save it. */
+    /*
+     * Movement three: the differentiator, read out of the editor (Slice 9 AC-26).
+     *
+     * The generated app talks to the CRM through one function and no URL: `hl(`
+     * is present, and the two things the model must never write are not — a
+     * `locationId`, which the proxy attaches server-side and would discard (D8),
+     * and a HighLevel origin, which a generated page cannot reach anyway (D4).
+     * Asserted here as well as at L1 because L1 reads the fixture directly; this
+     * reads what the collector stored, the API served and Monaco rendered.
+     *
+     * Read through `editorText` for the reason the header gives: the textarea
+     * this was first written against is gone, so the claim is made against
+     * Monaco's model, which is the exact text — not virtualised DOM that renders
+     * only the visible lines and would make an absence assertion meaningless.
+     */
+    await page.getByTestId('file-row').filter({ hasText: 'app.js' }).click()
+    await expect(page.getByTestId('code-editor')).toBeVisible()
+    await expect.poll(async () => (await editorText(page)) ?? '').toMatch(HL_CALL)
+
+    /*
+     * Captured once and asserted three times, rather than re-read per assertion:
+     * the two negatives are satisfied by an empty string, so they are only worth
+     * anything against a value that has been shown to hold `hl(`.
+     */
+    const generated = (await editorText(page)) ?? ''
+    expect(generated).toMatch(HL_CALL)
+    expect(generated).not.toMatch(/locationId/)
+    expect(generated).not.toMatch(/leadconnectorhq/)
+
+    /* Movement four: open a file, edit it, save it. */
     await page.getByTestId('file-row').filter({ hasText: 'index.html' }).click()
     await expect(page.getByTestId('code-editor')).toBeVisible()
     await expect.poll(() => editorText(page)).not.toBe('')
@@ -130,7 +169,7 @@ test.describe('Slice 06 — file operations', () => {
     await expect(page.getByTestId('file-editor-error')).toBeHidden()
 
     /*
-     * Movement four: the reload. A `PUT` that answered 200 and stored nothing
+     * Movement five: the reload. A `PUT` that answered 200 and stored nothing
      * passes every assertion above this line and fails this one.
      */
     await page.reload()
