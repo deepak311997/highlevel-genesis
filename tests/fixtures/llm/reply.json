@@ -20,7 +20,10 @@
   {
     "type": "content_block_start",
     "index": 0,
-    "content_block": { "type": "thinking", "thinking": "" }
+    "content_block": {
+      "type": "thinking",
+      "thinking": ""
+    }
   },
   {
     "type": "content_block_delta",
@@ -33,40 +36,230 @@
   {
     "type": "content_block_delta",
     "index": 0,
-    "delta": { "type": "signature_delta", "signature": "FakeSignatureNotVerified" }
-  },
-  { "type": "content_block_stop", "index": 0 },
-  { "type": "content_block_start", "index": 1, "content_block": { "type": "text", "text": "" } },
-  {
-    "type": "content_block_delta",
-    "index": 1,
-    "delta": { "type": "text_delta", "text": "Here is a contact dashboard. " }
+    "delta": {
+      "type": "signature_delta",
+      "signature": "FakeSignatureNotVerified"
+    }
   },
   {
-    "type": "content_block_delta",
-    "index": 1,
-    "delta": { "type": "text_delta", "text": "It lists everyone in your account, " }
+    "type": "content_block_stop",
+    "index": 0
   },
   {
-    "type": "content_block_delta",
+    "type": "content_block_start",
     "index": 1,
-    "delta": { "type": "text_delta", "text": "newest first, with a search box above the list. " }
-  },
-  {
-    "type": "content_block_delta",
-    "index": 1,
-    "delta": { "type": "text_delta", "text": "Clicking a row opens that contact's details. " }
+    "content_block": {
+      "type": "text",
+      "text": ""
+    }
   },
   {
     "type": "content_block_delta",
     "index": 1,
-    "delta": { "type": "text_delta", "text": "Every value is read from your CRM account." }
+    "delta": {
+      "type": "text_delta",
+      "text": "Here is a contact dashboard. "
+    }
   },
-  { "type": "content_block_stop", "index": 1 },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "It lists everyone in your account, "
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "newest first, with a search box above the list. "
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "Clicking a row opens that contact's details. "
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "Every value is read from your CRM account."
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "\n\n"
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "<genesis:file path=\"index.html\">\n"
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"utf-8\" />\n    <title>Contacts</title>\n"
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "    <link rel=\"stylesheet\" href=\"styles.css\" />\n  </head>\n  <body>\n    <h1>Contacts</h1>\n    <input id=\"q\" placeholder=\"Search\" />\n"
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "    <ul id=\"rows\"></ul>\n    <script src=\"app.js\"></script>\n  </body>\n</html>\n"
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "</genesis:file>\n"
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "\n"
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "<genesis:file path=\"styles.css\">\n"
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "body {\n  font-family: system-ui, sans-serif;\n  margin: 2rem;\n"
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "}\n\n#rows li {\n"
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "  padding: 0.5rem 0;\n}\n"
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "</genesis:file>\n"
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "\n"
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "<genesis:file path=\"app.js\">\n"
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "const rows = document.getElementById('rows')\nconst q = document.getElementById('q')\n\nasync function load() {\n  const res = await fetch('/api/hl/contacts')\n  const { contacts } = await res.json()\n  render(contacts)\n"
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "}\n\nfunction render(contacts) {\n  rows.innerHTML = ''\n  for (const contact of contacts) {\n    const li = document.createElement('li')\n    li.textContent = contact.name\n"
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "    rows.append(li)\n  }\n}\n\nq.addEventListener('input', load)\nload()\n"
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "</genesis:file>\n"
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 1,
+    "delta": {
+      "type": "text_delta",
+      "text": "\nOpen index.html to see it."
+    }
+  },
+  {
+    "type": "content_block_stop",
+    "index": 1
+  },
   {
     "type": "message_delta",
-    "delta": { "stop_reason": "end_turn", "stop_sequence": null },
-    "usage": { "output_tokens": 63 }
+    "delta": {
+      "stop_reason": "end_turn",
+      "stop_sequence": null
+    },
+    "usage": {
+      "output_tokens": 63
+    }
   },
-  { "type": "message_stop" }
+  {
+    "type": "message_stop"
+  }
 ]

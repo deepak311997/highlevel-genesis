@@ -41,7 +41,17 @@ import { MAX_OUTPUT_BYTES, type LlmStream } from './stream'
  * | `__max_tokens`     | `max-tokens.json` |
  * | `__long`           | `reply.json`'s text repeated past `MAX_OUTPUT_BYTES` |
  * | `__slow`           | `reply.json`, with a long pause before the first token |
+ * | `__no_files`       | `prose-only.json` — a legitimate reply with no blocks (D17) |
+ * | `__bad_path`       | `bad-path.json` — a block naming `../secrets.js` |
+ * | `__unterminated`   | `unterminated.json` — a block that never closes |
+ * | `__dup_files`      | `duplicate-files.json` — one path written twice |
  * | *(none)*           | `reply.json`, a few tokens a second |
+ *
+ * The four file-shaped failures are **fixtures rather than L1-only inputs**
+ * because F8.1 is a user-facing requirement: an L1 test of `validateFileOps`
+ * asserts intent, and what F8.1 needs is the assertion that no document exists.
+ * Oversize and too-many-files stay at L1, because a fixture carrying
+ * 100 KB × 21 is a fixture nobody can read.
  *
  * The **last** user message, deliberately: reading the whole conversation would
  * make one `__refuse` poison every later turn of that project, which is exactly
@@ -81,6 +91,10 @@ const MARKERS = [
   '__max_tokens',
   '__long',
   '__slow',
+  '__no_files',
+  '__bad_path',
+  '__unterminated',
+  '__dup_files',
 ] as const
 
 type Marker = (typeof MARKERS)[number]
@@ -184,6 +198,26 @@ function planFor(messages: readonly MessageParam[]): Plan {
       return {
         events: loadEvents('reply.json'),
         throwAfter: 2,
+        firstDelayMs: DELTA_MS,
+        deltaDelayMs: DELTA_MS,
+      }
+    case '__no_files':
+      return {
+        events: loadEvents('prose-only.json'),
+        firstDelayMs: DELTA_MS,
+        deltaDelayMs: DELTA_MS,
+      }
+    case '__bad_path':
+      return { events: loadEvents('bad-path.json'), firstDelayMs: DELTA_MS, deltaDelayMs: DELTA_MS }
+    case '__unterminated':
+      return {
+        events: loadEvents('unterminated.json'),
+        firstDelayMs: DELTA_MS,
+        deltaDelayMs: DELTA_MS,
+      }
+    case '__dup_files':
+      return {
+        events: loadEvents('duplicate-files.json'),
         firstDelayMs: DELTA_MS,
         deltaDelayMs: DELTA_MS,
       }
