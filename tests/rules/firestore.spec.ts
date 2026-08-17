@@ -273,6 +273,116 @@ describe('users/{uid}/projects/{projectId}', () => {
   })
 })
 
+/**
+ * Exactly what `POST /api/projects/:projectId/messages` writes, so the denial is
+ * on the rule and not on the shape.
+ */
+function message(role: 'user' | 'assistant' = 'user') {
+  return {
+    role,
+    content: role === 'user' ? 'build a contact dashboard' : 'You said: build a contact dashboard',
+    seq: role === 'user' ? 0 : 1,
+    createdAt: serverTimestamp(),
+  }
+}
+
+async function seedMessage(uid = 'alice', projectId = 'proj-1', id = 'msg-1'): Promise<void> {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(
+      doc(asModular(ctx.firestore()), `users/${uid}/projects/${projectId}/messages/${id}`),
+      { ...message(), createdAt: new Date() },
+    )
+  })
+}
+
+describe('users/{uid}/projects/{projectId}/messages/{messageId}', () => {
+  /*
+   * AC-16. The owner is the most privileged client there is, and every one of
+   * their five operations is denied — the browser has `lib/messagesApi.ts` and
+   * nothing else.
+   *
+   * The write cases are the ones that matter most here, and for a reason that is
+   * about Slice 5 rather than this one: `role` is server-assigned, so a client
+   * that could write this collection could author an assistant turn — and from
+   * Slice 5 on the transcript *is* the LLM's context, which makes that
+   * self-service prompt injection into a prompt carrying HighLevel API knowledge
+   * and the user's own files.
+   *
+   * Rules do **not** cascade into subcollections, so neither `match /users/{uid}`
+   * nor `match /users/{uid}/projects/{projectId}` says anything about this path.
+   * The block being tested is required rather than decorative, and these cases are
+   * what would catch a later rule granting a parent recursively.
+   */
+  it('denies a verified owner reading one of their own messages', async () => {
+    await seedMessage()
+
+    await assertFails(getDoc(doc(verified('alice'), 'users/alice/projects/proj-1/messages/msg-1')))
+  })
+
+  it('denies a verified owner listing their own transcript', async () => {
+    await seedMessage()
+
+    await assertFails(getDocs(collection(verified('alice'), 'users/alice/projects/proj-1/messages')))
+  })
+
+  /* The one that would let a client author an assistant turn. */
+  it('denies a verified owner creating a message, user or assistant', async () => {
+    const alice = verified('alice')
+
+    await assertFails(
+      setDoc(doc(alice, 'users/alice/projects/proj-1/messages/mine'), message('user')),
+    )
+    await assertFails(
+      setDoc(doc(alice, 'users/alice/projects/proj-1/messages/forged'), message('assistant')),
+    )
+  })
+
+  /* The collection is append-only through the API (D13); a client cannot even
+   * reach it to try. */
+  it('denies a verified owner updating one of their own messages', async () => {
+    await seedMessage()
+
+    await assertFails(
+      updateDoc(doc(verified('alice'), 'users/alice/projects/proj-1/messages/msg-1'), {
+        content: 'something else',
+      }),
+    )
+  })
+
+  it('denies a verified owner deleting one of their own messages', async () => {
+    await seedMessage()
+
+    await assertFails(
+      deleteDoc(doc(verified('alice'), 'users/alice/projects/proj-1/messages/msg-1')),
+    )
+  })
+
+  /** AC-17. */
+  it('denies a different signed-in user, however verified they are', async () => {
+    await seedMessage()
+    const mallory = verified('mallory')
+
+    await assertFails(getDoc(doc(mallory, 'users/alice/projects/proj-1/messages/msg-1')))
+    await assertFails(getDocs(collection(mallory, 'users/alice/projects/proj-1/messages')))
+    await assertFails(
+      setDoc(doc(mallory, 'users/alice/projects/proj-1/messages/injected'), message('assistant')),
+    )
+    await assertFails(
+      updateDoc(doc(mallory, 'users/alice/projects/proj-1/messages/msg-1'), { content: 'stolen' }),
+    )
+    await assertFails(deleteDoc(doc(mallory, 'users/alice/projects/proj-1/messages/msg-1')))
+  })
+
+  it('denies an unauthenticated client', async () => {
+    await seedMessage()
+    const anon = anonymous()
+
+    await assertFails(getDoc(doc(anon, 'users/alice/projects/proj-1/messages/msg-1')))
+    await assertFails(getDocs(collection(anon, 'users/alice/projects/proj-1/messages')))
+    await assertFails(setDoc(doc(anon, 'users/alice/projects/proj-1/messages/anon'), message()))
+  })
+})
+
 describe('server-only collections', () => {
   /*
    * AC-15 — re-asserted because the rules file was rewritten. These two were

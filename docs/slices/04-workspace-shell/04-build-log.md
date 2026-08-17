@@ -120,3 +120,34 @@ resolved to the *same* commit timestamp. The plan put AC-3 in T3; the seeded ver
 and this is the one R1 actually turns on ("the L4 one is the assertion that matters, because it
 exercises the actual commit"). A single pair would come back right half the time by luck, so it
 runs three.
+
+## T5 — Rules and the composite index
+
+**Red — and it needed proving differently.** The seven new L3 cases in `tests/rules/firestore.spec.ts`
+**passed before the rules block existed**, because Firestore rules are additive: the absence of an
+`allow` *is* the denial, so a path with no match block is already closed. A test that passes
+immediately is testing nothing, so rather than accept it, the cases were checked for teeth
+directly — a scratch `match /users/{uid}/{document=**}` granting the owner recursively was added
+to `firestore.rules`, the suite went to **14 failures** including all seven messages cases, and
+the scratch grant was reverted. That is the regression these cases exist to catch (a later rule
+granting a parent recursively), and it is now demonstrated rather than assumed.
+
+Cases: a verified owner — the most privileged client there is — is denied `getDoc`, `getDocs` on
+the collection, `setDoc` of a user message *and* of an assistant one, `updateDoc` and `deleteDoc`
+(AC-16); a different verified user and an anonymous client are denied the same on alice's path
+(AC-17); every existing describe re-runs unchanged (AC-18). All `assertFails`; no `assertSucceeds`
+import was added, and there still is not one in the file. The denied payload is exactly what
+`handleCreateMessage` writes, so the denial is on the rule and not on the shape.
+
+**Green.** The `match /users/{uid}/projects/{projectId}/messages/{messageId}` deny-all block,
+comment included, verbatim from the PRD — and **in the same commit**, the
+`firestore.indexes.json` entry: `messages`, `COLLECTION`, `createdAt` ASC + `seq` ASC.
+
+**R2, read rather than tested.** No test at any level can catch the index missing — the emulator
+serves any query. Checked by reading the entry against `transcriptQuery()`: the handler calls
+`orderBy('createdAt','asc').orderBy('seq','asc')` and the index declares `createdAt` ASCENDING
+then `seq` ASCENDING, in that order. (`firebase firestore:indexes` cannot verify this against
+`demo-genesis` — it needs a real project — so the reading is the whole mitigation, as the plan
+says.)
+
+**Deviation from the plan:** none, beyond the extra work of proving the red step.
