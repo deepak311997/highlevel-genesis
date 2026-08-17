@@ -23,6 +23,15 @@ import {
  * A's undo history. AC-6 is that, asserted.
  */
 
+/** monaco's own numbering: `EndOfLineSequence.LF` is 0 and `CRLF` is 1. */
+const LF = 0 as editor.EndOfLineSequence
+const CRLF = 1 as editor.EndOfLineSequence
+
+/** What `setEOL` was last given, which is the only thing the EOL case reads. */
+function eolOf(model: editor.ITextModel): editor.EndOfLineSequence {
+  return (model as unknown as { eol: editor.EndOfLineSequence }).eol
+}
+
 /**
  * A model that records what was done to it, and nothing else.
  *
@@ -30,6 +39,13 @@ import {
  * standalone model service drops a disposed model, so `getModel(uri)` answers
  * `null` afterwards. A fake that kept it would let this suite pass over an
  * implementation that hands out disposed models.
+ *
+ * It is born **CRLF**, which is not a detail: monaco guesses a new model's line
+ * ending from the text it is created with and falls back to the platform default
+ * when there is none — so a model created empty, which is every model this
+ * registry makes for a file whose bytes have not arrived yet, is exactly the case
+ * that can come out CRLF. Starting the fake there is what makes the normalisation
+ * below a real assertion rather than a tautology.
  */
 function fakeModel(
   uri: Uri,
@@ -38,16 +54,21 @@ function fakeModel(
   unregister: () => void,
 ): editor.ITextModel {
   let disposed = false
-  return {
+  const model = {
     uri,
     value,
     language,
+    eol: value.includes('\n') ? LF : CRLF,
+    setEOL: vi.fn((next: editor.EndOfLineSequence) => {
+      model.eol = next
+    }),
     dispose: vi.fn(() => {
       disposed = true
       unregister()
     }),
     isDisposed: () => disposed,
-  } as unknown as editor.ITextModel
+  }
+  return model as unknown as editor.ITextModel
 }
 
 /**
@@ -80,6 +101,7 @@ function fakeMonaco(): MonacoModelApi & { created: string[] } {
         return model
       },
       getModel: (uri: Uri) => models.get(uri.toString()) ?? null,
+      EndOfLineSequence: { LF },
     },
   }
 }
@@ -155,6 +177,34 @@ describe('createModelRegistry', () => {
 
     expect(second).toBe(first)
     expect(monaco.created).toHaveLength(1)
+  })
+
+  /**
+   * **Every model this registry hands out writes LF**, whatever it was born with.
+   *
+   * Monaco guesses a new model's line ending from the text it is created with and
+   * falls back to the platform default when there is none — and this registry
+   * creates a model the moment a tab is activated, which is *before* the file's
+   * bytes have arrived. Left alone, that empty model can come out CRLF, and then
+   * every `\n` monaco writes into it becomes `\r\n`: the first keystroke marks the
+   * whole document dirty, and **Save** stores a file in which every line changed.
+   * The e2e caught exactly this, as a two-byte difference in a 57-byte file.
+   *
+   * Pinned here rather than left to whichever value the model happened to be
+   * created from, because "it works when the content arrives first" is an
+   * accidental invariant and this one is a stated one.
+   */
+  it('normalises every model it hands out to LF', () => {
+    const registry = createModelRegistry(monaco, 'proj-1')
+
+    // Created empty, which is a tab activated before its read came back.
+    expect(eolOf(registry.model('styles.css', '', 'css'))).toBe(LF)
+    // And created from content, which is the case that used to hide the first.
+    expect(eolOf(registry.model('index.html', '<h1>A</h1>\n', 'html'))).toBe(LF)
+
+    // Including one adopted from monaco's global registry by a later registry.
+    const second = createModelRegistry(monaco, 'proj-1')
+    expect(eolOf(second.model('styles.css', 'ignored', 'css'))).toBe(LF)
   })
 
   /*

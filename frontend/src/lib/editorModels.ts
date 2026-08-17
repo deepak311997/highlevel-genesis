@@ -26,12 +26,14 @@ import type { editor, Uri } from 'monaco-editor'
 /** The scheme is monaco's own convention for a model with no file behind it. */
 const SCHEME = 'inmemory://genesis'
 
-/** What the registry needs of monaco. Both fakeable, which is how AC-6–AC-9 run. */
+/** What the registry needs of monaco. All fakeable, which is how AC-6–AC-9 run. */
 export interface MonacoModelApi {
   Uri: { parse: (raw: string) => Uri }
   editor: {
     createModel: (value: string, language?: string, uri?: Uri) => editor.ITextModel
     getModel: (uri: Uri) => editor.ITextModel | null
+    /** Only `LF` is named, because only `LF` is ever used — see `model`. */
+    EndOfLineSequence: { LF: editor.EndOfLineSequence }
   }
 }
 
@@ -90,6 +92,19 @@ export function createModelRegistry(monaco: MonacoModelApi, projectId: string): 
     const uri = monaco.Uri.parse(modelUriString(projectId, path))
     const adopted = monaco.editor.getModel(uri)
     const created = adopted ?? monaco.editor.createModel(value, language, uri)
+
+    /*
+     * **LF, stated rather than inherited.**
+     *
+     * Monaco guesses a new model's line ending from the text it is created with
+     * and falls back to the platform default when there is none — and a tab is
+     * activated, so its model is created, *before* the file's bytes arrive. Left
+     * alone, that empty model can come out CRLF, and every `\n` written into it
+     * afterwards becomes `\r\n`: the first keystroke marks the whole document
+     * dirty and **Save** stores a file in which every line changed. Monaco skips
+     * the call when the model already agrees, so this is free on the common path.
+     */
+    created.setEOL(monaco.editor.EndOfLineSequence.LF)
     models.set(path, created)
     return created
   }

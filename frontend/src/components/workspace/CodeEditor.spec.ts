@@ -77,6 +77,13 @@ function fakeModel(value: string) {
      */
     onChange: null as null | (() => void),
     setValue: vi.fn(),
+    /**
+     * The registry pins every model it hands out to LF, because monaco guesses a
+     * new model's line ending from the text it was created with — and a tab's
+     * model is created before its bytes arrive. `editorModels.spec.ts` is where
+     * that is asserted; here it only has to exist.
+     */
+    setEOL: vi.fn(),
     dispose: vi.fn(() => {
       model.disposed = true
     }),
@@ -123,6 +130,7 @@ function makeMonaco() {
         return model
       },
       getModel: (uri: { toString: () => string }) => models.get(uri.toString()) ?? null,
+      EndOfLineSequence: { LF: 0 },
     },
   }
 }
