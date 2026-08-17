@@ -222,3 +222,44 @@ its design.
 touch — `stores/hl.ts`, `components/ConnectionPanel.vue`, `lib/authApi.ts`, `lib/hlApi.spec.ts` —
 so `main` is not Prettier-clean at those lines. Reverted to keep the slice's diff reviewable. See
 *Deferred* at the end of this log.
+
+## T9 — Vendor the six shadcn-vue blocks
+
+**Red.** None possible — this is upstream code fetched by a CLI, and a test asserting a vendored
+file exists would assert the CLI ran. The plan's replacements for the red step, all met:
+`typecheck` and `lint --max-warnings 0` pass on the generated files, the suite is green, and
+`git diff frontend/package.json` is **empty** (the lockfile too).
+
+**Green.** `npx shadcn-vue@latest add tabs badge resizable scroll-area separator textarea` from
+`frontend/` — 17 files across the six directories.
+
+**Two things the plan did not predict, both resolved inside its own instructions:**
+
+1. **The CLI added a runtime dependency.** It installed `@lucide/vue` ^1.31.0 — its configured
+   `iconLibrary` — even though the repo already carries `lucide-vue-next` ^1.0.0 (the dialog uses
+   it) and that is what the generated `ResizableHandle.vue` actually imports. Nothing under
+   `frontend/src` imports `@lucide/vue`, so it was uninstalled. The PRD's definition of done
+   ("no new runtime dependency appears in `frontend/package.json` as a result") is met, and D20's
+   claim survives: all six blocks sit on `reka-ui`, `class-variance-authority`, `clsx`,
+   `@vueuse/core` and the already-present `lucide-vue-next`.
+
+2. **Ten of the generated files failed `strictTypeChecked` / `exactOptionalPropertyTypes`**, which
+   T9's refactor step anticipated ("make the **minimum** edit and add a comment saying it deviates
+   from upstream"). Every failure was one already-solved family: upstream forwards props with
+   `reactiveOmit` / `useForwardProps(Emits)`, whose result carries keys whose value is `undefined`,
+   and `exactOptionalPropertyTypes` treats "absent" and "present but undefined" as different
+   types. The repo's existing answer — strip undefined keys, documented at length in
+   `ui/label/Label.vue` and reused in `ui/dialog/DialogContent.vue` — was applied to
+   `Tabs`, `TabsList`, `TabsTrigger`, `TabsContent`, `ResizablePanelGroup`, `ResizableHandle`,
+   `ScrollArea`, `ScrollBar` and `Separator`. Three of those have a **required** prop
+   (`SplitterGroup.direction`, `TabsTrigger.value`, `TabsContent.value`) which a filtered record
+   cannot promise the compiler is still present, so each is bound explicitly in the template and
+   filtered out of the spread — checked rather than cast. `ResizableHandle` also filters its own
+   `withHandle`, which is not a prop the primitive knows and would otherwise land on the DOM node.
+   `ScrollBar` and `Separator` gained `class: undefined` defaults for
+   `vue/require-default-prop`. `Textarea.vue` needed `Input.vue`'s two existing deviations: a
+   function-type emits declaration for `prefer-function-type`, and the conditional `useVModel`
+   option object for `exactOptionalPropertyTypes`. `Badge` needed no edit at all.
+
+**Refactor.** `npm --prefix frontend run format`. Prettier also wanted to reformat four files this
+slice does not touch; those were reverted (see *Deferred*).
