@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 
 import ProjectDeleteDialog from '@/components/ProjectDeleteDialog.vue'
 import ProjectFormDialog from '@/components/ProjectFormDialog.vue'
@@ -17,9 +18,11 @@ import type { Project } from '@/lib/projectsApi'
  * The error one is not theoretical — the card's only source of truth is an
  * endpoint, so "we could not ask" is a state it has to be able to say out loud.
  *
- * Rows are deliberately **not** links (D12). The workspace screen they would
- * point at is Slice 4, and a link to a screen that does not exist is either dead
- * or a screen this slice has to build.
+ * **The project's name is a link to its workspace; the row is not** (Slice 4, D23).
+ * Slice 3's D12 said rows would become links the moment the workspace existed, and
+ * it does. Linking the name rather than the whole row is what keeps a mis-aimed tap
+ * away from Rename and Delete — two destructive-ish actions sitting inside the same
+ * rectangle.
  */
 const projects = useProjectsStore()
 
@@ -108,7 +111,13 @@ onMounted(() => {
           class="flex items-start justify-between gap-4 rounded-md border border-border p-3"
         >
           <div class="flex min-w-0 flex-col gap-1">
-            <p class="truncate font-medium" data-testid="project-name">{{ project.name }}</p>
+            <RouterLink
+              :to="`/projects/${project.id}`"
+              class="truncate font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              data-testid="project-name"
+            >
+              {{ project.name }}
+            </RouterLink>
             <p
               v-if="project.description"
               class="text-sm text-muted-foreground"

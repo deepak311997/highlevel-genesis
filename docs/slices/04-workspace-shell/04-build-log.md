@@ -385,3 +385,28 @@ both trees mounted, which is what would make AC-23 and AC-24 trivially true of t
    stubs the dialogs that own their own suites.
 3. Two `as` assertions in the mocked store were flagged by `no-unnecessary-type-assertion` and
    removed.
+
+## T14 — The dashboard link
+
+**Red.** `ProjectsCard.spec.ts` — the project name is a `RouterLink` whose `to` is
+`/projects/proj-1` (and `/projects/proj-2` for the second row) carrying the project's name, while
+Rename and Delete are still `BUTTON` elements; and a row contains exactly one link (AC-19).
+`RouterLinkStub` added to the existing `MOUNT` stubs.
+
+**Green.** The name wrapped in `<RouterLink :to="`/projects/${project.id}`">`, with focus-visible
+styling so a keyboard user can see where they are. The row stays inert (D23).
+
+**Refactor.** Two updates the plan called for, and one it did not:
+
+- `DashboardView.spec.ts`'s one test that mounts the **real** `ProjectsCard` gained
+  `RouterLinkStub`, exactly as the plan predicted — it mounts without a router and would have
+  broken the moment the card needed one.
+- `ProjectsCard.vue`'s header comment, which said rows are deliberately not links because Slice 4
+  does not exist, now says what D23 decided and why the name rather than the row.
+- **Not in the plan:** Slice 3 left a passing test, `does not make a row a link`, asserting no `a`
+  element anywhere inside a row — the exact claim D23 inverts. It was **not deleted**. Slice 3's
+  D12 said "the moment one becomes a link, Slice 4 has started", so the claim narrows instead: the
+  test is now `does not make the row itself a link`, asserting the row is still an `LI` with no
+  `href` while the name inside it navigates. That is what stops a later change wrapping the whole
+  rectangle — with Delete inside it — and is a deliberate, documented inversion rather than a test
+  weakened to get a green suite.
