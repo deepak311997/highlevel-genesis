@@ -469,6 +469,44 @@ is not a weakened assertion**: nothing about what is checked changed, and a bran
 renders still fails — fifteen seconds later. Two consecutive full green runs followed, and a
 third in the final pass.
 
+### Amendment 4 — the port-band tests were asserting the environment they ran in
+
+The post-build gate came back red with five failures, all in
+`scripts/test-emulator-config.spec.mjs`, all of the same shape: `expected 9399 to be 9199`,
+`expected 4900 to be 4700`. **No product code was involved.**
+
+The cause is a test defect, not an implementation one, so it is recorded here rather than fixed
+quietly. `scripts/test-emulator-config.mjs` reads its band from the environment —
+`EMULATOR_PORT_OFFSET`, `EMULATOR_HUB_PORT`, `EMULATOR_LOGGING_PORT` — which is the whole point
+of the band mechanism this slice extended in Amendment 2. The spec, though, imported `OFFSET`
+in some places and hard-coded `9199` / `4700` / `4800` in others. Those literals are only true
+for the *committed* band. This checkout runs on the second band (offset 300, hub 4900, logging
+4950) because another checkout holds the default one, so five assertions failed on the ports
+being exactly what the environment had asked for.
+
+A test that goes red because of the environment it ran in, rather than the code it is testing,
+is the one failure a test may never produce: this one cost a fix session aimed at a defect that
+did not exist. Every behavioural case now **states the band it is talking about** and passes it
+to `shiftPorts` explicitly; the two cases that are genuinely about the configured values assert
+against the exported constants (`OFFSET`, `HUB_PORT`, `LOGGING_PORT`, `EVENTARC_PORT`,
+`TASKS_PORT`) instead of literals. Nothing was deleted, skipped or loosened — the count is
+unchanged at 21, and the suite was verified green both with the band exported and with it unset.
+
+Stating the bands also exposed a second, real fault that the literals had hidden. The
+cross-band case — *shares no port between two checkouts on different bands*, the load-bearing
+one — named only `offset`, `hubPort` and `loggingPort` for each band, so **both bands fell back
+to the same `eventarcPort` and `tasksPort`** and genuinely shared 4600 and 4650. That is exactly
+the collision Amendment 2 was written to prevent, surviving inside the test meant to catch it.
+Both bands are now stated in full.
+
+**Residual risk, for whoever runs two checkouts at once.** A checkout that picks a band by
+exporting `EMULATOR_PORT_OFFSET`, `EMULATOR_HUB_PORT` and `EMULATOR_LOGGING_PORT` — as this one
+does — but *not* `EMULATOR_EVENTARC_PORT` and `EMULATOR_TASKS_PORT` still takes the committed
+4600 and 4650 and so still shares them with the other checkout. The generator supports both
+variables; nothing sets them here. Today the `/tmp/genesis-suite-gate.lock` in
+`scripts/autopilot.sh` serialises emulator runs across checkouts and hides it, but a suite run
+outside that lock will hit `EADDRINUSE` on 4600 or 4650. **Export all five, not three.**
+
 ---
 
 ## Acceptance criteria — every one, and where it is proved
