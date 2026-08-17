@@ -16,6 +16,8 @@ import {
   generateBodySchema,
   mapStream,
   openStream,
+  type GenerateErrorCode,
+  type LlmEvent,
 } from './llm'
 import { appendAssistantMessage, readTranscript } from './messages/handlers'
 import { notFound, readProject } from './projects/handlers'
@@ -229,6 +231,31 @@ export async function handleGenerate(req: Request, res: Response, uid: string): 
   const startedAt = Date.now()
   const stream = await openStream(buildParams(context))
 
+  /*
+   * D21, AC-17, AC-18. Aborting rather than letting the generation run to
+   * completion is half the decision — an orphaned generation still bills — and
+   * persisting what it produced is the other: a user who closed the tab
+   * mid-reply comes back to what had been written, not to a prompt with no
+   * answer.
+   *
+   * **The listener is on `res`, not on `req`.** `express.json()` has already
+   * drained the request body by the time this runs, so `req` has finished and
+   * emitted its own `close` — attaching there registers a handler for an event
+   * that has already fired, and the disconnect is never observed. `res` emits
+   * `close` when the response finishes *or* when the connection is terminated
+   * early, which is exactly the pair of cases that need telling apart.
+   *
+   * `writableEnded` is what tells them apart: a completed turn has already
+   * called `res.end()`, so a successful stream is never recorded as an
+   * abandonment.
+   */
+  let clientGone = false
+  res.on('close', () => {
+    if (res.writableEnded) return
+    clientGone = true
+    stream.abort()
+  })
+
   res.status(200)
   res.set('Content-Type', 'text/event-stream; charset=utf-8')
   res.set('Cache-Control', 'no-cache, no-transform')
@@ -260,33 +287,106 @@ export async function handleGenerate(req: Request, res: Response, uid: string): 
 
   try {
     for await (const event of mapStream(stream)) {
-      // `res.destroyed` is the socket's own state, so there is no flag to keep in
-      // sync — Slice 0's check, unchanged.
-      if (res.destroyed) break
-
       if (event.kind === 'token') {
-        wroteSinceTick = true
-        res.write(encodeSse('token', { text: event.text }))
+        /*
+         * `res.destroyed` is the socket's own state, so there is no flag to keep
+         * in sync — Slice 0's check. It guards the *write* rather than breaking
+         * the loop, because the terminal event still has to be handled: a client
+         * that left mid-stream is exactly the case whose partial must be
+         * persisted (D21).
+         */
+        if (!res.destroyed) {
+          wroteSinceTick = true
+          res.write(encodeSse('token', { text: event.text }))
+        }
         continue
       }
 
-      logGeneration({
-        model: event.model,
-        stopReason: event.stopReason,
-        truncated: event.kind === 'end' && event.truncated,
-        durationMs: Date.now() - startedAt,
-        ...event.usage,
-      })
-
-      if (event.kind === 'end') {
-        const message = await appendAssistantMessage(uid, projectId, event.text, event.truncated)
-        writeTerminalFrame(res, encodeSse('done', { message }))
-        return
-      }
+      await finishTurn(res, uid, projectId, event, clientGone, Date.now() - startedAt)
+      return
     }
   } finally {
     clearInterval(keepAlive)
   }
 
   if (!res.writableEnded) res.end()
+}
+
+/** The user-facing copy for each way a stream can end badly. */
+const ERROR_COPY: Record<GenerateErrorCode, string> = {
+  upstream: 'The reply was interrupted. Try again.',
+  refused: 'Claude declined to answer that. Try rephrasing.',
+  internal: 'Something went wrong. Please try again.',
+}
+
+/**
+ * The one terminal, and the one place both kinds of them are handled.
+ *
+ * | Mapper event | Persisted | Frame |
+ * |---|---|---|
+ * | `end`, text non-empty | `truncated` from the event | `done` with the message |
+ * | `end`, text empty | nothing | `error` `upstream`, `message: null` |
+ * | `error` `refused` | nothing — content is empty by construction | `error` `refused`, `null` |
+ * | `error` `upstream`, text non-empty | `truncated: true` | `error` `upstream`, the partial |
+ * | `error` `upstream`, text empty | nothing | `error` `upstream`, `null` |
+ * | any of the above with `clientGone` | as above, `truncated: true` | **nothing** |
+ *
+ * **Success and interruption are one code path** because the client renders them
+ * the same way (D9): whatever frame arrives, the placeholder bubble is replaced
+ * by what the server actually stored. An `error` carrying only a string would
+ * leave the client holding its own accumulated text as an id-less bubble that
+ * then disagrees with the server's copy on the next load.
+ *
+ * **An `end` with no text cannot really happen** — a model that said nothing with
+ * `end_turn` — but it is not persisted as an empty message either, because
+ * `storedMessageSchema` requires non-empty content and the document would be
+ * unreadable the moment it was written. It is reported as an interruption, which
+ * is what it looks like from the user's side.
+ *
+ * **`clientGone` forces `truncated`** rather than trusting the mapper's flag. The
+ * real SDK's `abort()` makes the in-flight iterator throw, which the mapper turns
+ * into an `upstream` error; a stream that stops cleanly instead would otherwise
+ * be persisted as complete. The client left mid-stream, so the reply is
+ * incomplete whichever way the upstream chose to say so — and the `writableEnded`
+ * guard above is what guarantees `clientGone` means exactly that.
+ */
+async function finishTurn(
+  res: Response,
+  uid: string,
+  projectId: string,
+  event: Extract<LlmEvent, { kind: 'end' | 'error' }>,
+  clientGone: boolean,
+  durationMs: number,
+): Promise<void> {
+  /*
+   * `clientGone` forces the flag; otherwise an `end` carries the mapper's own
+   * verdict — `false` on `end_turn`, `true` on `max_tokens` (D23) and on the
+   * byte cap (D22) — and every `error` is by definition incomplete.
+   */
+  const truncated = clientGone || (event.kind === 'end' ? event.truncated : true)
+
+  // Once per turn, on every path, and before the frame — so a turn is accounted
+  // for even if the socket dies while it is being told about.
+  logGeneration({
+    model: event.model,
+    stopReason: event.stopReason,
+    truncated,
+    durationMs,
+    ...event.usage,
+  })
+
+  const message =
+    event.text === '' ? null : await appendAssistantMessage(uid, projectId, event.text, truncated)
+
+  // Nobody is listening. The partial is already stored, which is the whole of
+  // what a returning user needs (F8.2).
+  if (clientGone) return
+
+  if (event.kind === 'end' && message !== null) {
+    writeTerminalFrame(res, encodeSse('done', { message }))
+    return
+  }
+
+  const code: GenerateErrorCode = event.kind === 'end' ? 'upstream' : event.code
+  writeTerminalFrame(res, encodeSse('error', { error: ERROR_COPY[code], code, message }))
 }

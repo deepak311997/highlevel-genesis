@@ -403,3 +403,192 @@ describe('POST /generate — a turn that streams', () => {
     expect(stored.map((doc) => doc['role'])).toEqual(['user', 'assistant', 'user', 'assistant'])
   })
 })
+
+/** The `error` frame's payload, narrowed for assertions. */
+function errorPayload(res: GenerateResponse): {
+  error: string
+  code: string
+  message: Record<string, unknown> | null
+} {
+  const frame = framesOf(res.frames, 'error')[0]
+  if (frame === undefined) throw new Error('no error frame')
+  return frame.data as { error: string; code: string; message: Record<string, unknown> | null }
+}
+
+async function assistantMessages(
+  uid: string,
+  projectId: string,
+): Promise<Record<string, unknown>[]> {
+  return (await storedMessages(uid, projectId)).filter((doc) => doc['role'] === 'assistant')
+}
+
+describe('POST /generate — failure, mid-stream', () => {
+  /*
+   * AC-12. The partial is the whole point (F8.2): a user who watched two
+   * sentences arrive must come back to those two sentences, not to a prompt with
+   * no answer. And the `error` frame carries the persisted document, so success
+   * and interruption are **one** client code path (D9) — whatever arrives, the
+   * placeholder is replaced by what the server actually stored.
+   */
+  it('answers tokens then one upstream error, persisting the partial as truncated', async () => {
+    await seedMessage(aliceUid, 'proj-1', 'msg-a', {
+      content: '__fail_midstream build a contact dashboard',
+    })
+
+    const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+
+    expect(res.status).toBe(200)
+    expect(framesOf(res.frames, 'token')).toHaveLength(2)
+    expect(framesOf(res.frames, 'error')).toHaveLength(1)
+    expect(framesOf(res.frames, 'done')).toHaveLength(0)
+    expect(res.frames.at(-1)?.event).toBe('error')
+
+    const payload = errorPayload(res)
+    expect(payload.code).toBe('upstream')
+
+    const stored = await assistantMessages(aliceUid, 'proj-1')
+    expect(stored).toHaveLength(1)
+    expect(stored[0]?.['content']).toBe(tokenText(res))
+    expect(stored[0]?.['truncated']).toBe(true)
+    expect(payload.message?.['content']).toBe(stored[0]?.['content'])
+    expect(payload.message?.['truncated']).toBe(true)
+  })
+
+  /** AC-13. Nothing was produced, so there is nothing to preserve. */
+  it('answers one error with a null message and writes nothing when it fails upfront', async () => {
+    await seedMessage(aliceUid, 'proj-1', 'msg-a', { content: '__fail_upfront build a dashboard' })
+
+    const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+
+    expect(res.status).toBe(200)
+    expect(framesOf(res.frames, 'token')).toHaveLength(0)
+    expect(framesOf(res.frames, 'error')).toHaveLength(1)
+    expect(errorPayload(res)).toMatchObject({ code: 'upstream', message: null })
+    expect(await assistantMessages(aliceUid, 'proj-1')).toHaveLength(0)
+  })
+
+  /*
+   * AC-14, D18. A refusal is HTTP 200 with `stop_reason: 'refusal'` and no
+   * content, so a handler reading `content[0]` would break on exactly the case it
+   * exists to report. Nothing is persisted, because there is nothing to persist.
+   */
+  it('answers one refused error and writes nothing when the model declines', async () => {
+    await seedMessage(aliceUid, 'proj-1', 'msg-a', { content: '__refuse do something dubious' })
+
+    const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+
+    expect(res.status).toBe(200)
+    expect(framesOf(res.frames, 'error')).toHaveLength(1)
+    expect(errorPayload(res)).toMatchObject({ code: 'refused', message: null })
+    expect(errorPayload(res).error).toBe('Claude declined to answer that. Try rephrasing.')
+    expect(await assistantMessages(aliceUid, 'proj-1')).toHaveLength(0)
+  })
+
+  /*
+   * AC-15, D23. `max_tokens` is a real, useful, incomplete answer — `done`, not
+   * an error, so no Retry is offered for something that did not fail and the text
+   * that did arrive is not hidden behind an error state.
+   */
+  it('ends with done and truncated true when the model hits max_tokens', async () => {
+    await seedMessage(aliceUid, 'proj-1', 'msg-a', { content: '__max_tokens write me an epic' })
+
+    const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+
+    expect(framesOf(res.frames, 'done')).toHaveLength(1)
+    expect(framesOf(res.frames, 'error')).toHaveLength(0)
+    expect(doneMessage(res)['truncated']).toBe(true)
+    expect((await assistantMessages(aliceUid, 'proj-1'))[0]?.['truncated']).toBe(true)
+  })
+
+  /*
+   * AC-16, D22. The cap converts the worst available failure — a generation that
+   * succeeded, streamed perfectly, and then failed at the Firestore write — into
+   * a truncated-but-saved reply.
+   */
+  it('caps a runaway generation, ending in done with a stored reply under the limit', async () => {
+    await seedMessage(aliceUid, 'proj-1', 'msg-a', { content: '__long write me everything' })
+
+    const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+
+    expect(framesOf(res.frames, 'done')).toHaveLength(1)
+    const stored = (await assistantMessages(aliceUid, 'proj-1'))[0]
+    expect(stored?.['truncated']).toBe(true)
+    const content = String(stored?.['content'])
+    expect(Buffer.byteLength(content, 'utf8')).toBeLessThanOrEqual(800_000)
+    // And the cap really bit, rather than the fixture happening to be short.
+    expect(Buffer.byteLength(content, 'utf8')).toBeGreaterThan(400_000)
+    // What the client saw is byte-identical to what was stored.
+    expect(content).toBe(tokenText(res))
+  })
+})
+
+/*
+ * **AC-17 and AC-18 are not here, and that is a finding rather than a gap.**
+ *
+ * The client disconnect cannot be observed through the functions emulator. This
+ * was measured, not assumed: instrumenting `req.on('close')`, `req.on('aborted')`,
+ * `res.on('aborted')` and `res.on('close')`, then aborting a real `fetch` two
+ * tokens into a `__slow` stream, produces no `req` event at all, no `aborted`
+ * event at all, the generation running to completion (`stopReason: 'end_turn'`,
+ * `durationMs: 1213`), and `res close` arriving only afterwards with
+ * `writableEnded: true`. The emulator terminates the client connection at its own
+ * proxy and never propagates it to the function runtime.
+ *
+ * So the half we own — given the signal, abort the stream, persist the partial
+ * marked `truncated`, and write nothing to the dead socket — is driven at L1 in
+ * `functions/src/generate.spec.ts`, where the signal can be delivered. The half
+ * the platform owns is a Slice 13 hand-check against the deploy, beside R2's.
+ *
+ * A test that cannot fail for the right reason is worse than no test, because
+ * `it('persists the partial')` reads as proof either way.
+ */
+
+describe('POST /generate — a transcript ending in an assistant turn', () => {
+  /*
+   * **R1, end to end.** A trailing assistant message is an assistant prefill, and
+   * prefill is a 400 on `claude-opus-5` — so untreated, this is the shape that
+   * breaks Retry after an interruption, every single time, on the one path that
+   * is supposed to work when something has already gone wrong.
+   *
+   * The transcript is seeded past the routes into exactly the shape an
+   * interrupted turn leaves behind, and then generated from.
+   */
+  it('drops the trailing assistant turn and streams normally', async () => {
+    await seedMessage(aliceUid, 'proj-1', 'bot-a', {
+      role: 'assistant',
+      content: 'Here is a cont',
+      seq: 1,
+      createdAt: Timestamp.fromMillis(1_700_000_100_000),
+      truncated: true,
+    })
+
+    const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+
+    expect(res.status).toBe(200)
+    expect(framesOf(res.frames, 'done')).toHaveLength(1)
+    expect(framesOf(res.frames, 'error')).toHaveLength(0)
+    // The interrupted reply is still there — D26's append-only rule under
+    // pressure — and the new one is beside it.
+    const stored = await assistantMessages(aliceUid, 'proj-1')
+    expect(stored).toHaveLength(2)
+    expect(stored.map((doc) => doc['truncated'])).toEqual([true, false])
+  })
+
+  /* Three in a row, which two interruptions and a Retry produce. */
+  it('drops several trailing assistant turns', async () => {
+    for (const [index, id] of ['bot-a', 'bot-b', 'bot-c'].entries()) {
+      await seedMessage(aliceUid, 'proj-1', id, {
+        role: 'assistant',
+        content: `partial ${String(index)}`,
+        seq: 1,
+        createdAt: Timestamp.fromMillis(1_700_000_100_000 + index * 1000),
+        truncated: true,
+      })
+    }
+
+    const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+
+    expect(res.status).toBe(200)
+    expect(framesOf(res.frames, 'done')).toHaveLength(1)
+  })
+})

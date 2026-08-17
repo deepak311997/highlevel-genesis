@@ -225,3 +225,33 @@ full 540-second timeout. So T9 also carries one streaming assertion (200, event 
 `done` whose payload is an assistant message), and the `token`/`end` handling that satisfies it. The
 detailed stream assertions — the persisted document, transcript order, the log line, the keep-alive
 — stay in T10, and failure handling stays in T11.
+
+## T10 — The stream itself
+
+**Commit:** `c63ec26`
+
+**Tests added**
+
+| Level | File | What |
+|---|---|---|
+| L1 | `functions/src/lib/log.spec.ts` | `logGenerationEvent` writes one line, parseable as one JSON object, carrying the event and all eight fields; no field for content; a secret reaching it despite the type is still redacted; **a numeric value under a sensitive-looking name survives, a string under the same name does not** |
+| L1 | `functions/src/generate.spec.ts` | `logGeneration` emits exactly one `console.info`, names `generation.complete`, carries the model, stop reason, `truncated`, `durationMs` and the four token counts, and **drops a `text` forced in at runtime** — asserted by pinning the emitted key list. `keepAliveMs` is 15,000 by default, honours the override under the emulator, **ignores it when not**, and falls back for `''`/`soon`/`0`/`-5` |
+| L4 | `tests/integration/generate.spec.ts` | 200 with `text/event-stream; charset=utf-8`, tokens then exactly one `done` (AC-1); `cache-control` and `x-accel-buffering`; exactly one assistant document whose content equals the concatenated tokens, `seq: 1`, `truncated: false` (AC-2); the `done` frame's message equals that document in wire shape, five keys, no `seq`; no thinking text on the wire (AC-11 end to end); the transcript reads user-then-assistant with both `truncated: false` (AC-3); **a comment frame before the first token on `__slow`, and more than one** (AC-19); a full second two-request turn |
+
+**Green:** `GenerationLogContext` and `logGenerationEvent` in `lib/log.ts`; `logGeneration`, the
+keep-alive interval and the terminal log call in `generate.ts`.
+
+### A real bug the tests caught
+
+`redact`'s `SENSITIVE_KEY` matches `token` as a case-insensitive substring — deliberately, so
+`refreshToken` and `newPassword` are caught without enumerating spellings. But
+`inputTokens`, `outputTokens`, `cacheCreationInputTokens` and `cacheReadInputTokens` match it too,
+so the first version of the generation line emitted `"[redacted]"` for **all four counts** — the only
+numbers the line exists to carry (D25), and the ones D16's cache claim is verified with. Silently,
+because a redacted field still looks deliberate.
+
+Fixed by excluding on **type** rather than on name: every credential this codebase handles is a
+string — access and refresh tokens, passwords, out-of-band codes, API keys, the sealed OAuth state —
+so a number or boolean under a sensitive name is a count, an expiry or a flag. A name-based
+exclusion list would need maintaining, and the next field somebody added would not be on it. Two L1
+cases pin both directions.
