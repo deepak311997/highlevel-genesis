@@ -2,6 +2,7 @@
 import EditorTabs from '@/components/workspace/EditorTabs.vue'
 import FileEditor from '@/components/workspace/FileEditor.vue'
 import FileTree from '@/components/workspace/FileTree.vue'
+import SnapshotSheet from '@/components/workspace/SnapshotSheet.vue'
 import { Separator } from '@/components/ui/separator'
 
 /**
@@ -31,8 +32,14 @@ import { Separator } from '@/components/ui/separator'
        sized by `flex-grow` (a percentage does not — it collapses to content, and
        Monaco to 5px). Each class is inert in the other layout. -->
   <section class="flex h-full min-h-0 flex-1 flex-col" data-testid="editor-panel">
-    <header class="flex shrink-0 items-center px-4 py-3">
+    <!-- `justify-between`, so history sits opposite the title rather than
+         beside it: the header is the panel's only chrome and the trigger is the
+         only control in it, so the two ends of one strip is the whole layout.
+         `SnapshotSheet` owns everything past the click — this panel neither
+         knows nor stores whether the sheet is open (D20). -->
+    <header class="flex shrink-0 items-center justify-between px-4 py-3">
       <h2 class="text-sm font-semibold">Code</h2>
+      <SnapshotSheet />
     </header>
 
     <Separator />
