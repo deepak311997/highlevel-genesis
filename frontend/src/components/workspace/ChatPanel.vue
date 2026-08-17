@@ -20,9 +20,16 @@ import { useWorkspaceStore } from '@/stores/workspace'
  * transcript shown beside a failure notice leaves the user unable to tell which of
  * the two is current.
  *
- * The `Echo mode` badge is not decoration (D7, D19): it says out loud that the
- * reply is a stub rather than intelligence. It and the echo disappear together in
- * Slice 5.
+ * Slice 5 replaces Slice 4's stub badge with a `Generating…` one, shown only
+ * while a stream is open (D30). That is F6.2's streaming status, and it
+ * discharges D14's cost: adaptive thinking means the first token can be seconds
+ * away, so the pause is a labelled state rather than a frozen screen.
+ *
+ * **The streaming placeholder sits inside the transcript list**, after the
+ * bubbles, so the existing scroll machinery covers it and there is one mechanism
+ * rather than two. It cannot collide with the empty state: the user's own
+ * message is appended before the stream opens, so `bubbles.length` is never 0
+ * while `generating` is true.
  */
 const workspace = useWorkspaceStore()
 
@@ -52,6 +59,14 @@ function scrollToBottom(): void {
  */
 watch(() => workspace.messages.length, scrollToBottom, { flush: 'post' })
 
+/*
+ * And again on every token (AC-43). A separate watcher rather than a wider
+ * source: the two grow at completely different rates — one message per turn
+ * against hundreds of tokens — and measuring once on mount would leave the
+ * viewport a screen behind by the third token.
+ */
+watch(() => workspace.streamingText, scrollToBottom, { flush: 'post' })
+
 // And once on mount, so a reload opens on the newest message rather than the oldest.
 onMounted(scrollToBottom)
 
@@ -80,13 +95,28 @@ const showComposer = computed(
   () =>
     workspace.messagesError !== null || (workspace.messagesLoaded && !workspace.messagesLoading),
 )
+
+/**
+ * Retry re-opens the stream for the same transcript — no new user message (D26).
+ *
+ * That is free given D2: the endpoint's whole input is the project id, and the
+ * transcript is the server's own record. It is also exactly the case D6's
+ * trailing-assistant drop exists for, since an interrupted turn leaves the
+ * transcript ending on an assistant message.
+ */
+function retry(): void {
+  void workspace.retryGeneration()
+}
 </script>
 
 <template>
   <section class="flex h-full min-h-0 flex-col" data-testid="chat-panel">
     <header class="flex shrink-0 items-center justify-between gap-3 px-4 py-3">
       <h2 class="text-sm font-semibold">Chat</h2>
-      <Badge variant="secondary">Echo mode</Badge>
+      <!-- Only while a stream is open (D30, AC-39). -->
+      <Badge v-if="workspace.generating" variant="secondary" data-testid="chat-generating">
+        Generating…
+      </Badge>
     </header>
 
     <Separator />
@@ -123,7 +153,7 @@ const showComposer = computed(
       <div ref="scrollRoot" class="min-h-0 flex-1">
         <ScrollArea class="h-full">
           <ul
-            v-if="bubbles.length > 0"
+            v-if="bubbles.length > 0 || workspace.generating"
             class="flex flex-col gap-3 p-4"
             data-testid="chat-transcript"
           >
@@ -136,14 +166,43 @@ const showComposer = computed(
               :class="message.role === 'user' ? 'self-end bg-secondary' : 'self-start bg-card'"
             >
               <p class="whitespace-pre-wrap text-sm">{{ message.content }}</p>
-              <!-- A timestamp that will not parse yields no line at all (D29). -->
-              <span
-                v-if="message.time !== null"
-                data-testid="message-time"
-                class="text-xs text-muted-foreground"
-              >
-                {{ message.time }}
-              </span>
+              <div class="flex items-center gap-2">
+                <!-- A timestamp that will not parse yields no line at all (D29). -->
+                <span
+                  v-if="message.time !== null"
+                  data-testid="message-time"
+                  class="text-xs text-muted-foreground"
+                >
+                  {{ message.time }}
+                </span>
+                <!--
+                  One marker for four causes (D23): a client disconnect, a
+                  mid-stream failure, `stop_reason: 'max_tokens'` and the byte
+                  cap. It says what it means rather than showing a bare icon.
+                -->
+                <span
+                  v-if="message.truncated"
+                  data-testid="message-interrupted"
+                  class="text-xs font-medium text-muted-foreground"
+                >
+                  · Interrupted
+                </span>
+              </div>
+            </li>
+
+            <!--
+              The placeholder, inside the list so one scroll mechanism covers it
+              too. Keyed by a synthetic id, since it has no server id yet.
+            -->
+            <li
+              v-if="workspace.generating"
+              key="__streaming"
+              data-testid="streaming-bubble"
+              data-role="assistant"
+              class="flex max-w-[85%] flex-col gap-1 self-start rounded-lg border border-border bg-card p-3"
+            >
+              <p class="whitespace-pre-wrap text-sm">{{ workspace.streamingText }}</p>
+              <span class="text-xs text-muted-foreground">Generating…</span>
             </li>
           </ul>
 
@@ -154,6 +213,26 @@ const showComposer = computed(
         </ScrollArea>
       </div>
     </template>
+
+    <!--
+      Below the transcript and above the composer, so it reads as being about the
+      reply rather than about what the user is typing (AC-41). The transcript
+      stays visible beside it: a failed generation does not invalidate the
+      conversation, and hiding it would hide the partial the server just
+      persisted — which is the thing F8.2 exists to preserve.
+    -->
+    <div
+      v-if="workspace.generateError"
+      data-testid="generate-error"
+      class="flex flex-col gap-2 border-t border-border p-3"
+    >
+      <Alert variant="destructive">
+        <AlertDescription>{{ workspace.generateError }}</AlertDescription>
+      </Alert>
+      <Button variant="outline" size="sm" data-testid="generate-retry" @click="retry()">
+        Retry
+      </Button>
+    </div>
 
     <MessageComposer v-if="showComposer" />
   </section>
