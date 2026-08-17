@@ -115,3 +115,20 @@ AC-10/AC-11 (PATCH).
 **Deviations from the plan:** none. The cross-tenant case compares bob's whole stored document
 before and after with `toEqual`, which covers "including its `updatedAt`" without naming
 fields one at a time.
+
+---
+
+## T6 — `DELETE /api/projects/:projectId`
+
+**Red:** `describe('DELETE /api/projects/:projectId')` — 10 cases.
+
+**Green:** `handleDeleteProject`, which reads `snapshot.get('deletedAt')` off the raw snapshot
+and never parses (P3). It treats both `null` and `undefined` as live, so a document written
+before the field existed can still be deleted. `updatedAt` advances alongside `deletedAt`
+(P4); a second delete writes nothing at all.
+
+**ACs:** AC-8, AC-9, AC-12 (delete), AC-17 (DELETE), AC-10/AC-11 (DELETE).
+
+**Deviations from the plan:** none. One case beyond the plan's list — a corrupt document is
+deletable — because that is the whole reason P3 says this handler does not parse, and it was
+otherwise untested.

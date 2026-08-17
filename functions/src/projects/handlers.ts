@@ -288,3 +288,40 @@ export async function handlePatchProject(req: Request, res: Response, uid: strin
 
   res.json({ project })
 }
+
+/**
+ * Soft-delete, idempotently.
+ *
+ * **This handler never parses the stored document** (P3). Every other read goes
+ * through `readProject`, but a project that fails to parse must still be
+ * deletable — parsing here would make D16's "always 200" a lie for exactly the
+ * projects a user most wants gone, and leave a corrupt document with no way out
+ * of the collection.
+ *
+ * Idempotent because the UI cannot be certain of its own staleness: a second
+ * tab, a double click, a retry after a timeout. Answering 404 to any of those
+ * puts an error on screen for a user who already has what they asked for — the
+ * same reasoning as `handleDeleteConnection`.
+ *
+ * A second delete writes nothing at all, so the first `deletedAt` stands and
+ * "when was this deleted" stays true.
+ */
+export async function handleDeleteProject(req: Request, res: Response, uid: string): Promise<void> {
+  const id = requireProjectId(req)
+  const ref = getDb().doc(`${projectsPath(uid)}/${id}`)
+  const snapshot = await ref.get()
+
+  const deletedAt: unknown = snapshot.get('deletedAt')
+  const alreadyDeleted = deletedAt !== null && deletedAt !== undefined
+
+  if (snapshot.exists && !alreadyDeleted) {
+    await ref.update({
+      deletedAt: FieldValue.serverTimestamp(),
+      // The data model says `updatedAt` advances on every accepted mutation,
+      // and a delete is one (P4).
+      updatedAt: FieldValue.serverTimestamp(),
+    })
+  }
+
+  res.json({ ok: true })
+}

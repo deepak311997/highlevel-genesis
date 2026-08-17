@@ -3,6 +3,7 @@ import { Router } from 'express'
 import { asyncHandler } from '../lib/errors'
 import {
   handleCreateProject,
+  handleDeleteProject,
   handleGetProject,
   handleListProjects,
   handlePatchProject,
@@ -45,4 +46,9 @@ projectsRouter.patch(
   '/projects/:projectId',
   attested,
   asyncHandler(withVerifiedUser(handlePatchProject)),
+)
+projectsRouter.delete(
+  '/projects/:projectId',
+  attested,
+  asyncHandler(withVerifiedUser(handleDeleteProject)),
 )
