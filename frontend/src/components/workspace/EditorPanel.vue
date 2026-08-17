@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import EditorTabs from '@/components/workspace/EditorTabs.vue'
 import FileEditor from '@/components/workspace/FileEditor.vue'
 import FileTree from '@/components/workspace/FileTree.vue'
 import { Separator } from '@/components/ui/separator'
@@ -13,8 +14,13 @@ import { Separator } from '@/components/ui/separator'
  * wants the height — and because the narrow layout already spends its width on
  * one panel at a time.
  *
- * The editor is a textarea until Slice 7 swaps in Monaco. That swap touches
- * `FileEditor.vue` and nothing here.
+ * **The height chain is load-bearing** (D19, R4). Monaco measures its container,
+ * so a container sized by its own content collapses the editor to 0 px and
+ * renders nothing at all, with no error attached — and jsdom computes no layout,
+ * so nothing below L5 can see it. The chain is this section's `h-full min-h-0`,
+ * then `FileEditor`'s `min-h-0 flex-1`, then `CodeEditor`'s `h-full`. Any link
+ * left out and the box has no definite height. Its spec pins the classes; AC-30
+ * measures the real box in a browser.
  */
 </script>
 
@@ -39,6 +45,11 @@ import { Separator } from '@/components/ui/separator'
     </div>
 
     <Separator />
+
+    <!-- Between the tree and the editor, and outside `FileEditor`: the strip is
+         what the panel navigates *by*, and it stays put while the editor below
+         it swaps between the empty, loading, failed and open states. -->
+    <EditorTabs />
 
     <FileEditor />
   </section>

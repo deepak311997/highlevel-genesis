@@ -10,9 +10,10 @@ const store = reactive({
   filesLoading: false,
   filesLoaded: true,
   filesError: null as string | null,
-  selectedPath: null as string | null,
+  selectedPath: 'index.html',
+  openTabs: ['index.html'],
+  dirtyPaths: [] as string[],
   fileTree: [] as FileRow[],
-  fileContent: '',
   editorContent: '',
   fileDirty: false,
   fileLoading: false,
@@ -23,10 +24,23 @@ const store = reactive({
   generating: false,
   loadFiles: vi.fn(),
   selectFile: vi.fn(),
+  closeTab: vi.fn(),
+  editContent: vi.fn(),
+  reloadFile: vi.fn(),
   saveFile: vi.fn(),
 })
 
 vi.mock('@/stores/workspace', () => ({ useWorkspaceStore: () => store }))
+
+/**
+ * D23 — Monaco never runs below L5. Stubbed here as well as in
+ * `FileEditor.spec.ts`, and not only for speed: unstubbed, this suite would pull
+ * the real editor chunk into jsdom, and `VueMonacoEditor`'s own `onMounted`
+ * calls `loader.init()`.
+ */
+vi.mock('./CodeEditor.vue', () => ({
+  default: { name: 'CodeEditor', template: '<div data-testid="code-editor" />' },
+}))
 
 const EditorPanel = (await import('./EditorPanel.vue')).default
 
@@ -50,6 +64,9 @@ const EditorPanel = (await import('./EditorPanel.vue')).default
  * element is what is left, and it fails if the capping is ever restored without
  * the scrolling.
  */
+/** One mount, so the geometry cases below read the same tree the panel renders. */
+const wide = () => mount(EditorPanel)
+
 describe('EditorPanel', () => {
   it('renders the tree and the editor', () => {
     const wrapper = mount(EditorPanel)
@@ -69,5 +86,45 @@ describe('EditorPanel', () => {
     expect(capped[0]?.attributes('class')).toMatch(/overflow-y-auto/)
     // The clipping this replaced: a capped box that hides what it cannot show.
     expect(capped[0]?.attributes('class')).not.toMatch(/overflow-hidden/)
+  })
+
+  /** The strip goes between the tree and the editor, not inside either. */
+  it('renders the tab strip between the tree and the editor', () => {
+    const wrapper = wide()
+
+    const order = wrapper
+      .findAll('[data-testid="file-tree"], [data-testid="editor-tabs"], [data-testid="file-editor"]')
+      .map((element) => element.attributes('data-testid'))
+
+    expect(order).toEqual(['file-tree', 'editor-tabs', 'file-editor'])
+  })
+
+  /**
+   * D19, R4 — the finding Slice 6 handed over, in the form Monaco makes fatal.
+   *
+   * Monaco **measures its container**. A container sized by its own content
+   * collapses the editor to 0 px and renders nothing at all, with no error
+   * attached — and jsdom computes no layout, so no test at any level below L5 can
+   * see it. AC-30 measures the real box in a browser; this pins the chain of
+   * classes that produces it, which is the part a refactor can break silently.
+   *
+   * The chain is: the panel is a `min-h-0` column, the editor's region is
+   * `min-h-0 flex-1`, and `CodeEditor`'s root is `h-full`. Any link left out and
+   * the box has no definite height.
+   */
+  it('gives the editor region a definite height', () => {
+    const wrapper = wide()
+
+    const editor = wrapper.find('[data-testid="file-editor"]')
+    expect(editor.attributes('class')).toMatch(/min-h-0/)
+    expect(editor.attributes('class')).toMatch(/flex-1/)
+
+    // And the panel it sits in is a column that may shrink below its content.
+    const panel = wrapper.find('[data-testid="editor-panel"]')
+    expect(panel.attributes('class')).toMatch(/min-h-0/)
+    expect(panel.attributes('class')).toMatch(/h-full/)
+
+    // Nothing inside the panel opts back out of it.
+    expect(wrapper.html()).not.toMatch(/\bh-auto\b/)
   })
 })
