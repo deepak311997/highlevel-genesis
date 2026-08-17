@@ -1,24 +1,50 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
+
+import type { ProbeResult, ProbeState, SurfaceProbe } from '@/stores/hl'
 
 /*
  * Plain values, not refs. A Pinia store auto-unwraps its refs on the store
  * object, so a component reads `hl.loading` as a boolean — mocking it as
  * `{ value: false }` makes every check truthy and every branch collapse to the
  * first one. The mock has to have the shape the component actually sees.
+ *
+ * Annotated rather than asserted field by field, so `probe` keeps the whole
+ * union and a typo'd state in a test is a compile error rather than a branch
+ * that silently renders nothing.
  */
-const store = vi.hoisted(() => ({
+interface StoreMock {
+  status: null
+  loading: boolean
+  busy: boolean
+  error: string | null
+  lastError: string | null
+  isConnected: boolean
+  needsReconnect: boolean
+  label: string | null
+  probe: ProbeState
+  probeResult: ProbeResult | null
+  refresh: Mock
+  connect: Mock
+  disconnect: Mock
+  checkDataAccess: Mock
+}
+
+const store = vi.hoisted<StoreMock>(() => ({
   status: null,
   loading: false,
   busy: false,
-  error: null as string | null,
-  lastError: null as string | null,
+  error: null,
+  lastError: null,
   isConnected: false,
   needsReconnect: false,
-  label: null as string | null,
+  label: null,
+  probe: 'idle',
+  probeResult: null,
   refresh: vi.fn(),
   connect: vi.fn(),
   disconnect: vi.fn(),
+  checkDataAccess: vi.fn(),
 }))
 
 vi.mock('@/stores/hl', () => ({ useHlStore: () => store }))
@@ -41,10 +67,26 @@ function reset(): void {
   store.isConnected = false
   store.needsReconnect = false
   store.label = null
+  store.probe = 'idle'
+  store.probeResult = null
   vi.clearAllMocks()
 }
 
 beforeEach(reset)
+
+/** A surface that answered, unless the case says otherwise. */
+function probed(over: Partial<SurfaceProbe> = {}): SurfaceProbe {
+  return { count: 1, error: null, reconnect: false, ...over }
+}
+
+function result(over: Partial<ProbeResult> = {}): ProbeResult {
+  return {
+    contacts: probed(),
+    conversations: probed(),
+    calendars: probed(),
+    ...over,
+  }
+}
 
 describe('ConnectionPanel', () => {
   it('asks for the status as soon as it mounts', async () => {
@@ -178,5 +220,159 @@ describe('ConnectionPanel', () => {
     const connected = mount(ConnectionPanel)
     await connected.find('[data-testid="connection-disconnect"]').trigger('click')
     expect(store.disconnect).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * The Data access section.
+ *
+ * It lives inside the connected branch, so "not connected" needs no guard of its
+ * own — and the probe is on demand, never on mount, because three HighLevel
+ * calls per dashboard visit spend a rate-limit budget to answer a question
+ * nobody asked (D30).
+ */
+describe('ConnectionPanel — data access', () => {
+  it('offers Check data access when connected, and issues nothing on mount', async () => {
+    store.isConnected = true
+
+    const wrapper = mount(ConnectionPanel)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="data-access"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="data-access-check"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="data-access-loading"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="data-access-row-contacts"]').exists()).toBe(false)
+    expect(store.checkDataAccess).not.toHaveBeenCalled()
+  })
+
+  it('runs the probe when Check data access is pressed', async () => {
+    store.isConnected = true
+
+    const wrapper = mount(ConnectionPanel)
+    await wrapper.find('[data-testid="data-access-check"]').trigger('click')
+
+    expect(store.checkDataAccess).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows a loading state and disables the button while the probe runs', () => {
+    store.isConnected = true
+    store.probe = 'loading'
+
+    const wrapper = mount(ConnectionPanel)
+
+    expect(wrapper.find('[data-testid="data-access-loading"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="data-access-check"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('renders one row per surface with its count', () => {
+    store.isConnected = true
+    store.probe = 'ready'
+    store.probeResult = result({
+      contacts: probed({ count: 20 }),
+      conversations: probed({ count: 5 }),
+      calendars: probed({ count: 3 }),
+    })
+
+    const wrapper = mount(ConnectionPanel)
+
+    expect(wrapper.find('[data-testid="data-access-row-contacts"]').text()).toContain('Contacts')
+    expect(wrapper.find('[data-testid="data-access-row-contacts"]').text()).toContain('20')
+    expect(wrapper.find('[data-testid="data-access-row-conversations"]').text()).toContain(
+      'Conversations',
+    )
+    expect(wrapper.find('[data-testid="data-access-row-conversations"]').text()).toContain('5')
+    expect(wrapper.find('[data-testid="data-access-row-calendars"]').text()).toContain('Calendars')
+    expect(wrapper.find('[data-testid="data-access-row-calendars"]').text()).toContain('3')
+    expect(wrapper.find('[data-testid="data-access-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="data-access-loading"]').exists()).toBe(false)
+  })
+
+  /*
+   * Zero is falsy, and a `v-if="row.count"` would render the "we could not read
+   * a number" branch for a location that genuinely has no contacts yet. That
+   * mistake is the whole reason this case exists.
+   */
+  it('renders an empty state for a surface that answered zero', () => {
+    store.isConnected = true
+    store.probe = 'ready'
+    store.probeResult = result({ contacts: probed({ count: 0 }) })
+
+    const wrapper = mount(ConnectionPanel)
+    const row = wrapper.find('[data-testid="data-access-row-contacts"]')
+
+    expect(row.text()).toContain('None yet')
+    expect(row.text()).not.toContain('—')
+    expect(wrapper.find('[data-testid="data-access-error"]').exists()).toBe(false)
+  })
+
+  it('renders an em dash for a surface with no usable count', () => {
+    store.isConnected = true
+    store.probe = 'ready'
+    store.probeResult = result({ contacts: probed({ count: null }) })
+
+    const wrapper = mount(ConnectionPanel)
+
+    expect(wrapper.find('[data-testid="data-access-row-contacts"]').text()).toContain('—')
+  })
+
+  it('offers Reconnect HighLevel when a surface needs one, and calls connect once', async () => {
+    store.isConnected = true
+    store.probe = 'ready'
+    store.probeResult = result({
+      contacts: probed({ count: null, error: 'Reconnect HighLevel to continue.', reconnect: true }),
+    })
+
+    const wrapper = mount(ConnectionPanel)
+
+    expect(wrapper.find('[data-testid="data-access-error"]').text()).toContain(
+      'Reconnect HighLevel to continue.',
+    )
+    const button = wrapper.find('[data-testid="data-access-reconnect"]')
+    expect(button.exists()).toBe(true)
+    // Distinct from the panel's own Connect button, which is not on this screen.
+    expect(wrapper.find('[data-testid="connection-connect"]').exists()).toBe(false)
+
+    await button.trigger('click')
+
+    expect(store.connect).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows an error state when every surface failed', () => {
+    store.isConnected = true
+    store.probe = 'error'
+    store.probeResult = result({
+      contacts: probed({ count: null, error: 'Could not reach HighLevel.' }),
+      conversations: probed({ count: null, error: 'Could not reach HighLevel.' }),
+      calendars: probed({ count: null, error: 'Could not reach HighLevel.' }),
+    })
+
+    const wrapper = mount(ConnectionPanel)
+
+    expect(wrapper.find('[data-testid="data-access-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="data-access-reconnect"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="data-access-row-contacts"]').text()).toContain(
+      'Could not reach HighLevel.',
+    )
+  })
+
+  it('renders nothing at all when the user is not connected', () => {
+    const wrapper = mount(ConnectionPanel)
+
+    expect(wrapper.find('[data-testid="connection-empty"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="data-access"]').exists()).toBe(false)
+  })
+
+  /*
+   * A connection that needs reconnecting has its own panel state with its own
+   * button; probing it would only produce three copies of the same 409.
+   */
+  it('keeps the reconnect-required panel on its own screen', () => {
+    store.isConnected = true
+    store.needsReconnect = true
+
+    const wrapper = mount(ConnectionPanel)
+
+    expect(wrapper.find('[data-testid="connection-needs-reconnect"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="data-access"]').exists()).toBe(false)
   })
 })

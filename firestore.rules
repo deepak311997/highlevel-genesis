@@ -35,6 +35,15 @@ service cloud.firestore {
     // location. A token readable by the browser is a token readable by anyone
     // who opens devtools, so GET /api/hl/connection returns a redacted
     // projection and this document is reachable from no client at all.
+    //
+    // From Slice 8 the document has a second writer: the proxy's transactional
+    // token refresh rotates `accessToken`, `refreshToken` and `expiresAt`, and
+    // sets `needsReconnect: true` on a definitive `invalid_grant` or an upstream
+    // 401. So this denial is load-bearing against a document that is actively
+    // mutated server-side — in particular against a client clearing
+    // `needsReconnect` to make the proxy retry a connection the server has
+    // already established is dead. No rule changed for that field, and none
+    // should: rules deny the document, whatever it holds.
     match /hlConnections/{uid} {
       allow read, write: if false;
     }

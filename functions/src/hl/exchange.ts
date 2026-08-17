@@ -1,4 +1,4 @@
-import { hlApiBase, hlClientId, hlClientSecret, hlRedirectUri } from './config'
+import { hlApiBase, hlClientId, hlClientSecret, hlRedirectUri, hlUpstreamTimeoutMs } from './config'
 import {
   installedLocationsSchema,
   locationDetailSchema,
@@ -48,6 +48,22 @@ async function postToken(params: Record<string, string>): Promise<TokenResponse>
   const res = await fetch(`${hlApiBase()}/oauth/token`, {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+    /*
+     * Bounded, and by the same number the proxy's own upstream call uses.
+     *
+     * This is the one HighLevel call that runs **inside a Firestore
+     * transaction** — `tokenStore.ts`'s rotation — so how long it takes is how
+     * long a document lock is held. Left to undici's defaults (300 s), a
+     * HighLevel that accepts the connection and then says nothing would hold
+     * `hlConnections/{uid}` until the function's own 60-second timeout, and
+     * every other proxied call for that user would queue behind it and burn
+     * its own budget waiting.
+     *
+     * A timeout is not `invalid_grant`, so `isDefinitiveRefreshFailure` reads
+     * it as transient: nothing is written and the caller gets
+     * `502 hl_unavailable`, which is what D26 asks for.
+     */
+    signal: AbortSignal.timeout(hlUpstreamTimeoutMs()),
     body: new URLSearchParams({
       client_id: hlClientId(),
       client_secret: hlClientSecret(),

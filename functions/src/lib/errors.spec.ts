@@ -10,7 +10,10 @@ import { errorHandler, HttpError } from './errors'
  */
 function mockResponse() {
   const status = vi.fn(() => res)
-  const json = vi.fn(() => res)
+  // Typed with its argument so a test can assert on the exact body, keys and
+  // all — `toHaveBeenCalledWith` treats an explicit `undefined` value as absent,
+  // which is precisely the distinction `detail` turns on.
+  const json = vi.fn((_body: unknown) => res)
   const res = { status, json } as unknown as Response
   return { res, status, json }
 }
@@ -37,6 +40,47 @@ describe('errorHandler', () => {
 
     expect(status).toHaveBeenCalledWith(429)
     expect(json).toHaveBeenCalledWith({ error: 'Too many attempts', code: 'throttled' })
+  })
+
+  /*
+   * `detail` is upstream's own text about the *request* — HighLevel's message
+   * on a proxied call (D19). One envelope, one error handler: the alternative
+   * was the proxy writing its own error responses, which is a second failure
+   * shape for clients to learn.
+   */
+  it('includes a detail when the error carries one', () => {
+    const { res, json } = mockResponse()
+
+    errorHandler(
+      new HttpError(
+        404,
+        'HighLevel could not find that record.',
+        'hl_not_found',
+        'Contact not found',
+      ),
+      req,
+      res,
+      next,
+    )
+
+    expect(json).toHaveBeenCalledWith({
+      error: 'HighLevel could not find that record.',
+      code: 'hl_not_found',
+      detail: 'Contact not found',
+    })
+  })
+
+  /*
+   * The key is absent, not `null`. `exactOptionalPropertyTypes` distinguishes
+   * the two in the type, and the wire shape should agree: a client reading
+   * `detail` gets a string or nothing, never a null to special-case.
+   */
+  it('omits the key entirely when the error carries no detail', () => {
+    const { res, json } = mockResponse()
+
+    errorHandler(new HttpError(403, 'Not allowed.', 'route_not_allowed'), req, res, next)
+
+    expect(json.mock.lastCall).toStrictEqual([{ error: 'Not allowed.', code: 'route_not_allowed' }])
   })
 
   it('reduces an unknown error to a generic 500 for the client', () => {

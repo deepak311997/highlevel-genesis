@@ -28,6 +28,24 @@ export default defineConfig({
   forbidOnly: !!process.env['CI'],
   retries: process.env['CI'] ? 1 : 0,
   reporter: process.env['CI'] ? 'github' : 'list',
+  /**
+   * Playwright's default is five seconds, and that is too tight for this suite.
+   *
+   * Every `expect` here waits for a state the app *reaches* — a request lands, a
+   * store updates, a branch re-renders. None of them is a latency budget, so
+   * five seconds is not asserting anything about the product; it is asserting
+   * something about the machine. On a developer machine running a second
+   * checkout's emulator set, or simply a browser and an editor, that assertion
+   * fails at random — measured here as three different tests failing on three
+   * consecutive runs, in three slices none of which had changed, while the
+   * functions emulator's slowest invocation across the whole run was 732 ms.
+   *
+   * Fifteen seconds is the value the individual hops that already needed one
+   * were given, so this makes the file consistent rather than introducing a new
+   * number. It buys patience and gives up nothing: a genuinely broken branch
+   * never renders, so it still fails — fifteen seconds later.
+   */
+  expect: { timeout: 15_000 },
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: 'on-first-retry',

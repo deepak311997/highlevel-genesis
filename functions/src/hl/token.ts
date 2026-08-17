@@ -31,9 +31,49 @@ export class HlNotConnectedError extends Error {
   }
 }
 
+/**
+ * The connection is marked dead and only the user can fix it.
+ *
+ * Raised without touching HighLevel — either because the document already
+ * carries `needsReconnect` (D24) or because a refresh came back
+ * `invalid_grant` (D26). Both are answered by reconnecting, which is what the
+ * panel already offers.
+ */
+export class HlReconnectRequiredError extends Error {
+  constructor() {
+    super('Your HighLevel connection expired.')
+    this.name = 'HlReconnectRequiredError'
+  }
+}
+
+/**
+ * A refresh failed in a way that says nothing about the connection — a 5xx, a
+ * network error, a timeout.
+ *
+ * Distinct from {@link HlReconnectRequiredError} because the *persistence* rule
+ * differs, and that asymmetry is the whole of D26: a blip must not be recorded
+ * as a dead connection, and a dead connection must not be retried forever.
+ */
+export class HlRefreshUnavailableError extends Error {
+  constructor() {
+    super('HighLevel is not responding. Try again.')
+    this.name = 'HlRefreshUnavailableError'
+  }
+}
+
 export interface ConnectionSnapshot {
   accessToken: string
   expiresAtMs: number
+  /** The location this token is scoped to — the only one we ever inject (D10). */
+  locationId: string
+  /** Set when a refresh or an upstream 401 proved the grant is dead (D20, D26). */
+  needsReconnect: boolean
+}
+
+/** What a proxied call needs: the credential, and the location to name. */
+export interface ResolvedConnection {
+  accessToken: string
+  locationId: string
 }
 
 export interface TokenDeps {
@@ -53,18 +93,37 @@ export function isFresh(expiresAtMs: number, now: number): boolean {
   return expiresAtMs - SKEW_MS > now
 }
 
-export async function getAccessToken(
+/**
+ * The primary entry point: one read, both facts.
+ *
+ * The proxy needs the access token *and* the connection's `locationId`, and
+ * a second Firestore read for a value the first already returned would be a
+ * lookup on every CRM call that changes nothing.
+ */
+export async function resolveConnection(
   uid: string,
   deps: TokenDeps,
   now = Date.now(),
-): Promise<string> {
+): Promise<ResolvedConnection> {
   const connection = await deps.read(uid)
   if (connection === undefined) throw new HlNotConnectedError()
+
+  /*
+   * Refused before the token is even looked at (D24).
+   *
+   * A connection marked dead cannot be revived by a refresh — that is what
+   * marked it — so attempting one costs a HighLevel round trip to learn what
+   * the document already says, and re-marks it. Harmless when nothing called
+   * the proxy; wasteful now that a preview can fire several calls at once.
+   */
+  if (connection.needsReconnect) throw new HlReconnectRequiredError()
 
   // Fast path: no transaction, no lock, no HighLevel round trip. This is what
   // almost every call takes, and keeping it out of a transaction is why the
   // proxy can serve a burst of preview requests without serialising them.
-  if (isFresh(connection.expiresAtMs, now)) return connection.accessToken
+  const accessToken = isFresh(connection.expiresAtMs, now)
+    ? connection.accessToken
+    : await deps.refresh(uid)
 
-  return deps.refresh(uid)
+  return { accessToken, locationId: connection.locationId }
 }

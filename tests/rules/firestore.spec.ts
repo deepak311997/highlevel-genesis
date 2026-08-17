@@ -457,6 +457,28 @@ async function seedFile(uid = 'alice', projectId = 'proj-1', id = 'index.html'):
   })
 }
 
+/**
+ * A connection exactly as the two server writers leave it — the OAuth callback
+ * and, from Slice 8, the transactional refresh and the upstream-401 marker.
+ *
+ * Seeded past the rules so the update below is denied on a document that is
+ * really there. A denied update against a document that does not exist proves
+ * less, and `needsReconnect: true` is the state a client would most want to
+ * change.
+ */
+async function seedConnection(uid = 'alice'): Promise<void> {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(asModular(ctx.firestore()), `hlConnections/${uid}`), {
+      accessToken: 'live-access-token',
+      refreshToken: 'live-refresh-token',
+      expiresAt: new Date(),
+      locationId: 'lUanVn0CtZJTlymH8ySo',
+      needsReconnect: true,
+      updatedAt: new Date(),
+    })
+  })
+}
+
 describe('users/{uid}/projects/{projectId}/files/{fileId}', () => {
   /*
    * AC-32. The owner is the most privileged client there is, and every one of
@@ -575,9 +597,25 @@ describe('server-only collections', () => {
    * The owner case is the one that matters and the one people skip. It is
    * tempting to let a user read their own connection — but a token readable by
    * the browser is a token readable by anyone who opens devtools.
+   *
+   * Slice 8's AC-36 completes the set with the two operations nobody had asked
+   * for yet — `list` and `update` — because this is the slice that gives
+   * `hlConnections/{uid}` a second writer. **No rules change was needed** (D33):
+   * a rule that denies a document denies it whatever fields it holds. Re-proving
+   * it is still cheaper than assuming it, because "rules say nothing about
+   * fields" holds right up until someone writes a field-level condition.
    */
   it('denies even a verified owner reading their own HighLevel tokens', async () => {
     await assertFails(getDoc(doc(verified('alice'), 'hlConnections/alice')))
+  })
+
+  /* A denied `get` says nothing about a `list`: a query is refused on its own
+   * terms, and a client that could list this collection would hold every
+   * connected user's tokens rather than one. */
+  it('denies a verified owner listing hlConnections', async () => {
+    await seedConnection()
+
+    await assertFails(getDocs(collection(verified('alice'), 'hlConnections')))
   })
 
   it('denies a verified owner writing their own connection', async () => {
@@ -588,6 +626,18 @@ describe('server-only collections', () => {
         locationId: 'lUanVn0CtZJTlymH8ySo',
         needsReconnect: false,
       }),
+    )
+  })
+
+  /* The write a client would actually want now that a server path sets
+   * `needsReconnect: true` on a dead connection: clearing the flag, so the proxy
+   * tries a token the server has already established is finished with. Denied
+   * like everything else — reconnecting goes through the OAuth flow. */
+  it('denies a verified owner updating their own connection', async () => {
+    await seedConnection()
+
+    await assertFails(
+      updateDoc(doc(verified('alice'), 'hlConnections/alice'), { needsReconnect: false }),
     )
   })
 

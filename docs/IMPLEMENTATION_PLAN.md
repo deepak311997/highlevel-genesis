@@ -21,8 +21,13 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 | 3 — Projects | ✅ merged to `main` |
 | 4 — Workspace shell & chat persistence | ✅ merged to `main` |
 | 5 — Streaming generation | ✅ merged to `main` |
-| 6 — File operations | ✅ built, reviewed, PR open from `slice/06-file-operations` |
-| 7–13 | not started |
+| 6 — File operations | ✅ merged to `main` |
+| 7 | not started |
+| 8 — HighLevel API proxy | ✅ built, reviewed, PR open from `slice/08-highlevel-proxy` |
+| 9–13 | not started |
+
+**Slice 8 ran ahead of 7**, which §4's dependency line permits: it depends on 2 alone,
+and 2 merged on day 1. Nothing in 7 is owed to it.
 
 **Slices from here run unattended.** `scripts/autopilot.sh` drives the five-stage loop
 one slice at a time — a fresh session per stage, the suite run by the orchestrator rather
@@ -36,9 +41,21 @@ been red since Slice 1: `vite.config.ts` threw at config load on any checkout wi
 8080 — the *development* emulator — so off CI it "passed" by finding a dev session, loading
 its rules over that session's and calling `clearFirestore()` on it.
 
-**Suite, re-run in full on `slice/06-file-operations` at ship time, rebased on `main`
-(2026-08-18):** typecheck 0 · lint 0 · **1,404 unit** (750 functions · 635 frontend ·
-19 scripts) · **36 rules** · **292 integration** · **14 e2e**. All six green — 1,746 cases.
+**Suite, re-run in full on `slice/08-highlevel-proxy` at ship time, rebased on `main`
+(2026-08-18):** typecheck 0 · lint 0 · **1,627 unit** (922 functions · 684 frontend ·
+21 scripts) · **38 rules** · **325 integration** · **14 e2e**. All six green — 2,004 cases.
+
+Slice 8 added 223 unit cases (172 functions · 49 frontend · 2 scripts), 2 rules cases and
+33 integration cases. Thirty-three of the unit cases are its review's own, written test-first
+for the ten findings that review fixed — two of them in files that exist only because of it,
+`hl/tokenStore.spec.ts` and `hl/index.spec.ts`. The e2e count does not move: AC-48 extends
+Slice 2's existing connect walk in `tests/e2e/highlevel.spec.ts` rather than adding a case,
+so pressing **Check data access** is asserted inside the run that connected the account.
+
+**The one thing Slice 8 could not discharge:** the definition of done's manual sandbox check —
+one `curl` per surface against the real account, confirming the fixtures recorded on 2026-08-14
+still match the live shapes. The unattended sessions had no HighLevel credentials. It is the
+item R6 rests on, and it is called out in the PR rather than left in a checklist.
 
 Slice 6 added 447 unit cases (326 functions · 121 frontend), 8 rules cases, 60 integration
 cases and 2 e2e cases — twelve of the unit cases are its review's own, written test-first
@@ -481,7 +498,8 @@ golden path in the real editor.
 ---
 
 ### Slice 8 — HighLevel API proxy
-**Spec:** F7.1, F7.2 · **Depends on:** 2 · **Mode:** full · **Day 3–4**
+**Spec:** F7.1, F7.2, F8.3 (the HighLevel half), F1.3 (token refresh, completing Slice 2's
+deferral) · **Depends on:** 2 · **Mode:** full · **Day 3–4**
 
 The authenticated proxy generated apps call. Attaches and refreshes the user's token
 server-side, allowlists routes across Contacts, Conversations, and Calendars, maps
@@ -498,6 +516,40 @@ not on it.
 **Demo:** curl the proxy with a signed-in session, get real sandbox contacts back.
 **Risk:** high — this is where a mistake leaks another tenant's data. Rules and auth checks
 get adversarial tests.
+
+**Built 2026-08-18** on `slice/08-highlevel-proxy`. A new `functions/src/hl/` half — `routes.ts`
+(the thirteen-row allowlist as exported *data*, a specificity-ordered matcher, and upstream URL
+and body assembly), `proxyError.ts` (the pure upstream-condition → `{ status, code, detail }`
+mapper), `tokenStore.ts` (the Firestore `TokenDeps` adapter Slice 2 deferred: the fast-path read
+and the transactional rotation) and `proxy.ts` (`handleProxy`, the four-header upstream call, the
+20-second abort, the 5 MiB cap and the `hl.proxy` log line) — mounted as
+`<METHOD> /api/hl/proxy/**` behind `requireAppCheck` and `withVerifiedUser`. Around it:
+`resolveConnection` and the `needsReconnect` short-circuit in `token.ts`, `detail` on `HttpError`,
+`ProxyLogContext` in `lib/log.ts`, the `X-RateLimit-*` set on the CORS `exposedHeaders` list, the
+fake's three replayed surfaces with their failure markers — and on the frontend `hlProxyApi.ts`,
+the store's `checkDataAccess()` probe, and the connection panel's **Data access** section.
+
+**Three properties worth carrying forward**, because each is a place a later change would quietly
+undo the slice:
+
+- **The upstream URL is assembled from the matched row's own `pattern`** (D6), with
+  `[A-Za-z0-9_-]{1,64}` parameters substituted into it — never by appending the caller's path. That
+  is what makes `..`, `%2F` and an absolute URL unrepresentable rather than filtered.
+- **`locationId` is a reserved key** (P1). It is removed from the query string and from the top
+  level of the JSON body on *every* row, then re-added from the connection exactly where the row's
+  `locationIn` says. A caller-supplied location therefore never reaches HighLevel on any route.
+- **On `invalid_grant` the refresh transaction must commit** (P8). The refusal is a sentinel
+  returned from the transaction body and thrown after it resolves; throwing from inside discards
+  `needsReconnect: true` with everything else, and the failure then reads like a Firestore bug.
+
+**Constraints two later slices inherit:** Slice 9 imports `HL_ROUTES` rather than restating it (D2)
+and owns the N+1 instruction the rate-limit ceiling actually needs (D34); Slice 10 must satisfy both
+App Check and the `srcdoc` iframe's opaque origin, and D16 records the recommended shape — a
+parent-side `postMessage` bridge, so no credential crosses into the sandbox (R8).
+
+**Deferred to Slice 13's checklist:** the README gains the allowlist as a section of its own — one
+table, three consumers — and `HL_ALLOW_MESSAGE_SEND` as a deployment note saying why it is off in
+every environment, including the tests.
 
 ---
 
@@ -729,9 +781,9 @@ read. `PRODUCT_SPEC.md` §7 holds the package-level version of this.
 | Brief requirement | Spec | Slice | State |
 |---|---|---|---|
 | Email + password auth, session persists | F1.1 | 1 | ✅ shipped (plus a verification gate) |
-| HighLevel OAuth 2.0, full flow via Cloud Function callback | F1.2 | 2 | ⏭ next |
-| Tokens in Firestore scoped to the Firebase user, refresh on expiry | F1.3 | 2 | ⏭ |
-| One HighLevel location per user | F1.3 | 2 | ⏭ — falls out of Target User = Sub-account |
+| HighLevel OAuth 2.0, full flow via Cloud Function callback | F1.2 | 2 | ✅ shipped in 2 — authorize URL with a CSRF `state`, `GET /api/oauth/callback`, code-for-token, tokens written server-side and never returned to the browser |
+| Tokens in Firestore scoped to the Firebase user, refresh on expiry | F1.3 | 2, 8 | ✅ storage and the skew arithmetic in 2; **8 supplies the effect behind them** — the Firestore `TokenDeps` adapter, the proactive five-minute refresh and the rotation inside a `runTransaction` with a re-read short-circuit |
+| One HighLevel location per user | F1.3 | 2 | ✅ — falls out of Target User = Sub-account; the proxy injects that one location on every call (8, D10) |
 | Project CRUD incl. soft-delete, scoped per user by the API | F2.1–2.3 | 3 | ✅ |
 | Server-side generation: bounded context → stream → validated file ops → persist | F3.1–3.4 | 5, 6, 9 | 🟡 all four shipped — context, stream and persist in 5; **validated file ops in 6**, parsed as they stream and refused as one set. Only the HighLevel knowledge in the context is owed, in 9 |
 | SSE endpoint; protocol covers tokens, file boundaries, completion, errors | F4.1–4.3 | 5, 6 | ✅ `POST /generate` — `token`, `file_start`, `file_chunk`, `file_end`, `done` and `error` frames, both error channels, keep-alives |
@@ -744,12 +796,12 @@ read. `PRODUCT_SPEC.md` §7 holds the package-level version of this.
 | iframe preview showing **real** HL data, refreshes after generation | F6.4 | 10 | ⏭ — the money shot |
 | SSE client handles all event types, survives disconnects | F6.5 | 5 | 🟡 all three event types handled and chunk-split-safe by construction (the parser is driven split at every offset); the client's own abort is proven, and the **server**-side disconnect is L1-proven but undeliverable from the emulator — a Slice 13 hand-check |
 | Snapshot history in a sheet/dialog with Restore | F6.6 | 11 | ⏭ |
-| Contacts · Conversations · Calendars exposed to generated apps | F7.1 | 8 | ⏭ |
-| Authenticated proxy attaching/refreshing tokens server-side | F7.2 | 8 | ⏭ |
+| Contacts · Conversations · Calendars exposed to generated apps | F7.1 | 8 | ✅ thirteen allowlisted rows over `<METHOD> /api/hl/proxy/**` — contacts search/get/create/update, conversations search/get/messages/send, calendars list/get/events/appointment/free-slots. `POST /conversations/messages` ships **disabled** behind `HL_ALLOW_MESSAGE_SEND` (D5): it sends a real message. The table is data, so 9 renders it and 13 documents it from the same rows |
+| Authenticated proxy attaching/refreshing tokens server-side | F7.2 | 8 | ✅ ID token + `email_verified` + App Check on the caller's side; on HighLevel's side our `Authorization`, the row's `Version`, `Accept` and nothing of the caller's — the token is attached and rotated server-side and the browser never sees one |
 | Sandbox HL account | F7.3 | 2, 13 | ⏭ — create it before Slice 2, seed it before the Loom |
 | Malformed LLM output handled without corrupting state | F8.1 | 6, 12 | 🟡 shipped in 6 — a bad path, a duplicate, an oversized file, an over-cap set and an unterminated block each refuse the **whole** turn's files, name the reason on screen, and leave the stored tree byte-identical. The message still commits. Slice 12 covers the rest of F8 |
 | Interrupted streams: partial results preserved | F8.2 | 5, 12 | 🟡 a partial is persisted with `truncated: true` on every interruption the emulator can reach — a mid-stream upstream failure — and marked in the transcript, with a Retry beside it; the client-disconnect trigger is the Slice 13 hand-check above |
-| Failed HL calls surfaced clearly | F8.3 | 8, 10, 12 | ⏭ |
+| Failed HL calls surfaced clearly | F8.3 | 8, 10, 12 | 🟡 the proxy half shipped in 8 — every upstream condition maps to its own status and `code` in the existing envelope, carrying HighLevel's own message as `detail` (never a 401, which would sign the user out of Genesis), and a dead connection reaches a **Reconnect HighLevel** button in the dashboard's Data access section; **surfacing a failure inside the preview is Slice 10** |
 | Hosting + Functions deployed, live URLs in README | F9.1 | 13 | ⏭ |
 | Secrets via env/Secret Manager, `.env.example` | F9.2 | 13 | 🟡 per-package examples exist; **root `.env.example` owed** |
 | Deployed callback registered as the HL redirect URI | F9.3 | 2, 13 | ⏭ |

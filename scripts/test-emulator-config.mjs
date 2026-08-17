@@ -46,6 +46,27 @@ export const HUB_PORT = Number(process.env['EMULATOR_HUB_PORT'] ?? 4700)
 export const LOGGING_PORT = Number(process.env['EMULATOR_LOGGING_PORT'] ?? 4800)
 
 /**
+ * Eventarc and Cloud Tasks, which the CLI starts alongside `functions` whether
+ * or not firebase.json names them — and which this generator forgot when hub
+ * and logging were dealt with.
+ *
+ * The consequence was the exact failure the band mechanism exists to prevent,
+ * one layer down: two checkouts on different bands both took the CLI's own
+ * defaults, 9299 and 9499, and the second suite to start died with
+ * `EADDRINUSE` before a test ran.
+ *
+ * Settings rather than arithmetic, and here that is not a preference. Those
+ * defaults sit **inside the shifted auth band** — `9299 + 300` is 9599 and
+ * `9099 + 300` is 9399, so a +offset rule would eventually walk one checkout's
+ * eventarc onto another's auth port, which is the precise class of bug that made
+ * hub and logging settings in the first place. The values below are picked to
+ * clear every emulator this repo declares, on every band anyone is likely to
+ * choose.
+ */
+export const EVENTARC_PORT = Number(process.env['EMULATOR_EVENTARC_PORT'] ?? 4600)
+export const TASKS_PORT = Number(process.env['EMULATOR_TASKS_PORT'] ?? 4650)
+
+/**
  * Firestore serves its long-poll channel on a second socket, whose port
  * `firebase.json` does not have to declare — the CLI defaults it to 9150. That
  * default is the one port a `+100 on everything declared` rule cannot reach,
@@ -62,7 +83,13 @@ export const DEFAULT_FIRESTORE_WEBSOCKET_PORT = 9150
  * the config passed in is not touched.
  */
 export function shiftPorts(config, options = {}) {
-  const { offset = OFFSET, hubPort = HUB_PORT, loggingPort = LOGGING_PORT } = options
+  const {
+    offset = OFFSET,
+    hubPort = HUB_PORT,
+    loggingPort = LOGGING_PORT,
+    eventarcPort = EVENTARC_PORT,
+    tasksPort = TASKS_PORT,
+  } = options
   const emulators = { ...(config.emulators ?? {}) }
 
   for (const [name, block] of Object.entries(emulators)) {
@@ -79,6 +106,8 @@ export function shiftPorts(config, options = {}) {
 
   emulators.hub = { port: hubPort }
   emulators.logging = { port: loggingPort }
+  emulators.eventarc = { port: eventarcPort }
+  emulators.tasks = { port: tasksPort }
 
   return { ...config, emulators }
 }

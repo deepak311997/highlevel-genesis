@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { getAccessToken, HlNotConnectedError, isFresh, SKEW_MS, type TokenDeps } from './token'
+import {
+  HlNotConnectedError,
+  HlReconnectRequiredError,
+  isFresh,
+  resolveConnection,
+  SKEW_MS,
+  type TokenDeps,
+} from './token'
 
 /**
  * Deciding *whether* to refresh.
@@ -19,12 +26,16 @@ import { getAccessToken, HlNotConnectedError, isFresh, SKEW_MS, type TokenDeps }
 
 const UID = 'user-1'
 const NOW = 1_700_000_000_000
+const LOCATION = 'lUanVn0CtZJTlymH8ySo'
 
 function deps(overrides: Partial<TokenDeps> = {}): TokenDeps {
   return {
-    read: vi
-      .fn()
-      .mockResolvedValue({ accessToken: 'stored-token', expiresAtMs: NOW + 60 * 60_000 }),
+    read: vi.fn().mockResolvedValue({
+      accessToken: 'stored-token',
+      expiresAtMs: NOW + 60 * 60_000,
+      locationId: LOCATION,
+      needsReconnect: false,
+    }),
     refresh: vi.fn().mockResolvedValue('rotated-token'),
     ...overrides,
   }
@@ -54,32 +65,89 @@ describe('isFresh', () => {
   })
 })
 
-describe('getAccessToken', () => {
-  it('returns the stored token without touching HighLevel when it is fresh', async () => {
+/**
+ * The token *and* the location, from one read.
+ *
+ * The proxy needs both — the token to authenticate the call and the connection's
+ * own `locationId` to inject (D10) — and a second Firestore read for a value the
+ * first one already returned would be a lookup that changes nothing.
+ */
+describe('resolveConnection', () => {
+  it('returns the stored token and the location without a refresh when fresh', async () => {
     const d = deps()
 
-    await expect(getAccessToken(UID, d, NOW)).resolves.toBe('stored-token')
+    await expect(resolveConnection(UID, d, NOW)).resolves.toEqual({
+      accessToken: 'stored-token',
+      locationId: LOCATION,
+    })
     expect(d.refresh).not.toHaveBeenCalled()
   })
 
-  it('rotates when the token falls inside the skew window', async () => {
+  it('refreshes and still returns the connection’s location when inside the skew', async () => {
     const d = deps({
-      read: vi.fn().mockResolvedValue({ accessToken: 'stale', expiresAtMs: NOW + SKEW_MS - 1 }),
+      read: vi.fn().mockResolvedValue({
+        accessToken: 'stale',
+        expiresAtMs: NOW + SKEW_MS - 1,
+        locationId: LOCATION,
+        needsReconnect: false,
+      }),
     })
 
-    await expect(getAccessToken(UID, d, NOW)).resolves.toBe('rotated-token')
-    expect(d.refresh).toHaveBeenCalledTimes(1)
-    expect(d.refresh).toHaveBeenCalledWith(UID)
+    await expect(resolveConnection(UID, d, NOW)).resolves.toEqual({
+      accessToken: 'rotated-token',
+      locationId: LOCATION,
+    })
+  })
+
+  /*
+   * AC-29. Slice 2's review named this as travelling with the transaction:
+   * harmless when nothing called the proxy, wasteful now that a preview can fire
+   * several calls at once at a connection that is already known to be dead. The
+   * assertion that matters is `refresh` never being reached — a refused
+   * connection must cost no HighLevel round trip at all.
+   */
+  it('refuses a connection already marked needsReconnect, without refreshing', async () => {
+    const d = deps({
+      read: vi.fn().mockResolvedValue({
+        accessToken: 'stored-token',
+        expiresAtMs: NOW + 60 * 60_000,
+        locationId: LOCATION,
+        needsReconnect: true,
+      }),
+    })
+
+    await expect(resolveConnection(UID, d, NOW)).rejects.toBeInstanceOf(HlReconnectRequiredError)
+    expect(d.refresh).not.toHaveBeenCalled()
+  })
+
+  it('refuses a dead connection even when the token is stale', async () => {
+    const d = deps({
+      read: vi.fn().mockResolvedValue({
+        accessToken: 'stale',
+        expiresAtMs: NOW - 1,
+        locationId: LOCATION,
+        needsReconnect: true,
+      }),
+    })
+
+    await expect(resolveConnection(UID, d, NOW)).rejects.toBeInstanceOf(HlReconnectRequiredError)
+    expect(d.refresh).not.toHaveBeenCalled()
   })
 
   it('rotates exactly once, never twice, for a single call', async () => {
     const d = deps({
-      read: vi.fn().mockResolvedValue({ accessToken: 'stale', expiresAtMs: NOW - 1 }),
+      read: vi.fn().mockResolvedValue({
+        accessToken: 'stale',
+        expiresAtMs: NOW - 1,
+        locationId: LOCATION,
+        needsReconnect: false,
+      }),
     })
 
-    await getAccessToken(UID, d, NOW)
+    await resolveConnection(UID, d, NOW)
 
     expect(d.refresh).toHaveBeenCalledTimes(1)
+    expect(d.refresh).toHaveBeenCalledWith(UID)
   })
 
   /*
@@ -91,7 +159,7 @@ describe('getAccessToken', () => {
   it('rejects when the user has no connection at all', async () => {
     const d = deps({ read: vi.fn().mockResolvedValue(undefined) })
 
-    await expect(getAccessToken(UID, d, NOW)).rejects.toBeInstanceOf(HlNotConnectedError)
+    await expect(resolveConnection(UID, d, NOW)).rejects.toBeInstanceOf(HlNotConnectedError)
     expect(d.refresh).not.toHaveBeenCalled()
   })
 })

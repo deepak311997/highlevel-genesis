@@ -6,9 +6,11 @@ import { describe, expect, it } from 'vitest'
 
 import {
   DEFAULT_FIRESTORE_WEBSOCKET_PORT,
+  EVENTARC_PORT,
   HUB_PORT,
   LOGGING_PORT,
   OFFSET,
+  TASKS_PORT,
   shiftPorts,
 } from './test-emulator-config.mjs'
 
@@ -17,11 +19,23 @@ import {
  * the process happens to be configured with. The alternative bit us within the
  * hour: the second checkout exports EMULATOR_PORT_OFFSET, so its suite imported
  * an OFFSET of 300 and every assertion written as a bare 9199 failed — a red
- * gate caused by the environment the test ran in rather than by the code it was
- * testing, which is the one thing a test may never do.
+ * gate caused by the environment the test ran in rather than by the code under
+ * test, which is the one thing a test may never do.
  */
-const DEFAULT_BAND = { offset: 100, hubPort: 4700, loggingPort: 4800 }
-const SECOND_BAND = { offset: 300, hubPort: 4900, loggingPort: 4950 }
+const DEFAULT_BAND = {
+  offset: 100,
+  hubPort: 4700,
+  loggingPort: 4800,
+  eventarcPort: 4600,
+  tasksPort: 4650,
+}
+const SECOND_BAND = {
+  offset: 300,
+  hubPort: 4900,
+  loggingPort: 4950,
+  eventarcPort: 4960,
+  tasksPort: 4970,
+}
 
 /**
  * The generated config's whole job is to be reachable while a `npm run dev`
@@ -145,12 +159,40 @@ describe('a second checkout gets its own band', () => {
     expect(emulators.logging.port).toBe(5000)
   })
 
-  it('follows the configured band when given nothing', () => {
+  /*
+   * Eventarc and Cloud Tasks are started alongside `functions` whether or not
+   * firebase.json mentions them, exactly as the hub and the logging emulator
+   * are — and they were the two this generator still forgot. Two checkouts on
+   * different bands therefore both took the CLI's defaults, 9299 and 9499, and
+   * the second run to start died with `EADDRINUSE` before a single test ran.
+   *
+   * They are settings rather than arithmetic for the same reason hub and
+   * logging are, and here the reason is sharper: those CLI defaults sit *inside*
+   * the shifted auth band, so `9299 + offset` would put one checkout's eventarc
+   * squarely on another's auth port.
+   */
+  it('takes eventarc and tasks as their own settings', () => {
+    const { emulators } = shiftPorts(firebaseJson(), { eventarcPort: 4960, tasksPort: 4970 })
+
+    expect(emulators.eventarc.port).toBe(4960)
+    expect(emulators.tasks.port).toBe(4970)
+  })
+
+  it('names eventarc and tasks even when nothing is passed', () => {
+    const { emulators } = shiftPorts(firebaseJson())
+
+    expect(typeof emulators.eventarc.port).toBe('number')
+    expect(typeof emulators.tasks.port).toBe('number')
+  })
+
+  it('keeps the committed defaults when given nothing', () => {
     const { emulators } = shiftPorts(firebaseJson())
 
     expect(emulators.auth.port).toBe(9099 + OFFSET)
     expect(emulators.hub.port).toBe(HUB_PORT)
     expect(emulators.logging.port).toBe(LOGGING_PORT)
+    expect(emulators.eventarc.port).toBe(EVENTARC_PORT)
+    expect(emulators.tasks.port).toBe(TASKS_PORT)
   })
 
   it('shares no port between two checkouts on different bands', () => {

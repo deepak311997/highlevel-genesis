@@ -7,6 +7,7 @@ import { errorHandler } from '../lib/errors'
 import { hlRouter } from '../hl'
 import { messagesRouter } from '../messages'
 import { projectsRouter } from '../projects'
+import { RATE_LIMIT_HEADERS } from '../hl/proxy'
 import { usersRouter } from '../users'
 import { healthRouter } from './health'
 
@@ -49,7 +50,14 @@ export function originAllowlist(
 export function createApiApp(): Express {
   const app = express()
 
-  app.use(cors({ origin: originAllowlist, credentials: false }))
+  // `exposedHeaders` because a browser cannot read a response header it was not
+  // told about, however plainly it is on the wire. The proxy copies HighLevel's
+  // five rate-limit headers across (D18) and they would be invisible to the SPA
+  // without this — a silent failure, which is the worst kind for a value whose
+  // job is to warn you before a 429.
+  app.use(
+    cors({ origin: originAllowlist, credentials: false, exposedHeaders: [...RATE_LIMIT_HEADERS] }),
+  )
   app.use(express.json({ limit: '1mb' }))
 
   // Mounted at both prefixes on purpose. The functions emulator strips the

@@ -33,9 +33,18 @@ const LOCATION_TOKEN = {
   locationId: 'loc-1',
 }
 
-let fetchMock: ReturnType<typeof vi.fn>
+type FetchStub = (url: string, init: RequestInit) => Promise<Response>
+
+let fetchMock: ReturnType<typeof vi.fn<FetchStub>>
 const saved: Record<string, string | undefined> = {}
-const KEYS = ['HL_CLIENT_ID', 'HL_CLIENT_SECRET', 'HL_REDIRECT_URI', 'HL_API_BASE'] as const
+const KEYS = [
+  'HL_CLIENT_ID',
+  'HL_CLIENT_SECRET',
+  'HL_REDIRECT_URI',
+  'HL_API_BASE',
+  'FUNCTIONS_EMULATOR',
+  'HL_TEST_UPSTREAM_TIMEOUT_MS',
+] as const
 
 function jsonResponse(body: unknown, status = 200): Response {
   return {
@@ -47,7 +56,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 /** The init object of the most recent call. */
 function lastInit(): RequestInit {
-  return (fetchMock.mock.calls.at(-1)?.[1] ?? {}) as RequestInit
+  return fetchMock.mock.calls.at(-1)?.[1] ?? {}
 }
 
 /** The body of the last call, which every call site here sends as a string. */
@@ -66,7 +75,7 @@ beforeEach(() => {
   process.env['HL_REDIRECT_URI'] = 'https://app.test/api/oauth/callback'
   process.env['HL_API_BASE'] = 'https://hl.test'
 
-  fetchMock = vi.fn().mockResolvedValue(jsonResponse(LOCATION_TOKEN))
+  fetchMock = vi.fn<FetchStub>().mockResolvedValue(jsonResponse(LOCATION_TOKEN))
   vi.stubGlobal('fetch', fetchMock)
 })
 
@@ -132,6 +141,33 @@ describe('refreshTokens', () => {
 
     expect(body.get('grant_type')).toBe('refresh_token')
     expect(body.get('refresh_token')).toBe('the-refresh-token')
+  })
+
+  /*
+   * The token endpoint is the one upstream call that runs **inside a Firestore
+   * transaction** (`tokenStore.ts`), so its duration is a document lock's
+   * duration. Unbounded, a HighLevel that accepts the connection and then says
+   * nothing holds `hlConnections/{uid}` until the function's own 60-second
+   * timeout kills the invocation, and every other proxied call for that user
+   * queues behind it, each burning its own budget.
+   *
+   * The proxy's own upstream call has had a bound since D27; this one is the
+   * same bound from the same setting, so there is one number rather than two.
+   */
+  it('abandons a token call that never answers', async () => {
+    process.env['FUNCTIONS_EMULATOR'] = 'true'
+    process.env['HL_TEST_UPSTREAM_TIMEOUT_MS'] = '40'
+    // A HighLevel that accepts the connection and then never answers: the only
+    // thing that ends this call is the signal the implementation attaches.
+    const stalls = (_url: string, init: RequestInit): Promise<Response> =>
+      new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => {
+          reject(new Error('aborted'))
+        })
+      })
+    fetchMock.mockImplementation(stalls)
+
+    await expect(refreshTokens('the-refresh-token')).rejects.toThrow()
   })
 })
 

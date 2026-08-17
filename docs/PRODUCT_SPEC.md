@@ -45,11 +45,11 @@ Browser — Vue 3 SPA (shadcn-vue · Monaco · sandboxed iframe preview)
 Cloud Functions v2 · Node 22 · region asia-south1
    ├─ api/health          round-trip diagnostic                              ✅ Slice 0
    ├─ api/auth/*          register · throttle · unverified-account cleanup   ✅ Slice 1
-   ├─ api/oauth/callback  HL authorize → code-for-token → Firestore             Slice 2
+   ├─ api/oauth/callback  HL authorize → code-for-token → Firestore          ✅ Slice 2
    ├─ generate            prompt → bounded context → Claude stream →
    │                      SSE events → validated file ops → snapshot          Slices 5, 6, 9, 11
    └─ api/hl/*            HighLevel proxy: route allowlist, transactional
-                          token refresh, error normalisation                   Slice 8
+                          token refresh, error normalisation                 ✅ Slice 8
    ▼
 Firestore — NAMED database `hl-genesis` (not `(default)`)
    users · authThrottle · hlConnections · projects · files · snapshots · messages

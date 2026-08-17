@@ -159,6 +159,15 @@ export interface JsonResponse {
   body: unknown
   /** Raw text, for asserting two responses are byte-identical. */
   raw: string
+  /**
+   * Response headers, lower-cased by `fetch`.
+   *
+   * Here because the proxy's contract includes headers it did not invent —
+   * HighLevel's five `X-RateLimit-*` values are copied across (D18), and a
+   * suite that could only see the body would call that shipped without ever
+   * having looked at it.
+   */
+  headers: Headers
 }
 
 export async function postJson(
@@ -172,15 +181,7 @@ export async function postJson(
     body: JSON.stringify(body),
   })
 
-  const raw = await res.text()
-  let parsed: unknown = undefined
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    parsed = raw
-  }
-
-  return { status: res.status, body: parsed, raw }
+  return toJsonResponse(res)
 }
 
 export interface OobCode {
@@ -289,7 +290,7 @@ async function toJsonResponse(res: Response): Promise<JsonResponse> {
   } catch {
     parsed = raw
   }
-  return { status: res.status, body: parsed, raw }
+  return { status: res.status, body: parsed, raw, headers: res.headers }
 }
 
 /**

@@ -1,0 +1,1290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Permit Desk — Slice 08 design companion</title>
+
+<style>
+  /* ---------------------------------------------------------------
+     Identity: a permit desk.
+
+     Slice 3's companion was a card index, because its idea was that a
+     document's address is its access control. Slice 4's was a
+     transcript with a gutter, because its idea was ORDER. Slice 5's
+     was a tape, because its idea was a CHANNEL opened once and ended
+     once. This slice's idea is a DESK: a narrow counter between
+     generated code and an entire business's CRM, at which every
+     request is checked against a printed list, stamped or refused,
+     and — if stamped — re-issued on our own stationery rather than
+     forwarded as it arrived.
+
+     So the page is built as a set of permits. Sections are announced
+     by a stamped chip carrying the section number. Figures sit on
+     pale forms with a ruled top edge. The one thing this page must
+     make felt is that NOTHING the caller wrote reaches HighLevel
+     unchanged — the token, the location and even the URL are ours.
+
+     Cool paper, deliberately unlike Slice 5's warm tape. Teal for the
+     desk itself (Genesis, server-side), green for what is permitted
+     through, crimson for every refusal, amber for HighLevel — a third
+     party, never quite ours — and violet reserved for the one
+     concurrency hazard, which is the only violet on the page. Every
+     colour is a token, so both themes come from one set of values and
+     no stroke is hard-coded.
+     ------------------------------------------------------------ */
+  :root {
+    --paper:        #f2f5f6;
+    --surface:      #fbfdfd;
+    --surface-2:    #e4eaec;
+    --ink:          #101819;
+    --ink-soft:     #48585c;
+    --ink-faint:    #79888c;
+    --rule:         #c8d3d6;
+    --rule-soft:    #dde5e7;
+
+    /* the desk: Genesis, server-side, the thing that decides */
+    --trust:        #0f6076;
+    --trust-wash:   #d9edf3;
+    /* permitted through */
+    --allow:        #1c6f47;
+    --allow-wash:   #d9f0e3;
+    /* refused, at any of the eight places it can be */
+    --deny:         #a81d2c;
+    --deny-wash:    #fadfe2;
+    /* HighLevel: upstream, third party, not ours */
+    --upstream:     #91600d;
+    --upstream-wash:#faedd2;
+    /* the concurrent-refresh hazard, and nothing else */
+    --hazard:       #5f34a8;
+    --hazard-wash:  #e9e2fb;
+
+    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+    --pad: clamp(1rem, 4vw, 3rem);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:        #0e1416;
+      --surface:      #161e21;
+      --surface-2:    #1f2a2e;
+      --ink:          #e8f0f2;
+      --ink-soft:     #a3b4b9;
+      --ink-faint:    #78888d;
+      --rule:         #2c393d;
+      --rule-soft:    #212c30;
+
+      --trust:        #55b9d6;
+      --trust-wash:   #0c2a33;
+      --allow:        #5fc793;
+      --allow-wash:   #0d2a1e;
+      --deny:         #f4818d;
+      --deny-wash:    #331419;
+      --upstream:     #e0ac52;
+      --upstream-wash:#312410;
+      --hazard:       #b295f2;
+      --hazard-wash:  #221838;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:        #0e1416;
+    --surface:      #161e21;
+    --surface-2:    #1f2a2e;
+    --ink:          #e8f0f2;
+    --ink-soft:     #a3b4b9;
+    --ink-faint:    #78888d;
+    --rule:         #2c393d;
+    --rule-soft:    #212c30;
+
+    --trust:        #55b9d6;
+    --trust-wash:   #0c2a33;
+    --allow:        #5fc793;
+    --allow-wash:   #0d2a1e;
+    --deny:         #f4818d;
+    --deny-wash:    #331419;
+    --upstream:     #e0ac52;
+    --upstream-wash:#312410;
+    --hazard:       #b295f2;
+    --hazard-wash:  #221838;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 68rem; margin: 0 auto; padding: 0 var(--pad) 5rem; }
+
+  /* --- masthead: a stamped permit ---------------------------------- */
+  .masthead {
+    padding: clamp(2.5rem, 7vw, 4.5rem) 0 2rem;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 2.5rem;
+  }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--trust);
+    margin: 0 0 0.9rem;
+  }
+  h1 {
+    font-size: clamp(2rem, 5.5vw, 3.2rem);
+    line-height: 1.08;
+    letter-spacing: -0.022em;
+    margin: 0 0 1rem;
+    font-weight: 700;
+  }
+  .standfirst {
+    font-size: clamp(1.02rem, 2.2vw, 1.2rem);
+    color: var(--ink-soft);
+    max-width: 46rem;
+    margin: 0 0 1.6rem;
+  }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 0.5rem;
+    font-family: var(--font-mono); font-size: 0.76rem;
+  }
+  .meta span {
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    border-radius: 2px;
+    padding: 0.22rem 0.6rem;
+    color: var(--ink-soft);
+  }
+
+  /* --- sections ---------------------------------------------------- */
+  section { margin: 0 0 3.6rem; }
+  .chip {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--trust);
+    border: 1px solid var(--trust);
+    border-radius: 2px;
+    padding: 0.14rem 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+  h2 {
+    font-size: clamp(1.35rem, 3.2vw, 1.85rem);
+    line-height: 1.2;
+    letter-spacing: -0.015em;
+    margin: 0 0 0.8rem;
+    font-weight: 650;
+  }
+  h3 {
+    font-size: 1.02rem;
+    margin: 2rem 0 0.6rem;
+    font-weight: 650;
+  }
+  p { margin: 0 0 1rem; max-width: 46rem; }
+  .lede { color: var(--ink-soft); }
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.87em;
+    background: var(--surface-2);
+    border-radius: 2px;
+    padding: 0.08em 0.32em;
+  }
+  strong { font-weight: 650; }
+
+  /* --- figures ----------------------------------------------------- */
+  figure {
+    margin: 1.6rem 0 0;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--trust);
+    border-radius: 3px;
+    padding: 1.1rem;
+  }
+  .scroll { overflow-x: auto; }
+  .scroll svg { display: block; min-width: 640px; width: 100%; height: auto; }
+  figcaption {
+    margin-top: 0.9rem;
+    padding-top: 0.8rem;
+    border-top: 1px dashed var(--rule);
+    font-size: 0.88rem;
+    color: var(--ink-soft);
+    max-width: 52rem;
+  }
+
+  /* SVG typography + theming, all from the same tokens */
+  .svg-t   { font-family: var(--font-body); font-size: 13px; fill: var(--ink); }
+  .svg-s   { font-family: var(--font-body); font-size: 11.5px; fill: var(--ink-soft); }
+  .svg-m   { font-family: var(--font-mono); font-size: 11.5px; fill: var(--ink); }
+  .svg-ms  { font-family: var(--font-mono); font-size: 10.5px; fill: var(--ink-soft); }
+  .svg-h   { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; }
+  .svg-num { font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; }
+
+  .f-surface  { fill: var(--surface); }
+  .f-surface2 { fill: var(--surface-2); }
+  .f-trust    { fill: var(--trust-wash); }
+  .f-allow    { fill: var(--allow-wash); }
+  .f-deny     { fill: var(--deny-wash); }
+  .f-upstream { fill: var(--upstream-wash); }
+  .f-hazard   { fill: var(--hazard-wash); }
+
+  .s-rule     { stroke: var(--rule); fill: none; }
+  .s-trust    { stroke: var(--trust); fill: none; }
+  .s-allow    { stroke: var(--allow); fill: none; }
+  .s-deny     { stroke: var(--deny); fill: none; }
+  .s-upstream { stroke: var(--upstream); fill: none; }
+  .s-hazard   { stroke: var(--hazard); fill: none; }
+
+  .t-trust    { fill: var(--trust); }
+  .t-allow    { fill: var(--allow); }
+  .t-deny     { fill: var(--deny); }
+  .t-upstream { fill: var(--upstream); }
+  .t-hazard   { fill: var(--hazard); }
+  .t-faint    { fill: var(--ink-faint); }
+
+  .m-trust    { fill: var(--trust); }
+  .m-allow    { fill: var(--allow); }
+  .m-deny     { fill: var(--deny); }
+  .m-upstream { fill: var(--upstream); }
+  .m-hazard   { fill: var(--hazard); }
+
+  .dash { stroke-dasharray: 5 4; }
+  .dot  { stroke-dasharray: 2 3; }
+
+  /* --- tables ------------------------------------------------------ */
+  .tablewrap { overflow-x: auto; margin: 1.4rem 0 0; }
+  table { border-collapse: collapse; width: 100%; min-width: 40rem; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 0.58rem 0.7rem; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+  th {
+    font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--ink-faint);
+    border-bottom: 1px solid var(--rule);
+  }
+  td.mono, th.mono { font-family: var(--font-mono); font-size: 0.82rem; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  .tag {
+    display: inline-block; font-family: var(--font-mono); font-size: 0.7rem;
+    border-radius: 2px; padding: 0.08rem 0.36rem; border: 1px solid currentColor;
+  }
+  .tag-allow { color: var(--allow); }
+  .tag-deny  { color: var(--deny); }
+  .tag-up    { color: var(--upstream); }
+  .tag-trust { color: var(--trust); }
+
+  /* --- permit cards ------------------------------------------------ */
+  .cards { display: grid; gap: 0.9rem; margin-top: 1.4rem; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--trust);
+    border-radius: 3px;
+    padding: 0.9rem 1rem;
+  }
+  .card.deny { border-left-color: var(--deny); }
+  .card.up   { border-left-color: var(--upstream); }
+  .card h4 {
+    margin: 0 0 0.45rem;
+    font-family: var(--font-mono); font-size: 0.82rem; font-weight: 650;
+    word-break: break-word;
+  }
+  .card p { font-size: 0.86rem; color: var(--ink-soft); margin: 0; max-width: none; }
+  .card dl { margin: 0.55rem 0 0; font-size: 0.78rem; font-family: var(--font-mono); color: var(--ink-faint); }
+  .card dl div { display: flex; gap: 0.5rem; }
+  .card dt { min-width: 5.4rem; }
+  .card dd { margin: 0; color: var(--ink-soft); }
+
+  .note {
+    border-left: 3px solid var(--hazard);
+    background: var(--hazard-wash);
+    padding: 0.85rem 1rem;
+    margin: 1.4rem 0 0;
+    border-radius: 0 3px 3px 0;
+    font-size: 0.92rem;
+  }
+  .note strong { color: var(--hazard); }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding-top: 1.4rem;
+    color: var(--ink-faint);
+    font-size: 0.85rem;
+  }
+
+  @media (max-width: 40rem) {
+    .card dt { min-width: 4.6rem; }
+  }
+</style>
+</head>
+
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">Slice 08 · design companion</p>
+  <h1>The permit desk</h1>
+  <p class="standfirst">
+    Genesis holds a token that can read an entire business's CRM, and it is about to let
+    generated code use it. Everything in this slice is one question asked four ways:
+    <em>what, exactly, is allowed through the counter?</em>
+  </p>
+  <div class="meta">
+    <span>F7.1 · F7.2 · F8.3 · F1.3</span>
+    <span>depends on slice 2</span>
+    <span>48 acceptance criteria</span>
+    <span>the contract is 02-prd.md</span>
+  </div>
+</header>
+
+<section>
+  <p class="lede">
+    This page draws what the PRD can only describe. The acceptance criteria, the decisions
+    and the test matrix live in <code>02-prd.md</code>, which is the document the build is
+    graded against; nothing here restates them. What is here is the shape of the boundary,
+    the order of one call through it, the reason the upstream URL cannot be tampered with,
+    and the single concurrency hazard the slice exists to get right.
+  </p>
+</section>
+
+<!-- ============================================================ 01 -->
+<section>
+  <p class="chip">01 · the boundary</p>
+  <h2>What crosses the counter, and what never does</h2>
+
+  <p>
+    Three zones, two crossings. The caller is a browser — today the dashboard, from Slice 10 a
+    sandboxed iframe's host — and it is never trusted with a credential. HighLevel is a third
+    party that will happily answer anyone holding a bearer token. Between them sits one Cloud
+    Function route which is the only thing in the system that has ever seen both.
+  </p>
+  <p>
+    The four items on the dashed line are the ones that make this slice a security slice rather
+    than a plumbing slice. None of them is supplied by the caller, and three of them are
+    <em>discarded</em> if the caller supplies them anyway.
+  </p>
+
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 920 430" role="img"
+           aria-label="Three zones. The browser sends a method, a path, a query and a body, plus a Firebase ID token and an App Check token. The Genesis proxy adds the HighLevel access token, the connection's locationId, the row's Version header and an assembled upstream URL, discarding any Authorization, Version or locationId the caller sent. HighLevel receives only what the proxy built. Firestore security rules deny every client all access to the hlConnections document.">
+        <defs>
+          <marker id="a-allow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" class="m-allow"/>
+          </marker>
+          <marker id="a-deny" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" class="m-deny"/>
+          </marker>
+          <marker id="a-up" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" class="m-upstream"/>
+          </marker>
+        </defs>
+
+        <!-- zone headers -->
+        <text x="20"  y="26" class="svg-h t-faint">UNTRUSTED · THE BROWSER</text>
+        <text x="330" y="26" class="svg-h t-trust">TRUSTED · CLOUD FUNCTION</text>
+        <text x="720" y="26" class="svg-h t-upstream">THIRD PARTY</text>
+
+        <!-- boundary lines -->
+        <line x1="312" y1="38" x2="312" y2="410" class="s-rule dash" stroke-width="1.5"/>
+        <line x1="700" y1="38" x2="700" y2="410" class="s-rule dash" stroke-width="1.5"/>
+
+        <!-- caller box -->
+        <rect x="20" y="46" width="272" height="150" rx="4" class="f-surface2"/>
+        <rect x="20" y="46" width="272" height="150" rx="4" class="s-rule" stroke-width="1"/>
+        <text x="36" y="70" class="svg-t">Generated app · dashboard</text>
+        <text x="36" y="92"  class="svg-ms">POST /api/hl/proxy/contacts/search</text>
+        <text x="36" y="110" class="svg-ms">?pageLimit=1</text>
+        <text x="36" y="128" class="svg-ms">{ "filters": [ … ] }</text>
+        <text x="36" y="152" class="svg-s t-allow">+ Firebase ID token (email_verified)</text>
+        <text x="36" y="170" class="svg-s t-allow">+ App Check token</text>
+        <text x="36" y="188" class="svg-s t-faint">no HighLevel credential, ever</text>
+
+        <!-- discarded box -->
+        <rect x="20" y="216" width="272" height="112" rx="4" class="f-deny"/>
+        <rect x="20" y="216" width="272" height="112" rx="4" class="s-deny" stroke-width="1"/>
+        <text x="36" y="240" class="svg-t t-deny">Sent by the caller · discarded</text>
+        <text x="36" y="262" class="svg-ms">Authorization: …</text>
+        <text x="36" y="280" class="svg-ms">Version: v3</text>
+        <text x="36" y="298" class="svg-ms">{ "locationId": "someone-else" }</text>
+        <text x="36" y="318" class="svg-s">no caller header reaches HighLevel</text>
+
+        <!-- desk -->
+        <rect x="336" y="46" width="340" height="282" rx="4" class="f-trust"/>
+        <rect x="336" y="46" width="340" height="282" rx="4" class="s-trust" stroke-width="1.5"/>
+        <text x="352" y="70" class="svg-t t-trust">POST /api/hl/proxy/**</text>
+        <text x="352" y="90" class="svg-s">verify ID token → uid</text>
+        <text x="352" y="108" class="svg-s">verify App Check</text>
+
+        <line x1="352" y1="120" x2="660" y2="120" class="s-trust dot" stroke-width="1"/>
+
+        <text x="352" y="142" class="svg-num t-trust">1</text>
+        <text x="372" y="142" class="svg-s">match (method, path) against the table</text>
+        <text x="352" y="164" class="svg-num t-trust">2</text>
+        <text x="372" y="164" class="svg-s">read hlConnections/{uid} — by uid, from the token</text>
+        <text x="352" y="186" class="svg-num t-trust">3</text>
+        <text x="372" y="186" class="svg-s">resolve an access token (refresh if stale)</text>
+        <text x="352" y="208" class="svg-num t-trust">4</text>
+        <text x="372" y="208" class="svg-s">inject the connection's locationId</text>
+        <text x="352" y="230" class="svg-num t-trust">5</text>
+        <text x="372" y="230" class="svg-s">assemble the upstream URL from the template</text>
+
+        <line x1="352" y1="246" x2="660" y2="246" class="s-trust dot" stroke-width="1"/>
+        <text x="352" y="268" class="svg-s t-faint">the only place both credentials have ever been seen</text>
+        <text x="352" y="292" class="svg-ms t-trust">Authorization · Version · Accept · Content-Type</text>
+        <text x="352" y="310" class="svg-s t-faint">four headers, all ours</text>
+
+        <!-- upstream -->
+        <rect x="720" y="46" width="180" height="150" rx="4" class="f-upstream"/>
+        <rect x="720" y="46" width="180" height="150" rx="4" class="s-upstream" stroke-width="1"/>
+        <text x="736" y="70" class="svg-t t-upstream">HighLevel</text>
+        <text x="736" y="92"  class="svg-ms">services.leadconnectorhq</text>
+        <text x="736" y="110" class="svg-ms">.com</text>
+        <text x="736" y="134" class="svg-s">answers for one location,</text>
+        <text x="736" y="152" class="svg-s">named by the token</text>
+        <text x="736" y="176" class="svg-s t-faint">100 req / 10 s burst</text>
+
+        <!-- firestore -->
+        <rect x="720" y="216" width="180" height="112" rx="4" class="f-surface2"/>
+        <rect x="720" y="216" width="180" height="112" rx="4" class="s-rule" stroke-width="1"/>
+        <text x="736" y="240" class="svg-t">Firestore</text>
+        <text x="736" y="262" class="svg-ms">hlConnections/{uid}</text>
+        <text x="736" y="284" class="svg-s t-deny">rules: read, write — if false</text>
+        <text x="736" y="304" class="svg-s t-faint">denied to its owner too</text>
+
+        <!-- arrows -->
+        <path d="M292 120 L336 120" class="s-allow" stroke-width="2" marker-end="url(#a-allow)"/>
+        <path d="M676 120 L720 120" class="s-upstream" stroke-width="2" marker-end="url(#a-up)"/>
+        <path d="M720 130 L676 130" class="s-upstream" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#a-up)"/>
+        <path d="M292 272 L336 272" class="s-deny" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#a-deny)"/>
+        <path d="M676 200 L720 250" class="s-trust" stroke-width="1.5"/>
+        <path d="M720 268 L678 268" class="s-deny" stroke-width="1.5" marker-end="url(#a-deny)"/>
+
+        <!-- bottom claim -->
+        <line x1="20" y1="356" x2="900" y2="356" class="s-rule" stroke-width="1"/>
+        <text x="20" y="380" class="svg-t">
+          The uid comes from the verified token. The location comes from that uid's own document.
+        </text>
+        <text x="20" y="400" class="svg-t">
+          The URL comes from a compile-time template. Nothing on the left composes any of them.
+        </text>
+      </svg>
+    </div>
+    <figcaption>
+      The dashed line at <code>x=312</code> is the trust boundary, and everything a caller can
+      influence stops there. The crimson box is not a rejection — those values are simply not
+      read. A caller-supplied <code>locationId</code> is overwritten rather than refused (D8),
+      because overriding is exactly as safe and does not break a generated app that included it
+      out of habit. The Firestore block on the right is the backstop the whole architecture
+      rests on: the document holding the token is unreachable from any client, including the
+      user who owns it, and Slice 8 adds a second <em>server-side</em> writer to it rather than
+      a client-side one.
+    </figcaption>
+  </figure>
+</section>
+
+<!-- ============================================================ 02 -->
+<section>
+  <p class="chip">02 · the sequence</p>
+  <h2>One call, eleven steps, eight ways out</h2>
+
+  <p>
+    The order matters more than the steps do. Every refusal that can be decided from the
+    request alone is decided <em>before</em> anything is read from Firestore, and every refusal
+    that can be decided from our own stored state is decided before HighLevel is contacted —
+    so a request that is going to be refused costs nothing, and a request that reaches
+    HighLevel has already been proven to be one this user may make.
+  </p>
+
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 940 680" role="img"
+           aria-label="A vertical sequence of eleven steps for one proxy call, from ID token verification to the mirrored response. Eight exits branch off to the right, each labelled with an HTTP status and error code: 401 unauthenticated, 403 email unverified, 401 app check failed, 403 route not allowed or route disabled, 400 invalid path, 409 hl not connected or hl reconnect required, 502 hl unavailable, and the mapped upstream failures. The last three steps involve HighLevel.">
+        <defs>
+          <marker id="b-trust" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" class="m-trust"/>
+          </marker>
+          <marker id="b-deny" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" class="m-deny"/>
+          </marker>
+          <marker id="b-allow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" class="m-allow"/>
+          </marker>
+          <marker id="b-up" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" class="m-upstream"/>
+          </marker>
+        </defs>
+
+        <text x="20"  y="24" class="svg-h t-trust">THE SPINE · CHEAPEST REFUSAL FIRST</text>
+        <text x="560" y="24" class="svg-h t-deny">EXITS</text>
+
+        <line x1="536" y1="34" x2="536" y2="600" class="s-rule dash" stroke-width="1"/>
+
+        <!-- spine steps -->
+        <!-- helper geometry: box x=20 w=500 h=40, gap 12 -->
+        <g>
+          <!-- 1 -->
+          <rect x="20" y="44" width="500" height="40" rx="3" class="f-trust"/>
+          <rect x="20" y="44" width="500" height="40" rx="3" class="s-trust" stroke-width="1"/>
+          <text x="34" y="61" class="svg-num t-trust">01</text>
+          <text x="62" y="61" class="svg-t">Verify the Firebase ID token</text>
+          <text x="62" y="77" class="svg-s">uid is taken from here and from nowhere else</text>
+
+          <!-- 2 -->
+          <rect x="20" y="96" width="500" height="40" rx="3" class="f-trust"/>
+          <rect x="20" y="96" width="500" height="40" rx="3" class="s-trust" stroke-width="1"/>
+          <text x="34" y="113" class="svg-num t-trust">02</text>
+          <text x="62" y="113" class="svg-t">Check <tspan class="svg-m">email_verified</tspan> on the decoded token</text>
+          <text x="62" y="129" class="svg-s">Slice 1 D26 — a token being present is not the same as an address existing</text>
+
+          <!-- 3 -->
+          <rect x="20" y="148" width="500" height="40" rx="3" class="f-trust"/>
+          <rect x="20" y="148" width="500" height="40" rx="3" class="s-trust" stroke-width="1"/>
+          <text x="34" y="165" class="svg-num t-trust">03</text>
+          <text x="62" y="165" class="svg-t">Verify App Check</text>
+          <text x="62" y="181" class="svg-s">this endpoint spends a third party's rate-limit budget</text>
+
+          <!-- 4 -->
+          <rect x="20" y="200" width="500" height="40" rx="3" class="f-allow"/>
+          <rect x="20" y="200" width="500" height="40" rx="3" class="s-allow" stroke-width="1.5"/>
+          <text x="34" y="217" class="svg-num t-allow">04</text>
+          <text x="62" y="217" class="svg-t">Match (method, path) against the allowlist</text>
+          <text x="62" y="233" class="svg-s">13 rows · literal segments beat parameters · no Firestore read yet</text>
+
+          <!-- 5 -->
+          <rect x="20" y="252" width="500" height="40" rx="3" class="f-allow"/>
+          <rect x="20" y="252" width="500" height="40" rx="3" class="s-allow" stroke-width="1.5"/>
+          <text x="34" y="269" class="svg-num t-allow">05</text>
+          <text x="62" y="269" class="svg-t">Validate each path parameter</text>
+          <text x="62" y="285" class="svg-m t-faint">[A-Za-z0-9_-]{1,64}</text>
+
+          <!-- 6 -->
+          <rect x="20" y="304" width="500" height="40" rx="3" class="f-trust"/>
+          <rect x="20" y="304" width="500" height="40" rx="3" class="s-trust" stroke-width="1"/>
+          <text x="34" y="321" class="svg-num t-trust">06</text>
+          <text x="62" y="321" class="svg-t">Read <tspan class="svg-m">hlConnections/{uid}</tspan></text>
+          <text x="62" y="337" class="svg-s">first Firestore call of the request</text>
+
+          <!-- 7 -->
+          <rect x="20" y="356" width="500" height="40" rx="3" class="f-hazard"/>
+          <rect x="20" y="356" width="500" height="40" rx="3" class="s-hazard" stroke-width="1.5"/>
+          <text x="34" y="373" class="svg-num t-hazard">07</text>
+          <text x="62" y="373" class="svg-t">Resolve an access token — fresh, or rotate in a transaction</text>
+          <text x="62" y="389" class="svg-s">the hazard · drawn on its own below</text>
+
+          <!-- 8 -->
+          <rect x="20" y="408" width="500" height="40" rx="3" class="f-allow"/>
+          <rect x="20" y="408" width="500" height="40" rx="3" class="s-allow" stroke-width="1"/>
+          <text x="34" y="425" class="svg-num t-allow">08</text>
+          <text x="62" y="425" class="svg-t">Inject <tspan class="svg-m">locationId</tspan> where the row says</text>
+          <text x="62" y="441" class="svg-s">query, body, or nowhere — never from the caller</text>
+
+          <!-- 9 -->
+          <rect x="20" y="460" width="500" height="40" rx="3" class="f-allow"/>
+          <rect x="20" y="460" width="500" height="40" rx="3" class="s-allow" stroke-width="1"/>
+          <text x="34" y="477" class="svg-num t-allow">09</text>
+          <text x="62" y="477" class="svg-t">Assemble the upstream URL from the row's template</text>
+          <text x="62" y="493" class="svg-s">never by concatenation · drawn in section 03</text>
+
+          <!-- 10 -->
+          <rect x="20" y="512" width="500" height="40" rx="3" class="f-upstream"/>
+          <rect x="20" y="512" width="500" height="40" rx="3" class="s-upstream" stroke-width="1.5"/>
+          <text x="34" y="529" class="svg-num t-upstream">10</text>
+          <text x="62" y="529" class="svg-t">Forward · 20 s abort · 5 MiB cap</text>
+          <text x="62" y="545" class="svg-s">four headers, all ours</text>
+
+          <!-- 11 -->
+          <rect x="20" y="564" width="500" height="40" rx="3" class="f-surface2"/>
+          <rect x="20" y="564" width="500" height="40" rx="3" class="s-rule" stroke-width="1"/>
+          <text x="34" y="581" class="svg-num">11</text>
+          <text x="62" y="581" class="svg-t">Mirror the status · pass the body byte for byte</text>
+          <text x="62" y="597" class="svg-s">plus the five X-RateLimit-* headers, plus one hl.proxy log line</text>
+        </g>
+
+        <!-- spine connectors -->
+        <path d="M270 84 L270 96"   class="s-trust" stroke-width="1.5" marker-end="url(#b-trust)"/>
+        <path d="M270 136 L270 148" class="s-trust" stroke-width="1.5" marker-end="url(#b-trust)"/>
+        <path d="M270 188 L270 200" class="s-trust" stroke-width="1.5" marker-end="url(#b-trust)"/>
+        <path d="M270 240 L270 252" class="s-allow" stroke-width="1.5" marker-end="url(#b-allow)"/>
+        <path d="M270 292 L270 304" class="s-allow" stroke-width="1.5" marker-end="url(#b-allow)"/>
+        <path d="M270 344 L270 356" class="s-trust" stroke-width="1.5" marker-end="url(#b-trust)"/>
+        <path d="M270 396 L270 408" class="s-hazard" stroke-width="1.5" marker-end="url(#b-trust)"/>
+        <path d="M270 448 L270 460" class="s-allow" stroke-width="1.5" marker-end="url(#b-allow)"/>
+        <path d="M270 500 L270 512" class="s-allow" stroke-width="1.5" marker-end="url(#b-allow)"/>
+        <path d="M270 552 L270 564" class="s-upstream" stroke-width="1.5" marker-end="url(#b-up)"/>
+
+        <!-- exits -->
+        <g>
+          <path d="M520 64 L556 64"  class="s-deny" stroke-width="1.5" marker-end="url(#b-deny)"/>
+          <text x="564" y="61" class="svg-m t-deny">401 unauthenticated</text>
+          <text x="564" y="76" class="svg-s t-faint">nothing read, nothing forwarded</text>
+
+          <path d="M520 116 L556 116" class="s-deny" stroke-width="1.5" marker-end="url(#b-deny)"/>
+          <text x="564" y="113" class="svg-m t-deny">403 email_unverified</text>
+
+          <path d="M520 168 L556 168" class="s-deny" stroke-width="1.5" marker-end="url(#b-deny)"/>
+          <text x="564" y="165" class="svg-m t-deny">401 app_check_failed</text>
+
+          <path d="M520 220 L556 220" class="s-deny" stroke-width="1.5" marker-end="url(#b-deny)"/>
+          <text x="564" y="217" class="svg-m t-deny">403 route_not_allowed</text>
+          <text x="564" y="232" class="svg-m t-deny">403 route_disabled</text>
+          <text x="564" y="247" class="svg-s t-faint">DELETE /contacts/:id lands here</text>
+
+          <path d="M520 272 L556 272" class="s-deny" stroke-width="1.5" marker-end="url(#b-deny)"/>
+          <text x="564" y="285" class="svg-m t-deny">400 invalid_path</text>
+
+          <path d="M520 324 L556 324" class="s-deny" stroke-width="1.5" marker-end="url(#b-deny)"/>
+          <text x="564" y="321" class="svg-m t-deny">409 hl_not_connected</text>
+          <text x="564" y="336" class="svg-s t-faint">no document for this uid</text>
+
+          <path d="M520 376 L556 376" class="s-deny" stroke-width="1.5" marker-end="url(#b-deny)"/>
+          <text x="564" y="373" class="svg-m t-deny">409 hl_reconnect_required</text>
+          <text x="564" y="388" class="svg-m t-deny">502 hl_unavailable</text>
+          <text x="564" y="403" class="svg-s t-faint">invalid_grant vs. a blip — different writes</text>
+
+          <path d="M520 532 L556 532" class="s-deny" stroke-width="1.5" marker-end="url(#b-deny)"/>
+          <text x="564" y="523" class="svg-m t-deny">409 · 403 · 404 · 429</text>
+          <text x="564" y="538" class="svg-m t-deny">400 · 502 · 504</text>
+          <text x="564" y="553" class="svg-s t-faint">upstream conditions, mapped — section 05</text>
+
+          <path d="M520 584 L556 584" class="s-allow" stroke-width="1.5" marker-end="url(#b-allow)"/>
+          <text x="564" y="581" class="svg-m t-allow">200 · 201</text>
+          <text x="564" y="596" class="svg-s t-faint">HighLevel's own JSON, unchanged</text>
+        </g>
+
+        <line x1="20" y1="628" x2="920" y2="628" class="s-rule" stroke-width="1"/>
+        <text x="20" y="652" class="svg-t">
+          Steps 01–05 refuse without touching Firestore. Steps 06–09 refuse without touching HighLevel.
+        </text>
+        <text x="20" y="670" class="svg-s">
+          By the time step 10 runs, three separate facts have been established: who is asking, that they may ask this, and whose data it is.
+        </text>
+      </svg>
+    </div>
+    <figcaption>
+      The eight exits are the whole of F8.3 for this surface, and each is a row of the PRD's
+      failure table with a user-facing sentence attached. Two are worth reading twice. At step 07
+      the two refresh failures are <em>different</em>: a definitive <code>invalid_grant</code>
+      writes <code>needsReconnect: true</code> and leaves the stored refresh token exactly where
+      it is, while a 500 or a network blip writes nothing at all — persisting a blip as a dead
+      connection would destroy a token that was probably still valid. And at step 10 an upstream
+      401 becomes a <strong>409</strong>, never a 401: the frontend's shared client reads 401 as
+      "your session died", so mirroring HighLevel's status would sign the user out of Genesis for
+      a problem in someone else's system.
+    </figcaption>
+  </figure>
+</section>
+
+<!-- ============================================================ 03 -->
+<section>
+  <p class="chip">03 · the structural claim</p>
+  <h2>The upstream URL is a template, not a string</h2>
+
+  <p>
+    Every proxy that has ever leaked was, at bottom, a proxy that built a URL by joining
+    something a caller wrote onto something it trusted. The defence usually offered is filtering:
+    reject <code>..</code>, reject <code>%2F</code>, reject a scheme, reject an <code>@</code>.
+    That is a blocklist over URL parsing, and blocklists over URL parsing have a poor record.
+  </p>
+  <p>
+    The alternative below is not a better filter. It is an assembly step in which the caller's
+    path is <em>consumed</em> rather than <em>carried</em>: it selects a row and populates
+    parameters, and then it is discarded. What is sent upstream is built from a string literal
+    in our source plus values that have been proven to match <code>[A-Za-z0-9_-]{1,64}</code>.
+  </p>
+
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 920 400" role="img"
+           aria-label="A comparison. Above, the rejected approach: the caller's path is sanitised and appended to the API base, so a traversal string that survives filtering reaches HighLevel. Below, the chosen approach: the caller's path selects a table row and populates its parameters, both are validated, and the upstream URL is rebuilt from the row's constant template, so a traversal string cannot be represented at all.">
+        <defs>
+          <marker id="c-deny" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" class="m-deny"/>
+          </marker>
+          <marker id="c-allow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" class="m-allow"/>
+          </marker>
+        </defs>
+
+        <!-- rejected -->
+        <text x="20" y="24" class="svg-h t-deny">REJECTED · SANITISE AND APPEND</text>
+        <rect x="20" y="36" width="880" height="130" rx="4" class="f-deny" opacity="0.45"/>
+        <rect x="20" y="36" width="880" height="130" rx="4" class="s-deny dash" stroke-width="1"/>
+
+        <rect x="38" y="58" width="234" height="46" rx="3" class="f-surface"/>
+        <rect x="38" y="58" width="234" height="46" rx="3" class="s-rule" stroke-width="1"/>
+        <text x="50" y="76" class="svg-s t-faint">caller's path</text>
+        <text x="50" y="94" class="svg-ms">/contacts/%2E%2E%2Foauth/token</text>
+
+        <path d="M280 81 L316 81" class="s-deny" stroke-width="1.5" marker-end="url(#c-deny)"/>
+
+        <rect x="324" y="58" width="200" height="46" rx="3" class="f-surface"/>
+        <rect x="324" y="58" width="200" height="46" rx="3" class="s-rule" stroke-width="1"/>
+        <text x="336" y="76" class="svg-s t-faint">a filter</text>
+        <text x="336" y="94" class="svg-ms">strip "..", reject "/"…</text>
+
+        <path d="M532 81 L568 81" class="s-deny" stroke-width="1.5" marker-end="url(#c-deny)"/>
+
+        <rect x="576" y="58" width="306" height="46" rx="3" class="f-surface"/>
+        <rect x="576" y="58" width="306" height="46" rx="3" class="s-deny" stroke-width="1.5"/>
+        <text x="588" y="76" class="svg-s t-deny">base + whatever survived</text>
+        <text x="588" y="94" class="svg-ms">…/contacts/../oauth/token</text>
+
+        <text x="38" y="130" class="svg-t t-deny">The caller's bytes are still in the URL.</text>
+        <text x="38" y="150" class="svg-s">Correctness now depends on the filter having thought of every encoding. One miss is a different endpoint.</text>
+
+        <!-- chosen -->
+        <text x="20" y="204" class="svg-h t-allow">CHOSEN · MATCH, VALIDATE, REBUILD</text>
+        <rect x="20" y="216" width="880" height="160" rx="4" class="f-allow" opacity="0.5"/>
+        <rect x="20" y="216" width="880" height="160" rx="4" class="s-allow" stroke-width="1.5"/>
+
+        <rect x="38" y="238" width="234" height="46" rx="3" class="f-surface"/>
+        <rect x="38" y="238" width="234" height="46" rx="3" class="s-rule" stroke-width="1"/>
+        <text x="50" y="256" class="svg-s t-faint">caller's path</text>
+        <text x="50" y="274" class="svg-ms">/contacts/JwwI60NJqfc8I4Ay2MiA</text>
+
+        <path d="M280 261 L316 261" class="s-allow" stroke-width="1.5" marker-end="url(#c-allow)"/>
+
+        <rect x="324" y="228" width="200" height="66" rx="3" class="f-surface"/>
+        <rect x="324" y="228" width="200" height="66" rx="3" class="s-allow" stroke-width="1"/>
+        <text x="336" y="246" class="svg-s t-faint">row 2 selected</text>
+        <text x="336" y="264" class="svg-ms">/contacts/:contactId</text>
+        <text x="336" y="284" class="svg-ms t-allow">:contactId ✓ [A-Za-z0-9_-]</text>
+
+        <path d="M532 261 L568 261" class="s-allow" stroke-width="1.5" marker-end="url(#c-allow)"/>
+
+        <rect x="576" y="228" width="306" height="66" rx="3" class="f-surface"/>
+        <rect x="576" y="228" width="306" height="66" rx="3" class="s-allow" stroke-width="1.5"/>
+        <text x="588" y="246" class="svg-s t-allow">template + encoded parameter</text>
+        <text x="588" y="264" class="svg-ms">hlApiBase() + "/contacts/"</text>
+        <text x="588" y="282" class="svg-ms">  + encode(contactId)</text>
+
+        <text x="38" y="322" class="svg-t t-allow">The caller's bytes are gone. The URL is a literal plus an alphanumeric.</text>
+        <text x="38" y="342" class="svg-s">
+          <tspan class="svg-ms">%2E%2E%2F</tspan> now fails the parameter grammar at step 05 and never reaches assembly —
+        </text>
+        <text x="38" y="360" class="svg-s">
+          and even if it somehow did, there is no expression in which it could appear.
+        </text>
+      </svg>
+    </div>
+    <figcaption>
+      This is the difference between a request being <em>rejected</em> and a request being
+      <em>unrepresentable</em>, and it is why the acceptance criterion for it (AC-6) asserts the
+      assembled URL rather than the match result. A matcher that returns the right row while
+      assembly quietly concatenates would pass a test written about matching and fail the only
+      property anyone cares about. The definition of done carries the corresponding review step:
+      a grep over <code>functions/src/hl</code> for any upstream URL built from a
+      caller-supplied string.
+    </figcaption>
+  </figure>
+</section>
+
+<!-- ============================================================ 04 -->
+<section>
+  <p class="chip">04 · the hazard</p>
+  <h2>Three calls, one expired token</h2>
+
+  <p>
+    The preview will fire several proxy calls on first render, and they will all find the same
+    token in the same state at the same moment. HighLevel rotates a refresh token when it is
+    used. So the question is not whether concurrent refreshes happen — they do, by construction —
+    but what the system looks like afterwards.
+  </p>
+  <p>
+    Two things make the answer boring, and both are worth naming because the naive reading of
+    "network call inside a transaction" is alarming. Firestore's read-write transactions are
+    <strong>pessimistic</strong>: the second caller's read blocks on the first caller's lock
+    rather than racing it. And the transaction body <strong>re-reads before it refreshes</strong>,
+    so a caller that was waiting finds the winner's fresh token and returns it untouched.
+  </p>
+
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 920 470" role="img"
+           aria-label="A comparison of three concurrent proxy calls on an expired token. Without a transaction, all three read the stale token, all three call HighLevel to refresh, three refresh tokens are issued, two are orphaned, and the third reuse fails with invalid grant. With the transaction, the first caller takes a lock and refreshes once, the second and third block on the lock, re-read, find the fresh token and return it, so exactly one refresh request reaches HighLevel.">
+        <defs>
+          <marker id="d-deny" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" class="m-deny"/>
+          </marker>
+          <marker id="d-haz" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" class="m-hazard"/>
+          </marker>
+          <marker id="d-allow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" class="m-allow"/>
+          </marker>
+        </defs>
+
+        <!-- left: without -->
+        <text x="20" y="24" class="svg-h t-deny">WITHOUT THE TRANSACTION</text>
+        <rect x="20" y="36" width="420" height="404" rx="4" class="f-deny" opacity="0.4"/>
+        <rect x="20" y="36" width="420" height="404" rx="4" class="s-deny dash" stroke-width="1"/>
+
+        <text x="38" y="62" class="svg-s t-faint">t = 0 · three calls, one stale token</text>
+        <rect x="38"  y="74" width="112" height="34" rx="3" class="f-surface"/>
+        <rect x="38"  y="74" width="112" height="34" rx="3" class="s-rule" stroke-width="1"/>
+        <text x="52"  y="95" class="svg-m">call A</text>
+        <rect x="162" y="74" width="112" height="34" rx="3" class="f-surface"/>
+        <rect x="162" y="74" width="112" height="34" rx="3" class="s-rule" stroke-width="1"/>
+        <text x="176" y="95" class="svg-m">call B</text>
+        <rect x="286" y="74" width="112" height="34" rx="3" class="f-surface"/>
+        <rect x="286" y="74" width="112" height="34" rx="3" class="s-rule" stroke-width="1"/>
+        <text x="300" y="95" class="svg-m">call C</text>
+
+        <path d="M94  108 L94  144" class="s-deny" stroke-width="1.5" marker-end="url(#d-deny)"/>
+        <path d="M218 108 L218 144" class="s-deny" stroke-width="1.5" marker-end="url(#d-deny)"/>
+        <path d="M342 108 L342 144" class="s-deny" stroke-width="1.5" marker-end="url(#d-deny)"/>
+
+        <text x="38" y="138" class="svg-s t-faint">each reads the same stale token</text>
+
+        <rect x="38" y="152" width="360" height="52" rx="3" class="f-surface"/>
+        <rect x="38" y="152" width="360" height="52" rx="3" class="s-deny" stroke-width="1.5"/>
+        <text x="52" y="172" class="svg-t t-deny">three POST /oauth/token · grant_type=refresh_token</text>
+        <text x="52" y="192" class="svg-ms">all three present RT₁</text>
+
+        <path d="M218 204 L218 232" class="s-deny" stroke-width="1.5" marker-end="url(#d-deny)"/>
+
+        <rect x="38" y="240" width="360" height="76" rx="3" class="f-surface"/>
+        <rect x="38" y="240" width="360" height="76" rx="3" class="s-deny" stroke-width="1.5"/>
+        <text x="52" y="260" class="svg-t t-deny">RT₂, RT₃ issued · the third fails</text>
+        <text x="52" y="280" class="svg-ms">400 invalid_grant on reuse three</text>
+        <text x="52" y="300" class="svg-s">two rotations are orphaned — nobody stored them</text>
+
+        <path d="M218 316 L218 344" class="s-deny" stroke-width="1.5" marker-end="url(#d-deny)"/>
+
+        <rect x="38" y="352" width="360" height="70" rx="3" class="f-surface"/>
+        <rect x="38" y="352" width="360" height="70" rx="3" class="s-rule" stroke-width="1"/>
+        <text x="52" y="372" class="svg-t">last write wins · state is whichever finished last</text>
+        <text x="52" y="392" class="svg-s">three upstream calls spent to make one token</text>
+        <text x="52" y="410" class="svg-s t-deny">one caller answers 502 for no reason it can name</text>
+
+        <!-- right: with -->
+        <text x="480" y="24" class="svg-h t-hazard">WITH THE TRANSACTION</text>
+        <rect x="480" y="36" width="420" height="404" rx="4" class="f-hazard" opacity="0.45"/>
+        <rect x="480" y="36" width="420" height="404" rx="4" class="s-hazard" stroke-width="1.5"/>
+
+        <text x="498" y="62" class="svg-s t-faint">t = 0 · three calls, one stale token</text>
+        <rect x="498" y="74" width="112" height="34" rx="3" class="f-surface"/>
+        <rect x="498" y="74" width="112" height="34" rx="3" class="s-hazard" stroke-width="1.5"/>
+        <text x="512" y="95" class="svg-m">call A</text>
+        <rect x="622" y="74" width="112" height="34" rx="3" class="f-surface"/>
+        <rect x="622" y="74" width="112" height="34" rx="3" class="s-rule" stroke-width="1"/>
+        <text x="636" y="95" class="svg-m">call B</text>
+        <rect x="746" y="74" width="112" height="34" rx="3" class="f-surface"/>
+        <rect x="746" y="74" width="112" height="34" rx="3" class="s-rule" stroke-width="1"/>
+        <text x="760" y="95" class="svg-m">call C</text>
+
+        <path d="M554 108 L554 152" class="s-hazard" stroke-width="2" marker-end="url(#d-haz)"/>
+        <path d="M678 108 L678 230" class="s-rule dot" stroke-width="1.5"/>
+        <path d="M802 108 L802 230" class="s-rule dot" stroke-width="1.5"/>
+        <text x="694" y="150" class="svg-s t-faint">blocked on</text>
+        <text x="694" y="166" class="svg-s t-faint">A's read lock</text>
+
+        <rect x="498" y="160" width="150" height="60" rx="3" class="f-surface"/>
+        <rect x="498" y="160" width="150" height="60" rx="3" class="s-hazard" stroke-width="1.5"/>
+        <text x="512" y="180" class="svg-t t-hazard">tx.get + lock</text>
+        <text x="512" y="200" class="svg-ms">one refresh</text>
+        <text x="512" y="216" class="svg-ms">RT₁ → RT₂</text>
+
+        <path d="M573 220 L573 250" class="s-hazard" stroke-width="2" marker-end="url(#d-haz)"/>
+
+        <rect x="498" y="258" width="384" height="52" rx="3" class="f-surface"/>
+        <rect x="498" y="258" width="384" height="52" rx="3" class="s-allow" stroke-width="1.5"/>
+        <text x="512" y="278" class="svg-t t-allow">commit · accessToken, refreshToken, expiresAt</text>
+        <text x="512" y="298" class="svg-ms">lock released — B and C wake</text>
+
+        <path d="M678 230 L678 258" class="s-rule" stroke-width="1.5" marker-end="url(#d-allow)"/>
+        <path d="M802 230 L802 258" class="s-rule" stroke-width="1.5" marker-end="url(#d-allow)"/>
+
+        <path d="M690 310 L690 344" class="s-allow" stroke-width="1.5" marker-end="url(#d-allow)"/>
+
+        <rect x="498" y="352" width="384" height="70" rx="3" class="f-surface"/>
+        <rect x="498" y="352" width="384" height="70" rx="3" class="s-allow" stroke-width="1.5"/>
+        <text x="512" y="372" class="svg-t t-allow">B and C re-read, find RT₂'s token, short-circuit</text>
+        <text x="512" y="392" class="svg-s">exactly one refresh request reached HighLevel</text>
+        <text x="512" y="410" class="svg-s">three callers, one token, one stored state</text>
+      </svg>
+    </div>
+    <figcaption>
+      The re-read is the load-bearing line, not the lock. A Firestore transaction may also
+      <em>retry</em> its body under contention, which would otherwise re-send a refresh token the
+      first attempt already spent — the re-read is what makes a retry harmless, because a retried
+      body finds the committed token and returns before it reaches the network. And the honest
+      residue, recorded rather than hidden: if neither mechanism held, HighLevel's measured grace
+      window accepts a reused refresh token at least once, so even the bad case is survivable
+      rather than a bricked connection. AC-26 asserts the one-refresh property against the
+      emulator, so if the emulator models locking differently the claim fails loudly instead of
+      being assumed.
+    </figcaption>
+  </figure>
+
+  <div class="note">
+    <strong>Why not a lease?</strong> Claiming a <code>refreshLeaseUntil</code> field in one
+    transaction, calling HighLevel outside it, and writing the result in a second is the correct
+    answer for a system with real concurrency — and it introduces a lock with an expiry policy, a
+    stale-lease sweep, and a third failure mode. Measured against a hazard that has been shown to
+    be survivable, on a five-day clock, that is machinery bought with the wrong currency. The
+    decision is D23 and it names this alternative so a reviewer can disagree with it on the record.
+  </div>
+</section>
+
+<!-- ============================================================ 05 -->
+<section>
+  <p class="chip">05 · the list</p>
+  <h2>Thirteen permits, and what is deliberately not on the counter</h2>
+
+  <p>
+    This table is data, exported from one module, with three consumers: the proxy enforces it,
+    Slice 9's system prompt is rendered from it, and Slice 13's README prints it. A table that is
+    data can be rendered three ways; a table that is a <code>switch</code> statement can be
+    rendered once and then drifts.
+  </p>
+
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="mono">#</th>
+          <th class="mono">method</th>
+          <th class="mono">path</th>
+          <th class="mono">version</th>
+          <th class="mono">scope</th>
+          <th class="mono">locationId</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td class="mono">1</td><td class="mono"><span class="tag tag-allow">POST</span></td><td class="mono">/contacts/search</td><td class="mono">2021-07-28</td><td class="mono">contacts.readonly</td><td class="mono">body</td></tr>
+        <tr><td class="mono">2</td><td class="mono"><span class="tag tag-allow">GET</span></td><td class="mono">/contacts/:contactId</td><td class="mono">2021-07-28</td><td class="mono">contacts.readonly</td><td class="mono">—</td></tr>
+        <tr><td class="mono">3</td><td class="mono"><span class="tag tag-up">POST</span></td><td class="mono">/contacts/</td><td class="mono">2021-07-28</td><td class="mono">contacts.write</td><td class="mono">body</td></tr>
+        <tr><td class="mono">4</td><td class="mono"><span class="tag tag-up">PUT</span></td><td class="mono">/contacts/:contactId</td><td class="mono">2021-07-28</td><td class="mono">contacts.write</td><td class="mono">—</td></tr>
+        <tr><td class="mono">5</td><td class="mono"><span class="tag tag-allow">GET</span></td><td class="mono">/conversations/search</td><td class="mono">2021-04-15</td><td class="mono">conversations.readonly</td><td class="mono">query</td></tr>
+        <tr><td class="mono">6</td><td class="mono"><span class="tag tag-allow">GET</span></td><td class="mono">/conversations/:conversationId</td><td class="mono">2021-04-15</td><td class="mono">conversations.readonly</td><td class="mono">—</td></tr>
+        <tr><td class="mono">7</td><td class="mono"><span class="tag tag-allow">GET</span></td><td class="mono">/conversations/:conversationId/messages</td><td class="mono">2021-04-15</td><td class="mono">conversations/message.readonly</td><td class="mono">—</td></tr>
+        <tr><td class="mono">8</td><td class="mono"><span class="tag tag-deny">POST</span></td><td class="mono">/conversations/messages <span class="tag tag-deny">flag</span></td><td class="mono">2021-04-15</td><td class="mono">conversations/message.write</td><td class="mono">—</td></tr>
+        <tr><td class="mono">9</td><td class="mono"><span class="tag tag-allow">GET</span></td><td class="mono">/calendars/</td><td class="mono">2021-04-15</td><td class="mono">calendars.readonly</td><td class="mono">query</td></tr>
+        <tr><td class="mono">10</td><td class="mono"><span class="tag tag-allow">GET</span></td><td class="mono">/calendars/:calendarId</td><td class="mono">2021-04-15</td><td class="mono">calendars.readonly</td><td class="mono">—</td></tr>
+        <tr><td class="mono">11</td><td class="mono"><span class="tag tag-allow">GET</span></td><td class="mono">/calendars/events</td><td class="mono">2021-04-15</td><td class="mono">calendars/events.readonly</td><td class="mono">query</td></tr>
+        <tr><td class="mono">12</td><td class="mono"><span class="tag tag-allow">GET</span></td><td class="mono">/calendars/events/appointments/:eventId</td><td class="mono">2021-04-15</td><td class="mono">calendars/events.readonly</td><td class="mono">—</td></tr>
+        <tr><td class="mono">13</td><td class="mono"><span class="tag tag-allow">GET</span></td><td class="mono">/calendars/:calendarId/free-slots</td><td class="mono">2021-04-15</td><td class="mono">calendars.readonly</td><td class="mono">—</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p style="margin-top:1.2rem">
+    Rows 10 and 11 have the same shape — <code>/calendars/</code> then one segment — so the
+    matcher cannot decide between them by trying rows in order. It resolves by
+    <strong>specificity</strong>: a literal segment beats a parameter at every position,
+    independent of where the rows sit in the table. AC-4 proves it by running the matcher against
+    a reversed copy of the list, which is the only version of that test that would catch a
+    regression introduced by someone tidying the table.
+  </p>
+
+  <h3>Off the counter, on purpose</h3>
+  <div class="cards">
+    <div class="card deny">
+      <h4>DELETE /contacts/:contactId</h4>
+      <p>
+        The platform reference's own worked example of the confused deputy: a generated "contact
+        cleanup tool" must not be able to delete a business's CRM in a loop. The scope is granted;
+        the row is not written.
+      </p>
+      <dl><div><dt>scope</dt><dd>held</dd></div><div><dt>picked up by</dt><dd>nothing planned</dd></div></dl>
+    </div>
+    <div class="card deny">
+      <h4>POST /contacts/upsert</h4>
+      <p>
+        A second create path whose duplicate-handling depends on a per-location setting we do not
+        control, for a capability row 3 already covers.
+      </p>
+      <dl><div><dt>scope</dt><dd>held</dd></div><div><dt>picked up by</dt><dd>nothing planned</dd></div></dl>
+    </div>
+    <div class="card deny">
+      <h4>POST /calendars/events/appointments</h4>
+      <p>
+        F7.1 asks for calendars as "list, appointments, availability" — all reads. Creating an
+        appointment writes to a real person's diary to satisfy a read-shaped requirement.
+      </p>
+      <dl><div><dt>scope</dt><dd>held</dd></div><div><dt>picked up by</dt><dd>nothing planned</dd></div></dl>
+    </div>
+    <div class="card deny">
+      <h4>GET /locations/:locationId</h4>
+      <p>
+        Connection metadata, already served by <code>GET /api/hl/connection</code> as a redacted
+        projection. Exposing it here would give generated code a second, unredacted view of the
+        account it is running against.
+      </p>
+      <dl><div><dt>scope</dt><dd>held</dd></div><div><dt>picked up by</dt><dd>nothing planned</dd></div></dl>
+    </div>
+    <div class="card up">
+      <h4>POST /conversations/messages <span class="tag tag-deny">flag</span></h4>
+      <p>
+        On the list and disabled. This endpoint sends a real SMS or email: in the sandbox it may
+        fail for want of a provisioned number, and if it succeeds it costs money and reaches a
+        real person. <code>HL_ALLOW_MESSAGE_SEND</code> is set nowhere except one integration
+        case, and it stays out of the Loom.
+      </p>
+      <dl><div><dt>off</dt><dd>403 route_disabled</dd></div><div><dt>on</dt><dd>forwarded</dd></div></dl>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 06 -->
+<section>
+  <p class="chip">06 · the failure fan</p>
+  <h2>Every exit, and the sentence at the end of it</h2>
+
+  <p>
+    F8.3 asks for failed HighLevel calls to be surfaced clearly. "Clearly" is only testable if
+    every upstream condition has a code the preview can branch on and a sentence a person can act
+    on, so both are fixed here rather than improvised at the component. Upstream-originated
+    failures also carry <code>detail</code> — HighLevel's own message about the request, truncated
+    to 200 characters — which is what makes a wrong filter grammar debuggable instead of a shrug.
+  </p>
+
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr><th>What happened</th><th class="mono">status · code</th><th>What the user reads</th><th class="mono">side effect</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Never connected</td>
+          <td class="mono"><span class="tag tag-deny">409</span> hl_not_connected</td>
+          <td>Connect your HighLevel account to load CRM data.</td>
+          <td class="mono">—</td>
+        </tr>
+        <tr>
+          <td>Refresh returned <code>invalid_grant</code></td>
+          <td class="mono"><span class="tag tag-deny">409</span> hl_reconnect_required</td>
+          <td>Your HighLevel connection expired. Reconnect to continue.</td>
+          <td class="mono t-deny">needsReconnect ← true<br>refreshToken untouched</td>
+        </tr>
+        <tr>
+          <td>Refresh failed transiently (5xx, network)</td>
+          <td class="mono"><span class="tag tag-up">502</span> hl_unavailable</td>
+          <td>HighLevel is not responding. Try again.</td>
+          <td class="mono t-allow">nothing written</td>
+        </tr>
+        <tr>
+          <td>Connection already marked dead</td>
+          <td class="mono"><span class="tag tag-deny">409</span> hl_reconnect_required</td>
+          <td>Your HighLevel connection expired. Reconnect to continue.</td>
+          <td class="mono">no refresh attempted</td>
+        </tr>
+        <tr>
+          <td>HighLevel answered 401 — revoked, or a scope removed</td>
+          <td class="mono"><span class="tag tag-deny">409</span> hl_reconnect_required</td>
+          <td>Your HighLevel connection expired. Reconnect to continue.</td>
+          <td class="mono t-deny">needsReconnect ← true</td>
+        </tr>
+        <tr>
+          <td>HighLevel answered 429</td>
+          <td class="mono"><span class="tag tag-up">429</span> hl_rate_limited</td>
+          <td>HighLevel is rate-limiting this account. Try again shortly.</td>
+          <td class="mono">X-RateLimit-* forwarded</td>
+        </tr>
+        <tr>
+          <td>HighLevel answered 404</td>
+          <td class="mono"><span class="tag tag-up">404</span> hl_not_found</td>
+          <td>HighLevel could not find that record. <span class="t-faint">+ detail</span></td>
+          <td class="mono">—</td>
+        </tr>
+        <tr>
+          <td>HighLevel answered 400 / 422</td>
+          <td class="mono"><span class="tag tag-up">400</span> hl_bad_request</td>
+          <td>HighLevel refused that request. <span class="t-faint">+ detail</span></td>
+          <td class="mono">—</td>
+        </tr>
+        <tr>
+          <td>Route is not on the list</td>
+          <td class="mono"><span class="tag tag-deny">403</span> route_not_allowed</td>
+          <td>That HighLevel route is not available through Genesis.</td>
+          <td class="mono">no read, no call</td>
+        </tr>
+        <tr>
+          <td>Route is on the list but flagged off</td>
+          <td class="mono"><span class="tag tag-deny">403</span> route_disabled</td>
+          <td>Sending messages is disabled in this environment.</td>
+          <td class="mono">no call</td>
+        </tr>
+        <tr>
+          <td>Upstream silent past 20 s · body past 5 MiB</td>
+          <td class="mono"><span class="tag tag-up">504</span> hl_timeout<br><span class="tag tag-up">502</span> hl_too_large</td>
+          <td>HighLevel took too long to answer. / That HighLevel response was too large.</td>
+          <td class="mono">aborted</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <strong>The one status that is deliberately not mirrored.</strong> HighLevel's 401 becomes our
+    409, never our 401. <code>apiClient</code> is shared by every screen in the app and reads a 401
+    as "your Firebase session died"; mirroring the upstream status would sign a user out of Genesis
+    because a token in <em>somebody else's</em> system had been revoked. The 409 says what is
+    actually true: there is a conflict between the connection we hold and the one HighLevel will
+    honour, and reconnecting resolves it.
+  </div>
+</section>
+
+<!-- ============================================================ 07 -->
+<section>
+  <p class="chip">07 · where the risk is</p>
+  <h2>Read the slice off its test levels</h2>
+
+  <p>
+    How a slice's criteria distribute across the five levels is a design statement, not an
+    accounting one. This slice's mass sits at L1 and L4 in almost equal parts, and that is the
+    shape it should have: the matcher and the error mapper are pure decisions that deserve to be
+    proven without an emulator, while tenant isolation and the refresh race are only real when a
+    real transaction and two real users are involved. The single L5 case is the demo line, as
+    always.
+  </p>
+
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 900 300" role="img"
+           aria-label="Bar chart of acceptance-criteria placements by test level. L1 unit has 21, L2 component has 5, L3 rules has 2, L4 integration has 20, and L5 end-to-end has 1, across 48 criteria and 49 placements.">
+        <!-- axis -->
+        <line x1="150" y1="40" x2="150" y2="250" class="s-rule" stroke-width="1"/>
+        <line x1="150" y1="250" x2="860" y2="250" class="s-rule" stroke-width="1"/>
+
+        <!-- gridlines: 0,5,10,15,20 at 28px per 1 unit? width 690 for 22 max -->
+        <g class="s-rule dot" stroke-width="1">
+          <line x1="307" y1="40" x2="307" y2="250"/>
+          <line x1="464" y1="40" x2="464" y2="250"/>
+          <line x1="621" y1="40" x2="621" y2="250"/>
+          <line x1="778" y1="40" x2="778" y2="250"/>
+        </g>
+        <text x="307" y="268" class="svg-ms t-faint" text-anchor="middle">5</text>
+        <text x="464" y="268" class="svg-ms t-faint" text-anchor="middle">10</text>
+        <text x="621" y="268" class="svg-ms t-faint" text-anchor="middle">15</text>
+        <text x="778" y="268" class="svg-ms t-faint" text-anchor="middle">20</text>
+
+        <!-- L1: 21 -> 21*31.4 = 659 -->
+        <rect x="150" y="48"  width="659" height="26" class="f-trust"/>
+        <rect x="150" y="48"  width="659" height="26" class="s-trust" stroke-width="1"/>
+        <text x="140" y="66" class="svg-m" text-anchor="end">L1 unit</text>
+        <text x="821" y="66" class="svg-m t-trust">21</text>
+
+        <!-- L2: 5 -> 157 -->
+        <rect x="150" y="88"  width="157" height="26" class="f-surface2"/>
+        <rect x="150" y="88"  width="157" height="26" class="s-rule" stroke-width="1"/>
+        <text x="140" y="106" class="svg-m" text-anchor="end">L2 component</text>
+        <text x="319" y="106" class="svg-m t-faint">5</text>
+
+        <!-- L3: 2 -> 63 -->
+        <rect x="150" y="128" width="63" height="26" class="f-deny"/>
+        <rect x="150" y="128" width="63" height="26" class="s-deny" stroke-width="1"/>
+        <text x="140" y="146" class="svg-m" text-anchor="end">L3 rules</text>
+        <text x="225" y="146" class="svg-m t-deny">2</text>
+
+        <!-- L4: 20 -> 628 -->
+        <rect x="150" y="168" width="628" height="26" class="f-allow"/>
+        <rect x="150" y="168" width="628" height="26" class="s-allow" stroke-width="1"/>
+        <text x="140" y="186" class="svg-m" text-anchor="end">L4 integration</text>
+        <text x="790" y="186" class="svg-m t-allow">20</text>
+
+        <!-- L5: 1 -> 31 -->
+        <rect x="150" y="208" width="31" height="26" class="f-upstream"/>
+        <rect x="150" y="208" width="31" height="26" class="s-upstream" stroke-width="1"/>
+        <text x="140" y="226" class="svg-m" text-anchor="end">L5 e2e</text>
+        <text x="193" y="226" class="svg-m t-upstream">1</text>
+
+        <text x="150" y="24" class="svg-h t-faint">49 PLACEMENTS ACROSS 48 CRITERIA · AC-24 IS PROVEN AT TWO LEVELS</text>
+
+        <text x="150" y="292" class="svg-s">
+          Two rules cases, and both are refusals — there is nothing on this slice a client is permitted to do.
+        </text>
+      </svg>
+    </div>
+    <figcaption>
+      The L3 bar is short and that is correct: this slice adds no collection and no field, so its
+      rules work is re-asserting that <code>hlConnections</code> is unreachable from every client
+      — in the same commit that gives the document its second server-side writer. The L4 bar is
+      long because the two properties that matter most cannot be established by a unit test:
+      <em>exactly one refresh under concurrency</em> needs a real transaction, and <em>alice never
+      sees bob's contacts</em> needs two users, two locations, and a stub that filters by the
+      <code>locationId</code> it actually received.
+    </figcaption>
+  </figure>
+</section>
+
+<!-- ============================================================ 08 -->
+<section>
+  <p class="chip">08 · what is still uncertain</p>
+  <h2>The risks worth carrying forward</h2>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th class="mono">#</th><th>Risk</th><th>What holds it</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="mono">R1</td>
+          <td><strong>A mistake here leaks another tenant's CRM.</strong> The proxy holds a token that reads an entire business's contacts.</td>
+          <td>Three independent structural properties, not one check: uid from the token only, <code>locationId</code> from that uid's own document, URL from a compile-time template. AC-11 makes isolation observable rather than asserted.</td>
+        </tr>
+        <tr>
+          <td class="mono">R2</td>
+          <td><strong>A refresh network call inside a retryable transaction.</strong> The naive reading spends a refresh token twice.</td>
+          <td>Pessimistic locking, a re-read short-circuit, and a measured grace window behind both. AC-26 asserts the one-refresh property rather than assuming it.</td>
+        </tr>
+        <tr>
+          <td class="mono">R3</td>
+          <td><strong>The allowlist is the only thing between generated code and a delete loop.</strong> A subtly greedy matcher reopens the API.</td>
+          <td>Over-permissiveness is hard to <em>express</em>: parameters cannot hold a slash by grammar, and assembly cannot hold anything but the template and those parameters.</td>
+        </tr>
+        <tr>
+          <td class="mono">R4</td>
+          <td><strong>Two rows have the same shape.</strong> Ordering bugs pass every test written from the table's own order.</td>
+          <td>Specificity is order-independent, and the test runs against a reversed table.</td>
+        </tr>
+        <tr>
+          <td class="mono">R5</td>
+          <td><strong>One row sends a real SMS.</strong> It costs money and reaches a person.</td>
+          <td>Flagged off everywhere but one integration case; out of the Loom.</td>
+        </tr>
+        <tr>
+          <td class="mono">R6</td>
+          <td><strong>Two HighLevel shapes are only ⚠️-verified</strong> — the contacts filter DSL and the conversations query parameters. A stub built from our own fixtures proves the proxy, not the integration.</td>
+          <td>Query and body are forwarded opaquely, so a wrong grammar is an upstream 4xx with a <code>detail</code> attached rather than a Genesis bug — and Slice 9 owns getting it right. A manual <code>curl</code> per surface against the real sandbox is in the definition of done.</td>
+        </tr>
+        <tr>
+          <td class="mono">R7</td>
+          <td><strong>Nothing limits how often a generated app calls the proxy</strong>, against a 100-request / 10-second burst ceiling.</td>
+          <td>Bounded and named rather than solved: 429 mapped with upstream's text, <code>X-RateLimit-Remaining</code> forwarded and logged, the real fix (a system-prompt instruction against N+1) is Slice 9's, a per-user quota is stretch S4.</td>
+        </tr>
+        <tr>
+          <td class="mono">R8</td>
+          <td><strong>App Check on the proxy is a constraint Slice 10 inherits</strong>, and Slice 10 is already the hardest unknown in the build.</td>
+          <td>Recorded now, with the opaque-origin problem beside it and a recommended shape — a parent-side <code>postMessage</code> bridge, so no credential enters the sandbox and the request stays same-origin. Slice 10 still owns the decision; it does not have to rediscover the constraints.</td>
+        </tr>
+        <tr>
+          <td class="mono">R9</td>
+          <td><strong>Scope creep is easy to justify here</strong>: the plan's own demo for this slice is a <code>curl</code>, which is not a screen.</td>
+          <td>One section on an existing panel, one button, one line per surface. No new component, no new route, no new store, no new dependency. Everything larger is an out-of-scope row with a slice number against it.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <p>
+    Slice 08 · HighLevel API proxy · design companion to
+    <code>docs/slices/08-highlevel-proxy/02-prd.md</code>, which is the contract this build is
+    graded against. Written 2026-08-17.
+  </p>
+</footer>
+
+</div>
+</body>
+</html>
