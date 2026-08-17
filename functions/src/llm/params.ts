@@ -1,6 +1,8 @@
 import type { MessageParam } from '@anthropic-ai/sdk/resources/messages'
 import type { MessageStreamParams } from '@anthropic-ai/sdk/resources/messages/messages'
 
+import { buildProjectState } from './projectState'
+import type { ProjectFile } from './projectState'
 import { SYSTEM_PROMPT } from './prompt'
 
 /**
@@ -32,6 +34,25 @@ import { SYSTEM_PROMPT } from './prompt'
  * The cost of leaving thinking on is a pause before the first token. `EFFORT`
  * shortens it and the `Generating…` badge makes it legible.
  *
+ * ## `system` is copied only when there is something volatile to append (D11)
+ *
+ * The project's own files go in as a second kind of `system` block, appended
+ * **after** the `cache_control` breakpoint. Both halves of that sentence are
+ * load-bearing.
+ *
+ * *After the breakpoint*, because render order is `tools` → `system` →
+ * `messages` and a change anywhere in the cached prefix invalidates everything
+ * following it. A block that changes whenever the project changes, placed one
+ * element earlier, would turn every generation into a cache write — with no
+ * error, no frame and the bill as the only symptom.
+ *
+ * *Only when there is something to append*, because a project holding no files
+ * must send the `SYSTEM_PROMPT` array **itself**, by identity (AC-13). An
+ * unconditional `[...SYSTEM_PROMPT]` would be harmless to the cache and would
+ * quietly make that guarantee unassertable, which is how it would survive
+ * review: the thing being protected is not the array but the habit of not
+ * touching it.
+ *
  * ## Effort is `low` for this slice, and Slice 9 re-tunes it (D15)
  *
  * `low` on `claude-opus-5` is documented as unusually strong; it keeps thinking
@@ -46,13 +67,19 @@ export const MODEL = 'claude-opus-5'
 export const MAX_TOKENS = 64_000
 export const EFFORT = 'low' as const
 
-export function buildParams(context: MessageParam[]): MessageStreamParams {
+export function buildParams(
+  context: MessageParam[],
+  files: readonly ProjectFile[] = [],
+): MessageStreamParams {
+  const projectState = buildProjectState(files)
+
   return {
     model: MODEL,
     max_tokens: MAX_TOKENS,
-    // The array itself, not a copy: nothing is appended per call, so the cached
-    // prefix is byte-identical on every request.
-    system: SYSTEM_PROMPT,
+    // The array itself when there is nothing volatile to add, so the cached
+    // prefix is byte-identical on every request; a copy with the project state
+    // appended *after* the breakpoint when there is (D11).
+    system: projectState === null ? SYSTEM_PROMPT : [...SYSTEM_PROMPT, projectState],
     output_config: { effort: EFFORT },
     messages: context,
   }
