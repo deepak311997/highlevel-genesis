@@ -309,3 +309,32 @@ beside R2's.
 
 `streamGenerateUntil`, `waitFor` and `sleep` were written for the removed L4 cases and deleted with
 them rather than left as dead helpers.
+
+## T12 — The deployment surface
+
+**Commit:** `9cdf6d2`
+
+**Tests added:** L1 `functions/src/index.spec.ts` — `generate.__endpoint` binds `ANTHROPIC_API_KEY`
+as a secret, `timeoutSeconds` is 540, `availableMemoryMb` is 512, and `api` keeps 60 s / 256 MiB /
+no secrets. Plus a source scan: `generate.ts` names both guards, and the messages `POST` route still
+carries `attested` and `withVerifiedUser`.
+
+These assertions passed on arrival, because T9 set the options. **Mutation-checked instead**:
+reverting the three to Slice 0's values (60 s, 256 MiB, no `secrets`) turns exactly those three
+cases red. The spec states in prose what `__endpoint` does and does not prove — it carries nothing
+about middleware, so the behavioural proof of the guards is T9's 401 and 403 over the wire.
+
+**Green:** a comment in `index.ts` recording that the options live in `generate.ts`, beside the
+`defineSecret` that declares the key.
+
+## T13 — Rules, re-asserted
+
+**Commit:** see below
+
+**Tests changed:** L3 `tests/rules/firestore.spec.ts` — the `message()` payload gains `truncated`,
+so it is byte-identical to what the two writers now store; two cases added — creating a **truncated
+assistant** message (the shape a client would most want to forge) and flipping `truncated` on an
+existing one; the cross-tenant injection case now uses the truncated shape too.
+
+**Green:** none. **No rules change** (D35) — a rule that denies a document denies it whatever fields
+it has. 28 cases, all `assertFails`, no `assertSucceeds` import.
