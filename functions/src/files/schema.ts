@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { projectsPath } from '../projects/schema'
+import { firestoreTimestamp } from '../users/schema'
 
 /**
  * `users/{uid}/projects/{projectId}/files/{fileId}` — a generated file, and the
@@ -123,4 +124,233 @@ const DISPLAY_MAX = 40
 export function displayPath(path: string): string {
   // eslint-disable-next-line no-control-regex -- stripping control characters is the point
   return path.replace(/[\u0000-\u001f\u007f-\u009f]/gu, '').slice(0, DISPLAY_MAX)
+}
+
+/** UTF-8 bytes, which is what both caps and Firestore's document limit count. */
+export function byteLength(text: string): number {
+  return Buffer.byteLength(text, 'utf8')
+}
+
+/**
+ * One file operation as the splitter produced it — **syntax only** (D8).
+ *
+ * Declared here rather than in `llm/fileops.ts` and re-exported from there, so
+ * the import direction is `llm/ → files/` in both directions that matter:
+ * `fileops.ts` already reads `PATH_MAX` for its hold-back bound, and a type
+ * declared the other way round would make that a cycle.
+ */
+export interface FileOp {
+  path: string
+  content: string
+}
+
+/**
+ * One file, ready to be written.
+ *
+ * `size` is computed here rather than by the writer, so the number stored beside
+ * the content is the one the validator actually measured against the cap.
+ */
+export interface FileWrite {
+  path: string
+  content: string
+  size: number
+}
+
+/**
+ * Why a turn's files were not written — **a discriminated union, not a string**.
+ *
+ * The union is what makes the copy table exhaustive: `fileErrorCopy` switches on
+ * `reason`, so a new way to refuse a set cannot be added without a copy line to
+ * go with it. Three of the seven are raised outside this file — `unterminated`
+ * by the collector's `finish()`, `incomplete` by a turn that did not complete
+ * (D10), and `write-failed` by the batch — which is why the type is broader than
+ * `validateFileOps`'s own return.
+ */
+export type FileRejection =
+  | { reason: 'path'; path: string }
+  | { reason: 'duplicate'; path: string }
+  | { reason: 'too-large'; path: string }
+  | { reason: 'too-many' }
+  | { reason: 'unterminated'; path: string }
+  | { reason: 'incomplete' }
+  | { reason: 'write-failed' }
+
+/** The lead-in every set-level refusal shares, so the seven lines cannot drift. */
+const REFUSED = 'Genesis could not save the generated files:'
+const UNCHANGED = 'Nothing was changed.'
+
+/**
+ * The user-facing sentence for a refusal, and the only thing they are told.
+ *
+ * Every path goes through `displayPath` first: these strings come **straight from
+ * the model's output** and have just been refused for being unstorable, so they
+ * are hostile by construction.
+ *
+ * The two caps are interpolated from their constants rather than written out, so
+ * raising `FILE_LIMIT` cannot leave a sentence claiming the old number.
+ */
+export function fileErrorCopy(rejection: FileRejection): string {
+  switch (rejection.reason) {
+    case 'path':
+      return `${REFUSED} "${displayPath(rejection.path)}" is not a file name we can store. ${UNCHANGED}`
+    case 'duplicate':
+      return `${REFUSED} "${displayPath(rejection.path)}" was written twice. ${UNCHANGED}`
+    case 'too-large':
+      return `${REFUSED} "${displayPath(rejection.path)}" is larger than ${String(FILE_BYTES_MAX / 1000)} KB. ${UNCHANGED}`
+    case 'too-many':
+      return `${REFUSED} a project can hold at most ${String(FILE_LIMIT)} files. ${UNCHANGED}`
+    case 'unterminated':
+      return `The reply ended in the middle of "${displayPath(rejection.path)}", so nothing was saved. Try again.`
+    case 'incomplete':
+      return 'The reply was cut short, so no files were saved. Try again.'
+    case 'write-failed':
+      return 'The generated files could not be saved. Try again.'
+  }
+}
+
+export type ValidateFileOpsResult =
+  { ok: true; writes: FileWrite[] } | { ok: false; error: FileRejection }
+
+/**
+ * The whole turn's ops, validated once, at one boundary (D8, D9).
+ *
+ * **All or nothing.** A generated app is a *set* of files that reference each
+ * other, so writing two of three produces an app that is broken in a way the user
+ * cannot see until the preview fails. The first failure ends the whole set.
+ *
+ * The order is P5's and is deterministic, so `fileError` is reproducible from a
+ * fixture: per op in the order written, path shape → duplicate against an earlier
+ * op → byte cap; then, after the loop, the union with what the project already
+ * holds against `FILE_LIMIT`. Path first because a path we cannot name is the one
+ * whose *identity* the other two messages depend on.
+ *
+ * `existingPaths` is read immediately before the write and is not transactional —
+ * `liveProjectCount` and `messageCount`'s rule, and D23's last-write-wins says the
+ * same thing from the other side. Two simultaneous generations at the cap can both
+ * land, which is a guard-rail missing by one rather than a boundary crossed.
+ */
+export function validateFileOps(
+  ops: readonly FileOp[],
+  existingPaths: readonly string[],
+): ValidateFileOpsResult {
+  const writes: FileWrite[] = []
+  const seen = new Set<string>()
+
+  for (const op of ops) {
+    if (!filePathSchema.safeParse(op.path).success) {
+      return { ok: false, error: { reason: 'path', path: op.path } }
+    }
+    if (seen.has(op.path)) {
+      return { ok: false, error: { reason: 'duplicate', path: op.path } }
+    }
+
+    const size = byteLength(op.content)
+    if (size > FILE_BYTES_MAX) {
+      return { ok: false, error: { reason: 'too-large', path: op.path } }
+    }
+
+    seen.add(op.path)
+    writes.push({ path: op.path, content: op.content, size })
+  }
+
+  // The **union**, not the count of ops: a turn that rewrites five existing files
+  // adds nothing to the project's total, and the cap is about what the project
+  // ends up holding.
+  const union = new Set([...existingPaths, ...seen])
+  if (union.size > FILE_LIMIT) {
+    return { ok: false, error: { reason: 'too-many' } }
+  }
+
+  return { ok: true, writes }
+}
+
+/** What `PUT`'s refusal says when the body is over the cap. */
+const BODY_TOO_LARGE = `That file is larger than ${String(FILE_BYTES_MAX / 1000)} KB.`
+
+/**
+ * `PUT`'s body — `content`, and nothing else.
+ *
+ * `.strict()` is the load-bearing call: `path` comes from the URL, and `size`,
+ * `createdAt` and `updatedAt` are the server's to write. A body carrying any of
+ * them is a 400 rather than a key we happened not to read.
+ *
+ * The cap is checked in **bytes**, in a `superRefine` rather than `.max()`,
+ * because `.max()` on a string counts UTF-16 code units — which would let a file
+ * of 60,000 three-byte characters through at 180,000 bytes.
+ */
+export const putFileBodySchema = z
+  .object({ content: z.string() })
+  .strict()
+  .superRefine((body, ctx) => {
+    if (byteLength(body.content) > FILE_BYTES_MAX) {
+      ctx.addIssue({ code: 'custom', message: BODY_TOO_LARGE, path: ['content'] })
+    }
+  })
+
+export type PutFileBody = z.infer<typeof putFileBodySchema>
+
+/**
+ * The stored document, **parsed rather than asserted**.
+ *
+ * Nothing here carries a `.catch`, and that is deliberate: `path` is the file's
+ * identity, `content` is the file, `size` is what the list renders and the
+ * timestamps are how it is dated. A document missing or corrupting any of them
+ * cannot be shown, so it is *known* to be unusable — omitted from the list, 404 by
+ * id, and logged once (D13).
+ *
+ * **`content` deliberately carries no maximum**, where the body schema has one.
+ * Both writers enforce the cap, so an oversized document cannot arrive; and if one
+ * somehow did, refusing to read it would lose the user's file rather than protect
+ * anything. A stored document is not a request body.
+ */
+export const storedFileSchema = z.object({
+  path: filePathSchema,
+  content: z.string(),
+  size: z.number().int().min(0),
+  createdAt: firestoreTimestamp,
+  updatedAt: firestoreTimestamp,
+})
+
+export type StoredFile = z.infer<typeof storedFileSchema>
+
+/**
+ * The same document as the list reads it — a projection with **no `content`**.
+ *
+ * Its own schema rather than `storedFileSchema.omit(...)`, because the omission is
+ * the point: opening a workspace must not ship 20 × 100 KB of code nobody has
+ * clicked on yet, and a schema that could parse a `content` would let one arrive.
+ */
+export const storedFileMetaSchema = storedFileSchema.omit({ content: true }).strict()
+
+export type StoredFileMeta = z.infer<typeof storedFileMetaSchema>
+
+/**
+ * The wire shapes. Timestamps are ISO-8601 strings — the project's convention
+ * since Slice 2.
+ *
+ * **There is no `id` field**, because the id *is* the path (D13). Carrying both
+ * would be two names for one thing and one more pair that can disagree.
+ */
+export interface FileMeta {
+  path: string
+  size: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface FileContent extends FileMeta {
+  content: string
+}
+
+export function toFileMeta(stored: StoredFileMeta): FileMeta {
+  return {
+    path: stored.path,
+    size: stored.size,
+    createdAt: stored.createdAt.toDate().toISOString(),
+    updatedAt: stored.updatedAt.toDate().toISOString(),
+  }
+}
+
+export function toFile(stored: StoredFile): FileContent {
+  return { ...toFileMeta(stored), content: stored.content }
 }
