@@ -410,3 +410,30 @@ styling so a keyboard user can see where they are. The row stays inert (D23).
   `href` while the name inside it navigates. That is what stops a later change wrapping the whole
   rectangle — with Delete inside it — and is a deliberate, documented inversion rather than a test
   weakened to get a green suite.
+
+## T15 — End to end
+
+**Red.** Not applicable in the usual sense, and the plan says so: "Green: nothing new — every part
+exists by T14. If it fails, the failure is real." It passed on the first run, which is the intended
+outcome — the parts were built and tested one at a time, and this walks the demo line through all
+of them at once.
+
+**Green.** `tests/e2e/workspace.spec.ts`, three tests, 9 e2e tests green in total:
+
+1. **AC-37** — sign up and verify, create a project through the UI, click its **name**, land on
+   `/projects/<id>`, see the name, a `Not connected` badge (AC-26 in a browser) and all three panels
+   with the editor and preview naming Slices 6, 7 and 10, see `chat-empty`, type the prompt, press
+   Enter, get two bubbles with `data-role` `user` then `assistant` and the echo second, watch the
+   composer clear — then **reload** and see both again, then go **back to the dashboard and in
+   again** and see them a third time. The reload proves the pair came back from the API; the second
+   visit proves it is not sitting in a store that happened not to be cleared.
+2. **AC-33 in a real browser** — Shift+Enter inserts a newline (`'first line\nsecond line'`) and
+   sends nothing. L2 asserts no request is issued; only a browser shows the newline actually lands.
+3. **AC-21 by the path a user reaches it** — delete the project from the dashboard, then navigate
+   back to the workspace URL: "That project no longer exists.", no chat panel, and the Back link
+   returns to the dashboard.
+
+Playwright's Desktop Chrome viewport is 1280×720, so this walks the **resizable** tree; the tabbed
+tree is covered at L2, where the breakpoint is controllable rather than guessed at.
+
+**Refactor.** `locator.type()` → `locator.pressSequentially()`, its non-deprecated equivalent.
