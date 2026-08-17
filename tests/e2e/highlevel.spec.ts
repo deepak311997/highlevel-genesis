@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import { resetEmulators } from '../integration/helpers'
-import { assertEmulatorBuild, signUpAndVerify } from './helpers'
+import { assertEmulatorBuild, connectHighLevel, signUpAndVerify } from './helpers'
 
 /**
  * Slice 2's one end-to-end test: the demo line, walked in a browser.
@@ -33,18 +33,7 @@ test.describe('Slice 02 — HighLevel connection', () => {
     // real ID token.
     await expect(page.getByTestId('connection-empty')).toBeVisible()
 
-    await page.getByTestId('connection-connect').click()
-
-    // Off to "HighLevel". The server built this URL, so arriving here means the
-    // state was sealed, the scopes were composed and the redirect_uri survived.
-    await expect(page.locator('#approve')).toBeVisible({ timeout: 15_000 })
-
-    await page.click('#approve')
-
-    // Back through the callback, which exchanged the code, stored the
-    // connection, and redirected into the SPA — which then replaced the URL.
-    await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 })
-    await expect(page.getByTestId('connection-location')).toHaveText('India Square')
+    await connectHighLevel(page)
 
     // Back must not return to the spent callback URL.
     await page.goBack()

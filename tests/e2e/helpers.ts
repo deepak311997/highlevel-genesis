@@ -128,6 +128,35 @@ export async function openNewProject(page: Page, name = 'Contact dashboard'): Pr
 }
 
 /**
+ * Connect the fake HighLevel location, and see its name on the dashboard.
+ *
+ * Extracted for the reason `openNewProject` was: a second suite needs it, and a
+ * second copy is where two specs start to disagree — here, about what a connected
+ * account looks like. It spans the handshake and nothing else: from the Connect
+ * button, out to the fake authorize page, back through the callback, to the
+ * location's name on screen. What a caller checks before it (the empty state) or
+ * after it (that a reload survives, that disconnect works) stays with the caller,
+ * because those are the caller's claims rather than this one's.
+ *
+ * The two 15-second waits are the two redirects — out to the fake and back
+ * through the callback — each a full server round trip rather than a render.
+ */
+export async function connectHighLevel(page: Page): Promise<void> {
+  await page.getByTestId('connection-connect').click()
+
+  // Off to "HighLevel". The server built this URL, so arriving here means the
+  // state was sealed, the scopes were composed and the redirect_uri survived.
+  await expect(page.locator('#approve')).toBeVisible({ timeout: 15_000 })
+
+  await page.click('#approve')
+
+  // Back through the callback, which exchanged the code, stored the
+  // connection, and redirected into the SPA — which then replaced the URL.
+  await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 })
+  await expect(page.getByTestId('connection-location')).toHaveText('India Square')
+}
+
+/**
  * Reading and writing Monaco from a test (Slice 7, D24, P3).
  *
  * `fill()` and `toHaveValue()` both stop working the moment the textarea is gone,
