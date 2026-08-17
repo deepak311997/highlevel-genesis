@@ -1,4 +1,9 @@
-import type { CollectionReference, DocumentSnapshot, Query } from 'firebase-admin/firestore'
+import type {
+  CollectionReference,
+  DocumentSnapshot,
+  Query,
+  WriteBatch,
+} from 'firebase-admin/firestore'
 import { FieldValue, Timestamp } from 'firebase-admin/firestore'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -107,14 +112,29 @@ describe('transcriptQuery', () => {
  * asserting here is the *document* — and the document is decided before any I/O
  * happens. The write reaching Firestore at all is T10's L4 case.
  */
-function fakeDb(stored: Record<string, unknown> | null): { written: unknown; path: string } {
-  const record = { written: undefined as unknown, path: '' }
-  const ref = {
+interface FakeDb {
+  /** The assistant message's own document, as staged on the batch. */
+  written: unknown
+  path: string
+  /** Every document staged, in order, with the collection it was staged into. */
+  staged: { path: string; data: Record<string, unknown>; options: unknown }[]
+  /** How many batches were created, and how many were committed. */
+  batches: number
+  commits: number
+}
+
+function fakeDb(stored: Record<string, unknown> | null): FakeDb {
+  const record: FakeDb = {
+    written: undefined,
+    path: '',
+    staged: [],
+    batches: 0,
+    commits: 0,
+  }
+
+  const message = {
     id: 'assistant-1',
-    set: (data: unknown) => {
-      record.written = data
-      return Promise.resolve()
-    },
+    path: 'users/alice/projects/proj-1/messages/assistant-1',
     get: () =>
       Promise.resolve({
         exists: stored !== null,
@@ -122,12 +142,39 @@ function fakeDb(stored: Record<string, unknown> | null): { written: unknown; pat
         data: () => stored,
       } as unknown as DocumentSnapshot),
   }
+
+  /*
+   * One recorder per `batch()` call, so "the message and the files went into
+   * **one** batch" is assertable rather than assumed — two batches would commit
+   * separately and D11's atomicity would be gone with no test to notice.
+   */
+  const batch = {
+    set(ref: { path: string }, data: Record<string, unknown>, options?: unknown) {
+      record.staged.push({ path: ref.path, data, options })
+      if (ref.path === message.path) record.written = data
+      return this
+    },
+    commit() {
+      record.commits += 1
+      return Promise.resolve([])
+    },
+  }
+
   getDb.mockReturnValue({
+    batch: () => {
+      record.batches += 1
+      return batch as unknown as WriteBatch
+    },
     collection: (path: string) => {
-      record.path = path
-      return { doc: () => ref } as unknown as CollectionReference
+      // The messages collection is the one this module composes; the files
+      // collection is composed by `stageFileWrites`, which shares this fake.
+      if (path.endsWith('/messages')) record.path = path
+      return {
+        doc: (id?: string) => (id === undefined ? message : { id, path: `${path}/${id}` }),
+      } as unknown as CollectionReference
     },
   })
+
   return record
 }
 
@@ -153,7 +200,7 @@ describe('appendAssistantMessage', () => {
   it('writes the assistant document under the project, with seq 1', async () => {
     const db = fakeDb(storedAssistant(false))
 
-    await appendAssistantMessage('alice', 'proj-1', 'Here is a contact dashboard', false)
+    await appendAssistantMessage('alice', 'proj-1', 'Here is a contact dashboard', false, [])
 
     expect(db.path).toBe('users/alice/projects/proj-1/messages')
     const written = db.written as Record<string, unknown>
@@ -174,7 +221,7 @@ describe('appendAssistantMessage', () => {
   it('stamps the document with a server timestamp sentinel', async () => {
     const db = fakeDb(storedAssistant(false))
 
-    await appendAssistantMessage('alice', 'proj-1', 'Here is a contact dashboard', false)
+    await appendAssistantMessage('alice', 'proj-1', 'Here is a contact dashboard', false, [])
 
     expect((db.written as Record<string, unknown>)['createdAt']).toBeInstanceOf(
       FieldValue.serverTimestamp().constructor,
@@ -185,7 +232,7 @@ describe('appendAssistantMessage', () => {
   it('carries the truncated flag it was given into the document', async () => {
     const db = fakeDb(storedAssistant(true))
 
-    await appendAssistantMessage('alice', 'proj-1', 'Here is a contact dash', true)
+    await appendAssistantMessage('alice', 'proj-1', 'Here is a contact dash', true, [])
 
     expect((db.written as Record<string, unknown>)['truncated']).toBe(true)
   })
@@ -199,7 +246,13 @@ describe('appendAssistantMessage', () => {
   it('returns the committed document in wire shape, carrying no seq', async () => {
     fakeDb(storedAssistant(true))
 
-    const message = await appendAssistantMessage('alice', 'proj-1', 'Here is a contact dash', true)
+    const message = await appendAssistantMessage(
+      'alice',
+      'proj-1',
+      'Here is a contact dash',
+      true,
+      [],
+    )
 
     expect(message).toEqual({
       id: 'assistant-1',
@@ -219,7 +272,58 @@ describe('appendAssistantMessage', () => {
     vi.spyOn(console, 'info').mockImplementation(() => undefined)
     fakeDb({ role: 'assistant' })
 
-    await expect(appendAssistantMessage('alice', 'proj-1', 'hi', false)).rejects.toThrow()
+    await expect(appendAssistantMessage('alice', 'proj-1', 'hi', false, [])).rejects.toThrow()
+  })
+
+  /**
+   * D11, and the reason the batch exists at all.
+   *
+   * The message contains `[file: index.html]`; if that commits and the file does
+   * not, the transcript is lying about the project's contents. One batch makes
+   * the turn atomic — 21 writes at the cap, far inside Firestore's 500.
+   */
+  it('stages the message and every file into one batch, committed once', async () => {
+    const db = fakeDb(storedAssistant(false))
+
+    await appendAssistantMessage('alice', 'proj-1', 'Here is a contact dashboard', false, [
+      { path: 'index.html', content: '<h1>x</h1>\n', size: 11, exists: false },
+      { path: 'app.js', content: 'const a = 1\n', size: 12, exists: true },
+    ])
+
+    expect(db.batches).toBe(1)
+    expect(db.commits).toBe(1)
+    expect(db.staged.map((entry) => entry.path)).toEqual([
+      'users/alice/projects/proj-1/messages/assistant-1',
+      'users/alice/projects/proj-1/files/index.html',
+      'users/alice/projects/proj-1/files/app.js',
+    ])
+  })
+
+  /* A prose-only turn still goes through the batch, carrying one document. */
+  it('commits exactly one batch of one document when there are no files', async () => {
+    const db = fakeDb(storedAssistant(false))
+
+    await appendAssistantMessage('alice', 'proj-1', 'Here is a contact dashboard', false, [])
+
+    expect(db.batches).toBe(1)
+    expect(db.commits).toBe(1)
+    expect(db.staged).toHaveLength(1)
+  })
+
+  /*
+   * The re-read still happens, and still happens **after** the commit:
+   * `serverTimestamp()` is a sentinel until then, so the committed document is
+   * the only place the real timestamp exists.
+   */
+  it('answers with the committed message even when files were written', async () => {
+    fakeDb(storedAssistant(false))
+
+    const message = await appendAssistantMessage('alice', 'proj-1', 'x', false, [
+      { path: 'app.js', content: 'a\n', size: 2, exists: false },
+    ])
+
+    expect(message.id).toBe('assistant-1')
+    expect(message.createdAt).toBe('2023-11-14T22:13:20.000Z')
   })
 })
 

@@ -2,6 +2,7 @@ import type { Request, Response } from 'express'
 import type { DocumentSnapshot, Query } from 'firebase-admin/firestore'
 import { FieldValue } from 'firebase-admin/firestore'
 
+import { stageFileWrites, type FileWritePlan } from '../files/handlers'
 import { HttpError } from '../lib/errors'
 import { getDb } from '../lib/firebase'
 import { logAuthEvent } from '../lib/log'
@@ -129,15 +130,29 @@ function readBackOrFail(snapshot: DocumentSnapshot, detail: string): Message {
 }
 
 /**
- * The assistant turn, written at the stream's terminal event.
+ * The assistant turn **and the turn's files**, in one batch (D11).
  *
  * Called by `/generate` and nowhere else, on every terminal path that produced
  * text — `done`, a mid-stream failure carrying a partial, and a client that
  * disconnected (D21, D22, D23). The `truncated` flag is the caller's to decide,
  * because only the caller knows *why* the stream ended.
  *
- * `seq` is 1 (D35). Both halves of a turn are now written in requests of their
- * own, so their `createdAt` values genuinely differ and `seq` is belt and braces
+ * **One `WriteBatch` per turn**, and the message is why it is owned here rather
+ * than in `files/`: the message contains `[file: index.html]`, so if that commits
+ * and the file does not, the transcript is lying about the project's contents.
+ * The message is the turn's anchor and the files hang off it (P7). Twenty-one
+ * writes at the cap — one message, twenty files — is far inside Firestore's 500.
+ *
+ * A batch resolves every `serverTimestamp()` in it to one commit timestamp, which
+ * was Slice 4's hazard (R1). It is harmless here: the message keeps its `seq: 1`,
+ * and the files live in a different collection ordered by name.
+ *
+ * The re-read still happens and still happens **after** the commit, because
+ * `serverTimestamp()` is a sentinel until then — so the committed document is the
+ * only place the real timestamp exists.
+ *
+ * `seq` is 1 (D35). Both halves of a turn are written in requests of their own,
+ * so their `createdAt` values genuinely differ and `seq` is belt and braces
  * rather than the tiebreak it was in Slice 4 — but the transcript query still
  * reads it, and every transcript written before this slice still needs it.
  */
@@ -146,17 +161,23 @@ export async function appendAssistantMessage(
   projectId: string,
   content: string,
   truncated: boolean,
+  fileWrites: readonly FileWritePlan[],
 ): Promise<Message> {
   // Auto-id, minted locally: nothing is read to get it.
   const ref = getDb().collection(messagesPath(uid, projectId)).doc()
+  const batch = getDb().batch()
 
-  await ref.set({
+  batch.set(ref, {
     role: 'assistant',
     content,
     seq: ASSISTANT_SEQ,
     createdAt: FieldValue.serverTimestamp(),
     truncated,
   })
+
+  stageFileWrites(batch, uid, projectId, fileWrites)
+
+  await batch.commit()
 
   return readBackOrFail(await ref.get(), 'after append')
 }

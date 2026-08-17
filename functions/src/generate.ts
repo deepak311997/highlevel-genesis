@@ -414,7 +414,10 @@ async function finishTurn(
   })
 
   const message =
-    event.text === '' ? null : await appendAssistantMessage(uid, projectId, event.text, truncated)
+    event.text === ''
+      ? null
+      : // The file half arrives in T11; a turn writes no files until it does.
+        await appendAssistantMessage(uid, projectId, event.text, truncated, [])
 
   // Nobody is listening. The partial is already stored, which is the whole of
   // what a returning user needs (F8.2).
