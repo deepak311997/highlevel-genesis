@@ -127,17 +127,3 @@ export async function resolveConnection(
 
   return { accessToken, locationId: connection.locationId }
 }
-
-/**
- * Kept as the simple entry point for callers that want only a credential.
- *
- * Delegating rather than duplicating means Slice 2's shipped unit tests still
- * describe one decision function rather than two that could disagree.
- */
-export async function getAccessToken(
-  uid: string,
-  deps: TokenDeps,
-  now = Date.now(),
-): Promise<string> {
-  return (await resolveConnection(uid, deps, now)).accessToken
-}

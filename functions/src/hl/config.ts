@@ -125,20 +125,6 @@ export function hlApiBase(): string {
 }
 
 /**
- * Whether `POST /conversations/messages` may be reached (D5).
- *
- * **Exactly `'true'`, and nothing else.** The route sends a real SMS or email:
- * it costs money, it reaches a real person, and in the sandbox it may fail for
- * want of a provisioned number. A looser reading — "anything but empty", or a
- * truthiness check — turns a stray `HL_ALLOW_MESSAGE_SEND=0` into a switch that
- * is on. Off in every environment including the test suite; the row exists so
- * the surface reads as deliberately safed rather than unimplemented.
- */
-export function hlAllowMessageSend(): boolean {
-  return process.env['HL_ALLOW_MESSAGE_SEND']?.trim() === 'true'
-}
-
-/**
  * How long a proxied upstream call may take before it is aborted (D27).
  *
  * The `api` function's own timeout is 60 s, so an unbounded upstream call would

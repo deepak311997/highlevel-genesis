@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
-  getAccessToken,
   HlNotConnectedError,
   HlReconnectRequiredError,
   isFresh,
@@ -63,48 +62,6 @@ describe('isFresh', () => {
 
   it('is false for a token that has already expired', () => {
     expect(isFresh(NOW - 1, NOW)).toBe(false)
-  })
-})
-
-describe('getAccessToken', () => {
-  it('returns the stored token without touching HighLevel when it is fresh', async () => {
-    const d = deps()
-
-    await expect(getAccessToken(UID, d, NOW)).resolves.toBe('stored-token')
-    expect(d.refresh).not.toHaveBeenCalled()
-  })
-
-  it('rotates when the token falls inside the skew window', async () => {
-    const d = deps({
-      read: vi.fn().mockResolvedValue({ accessToken: 'stale', expiresAtMs: NOW + SKEW_MS - 1 }),
-    })
-
-    await expect(getAccessToken(UID, d, NOW)).resolves.toBe('rotated-token')
-    expect(d.refresh).toHaveBeenCalledTimes(1)
-    expect(d.refresh).toHaveBeenCalledWith(UID)
-  })
-
-  it('rotates exactly once, never twice, for a single call', async () => {
-    const d = deps({
-      read: vi.fn().mockResolvedValue({ accessToken: 'stale', expiresAtMs: NOW - 1 }),
-    })
-
-    await getAccessToken(UID, d, NOW)
-
-    expect(d.refresh).toHaveBeenCalledTimes(1)
-  })
-
-  /*
-   * Rejecting rather than returning undefined is the point: a caller that
-   * received undefined would send `Authorization: Bearer undefined` and get a
-   * 401 back from HighLevel, which reads as "your connection expired" when the
-   * truth is that no connection was ever made.
-   */
-  it('rejects when the user has no connection at all', async () => {
-    const d = deps({ read: vi.fn().mockResolvedValue(undefined) })
-
-    await expect(getAccessToken(UID, d, NOW)).rejects.toBeInstanceOf(HlNotConnectedError)
-    expect(d.refresh).not.toHaveBeenCalled()
   })
 })
 
@@ -177,9 +134,32 @@ describe('resolveConnection', () => {
     expect(d.refresh).not.toHaveBeenCalled()
   })
 
+  it('rotates exactly once, never twice, for a single call', async () => {
+    const d = deps({
+      read: vi.fn().mockResolvedValue({
+        accessToken: 'stale',
+        expiresAtMs: NOW - 1,
+        locationId: LOCATION,
+        needsReconnect: false,
+      }),
+    })
+
+    await resolveConnection(UID, d, NOW)
+
+    expect(d.refresh).toHaveBeenCalledTimes(1)
+    expect(d.refresh).toHaveBeenCalledWith(UID)
+  })
+
+  /*
+   * Rejecting rather than returning undefined is the point: a caller that
+   * received undefined would send `Authorization: Bearer undefined` and get a
+   * 401 back from HighLevel, which reads as "your connection expired" when the
+   * truth is that no connection was ever made.
+   */
   it('rejects when the user has no connection at all', async () => {
     const d = deps({ read: vi.fn().mockResolvedValue(undefined) })
 
     await expect(resolveConnection(UID, d, NOW)).rejects.toBeInstanceOf(HlNotConnectedError)
+    expect(d.refresh).not.toHaveBeenCalled()
   })
 })

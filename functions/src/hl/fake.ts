@@ -20,10 +20,22 @@ import { Router, urlencoded, type Request, type Response } from 'express'
  *
  * It issues access tokens to anyone who asks and never checks a client secret.
  * Deployed, that is not a test double but an open door. `FUNCTIONS_EMULATOR` is
- * the one signal an operator cannot set by hand and a deploy cannot carry —
- * the same reasoning Slice 1 used for its fake mail transport (D21) and its
- * test-only cleanup route. A config flag here would be a remotely-settable way
- * to switch on a token minting service.
+ * the closest thing to a signal only the emulator sets — the same reasoning
+ * Slice 1 used for its fake mail transport (D21) and its test-only cleanup
+ * route. A config flag of our own would be a remotely-settable way to switch on
+ * a token minting service, which is strictly worse.
+ *
+ * **It is not, however, unsettable, and an earlier version of this comment said
+ * it was.** `FUNCTIONS_EMULATOR` is on neither `RESERVED_KEYS` nor the reserved
+ * prefixes firebase-tools refuses to deploy (`FIREBASE_`, `X_GOOGLE_`, `EXT_`,
+ * `K_*`, `FUNCTION_*`), so a line in `functions/.env` would ship it. That one
+ * line would mount this router, short-circuit App Check on every route, and
+ * honour `HL_TEST_API_BASE` — which since Slice 8 means pointing a live user's
+ * HighLevel token at a host of the operator's choosing. It takes a deliberate
+ * mistake, but a reviewer should not be told it takes an impossible one.
+ * Slice 13's deploy checklist owns the positive guard (refuse to build this
+ * router when the runtime says it is deployed); this comment owns not lying
+ * about it in the meantime.
  *
  * ## Behaviour is selected by the authorization code
  *
