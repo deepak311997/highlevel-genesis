@@ -174,7 +174,7 @@ substitutes for a named package without a recorded decision.
 | Vue 3 | `vue` ^3.5 | frontend | ✅ installed |
 | TypeScript | `typescript` ^6, `vue-tsc` | both | ✅ `strict` + four extra flags (see CLAUDE.md) |
 | **ShadCN for Vue (`shadcn-vue`)** | `shadcn-vue` CLI + vendored components | frontend | ✅ see §7.2 — *this one needs reading* |
-| **Monaco (`@guolao/vue-monaco-editor`)** | `@guolao/vue-monaco-editor`, `monaco-editor` | frontend | ⏳ Slice 7 — use the exact package, not `monaco-editor-vue3` |
+| **Monaco (`@guolao/vue-monaco-editor`)** | `@guolao/vue-monaco-editor` ^1.6.0, `monaco-editor` **`0.52.2` exact** | frontend | ✅ installed in Slice 7 — the exact package named here, not `monaco-editor-vue3`. The peer is **pinned, not caretted**: 0.55 added an `exports` map and 0.56 restructured the ESM tree, so `monaco-editor/esm/vs/editor/editor.api` — the path the wrapper's own `.d.ts` imports — stops resolving, which is a `typecheck` failure inside a package this document mandates. Bundled locally and handed to the loader, so nothing is fetched from a CDN at runtime |
 | **Claude (`@anthropic-ai/sdk`)** | `@anthropic-ai/sdk` ^0.117.1 | functions | ✅ installed in Slice 5 — model `claude-opus-5`, `client.messages.stream()` only, `max_tokens: 64000`; the pin is deliberate, that release types `output_config.effort` and `MessageStreamParams` so no cast is needed |
 | Firebase Auth / Firestore / Functions / Hosting | `firebase` (web), `firebase-admin`, `firebase-functions` v7 (v2 API), `firebase-tools` | all | ✅ installed |
 | Live preview: Sandpack / WebContainers / **srcdoc** | none — `srcdoc` + a hand-written runtime shim | frontend | ⏳ Slice 10 (decision: §6.1) |

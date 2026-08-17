@@ -1,0 +1,1147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Slice 07 — Monaco editor · design companion</title>
+    <style>
+      /* ---------------------------------------------------------------
+         Identity: this slice is about a code editor, so the page is one.
+         A gutter of line numbers down the left, a monospace voice, and an
+         accent palette borrowed from syntax tokens — keyword, string,
+         number, comment. No webfonts: the artifact CSP blocks font CDNs
+         and a silent fallback would wreck the hierarchy.
+         --------------------------------------------------------------- */
+      :root {
+        color-scheme: light dark;
+
+        --bg: #fbfbfd;
+        --surface: #ffffff;
+        --surface-2: #f2f3f7;
+        --ink: #16181d;
+        --muted: #5c6272;
+        --line: #d8dbe4;
+        --line-soft: #e8eaf0;
+
+        /* syntax-token accents */
+        --keyword: #7c3aed;
+        --string: #0d7a53;
+        --number: #b45309;
+        --bad: #c02434;
+        --info: #0a6b93;
+
+        --keyword-wash: #f1ebff;
+        --string-wash: #e6f5ee;
+        --number-wash: #fdf0dd;
+        --bad-wash: #fdecee;
+        --info-wash: #e5f2f8;
+
+        --radius: 10px;
+        --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+          "Liberation Mono", monospace;
+        --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0e1014;
+          --surface: #161a21;
+          --surface-2: #1d222b;
+          --ink: #e7e9ee;
+          --muted: #98a0b0;
+          --line: #2c333f;
+          --line-soft: #232a34;
+
+          --keyword: #c4a2ff;
+          --string: #5ed4a3;
+          --number: #f0b464;
+          --bad: #ff8b96;
+          --info: #6cc6ea;
+
+          --keyword-wash: #241b3a;
+          --string-wash: #122e25;
+          --number-wash: #33260f;
+          --bad-wash: #35191d;
+          --info-wash: #102b36;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--sans);
+        font-size: 16px;
+        line-height: 1.65;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .wrap {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 3rem 1.5rem 6rem;
+      }
+
+      /* ---- masthead: a file header, because that is what this is ---- */
+      header.masthead {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+        background: var(--surface);
+        margin-bottom: 3rem;
+      }
+      .tabstrip {
+        display: flex;
+        align-items: stretch;
+        background: var(--surface-2);
+        border-bottom: 1px solid var(--line);
+        font-family: var(--mono);
+        font-size: 0.76rem;
+        overflow-x: auto;
+      }
+      .tabstrip span {
+        padding: 0.5rem 0.9rem;
+        color: var(--muted);
+        border-right: 1px solid var(--line);
+        white-space: nowrap;
+      }
+      .tabstrip span.on {
+        background: var(--surface);
+        color: var(--ink);
+        box-shadow: inset 0 2px 0 var(--keyword);
+      }
+      .tabstrip span.dot::after {
+        content: " ●";
+        color: var(--number);
+      }
+      .masthead-body {
+        padding: 1.8rem 1.6rem 1.6rem;
+      }
+      h1 {
+        margin: 0 0 0.4rem;
+        font-size: 1.9rem;
+        line-height: 1.2;
+        letter-spacing: -0.02em;
+      }
+      .meta {
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        color: var(--muted);
+        margin: 0 0 1.2rem;
+      }
+      .meta b {
+        color: var(--ink);
+        font-weight: 500;
+      }
+      .demo {
+        margin: 0;
+        padding: 0.9rem 1rem;
+        background: var(--keyword-wash);
+        border-left: 3px solid var(--keyword);
+        border-radius: 0 6px 6px 0;
+        font-size: 0.95rem;
+      }
+      .demo strong {
+        display: block;
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--keyword);
+        margin-bottom: 0.25rem;
+      }
+
+      /* ---- sections, numbered like lines ---- */
+      section {
+        margin: 0 0 3.5rem;
+      }
+      h2 {
+        font-size: 1.15rem;
+        letter-spacing: -0.01em;
+        margin: 0 0 0.35rem;
+        display: flex;
+        align-items: baseline;
+        gap: 0.7rem;
+      }
+      h2 .ln {
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 0.05rem 0.4rem;
+        flex: none;
+      }
+      .lede {
+        margin: 0 0 1.5rem;
+        color: var(--muted);
+        font-size: 0.95rem;
+        max-width: 68ch;
+      }
+
+      figure {
+        margin: 0 0 1.4rem;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+        overflow: hidden;
+      }
+      .scroller {
+        overflow-x: auto;
+      }
+      figure svg {
+        display: block;
+        min-width: 640px;
+      }
+      figcaption {
+        padding: 0.75rem 1rem;
+        border-top: 1px solid var(--line-soft);
+        background: var(--surface-2);
+        color: var(--muted);
+        font-size: 0.83rem;
+      }
+      figcaption b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+
+      /* ---- svg text conventions ---- */
+      .t {
+        font-family: var(--mono);
+        font-size: 12px;
+        fill: var(--ink);
+      }
+      .t-sm {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        fill: var(--muted);
+      }
+      .t-lbl {
+        font-family: var(--mono);
+        font-size: 10px;
+        fill: var(--muted);
+        letter-spacing: 0.06em;
+      }
+      .t-hd {
+        font-family: var(--sans);
+        font-size: 12.5px;
+        font-weight: 600;
+        fill: var(--ink);
+      }
+      .box {
+        fill: var(--surface-2);
+        stroke: var(--line);
+      }
+      .box-plain {
+        fill: none;
+        stroke: var(--line);
+      }
+      .wash-k {
+        fill: var(--keyword-wash);
+        stroke: var(--keyword);
+      }
+      .wash-s {
+        fill: var(--string-wash);
+        stroke: var(--string);
+      }
+      .wash-n {
+        fill: var(--number-wash);
+        stroke: var(--number);
+      }
+      .wash-b {
+        fill: var(--bad-wash);
+        stroke: var(--bad);
+      }
+      .wash-i {
+        fill: var(--info-wash);
+        stroke: var(--info);
+      }
+      .ln-ink {
+        stroke: var(--muted);
+        fill: none;
+      }
+      .ln-k {
+        stroke: var(--keyword);
+        fill: none;
+      }
+      .ln-s {
+        stroke: var(--string);
+        fill: none;
+      }
+      .ln-b {
+        stroke: var(--bad);
+        fill: none;
+      }
+      .ln-dash {
+        stroke: var(--line);
+        fill: none;
+        stroke-dasharray: 4 4;
+      }
+      .fill-k {
+        fill: var(--keyword);
+      }
+      .fill-s {
+        fill: var(--string);
+      }
+      .fill-b {
+        fill: var(--bad);
+      }
+      .fill-ink {
+        fill: var(--muted);
+      }
+      .num {
+        font-family: var(--mono);
+        font-size: 9.5px;
+        font-weight: 700;
+        fill: var(--surface);
+      }
+
+      /* ---- tables ---- */
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.88rem;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 0.6rem 0.75rem;
+        border-bottom: 1px solid var(--line-soft);
+        vertical-align: top;
+      }
+      th {
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        border-bottom: 1px solid var(--line);
+      }
+      td code,
+      p code,
+      li code {
+        font-family: var(--mono);
+        font-size: 0.84em;
+        background: var(--surface-2);
+        border: 1px solid var(--line-soft);
+        border-radius: 4px;
+        padding: 0.05em 0.35em;
+      }
+      .tbl {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+        background: var(--surface);
+      }
+      .tbl tr:last-child td {
+        border-bottom: none;
+      }
+
+      /* ---- route cards ---- */
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 0.9rem;
+      }
+      .card {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+        padding: 0.9rem 1rem;
+      }
+      .card .verb {
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      .card .path {
+        font-family: var(--mono);
+        font-size: 0.8rem;
+        margin: 0.15rem 0 0.5rem;
+        word-break: break-all;
+      }
+      .stamp {
+        display: inline-block;
+        font-family: var(--mono);
+        font-size: 0.66rem;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        padding: 0.1rem 0.45rem;
+        border-radius: 999px;
+        border: 1px solid currentColor;
+      }
+      .stamp.same {
+        color: var(--string);
+        background: var(--string-wash);
+      }
+      .stamp.warn {
+        color: var(--number);
+        background: var(--number-wash);
+      }
+      .card p {
+        margin: 0.45rem 0 0;
+        font-size: 0.82rem;
+        color: var(--muted);
+      }
+
+      footer {
+        margin-top: 3rem;
+        padding-top: 1.2rem;
+        border-top: 1px solid var(--line);
+        font-family: var(--mono);
+        font-size: 0.76rem;
+        color: var(--muted);
+      }
+      a {
+        color: var(--info);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="masthead">
+        <div class="tabstrip" aria-hidden="true">
+          <span class="on">index.html</span>
+          <span class="dot">styles.css</span>
+          <span>app.js</span>
+        </div>
+        <div class="masthead-body">
+          <h1>Slice 07 — Monaco editor</h1>
+          <p class="meta">
+            <b>Spec</b> F6.3, F6.5 · <b>Branch</b> slice/07-monaco-editor ·
+            <b>Depends on</b> 6 · <b>Date</b> 2026-08-18 · design companion to
+            <b>02-prd.md</b>
+          </p>
+          <p class="demo">
+            <strong>The demo</strong>
+            Send a prompt, watch syntax-coloured HTML stream into a locked Monaco editor line by
+            line; when it finishes, open a second file in a second tab, type into it, switch tabs
+            and back to find the edit still there, save it, and reload.
+          </p>
+        </div>
+      </header>
+
+      <!-- =================================================== 1 -->
+      <section>
+        <h2><span class="ln">01</span> What is actually in the box</h2>
+        <p class="lede">
+          Monaco is not one dependency, it is a menu. Three of this slice's decisions are about
+          what we decline: the CDN the package reaches for by default (D2), the language services
+          that would put red squiggles on generated code (D3), and every language but four (D3).
+          What is left is one worker and one chunk.
+        </p>
+
+        <figure>
+          <div class="scroller">
+            <svg
+              viewBox="0 0 940 372"
+              width="940"
+              height="372"
+              role="img"
+              aria-label="The editor bundle contains monaco's edcore.main, four basic-language tokenizers and one generic worker; the CDN loader, four language-service workers and eighty-six other languages are deliberately excluded."
+            >
+              <defs>
+                <marker id="a-k" markerWidth="9" markerHeight="9" refX="7.5" refY="4.5" orient="auto">
+                  <path d="M0,0 L9,4.5 L0,9 z" class="fill-k" />
+                </marker>
+                <marker id="a-b" markerWidth="9" markerHeight="9" refX="7.5" refY="4.5" orient="auto">
+                  <path d="M0,0 L9,4.5 L0,9 z" class="fill-b" />
+                </marker>
+                <marker id="a-i" markerWidth="9" markerHeight="9" refX="7.5" refY="4.5" orient="auto">
+                  <path d="M0,0 L9,4.5 L0,9 z" style="fill: var(--info)" />
+                </marker>
+              </defs>
+
+              <!-- app side -->
+              <rect x="18" y="30" width="196" height="96" rx="8" class="box" />
+              <text class="t-hd" x="34" y="54">CodeEditor.vue</text>
+              <text class="t-sm" x="34" y="74">dynamic import()</text>
+              <text class="t-sm" x="34" y="90">→ its own chunk (D20)</text>
+              <text class="t-sm" x="34" y="112">skeleton until mount</text>
+
+              <rect x="18" y="150" width="196" height="80" rx="8" class="box" />
+              <text class="t-hd" x="34" y="174">monacoSetup.ts</text>
+              <text class="t-sm" x="34" y="194">loader.config({ monaco })</text>
+              <text class="t-sm" x="34" y="212">init() resolves locally</text>
+
+              <path d="M116,126 L116,150" class="ln-k" stroke-width="1.6" marker-end="url(#a-k)" />
+
+              <!-- the bundle -->
+              <rect x="272" y="18" width="322" height="248" rx="10" class="wash-s" stroke-width="1.4" />
+              <text class="t-lbl" x="290" y="40" style="fill: var(--string)">IN THE BUNDLE — LOCAL, OFFLINE</text>
+
+              <rect x="292" y="54" width="282" height="46" rx="6" class="box" />
+              <text class="t" x="306" y="74">esm/vs/editor/edcore.main</text>
+              <text class="t-sm" x="306" y="90">full editor: find · folding · multi-cursor</text>
+
+              <rect x="292" y="112" width="282" height="60" rx="6" class="box" />
+              <text class="t" x="306" y="132">basic-languages ×4</text>
+              <text class="t-sm" x="306" y="148">html · css · javascript · markdown</text>
+              <text class="t-sm" x="306" y="163">tokenizers only, main thread</text>
+
+              <rect x="292" y="184" width="282" height="44" rx="6" class="box" />
+              <text class="t" x="306" y="204">editor.worker ×1</text>
+              <text class="t-sm" x="306" y="219">MonacoEnvironment.getWorker (D5)</text>
+
+              <text class="t-sm" x="292" y="250">json → plaintext: its tokenizer only exists in the worker (D4)</text>
+
+              <path d="M214,190 L272,150" class="ln-s" stroke-width="1.6" marker-end="url(#a-i)" />
+
+              <!-- refused -->
+              <rect x="632" y="18" width="290" height="248" rx="10" class="wash-b" stroke-width="1.4" stroke-dasharray="5 4" />
+              <text class="t-lbl" x="650" y="40" style="fill: var(--bad)">DECLINED</text>
+
+              <rect x="650" y="54" width="254" height="52" rx="6" class="box-plain" stroke-dasharray="4 3" />
+              <text class="t" x="664" y="74">CDN loader (jsdelivr, AMD)</text>
+              <text class="t-sm" x="664" y="92">emulators must run offline · CSP</text>
+
+              <rect x="650" y="118" width="254" height="52" rx="6" class="box-plain" stroke-dasharray="4 3" />
+              <text class="t" x="664" y="138">4 × language-service worker</text>
+              <text class="t-sm" x="664" y="156">squiggles on generated code</text>
+
+              <rect x="650" y="182" width="254" height="52" rx="6" class="box-plain" stroke-dasharray="4 3" />
+              <text class="t" x="664" y="202">~86 other languages</text>
+              <text class="t-sm" x="664" y="220">nothing generates them (Slice 6, D12)</text>
+
+              <path d="M594,90 L646,80" class="ln-b" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#a-b)" />
+              <line x1="612" y1="76" x2="630" y2="94" class="ln-b" stroke-width="2" />
+              <line x1="630" y1="76" x2="612" y2="94" class="ln-b" stroke-width="2" />
+
+              <!-- runtime line -->
+              <line x1="18" y1="296" x2="922" y2="296" class="ln-dash" stroke-width="1.2" />
+              <text class="t-lbl" x="18" y="290">RUNTIME NETWORK REQUESTS FOR THE EDITOR</text>
+              <text class="t" x="18" y="322">0</text>
+              <text class="t-sm" x="40" y="322">
+                — after the app's own chunk is fetched, nothing else is dialled. AC-25 scans the
+                source for a CDN host; the definition of done greps the built dist at ship time.
+              </text>
+              <text class="t-sm" x="18" y="348">
+                Pinned monaco 0.52.2: 0.55+ added an exports map that stops resolving the very path
+                the brief's wrapper imports in its own .d.ts (D1).
+              </text>
+            </svg>
+          </div>
+          <figcaption>
+            <b>Figure 1.</b> The import boundary. Everything on the green side is bytes we ship;
+            everything on the red side is a default we turned off. The zero on the runtime line is
+            the claim the emulator deliverable depends on.
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- =================================================== 2 -->
+      <section>
+        <h2><span class="ln">02</span> The hazard: how a chunk reaches the screen</h2>
+        <p class="lede">
+          One decision in this slice is worth more than the rest combined, and it is invisible
+          everywhere we normally look. jsdom computes no layout and runs no Monaco, so both halves
+          of the comparison below pass every L1 and L2 test in this repository. The difference only
+          exists in a browser, in front of a person.
+        </p>
+
+        <figure>
+          <div class="scroller">
+            <svg
+              viewBox="0 0 940 380"
+              width="940"
+              height="380"
+              role="img"
+              aria-label="Comparison: calling setValue on every stream chunk pins the viewport to line one and re-tokenizes the whole document, while an append edit keeps the viewport following the last line at cost proportional to the delta."
+            >
+              <defs>
+                <marker id="b-b" markerWidth="9" markerHeight="9" refX="7.5" refY="4.5" orient="auto">
+                  <path d="M0,0 L9,4.5 L0,9 z" class="fill-b" />
+                </marker>
+                <marker id="b-s" markerWidth="9" markerHeight="9" refX="7.5" refY="4.5" orient="auto">
+                  <path d="M0,0 L9,4.5 L0,9 z" class="fill-s" />
+                </marker>
+              </defs>
+
+              <!-- LEFT: setValue -->
+              <text class="t-lbl" x="20" y="24" style="fill: var(--bad)">WITHOUT THE MITIGATION — model.setValue(next)</text>
+              <rect x="20" y="34" width="430" height="252" rx="10" class="wash-b" stroke-width="1.3" />
+
+              <!-- viewport frame -->
+              <rect x="40" y="56" width="238" height="182" rx="6" class="box" />
+              <rect x="40" y="56" width="26" height="182" rx="6" style="fill: var(--surface); stroke: var(--line)" />
+              <text class="t-sm" x="47" y="76">1</text>
+              <text class="t-sm" x="47" y="94">2</text>
+              <text class="t-sm" x="47" y="112">3</text>
+              <text class="t-sm" x="47" y="130">4</text>
+              <text class="t-sm" x="47" y="148">5</text>
+              <text class="t-sm" x="47" y="166">6</text>
+              <text class="t-sm" x="47" y="184">7</text>
+              <text class="t-sm" x="47" y="202">8</text>
+              <text class="t-sm" x="47" y="220">9</text>
+              <rect x="76" y="68" width="150" height="7" rx="3" class="fill-ink" opacity="0.5" />
+              <rect x="76" y="86" width="182" height="7" rx="3" class="fill-ink" opacity="0.5" />
+              <rect x="76" y="104" width="120" height="7" rx="3" class="fill-ink" opacity="0.5" />
+              <rect x="76" y="122" width="164" height="7" rx="3" class="fill-ink" opacity="0.5" />
+              <rect x="76" y="140" width="98" height="7" rx="3" class="fill-ink" opacity="0.5" />
+              <rect x="76" y="158" width="176" height="7" rx="3" class="fill-ink" opacity="0.5" />
+              <rect x="76" y="176" width="132" height="7" rx="3" class="fill-ink" opacity="0.5" />
+              <rect x="76" y="194" width="150" height="7" rx="3" class="fill-ink" opacity="0.5" />
+              <rect x="76" y="212" width="110" height="7" rx="3" class="fill-ink" opacity="0.5" />
+
+              <!-- scroll pinned -->
+              <path d="M296,72 L296,232" class="ln-b" stroke-width="1.4" stroke-dasharray="3 3" />
+              <path d="M296,150 L296,80" class="ln-b" stroke-width="2" marker-end="url(#b-b)" />
+              <text class="t-sm" x="306" y="120" style="fill: var(--bad)">viewport snaps</text>
+              <text class="t-sm" x="306" y="134" style="fill: var(--bad)">back to line 1</text>
+              <text class="t-sm" x="306" y="152" style="fill: var(--bad)">on every chunk</text>
+
+              <text class="t-sm" x="40" y="258">line 287 (where the model is being written) is off-screen, always</text>
+              <text class="t-sm" x="40" y="274">undo stack reset · whole document re-tokenized · O(n²) over the file</text>
+
+              <!-- RIGHT: append -->
+              <text class="t-lbl" x="490" y="24" style="fill: var(--string)">WITH IT — model.applyEdits([append]) + revealLine</text>
+              <rect x="490" y="34" width="430" height="252" rx="10" class="wash-s" stroke-width="1.3" />
+
+              <rect x="510" y="56" width="238" height="182" rx="6" class="box" />
+              <rect x="510" y="56" width="30" height="182" rx="6" style="fill: var(--surface); stroke: var(--line)" />
+              <text class="t-sm" x="515" y="76">281</text>
+              <text class="t-sm" x="515" y="94">282</text>
+              <text class="t-sm" x="515" y="112">283</text>
+              <text class="t-sm" x="515" y="130">284</text>
+              <text class="t-sm" x="515" y="148">285</text>
+              <text class="t-sm" x="515" y="166">286</text>
+              <text class="t-sm" x="515" y="184">287</text>
+              <rect x="550" y="68" width="150" height="7" rx="3" class="fill-ink" opacity="0.5" />
+              <rect x="550" y="86" width="182" height="7" rx="3" class="fill-ink" opacity="0.5" />
+              <rect x="550" y="104" width="120" height="7" rx="3" class="fill-ink" opacity="0.5" />
+              <rect x="550" y="122" width="164" height="7" rx="3" class="fill-ink" opacity="0.5" />
+              <rect x="550" y="140" width="98" height="7" rx="3" class="fill-ink" opacity="0.5" />
+              <rect x="550" y="158" width="176" height="7" rx="3" class="fill-s" opacity="0.85" />
+              <rect x="550" y="176" width="64" height="7" rx="3" class="fill-s" />
+              <rect x="618" y="174" width="2" height="11" class="fill-s" />
+
+              <path d="M766,80 L766,190" class="ln-s" stroke-width="2" marker-end="url(#b-s)" />
+              <text class="t-sm" x="776" y="128" style="fill: var(--string)">revealLine follows</text>
+              <text class="t-sm" x="776" y="142" style="fill: var(--string)">the tail; scroll and</text>
+              <text class="t-sm" x="776" y="156" style="fill: var(--string)">cursor are preserved</text>
+
+              <text class="t-sm" x="510" y="258">the bytes arriving are the bytes on screen — this is what F6.3 is asking for</text>
+              <text class="t-sm" x="510" y="274">cost is O(delta) · tokenizer stays incremental</text>
+
+              <!-- the decision -->
+              <rect x="20" y="304" width="900" height="60" rx="8" class="box" />
+              <text class="t" x="38" y="326">editorEdit(current, next) →</text>
+              <text class="t" x="212" y="326" style="fill: var(--string)">{ kind: 'append', text: suffix }</text>
+              <text class="t-sm" x="430" y="326">when next starts with current</text>
+              <text class="t" x="212" y="346" style="fill: var(--number)">{ kind: 'replace', text: next }</text>
+              <text class="t-sm" x="430" y="346">otherwise — a refetch, a repair, a different file</text>
+              <text class="t" x="640" y="326" style="fill: var(--muted)">null</text>
+              <text class="t-sm" x="680" y="326">when equal — no edit issued at all</text>
+              <text class="t-sm" x="640" y="346">Pure. AC-2 … AC-5. Reviewable before any .vue file changes.</text>
+            </svg>
+          </div>
+          <figcaption>
+            <b>Figure 2.</b> The one race-shaped decision this slice exists to get right (D8, R1).
+            The mitigation is a three-branch pure function, which is why it can be argued with in a
+            test rather than discovered in a demo.
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- =================================================== 3 -->
+      <section>
+        <h2><span class="ln">03</span> A generation, end to end, with the model's lifecycle</h2>
+        <p class="lede">
+          The lifecycle is the part prose hides: a model is created, appended to, its view state
+          saved when the user switches away, and disposed when the project closes. Miss the last
+          step and two projects share one <code>index.html</code> — see figure 4.
+        </p>
+
+        <figure>
+          <div class="scroller">
+            <svg
+              viewBox="0 0 940 430"
+              width="940"
+              height="430"
+              role="img"
+              aria-label="Sequence across four lanes — the workspace store, CodeEditor, the text model and the viewport — showing eleven numbered steps from file_start through append edits to done, refetch and disposal."
+            >
+              <defs>
+                <marker id="c-k" markerWidth="8.5" markerHeight="8.5" refX="7" refY="4.25" orient="auto">
+                  <path d="M0,0 L8.5,4.25 L0,8.5 z" class="fill-k" />
+                </marker>
+                <marker id="c-s" markerWidth="8.5" markerHeight="8.5" refX="7" refY="4.25" orient="auto">
+                  <path d="M0,0 L8.5,4.25 L0,8.5 z" class="fill-s" />
+                </marker>
+                <marker id="c-i" markerWidth="8.5" markerHeight="8.5" refX="7" refY="4.25" orient="auto">
+                  <path d="M0,0 L8.5,4.25 L0,8.5 z" class="fill-ink" />
+                </marker>
+              </defs>
+
+              <!-- lanes -->
+              <g>
+                <rect x="20" y="16" width="176" height="30" rx="6" class="wash-k" stroke-width="1.2" />
+                <text class="t-hd" x="34" y="36">workspace store</text>
+                <line x1="108" y1="46" x2="108" y2="392" class="ln-dash" stroke-width="1.2" />
+
+                <rect x="252" y="16" width="176" height="30" rx="6" class="box" />
+                <text class="t-hd" x="266" y="36">CodeEditor.vue</text>
+                <line x1="340" y1="46" x2="340" y2="392" class="ln-dash" stroke-width="1.2" />
+
+                <rect x="484" y="16" width="196" height="30" rx="6" class="box" />
+                <text class="t-hd" x="498" y="36">ITextModel (per path)</text>
+                <line x1="582" y1="46" x2="582" y2="392" class="ln-dash" stroke-width="1.2" />
+
+                <rect x="736" y="16" width="184" height="30" rx="6" class="wash-s" stroke-width="1.2" />
+                <text class="t-hd" x="750" y="36">what the user sees</text>
+                <line x1="828" y1="46" x2="828" y2="392" class="ln-dash" stroke-width="1.2" />
+              </g>
+
+              <!-- step helper: circle + text -->
+              <!-- 1 -->
+              <circle cx="108" cy="70" r="9" class="fill-k" />
+              <text class="num" x="105" y="73.5">1</text>
+              <text class="t-sm" x="124" y="66">file_start { path: "index.html" }</text>
+              <text class="t-sm" x="124" y="80">no tab open → open one, activate it (D11)</text>
+
+              <!-- 2 -->
+              <path d="M116,98 L332,98" class="ln-k" stroke-width="1.5" marker-end="url(#c-k)" />
+              <circle cx="340" cy="98" r="9" class="fill-k" />
+              <text class="num" x="337" y="101.5">2</text>
+              <text class="t-sm" x="356" y="94">activePath changes</text>
+
+              <!-- 3 -->
+              <path d="M348,126 L574,126" class="ln-k" stroke-width="1.5" marker-end="url(#c-k)" />
+              <circle cx="582" cy="126" r="9" class="fill-k" />
+              <text class="num" x="579" y="129.5">3</text>
+              <text class="t-sm" x="598" y="122">createModel(inmemory://genesis/&lt;projectId&gt;/index.html)</text>
+              <text class="t-sm" x="598" y="136">language from the extension map (D25)</text>
+
+              <!-- 4 -->
+              <circle cx="108" cy="164" r="9" class="fill-k" />
+              <text class="num" x="105" y="167.5">4</text>
+              <text class="t-sm" x="124" y="160">file_chunk ×N — streamingFiles[path] grows</text>
+
+              <!-- 5 -->
+              <path d="M116,188 L332,188" class="ln-k" stroke-width="1.5" marker-end="url(#c-k)" />
+              <path d="M348,188 L574,188" class="ln-s" stroke-width="1.5" marker-end="url(#c-s)" />
+              <circle cx="340" cy="188" r="9" class="fill-s" />
+              <text class="num" x="337" y="191.5">5</text>
+              <text class="t-sm" x="356" y="206">editorEdit → append</text>
+              <circle cx="582" cy="188" r="9" class="fill-s" />
+              <text class="num" x="579" y="191.5">6</text>
+              <text class="t-sm" x="598" y="184">applyEdits([{ range: end, text: delta }])</text>
+
+              <!-- 7 viewport -->
+              <path d="M590,212 L820,212" class="ln-s" stroke-width="1.5" marker-end="url(#c-s)" />
+              <circle cx="828" cy="212" r="9" class="fill-s" />
+              <text class="num" x="825" y="215.5">7</text>
+              <text class="t-sm" x="736" y="234">revealLine — coloured code,</text>
+              <text class="t-sm" x="736" y="248">read-only, following the tail</text>
+
+              <!-- 8 -->
+              <circle cx="108" cy="282" r="9" class="fill-k" />
+              <text class="num" x="105" y="285.5">8</text>
+              <text class="t-sm" x="124" y="278">done { files: [3], fileError: null }</text>
+              <text class="t-sm" x="124" y="292">streaming buffers dropped · readOnly false</text>
+
+              <!-- 9 -->
+              <circle cx="108" cy="318" r="9" class="fill-k" />
+              <text class="num" x="105" y="321.5">9</text>
+              <text class="t-sm" x="124" y="314">GET files, then one GET per OPEN tab it rewrote (D15)</text>
+
+              <!-- 10 -->
+              <path d="M116,342 L332,342" class="ln-ink" stroke-width="1.5" marker-end="url(#c-i)" />
+              <path d="M348,342 L574,342" class="ln-ink" stroke-width="1.5" marker-end="url(#c-i)" />
+              <circle cx="340" cy="342" r="9" class="fill-ink" />
+              <text class="num" x="337" y="345.5">10</text>
+              <circle cx="582" cy="342" r="9" class="fill-ink" />
+              <text class="num" x="579" y="345.5">11</text>
+              <text class="t-sm" x="598" y="338">server's repaired bytes ≠ what streamed → replace, not append</text>
+              <text class="t-sm" x="598" y="352">dirty buffer replaced and announced (D16)</text>
+
+              <!-- disposal -->
+              <line x1="20" y1="374" x2="920" y2="374" class="ln-dash" stroke-width="1.2" />
+              <text class="t-lbl" x="20" y="394" style="fill: var(--bad)">ON reset() OR ANOTHER PROJECT OPENED</text>
+              <text class="t-sm" x="292" y="394">
+                every model this registry created is disposed, tabs and buffers cleared — AC-9
+              </text>
+              <text class="t-sm" x="20" y="416">
+                Tab switches (not shown) save the outgoing view state and restore the incoming one; no request is issued — AC-8, AC-15.
+              </text>
+            </svg>
+          </div>
+          <figcaption>
+            <b>Figure 3.</b> Steps 5–7 are figure 2's append path in situ; steps 10–11 are the one
+            place a <code>replace</code> is correct, because the server repairs content and computes
+            <code>size</code>, so the bytes that streamed are not necessarily the bytes that were
+            stored.
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- =================================================== 4 -->
+      <section>
+        <h2><span class="ln">04</span> Why the model registry is ours</h2>
+        <p class="lede">
+          The wrapper will manage models for you if you bind its <code>path</code> prop. Read from
+          its source rather than its README: it keys them by <code>Uri.parse(path)</code> in
+          monaco's <em>global</em> registry, and at unmount disposes only whichever model happened
+          to be active. Every generated app has an <code>index.html</code>.
+        </p>
+
+        <figure>
+          <div class="scroller">
+            <svg
+              viewBox="0 0 940 268"
+              width="940"
+              height="268"
+              role="img"
+              aria-label="Comparison: binding the wrapper's path prop makes two projects share a single global model named index.html, so project B opens showing project A's code; project-scoped URIs give each project its own model."
+            >
+              <defs>
+                <marker id="d-b" markerWidth="9" markerHeight="9" refX="7.5" refY="4.5" orient="auto">
+                  <path d="M0,0 L9,4.5 L0,9 z" class="fill-b" />
+                </marker>
+                <marker id="d-s" markerWidth="9" markerHeight="9" refX="7.5" refY="4.5" orient="auto">
+                  <path d="M0,0 L9,4.5 L0,9 z" class="fill-s" />
+                </marker>
+              </defs>
+
+              <text class="t-lbl" x="20" y="24" style="fill: var(--bad)">:path="'index.html'" — the wrapper's own model management</text>
+              <rect x="20" y="34" width="430" height="180" rx="10" class="wash-b" stroke-width="1.3" />
+
+              <rect x="40" y="56" width="150" height="44" rx="6" class="box" />
+              <text class="t" x="54" y="76">project A</text>
+              <text class="t-sm" x="54" y="92">index.html</text>
+
+              <rect x="40" y="146" width="150" height="44" rx="6" class="box" />
+              <text class="t" x="54" y="166">project B</text>
+              <text class="t-sm" x="54" y="182">index.html</text>
+
+              <rect x="258" y="96" width="172" height="52" rx="6" class="wash-b" stroke-width="1.4" />
+              <text class="t" x="272" y="116">Uri("index.html")</text>
+              <text class="t-sm" x="272" y="132">ONE global model</text>
+
+              <path d="M190,78 L250,110" class="ln-b" stroke-width="1.6" marker-end="url(#d-b)" />
+              <path d="M190,168 L250,136" class="ln-b" stroke-width="1.6" marker-end="url(#d-b)" />
+
+              <text class="t-sm" x="40" y="206" style="fill: var(--bad)">B opens showing A's code, with A's undo history. No error, no log line.</text>
+
+              <text class="t-lbl" x="490" y="24" style="fill: var(--string)">our registry — inmemory://genesis/&lt;projectId&gt;/&lt;path&gt;</text>
+              <rect x="490" y="34" width="430" height="180" rx="10" class="wash-s" stroke-width="1.3" />
+
+              <rect x="510" y="56" width="150" height="44" rx="6" class="box" />
+              <text class="t" x="524" y="76">project A</text>
+              <text class="t-sm" x="524" y="92">index.html</text>
+
+              <rect x="510" y="146" width="150" height="44" rx="6" class="box" />
+              <text class="t" x="524" y="166">project B</text>
+              <text class="t-sm" x="524" y="182">index.html</text>
+
+              <rect x="722" y="52" width="180" height="46" rx="6" class="box" />
+              <text class="t-sm" x="734" y="72">…/&lt;A&gt;/index.html</text>
+              <text class="t-sm" x="734" y="88">disposed when A closes</text>
+
+              <rect x="722" y="142" width="180" height="46" rx="6" class="box" />
+              <text class="t-sm" x="734" y="162">…/&lt;B&gt;/index.html</text>
+              <text class="t-sm" x="734" y="178">disposed when B closes</text>
+
+              <path d="M660,78 L714,76" class="ln-s" stroke-width="1.6" marker-end="url(#d-s)" />
+              <path d="M660,168 L714,166" class="ln-s" stroke-width="1.6" marker-end="url(#d-s)" />
+
+              <text class="t-sm" x="510" y="206" style="fill: var(--string)">AC-6 asserts the URIs differ · AC-9 asserts disposal · AC-7 asserts reuse within a project</text>
+
+              <text class="t-sm" x="20" y="242">
+                The wrapper still owns what we want from it: the loader, editor construction, the container, the sizing, the theme prop. Only model identity moves (D7).
+              </text>
+              <text class="t-sm" x="20" y="258">
+                It also removes a dependency on whether the parent's watcher or the child's fires first in a flush — which is not a thing a test should have to pin.
+              </text>
+            </svg>
+          </div>
+          <figcaption>
+            <b>Figure 4.</b> The second hazard, and the reason a decision table row exists for
+            something the package advertises as a convenience (D7, R5).
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- =================================================== 5 -->
+      <section>
+        <h2><span class="ln">05</span> One panel, six exits</h2>
+        <p class="lede">
+          Every state the code panel can be in, and the sentence the user reads there. The editor
+          now has a loading state and a failure state of its own — Monaco arrives in a separate
+          chunk, so "the editor has not appeared yet" is a real thing that happens on a slow
+          connection, and it must not look like an empty file.
+        </p>
+
+        <figure>
+          <div class="scroller">
+            <svg
+              viewBox="0 0 940 300"
+              width="940"
+              height="300"
+              role="img"
+              aria-label="Failure fan: opening the code panel leads to six labelled outcomes — chunk loading, chunk failed, no tab open, file read failed, streaming and read-only, or editable."
+            >
+              <defs>
+                <marker id="e-i" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto">
+                  <path d="M0,0 L8,4 L0,8 z" class="fill-ink" />
+                </marker>
+              </defs>
+
+              <rect x="20" y="118" width="164" height="60" rx="8" class="wash-k" stroke-width="1.4" />
+              <text class="t-hd" x="36" y="142">open the code panel</text>
+              <text class="t-sm" x="36" y="160">tree renders first — it needs no Monaco</text>
+
+              <g>
+                <path d="M184,148 C240,148 240,36 296,36" class="ln-ink" stroke-width="1.4" marker-end="url(#e-i)" />
+                <rect x="304" y="14" width="616" height="42" rx="7" class="box" />
+                <text class="t" x="320" y="32">chunk still loading</text>
+                <text class="t-sm" x="320" y="48">a skeleton where the code will be — never an empty editor</text>
+                <text class="t-lbl" x="866" y="40">AC-26</text>
+              </g>
+
+              <g>
+                <path d="M184,148 C240,148 240,80 296,80" class="ln-b" stroke-width="1.4" marker-end="url(#e-i)" />
+                <rect x="304" y="60" width="616" height="42" rx="7" class="wash-b" stroke-width="1.2" />
+                <text class="t" x="320" y="78">chunk failed to load</text>
+                <text class="t-sm" x="320" y="94">“The editor could not be loaded.” + Try again · the tree and chat keep working</text>
+                <text class="t-lbl" x="866" y="86">AC-26</text>
+              </g>
+
+              <g>
+                <path d="M184,148 C240,148 240,126 296,126" class="ln-ink" stroke-width="1.4" marker-end="url(#e-i)" />
+                <rect x="304" y="106" width="616" height="42" rx="7" class="box" />
+                <text class="t" x="320" y="124">no tab open</text>
+                <text class="t-sm" x="320" y="140">“Select a file to read or edit it.” — the panel's own empty state, not “no files”</text>
+                <text class="t-lbl" x="866" y="132">AC-16</text>
+              </g>
+
+              <g>
+                <path d="M184,148 C240,148 240,172 296,172" class="ln-b" stroke-width="1.4" marker-end="url(#e-i)" />
+                <rect x="304" y="152" width="616" height="42" rx="7" class="wash-b" stroke-width="1.2" />
+                <text class="t" x="320" y="170">the file's read failed</text>
+                <text class="t-sm" x="320" y="186">the tab stays, the error is inside it, Try again re-reads — other tabs unaffected</text>
+                <text class="t-lbl" x="866" y="178">AC-13</text>
+              </g>
+
+              <g>
+                <path d="M184,148 C240,148 240,218 296,218" class="ln-ink" stroke-width="1.4" marker-end="url(#e-i)" />
+                <rect x="304" y="198" width="616" height="42" rx="7" class="wash-n" stroke-width="1.2" />
+                <text class="t" x="320" y="216">a stream is open</text>
+                <text class="t-sm" x="320" y="232">readOnly + readOnlyMessage · Save unavailable · “Read-only while a reply is generating.”</text>
+                <text class="t-lbl" x="866" y="224">AC-11, AC-20</text>
+              </g>
+
+              <g>
+                <path d="M184,148 C240,148 240,264 296,264" class="ln-s" stroke-width="1.4" marker-end="url(#e-i)" />
+                <rect x="304" y="244" width="616" height="42" rx="7" class="wash-s" stroke-width="1.2" />
+                <text class="t" x="320" y="262">editable</text>
+                <text class="t-sm" x="320" y="278">coloured, tabbed, dirty-marked, Save enabled inside the byte cap</text>
+                <text class="t-lbl" x="866" y="270">AC-19, AC-21</text>
+              </g>
+            </svg>
+          </div>
+          <figcaption>
+            <b>Figure 5.</b> Six exits, each with the copy attached. Two of them — the chunk states
+            — did not exist before this slice and are the direct cost of not putting a megabyte in
+            the entry bundle (D20).
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- =================================================== 6 -->
+      <section>
+        <h2><span class="ln">06</span> Where the risk lives</h2>
+        <p class="lede">
+          Thirty-one acceptance criteria, and their distribution is itself a decision. Monaco
+          cannot run in jsdom, so everything that can be made a pure function was, and the browser
+          is asked to prove only the two things that need a layout engine.
+        </p>
+
+        <figure>
+          <div class="scroller">
+            <svg
+              viewBox="0 0 940 232"
+              width="940"
+              height="232"
+              role="img"
+              aria-label="Acceptance criteria by test level: twenty-three at L1 unit, eleven at L2 component with Monaco stubbed, and two at L5 end to end in a real browser."
+            >
+              <text class="t-hd" x="20" y="30">L1 · unit — pure logic, fake monaco</text>
+              <rect x="20" y="42" width="820" height="26" rx="5" class="box-plain" />
+              <rect x="20" y="42" width="608" height="26" rx="5" class="wash-k" stroke-width="1.2" />
+              <text class="t" x="644" y="60">23 criteria</text>
+              <text class="t-sm" x="20" y="86">the language map · the append/replace decision · the model registry · the whole store</text>
+
+              <text class="t-hd" x="20" y="122">L2 · component — VueMonacoEditor stubbed</text>
+              <rect x="20" y="134" width="820" height="26" rx="5" class="box-plain" />
+              <rect x="20" y="134" width="291" height="26" rx="5" class="wash-i" stroke-width="1.2" />
+              <text class="t" x="327" y="152">11 criteria</text>
+              <text class="t-sm" x="20" y="178">the props the component passes · the strip · the four panel states · instance identity</text>
+
+              <text class="t-hd" x="20" y="204">L5 · end to end — a real browser, the only place a box has a size</text>
+              <rect x="20" y="212" width="820" height="18" rx="5" class="box-plain" />
+              <rect x="20" y="212" width="53" height="18" rx="5" class="wash-s" stroke-width="1.2" />
+              <text class="t" x="89" y="226">2 criteria — colouring, layout height, the tab round trip</text>
+            </svg>
+          </div>
+          <figcaption>
+            <b>Figure 6.</b> Not an accident: D23 is the decision that Monaco is never run below
+            L5, and this is what that decision costs and buys. The five criteria that appear at two
+            levels are counted at both.
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- =================================================== 7 -->
+      <section>
+        <h2><span class="ln">07</span> The server surface, for the avoidance of doubt</h2>
+        <p class="lede">
+          The whole slice is <code>frontend/</code> plus two e2e files. These three routes and the
+          stream protocol are exactly what Slice 6 shipped; what changes is only <em>when</em> the
+          browser calls them.
+        </p>
+
+        <div class="cards">
+          <div class="card">
+            <div class="verb">GET</div>
+            <div class="path">/api/projects/:projectId/files</div>
+            <span class="stamp same">unchanged</span>
+            <p>Still one call per project open, and one more after a generation that wrote files.</p>
+          </div>
+          <div class="card">
+            <div class="verb">GET</div>
+            <div class="path">/api/projects/:projectId/files/:path</div>
+            <span class="stamp warn">same shape, new cadence</span>
+            <p>
+              One per tab opened for the first time. Re-activating a tab, or reopening a closed
+              one, issues <b>nothing</b> (D10, D12). After a generation: one per open tab it
+              rewrote, not one for the selection (D15).
+            </p>
+          </div>
+          <div class="card">
+            <div class="verb">PUT</div>
+            <div class="path">/api/projects/:projectId/files/:path</div>
+            <span class="stamp same">unchanged</span>
+            <p>Attested, last-write-wins, scoped to the active tab. Refused while a stream is open.</p>
+          </div>
+          <div class="card">
+            <div class="verb">POST</div>
+            <div class="path">/generate</div>
+            <span class="stamp same">unchanged</span>
+            <p>
+              <code>token</code> · <code>file_start</code> · <code>file_chunk</code> ·
+              <code>file_end</code> · <code>done</code> · <code>error</code>. This slice consumes
+              the same frames into a different widget.
+            </p>
+          </div>
+        </div>
+        <p class="lede" style="margin-top: 1.2rem">
+          No new collection, no rules change, no index change, no system-prompt change, no
+          configuration. The definition of done asks the review to check that against the diff
+          rather than against this sentence.
+        </p>
+      </section>
+
+      <!-- =================================================== 8 -->
+      <section>
+        <h2><span class="ln">08</span> Risks</h2>
+        <div class="tbl">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 3rem">#</th>
+                <th style="width: 34%">Risk</th>
+                <th>Mitigation</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>R1</td>
+                <td>
+                  <code>setValue</code> per chunk instead of an append. Passes everything below L5;
+                  in the app it pins the viewport to line 1 for a whole generation.
+                </td>
+                <td>
+                  Figure 2's pure function, five ACs, and AC-10's negative — no
+                  <code>setValue</code> for a file while it streams. Watched at L5.
+                </td>
+              </tr>
+              <tr>
+                <td>R2</td>
+                <td>
+                  The mandated wrapper is old — <code>vue-demi</code>, and a <code>.d.ts</code> that
+                  imports a monaco path current monaco no longer resolves.
+                </td>
+                <td>
+                  monaco pinned to 0.52.2; <code>typecheck</code> is the gate. If it still fails,
+                  <b>stop and write it down</b> — replacing a brief-named package is a recorded
+                  decision, not a keyboard call.
+                </td>
+              </tr>
+              <tr>
+                <td>R3</td>
+                <td>Monaco cannot run in jsdom, so its visible behaviour has one proof, at L5.</td>
+                <td>Figure 6: everything decidable is pure and L1. L2 asserts props against a stub.</td>
+              </tr>
+              <tr>
+                <td>R4</td>
+                <td>
+                  Layout collapse — Monaco measures its container, and one with no definite height
+                  renders 0&nbsp;px with no error. The Slice 6 finding, in a louder form.
+                </td>
+                <td>
+                  The cap on the element that scrolls, a definite height below it,
+                  <code>automaticLayout: true</code>, and AC-30's non-zero height at L5.
+                </td>
+              </tr>
+              <tr>
+                <td>R5</td>
+                <td>Model URI collision across projects — figure 4.</td>
+                <td>Project-scoped URIs, our own registry, disposal on close. AC-6, AC-7, AC-9.</td>
+              </tr>
+              <tr>
+                <td>R6</td>
+                <td>Bundle weight — about a megabyte gzipped, paid for on the sign-in page.</td>
+                <td>Dynamic import behind the workspace; a bundle check in the definition of done.</td>
+              </tr>
+              <tr>
+                <td>R7</td>
+                <td>
+                  Slice 7 is <b>first on the cut list</b> and the graded chain (8 → 9 → 10) is still
+                  ahead.
+                </td>
+                <td>
+                  The cut is pre-decided: revert the two dependencies and
+                  <code>FileEditor.vue</code> to the textarea — one commit, because every rule lives
+                  in the store and nothing on the server depends on this slice.
+                </td>
+              </tr>
+              <tr>
+                <td>R8</td>
+                <td>
+                  The existing e2e drives a textarea and breaks by construction; the tempting fix is
+                  to loosen it.
+                </td>
+                <td>
+                  Updated in the same commit, through two named helpers, assertions unchanged.
+                  Weakening a test for a green suite is out of bounds here regardless.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <footer>
+        The contract is <b>02-prd.md</b> — decisions D1–D28, criteria AC-1…AC-31, and the test
+        matrix live there. This page draws only what a sentence could not say faster.
+      </footer>
+    </div>
+  </body>
+</html>

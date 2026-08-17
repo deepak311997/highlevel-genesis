@@ -28,7 +28,8 @@ const store = reactive({
   filesLoaded: true,
   filesError: null as string | null,
   selectedPath: null as string | null,
-  fileContent: '',
+  openTabs: [] as string[],
+  dirtyPaths: [] as string[],
   fileDirty: false,
   fileLoading: false,
   fileError: null as string | null,
@@ -44,6 +45,9 @@ const store = reactive({
   loadMessages: vi.fn(),
   loadFiles: vi.fn(),
   selectFile: vi.fn(),
+  closeTab: vi.fn(),
+  editContent: vi.fn(),
+  reloadFile: vi.fn(),
   saveFile: vi.fn(),
   send: vi.fn(),
 })
@@ -82,9 +86,18 @@ const PROJECT: Project = {
   updatedAt: '2026-08-17T09:00:00.000Z',
 }
 
+/**
+ * `CodeEditor: true` is not a convenience (D23).
+ *
+ * Unstubbed, this suite mounts the real `VueMonacoEditor`, whose `onMounted`
+ * calls `loader.init()` — and with nothing having called `loader.config({ monaco
+ * })` first, that appends a **CDN `<script>` tag** into jsdom. The editor's own
+ * behaviour is `CodeEditor.spec.ts`'s subject; what belongs here is the layout
+ * switch.
+ */
 const MOUNT = {
   global: {
-    stubs: { RouterLink: RouterLinkStub, MessageComposer: true },
+    stubs: { RouterLink: RouterLinkStub, MessageComposer: true, CodeEditor: true },
   },
 }
 

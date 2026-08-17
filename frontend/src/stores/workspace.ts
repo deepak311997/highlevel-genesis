@@ -37,6 +37,25 @@ import { getProject, type Project } from '@/lib/projectsApi'
  * store populated only when you came from the dashboard is worse than one that
  * never is, because only one of those two paths gets tested.
  */
+/**
+ * One open file, as far as the editor is concerned (D14).
+ *
+ * Slice 6 held these five as five top-level refs, which meant **one** buffer:
+ * clicking a second file threw away unsaved edits to the first, with no warning
+ * and no way back. One entry per path is the whole fix, and `openTabs` is what
+ * makes it visible.
+ */
+export interface FileBuffer {
+  /** What the user has. */
+  content: string
+  /** What the server last said. Dirty is the two disagreeing. */
+  saved: string
+  loading: boolean
+  error: string | null
+  /** D15/D16 — a generation replaced this buffer, until the next edit or close. */
+  replaced: boolean
+}
+
 export interface WorkspaceStore {
   projectId: Ref<string | null>
   project: Ref<Project | null>
@@ -78,15 +97,27 @@ export interface WorkspaceStore {
   /** Whether a list request has completed, successfully or not. */
   filesLoaded: Ref<boolean>
   filesError: Ref<string | null>
-  /** The file open in the editor, or `null` when nothing is selected. */
+  /** The **active tab**, or `null` when no tab is open (D14). */
   selectedPath: Ref<string | null>
-  /** The editor's buffer — what the user has. Two-way bound by `FileEditor`. */
-  fileContent: Ref<string>
-  /** What the server last said this file was. `fileDirty` is the two disagreeing. */
-  savedContent: Ref<string>
+  /** The open tabs, in the order they were opened. */
+  openTabs: Ref<string[]>
+  /**
+   * One buffer per path that has been opened this session (D14).
+   *
+   * **Survives a tab close** (D12), which is what removes the confirm dialog from
+   * this slice entirely: closing a tab cannot lose work, because reopening the
+   * file restores the unsaved content and its dirty mark without a request. A
+   * "discard your changes?" modal is a component, a focus trap, an e2e case and a
+   * decision about what the default button is — all bought by a rule that costs
+   * one line.
+   */
+  buffers: Ref<Record<string, FileBuffer>>
+  /** The paths the tab strip marks as having unsaved edits. */
+  dirtyPaths: ComputedRef<string[]>
+  /** The **active** buffer's content against what the server last said. */
   fileDirty: ComputedRef<boolean>
-  fileLoading: Ref<boolean>
-  fileError: Ref<string | null>
+  fileLoading: ComputedRef<boolean>
+  fileError: ComputedRef<string | null>
   saving: Ref<boolean>
   /** Kept apart from `fileError`: one renders beside Save, one instead of the editor. */
   saveError: Ref<string | null>
@@ -103,8 +134,8 @@ export interface WorkspaceStore {
   fileTree: ComputedRef<FileRow[]>
   /** What the editor shows — the streaming buffer while one exists, else the file. */
   editorContent: ComputedRef<string>
-  /** D22's notice: an unsaved edit was discarded by a generation that rewrote it. */
-  fileReplaced: Ref<boolean>
+  /** D15/D16's notice, for the **active** tab: a generation replaced this buffer. */
+  fileReplaced: ComputedRef<boolean>
   /** The last generation's `fileError`, kept apart from `generateError`. */
   generateFileError: Ref<string | null>
   atLimit: ComputedRef<boolean>
@@ -113,7 +144,14 @@ export interface WorkspaceStore {
   loadMessages: () => Promise<void>
   /** The file tree's Try again — this action and nothing else. */
   loadFiles: () => Promise<void>
+  /** Open a tab for a path if there is none, then make it active (D10). */
   selectFile: (path: string) => Promise<void>
+  /** Close a tab, keeping its buffer (D12). */
+  closeTab: (path: string) => void
+  /** Write the active buffer — what the editor calls on a keystroke. */
+  editContent: (text: string) => void
+  /** Re-read the active tab: the editor's **Try again** on a failed read. */
+  reloadFile: () => Promise<void>
   saveFile: () => Promise<void>
   send: () => Promise<void>
   /** Re-open the stream for the same transcript — no new user message (D26). */
@@ -148,12 +186,58 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
   const filesError = ref<string | null>(null)
 
   const selectedPath = ref<string | null>(null)
-  const fileContent = ref('')
-  const savedContent = ref('')
-  const fileLoading = ref(false)
-  const fileError = ref<string | null>(null)
+  const openTabs = ref<string[]>([])
+  const buffers = ref<Record<string, FileBuffer>>({})
   const saving = ref(false)
   const saveError = ref<string | null>(null)
+
+  function emptyBuffer(): FileBuffer {
+    return { content: '', saved: '', loading: false, error: null, replaced: false }
+  }
+
+  /** The buffer for a path, created on first use. */
+  function ensureBuffer(path: string): FileBuffer {
+    const existing = buffers.value[path]
+    if (existing !== undefined) return existing
+    const created = emptyBuffer()
+    buffers.value[path] = created
+    return created
+  }
+
+  /**
+   * Write a buffer **only if it is still there**.
+   *
+   * Every write that lands after an `await` goes through this, on top of the
+   * `current(gen)` guard: a buffer can be dropped mid-flight by a generation that
+   * rewrote a closed file (D15), and a late response resurrecting it would put an
+   * entry back that nothing on screen refers to — with `saved` set from a read
+   * whose tab is gone.
+   */
+  function withBuffer(path: string, write: (buffer: FileBuffer) => void): void {
+    const buffer = buffers.value[path]
+    if (buffer === undefined) return
+    write(buffer)
+  }
+
+  /**
+   * Forget a buffer, so the next open reads the server's copy (D15).
+   *
+   * Rebuilt rather than `delete`d — `no-dynamic-delete` is on, and the whole-object
+   * replacement `mergeFileTree`'s comment warns about is not a cost here: this runs
+   * once per generation per closed file it rewrote, not once per chunk.
+   */
+  function dropBuffer(path: string): void {
+    buffers.value = Object.fromEntries(
+      Object.entries(buffers.value).filter(([key]) => key !== path),
+    )
+  }
+
+  /** The active tab's buffer, or `null` — which is also "no tab" and "not read yet". */
+  const activeBuffer = computed<FileBuffer | null>(() => {
+    const path = selectedPath.value
+    if (path === null) return null
+    return buffers.value[path] ?? null
+  })
 
   /**
    * Dirty is **derived**, not maintained.
@@ -164,10 +248,35 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
    * cannot go stale, and it also makes typing a change and typing it back read as
    * clean — which is the truth.
    */
-  const fileDirty = computed(() => fileContent.value !== savedContent.value)
+  function isDirty(buffer: FileBuffer): boolean {
+    return buffer.content !== buffer.saved
+  }
+
+  const fileDirty = computed(() => {
+    const buffer = activeBuffer.value
+    return buffer !== null && isDirty(buffer)
+  })
+
+  /** What the strip marks. Over `openTabs`, so a closed dirty buffer is not shown. */
+  const dirtyPaths = computed(() =>
+    openTabs.value.filter((path) => {
+      const buffer = buffers.value[path]
+      return buffer !== undefined && isDirty(buffer)
+    }),
+  )
+
+  /*
+   * The active tab's fields, kept under their Slice 6 names (D14).
+   *
+   * That is deliberate diff hygiene rather than nostalgia: `FileTree.vue` does not
+   * change at all and half of `FileEditor.vue` does not either, so the review reads
+   * the change to the buffer model rather than a rename spread over four files.
+   */
+  const fileLoading = computed(() => activeBuffer.value?.loading ?? false)
+  const fileError = computed(() => activeBuffer.value?.error ?? null)
+  const fileReplaced = computed(() => activeBuffer.value?.replaced ?? false)
 
   const streamingFiles = ref<Record<string, string>>({})
-  const fileReplaced = ref(false)
   const generateFileError = ref<string | null>(null)
 
   /**
@@ -200,7 +309,7 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
   const editorContent = computed(() => {
     const path = selectedPath.value
     if (path === null) return ''
-    return streamingFiles.value[path] ?? fileContent.value
+    return streamingFiles.value[path] ?? activeBuffer.value?.content ?? ''
   })
 
   /**
@@ -389,40 +498,129 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     }
   }
 
+  /** Add a tab if there is not one already, keeping the order they were opened in. */
+  function openTab(path: string): void {
+    if (!openTabs.value.includes(path)) openTabs.value = [...openTabs.value, path]
+  }
+
   /**
-   * Open a file in the editor: the selection first, then its bytes.
+   * Open a tab for a path and make it active — fetching **only** if this session
+   * has never read it (D10, D12).
    *
-   * The buffer is cleared before the request goes out. Left in place, the
-   * previous file's code would render under the new filename for the length of a
-   * round trip — one file's contents labelled as another's, which is a worse
-   * screen than an empty one.
+   * The two negatives are the point. Re-activating an open tab issues nothing,
+   * because a refetch would silently discard the buffer, which is the exact bug
+   * tabs exist to fix. Reopening a *closed* file issues nothing either, because
+   * its buffer survived the close — so an unsaved edit comes back exactly as it
+   * was typed, with no round trip to show it.
    */
   async function selectFile(path: string): Promise<void> {
     const id = projectId.value
     if (id === null) return
 
-    const gen = generation
+    openTab(path)
     selectedPath.value = path
-    // A deliberate choice, so no generation may take it back.
-    autoSelected = null
-    fileContent.value = ''
-    savedContent.value = ''
-    fileError.value = null
+    // A deliberate choice, so no generation may take this tab back.
+    if (autoSelected === path) autoSelected = null
+    // Belongs to the save that failed, not to the tab now in front of the user.
     saveError.value = null
-    // The notice belongs to the file it was raised for, and D22 promised it stays
-    // "until the user selects another file" — this is that sentence.
-    fileReplaced.value = false
-    fileLoading.value = true
+
+    // Buffered already — content, an unsaved edit, or a failed read whose Try
+    // again is `reloadFile()`. Either way there is nothing to ask for.
+    if (buffers.value[path] !== undefined) return
+
+    ensureBuffer(path)
+    await readInto(path, id, generation)
+  }
+
+  /**
+   * Close a tab, **keeping its buffer** (D12).
+   *
+   * The buffer surviving is what makes this safe with no confirm dialog: reopening
+   * the file restores the unsaved content and its dirty mark, without a request.
+   * The *notice* does not survive, because closing the tab is the user acting on
+   * it, which is one of D16's two triggers.
+   *
+   * The left neighbour, then the right, then nothing — the left because that is
+   * where the eye already is when a tab disappears from under the cursor.
+   */
+  function closeTab(path: string): void {
+    const index = openTabs.value.indexOf(path)
+    if (index === -1) return
+
+    openTabs.value = openTabs.value.filter((open) => open !== path)
+    withBuffer(path, (buffer) => {
+      buffer.replaced = false
+    })
+
+    if (autoSelected === path) autoSelected = null
+    if (selectedPath.value !== path) return
+
+    // After the splice, `index - 1` is still the left neighbour and `index` is
+    // whatever moved up into its place.
+    selectedPath.value = openTabs.value[index - 1] ?? openTabs.value[index] ?? null
+    saveError.value = null
+  }
+
+  /**
+   * The active buffer's content — what the editor calls on a keystroke.
+   *
+   * Clearing `replaced` here is D16's first trigger: the notice has to be
+   * dismissible by *doing* something, or it sits over a file the user has since
+   * re-edited and lies about it. Per tab, not global — an edit in one tab has
+   * nothing to say about another's.
+   */
+  function editContent(text: string): void {
+    const path = selectedPath.value
+    if (path === null) return
+    withBuffer(path, (buffer) => {
+      buffer.content = text
+      buffer.replaced = false
+    })
+  }
+
+  /** Re-read the active tab — the editor's **Try again** on a failed read (AC-13). */
+  async function reloadFile(): Promise<void> {
+    const id = projectId.value
+    const path = selectedPath.value
+    if (id === null || path === null) return
+
+    ensureBuffer(path)
+    await readInto(path, id, generation)
+  }
+
+  /**
+   * Read one file into its buffer.
+   *
+   * Every write is `withBuffer`'d as well as `current(gen)`-guarded: the buffer
+   * can be dropped while this is in flight, and a late response must not put it
+   * back. `replaced` is deliberately not touched — a fresh read leaves it as the
+   * caller set it, which is what lets `applyGenerationFiles` announce a discard
+   * that this function performed.
+   */
+  async function readInto(path: string, id: string, gen: number): Promise<void> {
+    withBuffer(path, (buffer) => {
+      buffer.loading = true
+      buffer.error = null
+    })
     try {
       const file = await getFile(id, path)
       if (!current(gen)) return
-      fileContent.value = file.content
-      savedContent.value = file.content
+      withBuffer(path, (buffer) => {
+        buffer.content = file.content
+        buffer.saved = file.content
+      })
     } catch (err) {
       if (!current(gen)) return
-      fileError.value = err instanceof Error ? err.message : 'Could not load that file.'
+      const message = err instanceof Error ? err.message : 'Could not load that file.'
+      withBuffer(path, (buffer) => {
+        buffer.error = message
+      })
     } finally {
-      if (current(gen)) fileLoading.value = false
+      if (current(gen)) {
+        withBuffer(path, (buffer) => {
+          buffer.loading = false
+        })
+      }
     }
   }
 
@@ -456,14 +654,21 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
      */
     if (id === null || path === null || saving.value || generating.value) return
 
+    // Scoped to the active tab, and to nothing else (D26): a save touches this
+    // buffer, this path in the list, and no other tab.
+    const buffer = buffers.value[path]
+    if (buffer === undefined) return
+
     const gen = generation
     saving.value = true
     saveError.value = null
     try {
-      const file = await putFile(id, path, fileContent.value)
+      const file = await putFile(id, path, buffer.content)
       if (!current(gen)) return
-      fileContent.value = file.content
-      savedContent.value = file.content
+      withBuffer(path, (saved) => {
+        saved.content = file.content
+        saved.saved = file.content
+      })
       // The list's entry for this file is now stale in `size` and `updatedAt`,
       // and the response is the server's own word for both — so it is applied
       // here rather than paid for with a second `GET`.
@@ -502,68 +707,86 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     if (written.length > 0) await loadFiles()
     if (!current(gen)) return
 
-    const path = selectedPath.value
-    if (path === null) return
+    const id = projectId.value
+    if (id === null) return
 
-    if (written.includes(path)) {
-      /*
-       * The open file was rewritten, so its buffer is stale whatever state it
-       * was in. A dirty one is discarded — the window is narrow, because the
-       * panel is read-only while a stream is open (D21), so this is an edit
-       * typed before the send — and the discard is **announced** (D22). Silence
-       * is the one outcome that is not acceptable; a merge UI is a slice of its
-       * own.
-       */
-      const wasDirty = fileDirty.value
-      const id = projectId.value
-      if (id === null) return
-      await reReadSelected(id, path, gen)
-      if (current(gen)) fileReplaced.value = wasDirty
-      return
+    /*
+     * **Every open tab** the generation rewrote, not just the active one (D15).
+     *
+     * A generation that rewrites three files while two are open has to refresh
+     * both, or the tab the user is not looking at holds bytes the server has
+     * since replaced — and **Save** from it would put them back. The count is
+     * bounded by what is on screen, which is what makes fanning out affordable.
+     *
+     * A dirty buffer is discarded and the discard is **announced** (D16): the
+     * window is narrow, because the editor is read-only while a stream is open
+     * (D9), so this is an edit typed before the send. Silence is the one outcome
+     * that is not acceptable; a merge UI is a slice of its own.
+     *
+     * Sequential rather than `Promise.all`, because there are at most a handful
+     * of open tabs and one order is easier to reason about — and to assert —
+     * than a race between reads that each write a different buffer.
+     */
+    for (const path of openTabs.value) {
+      if (!written.includes(path)) continue
+      const buffer = buffers.value[path]
+      // A tab this generation opened has no buffer at all (P1), and an unread
+      // buffer is not a dirty one.
+      const wasDirty = buffer !== undefined && isDirty(buffer)
+      ensureBuffer(path)
+      await readInto(path, id, gen)
+      if (!current(gen)) return
+      withBuffer(path, (refreshed) => {
+        refreshed.replaced = wasDirty
+      })
     }
 
     /*
-     * The selection this generation made for itself, on a turn that stored
-     * nothing. Two shapes, and the second is the dangerous one:
-     *
-     * - a path that streamed but was never stored — a refused op set, or an
-     *   unterminated block — which leaves a filename with no file behind it;
-     * - a path the project **already holds**, whose buffer was never read,
-     *   because `file_start` selects and does not fetch. Left selected it shows
-     *   an empty textarea over a file with content, and the first keystroke
-     *   makes it dirty enough for **Save** to offer to replace that file with
-     *   what was typed.
-     *
-     * Both go back to no selection, which is where the panel was before the
-     * generation borrowed it — and no request is issued (AC-40).
-     *
-     * A selection the **user** made is never touched here, dirty included:
-     * re-reading or dropping it would discard an edit for a reason they cannot
-     * see and the server never asked for.
+     * A file that is **buffered but closed** has its entry dropped rather than
+     * re-read (D15). Re-reading every buffer ever opened would make the request
+     * count grow with the session for tabs nobody is looking at; dropping it
+     * keeps the answer correct, because the next open fetches the server's copy.
      */
-    if (autoSelected === path || !files.value.some((entry) => entry.path === path)) {
-      selectedPath.value = null
-      autoSelected = null
-      fileContent.value = ''
-      savedContent.value = ''
+    for (const path of written) {
+      if (openTabs.value.includes(path)) continue
+      if (buffers.value[path] !== undefined) dropBuffer(path)
     }
+
+    closeAutoSelected(written)
   }
 
-  /** The re-read of an open file, without `selectFile`'s clear-and-select. */
-  async function reReadSelected(id: string, path: string, gen: number): Promise<void> {
-    fileLoading.value = true
-    fileError.value = null
-    try {
-      const file = await getFile(id, path)
-      if (!current(gen)) return
-      fileContent.value = file.content
-      savedContent.value = file.content
-    } catch (err) {
-      if (!current(gen)) return
-      fileError.value = err instanceof Error ? err.message : 'Could not load that file.'
-    } finally {
-      if (current(gen)) fileLoading.value = false
-    }
+  /**
+   * Hand back the tab this generation opened for itself, unless the turn stored
+   * the file behind it (P1). Two shapes, and the second is the dangerous one:
+   *
+   * - a path that streamed but was never stored — a refused op set, or an
+   *   unterminated block — which leaves a filename with no file behind it;
+   * - a path the project **already holds**, whose bytes were never read,
+   *   because `file_start` opens a tab and does not fetch. Left open it shows
+   *   an empty editor over a file with content, its keystrokes go nowhere —
+   *   `editContent` has no buffer to write to — and the byte count reads 0.
+   *
+   * Both close the tab, which is where the panel was before the generation
+   * borrowed one, and no request is issued (AC-24).
+   *
+   * Called from **two** places, because a generation has two ways to end. `done`
+   * passes the files it wrote; the `finally` passes nothing, because a turn that
+   * never reached `done` — interrupted, refused before the first byte, dropped —
+   * stored nothing by construction. `done` runs first and leaves `autoSelected`
+   * null, so the second call is a no-op rather than a double close.
+   *
+   * A tab the **user** opened is never touched, dirty included: closing it would
+   * discard an edit for a reason they cannot see and the server never asked for.
+   * `selectFile` clears `autoSelected` when the user clicks that very tab, which
+   * is them adopting it.
+   */
+  function closeAutoSelected(written: string[]): void {
+    const opened = autoSelected
+    autoSelected = null
+    if (opened === null || written.includes(opened)) return
+
+    closeTab(opened)
+    dropBuffer(opened)
   }
 
   /** Every file field back to its initial value — shared by `open` and `reset`. */
@@ -573,15 +796,12 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     filesLoaded.value = false
     filesError.value = null
     selectedPath.value = null
+    openTabs.value = []
+    buffers.value = {}
     autoSelected = null
-    fileContent.value = ''
-    savedContent.value = ''
-    fileLoading.value = false
-    fileError.value = null
     saving.value = false
     saveError.value = null
     streamingFiles.value = {}
-    fileReplaced.value = false
     generateFileError.value = null
   }
 
@@ -612,7 +832,6 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     generateError.value = null
     streamingFiles.value = {}
     generateFileError.value = null
-    fileReplaced.value = false
     // Whatever the last generation selected for itself is the last generation's
     // business; this one has borrowed nothing yet.
     autoSelected = null
@@ -638,7 +857,8 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
            * storing nothing can put the panel back rather than leaving an
            * unread buffer under a real filename.
            */
-          if (selectedPath.value === null) {
+          if (openTabs.value.length === 0) {
+            openTab(event.path)
             selectedPath.value = event.path
             autoSelected = event.path
           }
@@ -706,6 +926,9 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
          */
         streamingFiles.value = {}
         generating.value = false
+        // A turn that never reached `done` stored nothing, so the tab it opened
+        // for itself goes back — see `closeAutoSelected`.
+        closeAutoSelected([])
       }
       if (controller === ours) controller = null
     }
@@ -815,8 +1038,9 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     filesLoaded,
     filesError,
     selectedPath,
-    fileContent,
-    savedContent,
+    openTabs,
+    buffers,
+    dirtyPaths,
     fileDirty,
     fileLoading,
     fileError,
@@ -833,6 +1057,9 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     loadMessages,
     loadFiles,
     selectFile,
+    closeTab,
+    editContent,
+    reloadFile,
     saveFile,
     send,
     retryGeneration: runGeneration,
