@@ -9,12 +9,16 @@ vi.mock('../lib/firebase', () => ({ getDb }))
 
 import {
   parseStoredFile,
+  planFileWrites,
   readProjectFiles,
+  readStoredFiles,
   requireFilePath,
   stageFileWrites,
   type FileWritePlan,
 } from './handlers'
-import { FILE_LIMIT } from './schema'
+import { mergeSnapshotFiles } from '../snapshots/plan'
+import { FILE_LIMIT, type StoredFile } from './schema'
+import type { CollectResult } from '../llm/fileops'
 
 /**
  * The write path's document shape, and the two fail-closed reads around it.
@@ -262,6 +266,220 @@ describe('requireFilePath', () => {
   /* A malformed path and a stranger's file read the same to the caller. */
   it('describes the outcome rather than the rule', () => {
     expect(() => requireFilePath(req('A.html'))).toThrow('That file could not be found.')
+  })
+})
+
+/**
+ * A Firestore whose one collection answers a `orderBy → limit → get` chain,
+ * recording the links so the query's shape is asserted rather than assumed.
+ *
+ * The chain is what changed in Slice 11 (D14): the read used to be `limit →
+ * select()`, which returns ≤20 refs and no field data. It now returns the
+ * documents, because one read has to answer three questions — is the union
+ * within `FILE_LIMIT`, which of the turn's writes are rewrites, and what is the
+ * project's file set for the snapshot to copy.
+ */
+function fakeQuery(docs: { id: string; data: unknown }[]): {
+  calls: { collection: string; orderBy: unknown[]; limit: number | null }
+} {
+  const calls: { collection: string; orderBy: unknown[]; limit: number | null } = {
+    collection: '',
+    orderBy: [],
+    limit: null,
+  }
+
+  const snapshot = { docs: docs.map((doc) => ({ exists: true, id: doc.id, data: () => doc.data })) }
+
+  getDb.mockReturnValue({
+    collection: (path: string) => {
+      calls.collection = path
+      return {
+        orderBy: (field: string) => {
+          calls.orderBy.push(field)
+          return {
+            limit: (count: number) => {
+              calls.limit = count
+              return { get: () => Promise.resolve(snapshot) }
+            },
+          }
+        },
+      }
+    },
+  })
+
+  return { calls }
+}
+
+const stored = (path: string, content: string): { id: string; data: StoredFile } => ({
+  id: path,
+  data: {
+    path,
+    content,
+    size: Buffer.byteLength(content, 'utf8'),
+    createdAt: Timestamp.fromMillis(1_700_000_000_000),
+    updatedAt: Timestamp.fromMillis(1_700_000_100_000),
+  },
+})
+
+/** A finished collection, with only the members `planFileWrites` reads. */
+const collected = (
+  ops: { path: string; content: string }[],
+  unterminated: string | null = null,
+): CollectResult => ({ messageText: 'prose', ops, unterminated, frames: [] })
+
+describe('readStoredFiles', () => {
+  /*
+   * D30's rule, restated for a query that is no longer a projection: a single
+   * `orderBy` is served by Firestore's automatic index, so this needs no entry in
+   * `firestore.indexes.json` — stated because Slices 3 and 4 both paid for a
+   * missing composite index and the emulator does not enforce them.
+   */
+  it('reads the project’s files ordered by path, capped at the file limit', async () => {
+    const { calls } = fakeQuery([stored('index.html', '<p>hi</p>'), stored('app.js', 'let x')])
+
+    await readStoredFiles('alice', 'proj-1')
+
+    expect(calls.collection).toBe('users/alice/projects/proj-1/files')
+    expect(calls.orderBy).toEqual(['path'])
+    expect(calls.limit).toBe(FILE_LIMIT)
+  })
+
+  it('returns the parsed documents, content included', async () => {
+    fakeQuery([stored('app.js', 'let x')])
+
+    const files = await readStoredFiles('alice', 'proj-1')
+
+    expect(files.map((file) => [file.path, file.content, file.size])).toEqual([
+      ['app.js', 'let x', 5],
+    ])
+  })
+
+  /*
+   * P2. `readFilePaths` counted an unreadable document, because it counted refs
+   * and never looked inside one. This reads the document, so a corrupt one is
+   * *known* to be corrupt and is omitted — which the PRD argues for directly: a
+   * copy of a document nothing can read would be a copy of nothing.
+   *
+   * Two consequences, both improvements and both deliberate: the `FILE_LIMIT`
+   * union check counts one fewer, and a rewrite of a corrupt path is staged with
+   * `exists: false`, so it is written whole and **repaired**.
+   */
+  it('omits a document that cannot be read, and logs it once', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    fakeQuery([stored('app.js', 'let x'), { id: 'index.html', data: { path: 'index.html' } }])
+
+    const files = await readStoredFiles('alice', 'proj-1')
+
+    expect(files.map((file) => file.path)).toEqual(['app.js'])
+    expect(info).toHaveBeenCalledTimes(1)
+  })
+
+  it('omits a document filed under an id that is not its path', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    fakeQuery([{ ...stored('app.js', 'let x'), id: 'other.js' }])
+
+    expect(await readStoredFiles('alice', 'proj-1')).toEqual([])
+  })
+})
+
+describe('planFileWrites', () => {
+  /** AC-1's caller half — `resulting` is the project's set *after* this turn. */
+  it('returns the merge of what is stored with what the turn wrote', async () => {
+    const files = [stored('index.html', '<p>one</p>'), stored('app.js', 'let x')]
+    fakeQuery(files)
+
+    const outcome = await planFileWrites(
+      'alice',
+      'proj-1',
+      collected([
+        { path: 'index.html', content: '<p>two</p>' },
+        { path: 'about.html', content: '<p>new</p>' },
+      ]),
+      true,
+    )
+
+    expect(outcome.resulting).toEqual(
+      mergeSnapshotFiles(
+        files.map((file) => file.data),
+        outcome.writes.map(({ path, content, size }) => ({ path, content, size })),
+      ),
+    )
+    // Spelled out as well as compared, so the test says what the merge is *for*:
+    // the file the turn never mentioned is in the turn's resulting set.
+    expect(outcome.resulting.map((file) => file.path)).toEqual([
+      'about.html',
+      'app.js',
+      'index.html',
+    ])
+    expect(outcome.resulting.find((file) => file.path === 'app.js')?.content).toBe('let x')
+  })
+
+  it('marks a rewrite as existing and a new file as not', async () => {
+    fakeQuery([stored('index.html', '<p>one</p>')])
+
+    const outcome = await planFileWrites(
+      'alice',
+      'proj-1',
+      collected([
+        { path: 'index.html', content: '<p>two</p>' },
+        { path: 'about.html', content: '<p>new</p>' },
+      ]),
+      true,
+    )
+
+    expect(outcome.writes.map((write) => [write.path, write.exists])).toEqual([
+      ['index.html', true],
+      ['about.html', false],
+    ])
+  })
+
+  /*
+   * D2, AC-1's third clause. A prose-only turn reads nothing at all — no cap to
+   * check, nothing to write, and therefore no snapshot to plan. The read never
+   * happening is the assertion: `getDb` is left un-stubbed, so a call would
+   * throw rather than quietly return a fake.
+   */
+  it('issues no read and resolves to an empty resulting set for a prose-only turn', async () => {
+    getDb.mockImplementation(() => {
+      throw new Error('planFileWrites read Firestore for a turn that wrote no files')
+    })
+
+    const outcome = await planFileWrites('alice', 'proj-1', collected([]), true)
+
+    expect(outcome).toEqual({ writes: [], resulting: [], error: null })
+  })
+
+  it.each([
+    ['an unterminated block', collected([{ path: 'a.js', content: 'x' }], 'a.js'), true],
+    ['a turn that did not complete', collected([{ path: 'a.js', content: 'x' }]), false],
+  ])('resolves to an empty resulting set for %s', async (_label, result, completed) => {
+    getDb.mockImplementation(() => {
+      throw new Error('planFileWrites read Firestore for a turn that stores nothing')
+    })
+
+    const outcome = await planFileWrites('alice', 'proj-1', result, completed)
+
+    expect(outcome.resulting).toEqual([])
+    expect(outcome.error).not.toBeNull()
+  })
+
+  /*
+   * A refusal decided *after* the read — the set is validated against what the
+   * project already holds — so this one cannot assert the absence of a call. What
+   * it asserts is the thing a caller acts on: nothing is written, so there is no
+   * resulting set to snapshot.
+   */
+  it('resolves to an empty resulting set for a refused op set', async () => {
+    fakeQuery([stored('index.html', '<p>one</p>')])
+
+    const outcome = await planFileWrites(
+      'alice',
+      'proj-1',
+      collected([{ path: '../secrets.js', content: 'x' }]),
+      true,
+    )
+
+    expect(outcome).toEqual({ writes: [], resulting: [], error: { reason: 'path', path: '../secrets.js' } })
   })
 })
 
