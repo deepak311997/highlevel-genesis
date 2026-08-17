@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatDay } from './date'
+import { formatDay, formatTime } from './date'
 
 /**
- * One day formatter, shared by the account card and the projects card.
+ * Two formatters — a day for the cards, a time for chat bubbles.
  *
  * The pinning is the point: left to the environment, a rendered date depends on
  * whichever machine the page — or the test — happens to run on, which turns a
@@ -28,5 +28,30 @@ describe('formatDay', () => {
    */
   it.each(['', 'not a date', 'undefined'])('returns null for %s', (value) => {
     expect(formatDay(value)).toBeNull()
+  })
+})
+
+describe('formatTime', () => {
+  /** AC-29. 24-hour, zero-padded, no seconds — a chat bubble's timestamp. */
+  it('formats an ISO-8601 timestamp as HH:mm, pinned to en-GB and UTC', () => {
+    expect(formatTime('2026-08-17T09:05:00.000Z')).toBe('09:05')
+  })
+
+  /* The pin, asserted: 23:30 UTC is a different clock time in every other zone,
+   * so an unpinned formatter would make this assertion depend on the machine. */
+  it('does not shift the time into the local time zone', () => {
+    expect(formatTime('2026-08-17T23:30:00.000Z')).toBe('23:30')
+  })
+
+  it('renders midnight as 00:00 rather than 24:00', () => {
+    expect(formatTime('2026-08-17T00:00:00.000Z')).toBe('00:00')
+  })
+
+  /*
+   * D29. A message whose stored timestamp will not parse renders without a time
+   * rather than with "Invalid Date" — its content is what matters.
+   */
+  it.each(['', 'not a date', 'undefined'])('returns null for %s', (value) => {
+    expect(formatTime(value)).toBeNull()
   })
 })
