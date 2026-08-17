@@ -184,6 +184,44 @@ Added to the PRD's own list, from this review:
   attacker-influenceable — the argument stops holding and the delimiter needs escaping before
   that content lands in the block.
 
+## Ship-time addendum — 2026-08-18, after the rebase
+
+The suite table above was measured before `slice/07-monaco-editor` merged. Rebasing onto
+current `main` at ship time moved it, and found one defect.
+
+**Slice 7 removed the file editor's textarea, and AC-26 was written against it.** The rebase
+reported no conflict — Slice 7 rewrote movement four of `tests/e2e/files.spec.ts` for Monaco
+while Slice 9 added movement three above it, so git merged both hunks — but the merged file
+asserted `toHaveValue()` on `file-editor-input`, a testid Slice 7 deleted. The test failed on
+`element(s) not found`, which is the honest failure: the one L5 proof that HighLevel-shaped
+code reaches the editor was not proving anything.
+
+Fixed on this branch in `3c9a023`, the same way the file's own header says the rest of it was
+converted: read through `editorText`, which returns Monaco's model value rather than the
+virtualised DOM. That distinction is load-bearing here in a way it is not in movement four —
+two of AC-26's three assertions are *absences* (`locationId`, a HighLevel origin), and a DOM
+scrape of a long file only renders the visible lines, so an absence assertion over it would
+pass on any file long enough to scroll. The three assertions now run against one captured
+string that has already been shown to contain `hl(`, because both negatives are satisfied by
+the empty string.
+
+Suite re-run in full on the rebased branch, all six green:
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | clean — root, functions, frontend |
+| `npm run lint` | clean, zero warnings |
+| `npm run test:unit` — functions | 43 files / **1,051** tests |
+| `npm run test:unit` — frontend | 60 files / **786** tests (Slice 7's, unchanged by this slice) |
+| `npm run test:unit` — scripts | 3 files / **21** tests |
+| `npm run test:rules` | 1 file / **38** tests — unchanged from `main` |
+| `npm run test:integration` | 16 files / **329** tests |
+| `npm run test:e2e` | **16** passed |
+
+**2,241 cases.** Measured against `origin/main` in a worktree rather than inferred: `main` runs
+39 files / 922 functions unit and 325 integration, so Slice 9's own contribution is **+129
+functions unit** (4 new spec files) and **+4 integration**, with rules and e2e flat.
+
 ## Verdict
 
 **Approve.** The slice does what its PRD says, the architecture is right — the cheat-sheet is
