@@ -165,6 +165,8 @@ const OUTCOME = {
   outputTokens: 638,
   cacheCreationInputTokens: 0,
   cacheReadInputTokens: 11,
+  hlCallsKnown: 2,
+  hlCallsUnknown: 1,
 }
 
 const REAL_EMULATOR = process.env['FUNCTIONS_EMULATOR']
@@ -213,6 +215,15 @@ describe('logGeneration', () => {
     ['outputTokens', 638],
     ['cacheCreationInputTokens', 0],
     ['cacheReadInputTokens', 11],
+    /*
+     * Slice 9, D19, AC-24. The one metric that says whether F3.2 landed: how
+     * many `hl()` calls the turn generated that reach an allowlisted route, and
+     * how many do not. Two integers, which is why they are allowed to join a
+     * context that deliberately has no free-form body — a count cannot carry a
+     * contact, a path or a sentence somebody wrote.
+     */
+    ['hlCallsKnown', 2],
+    ['hlCallsUnknown', 1],
   ])('carries %s', (key, value) => {
     logGeneration(OUTCOME)
 
@@ -249,12 +260,91 @@ describe('logGeneration', () => {
       'cacheReadInputTokens',
       'durationMs',
       'event',
+      'hlCallsKnown',
+      'hlCallsUnknown',
       'inputTokens',
       'model',
       'outputTokens',
       'stopReason',
       'truncated',
     ])
+  })
+})
+
+/**
+ * AC-24 from the other end — **the counters are computed from the turn's file
+ * blocks, not from its chat text** (D19).
+ *
+ * Asserting the projection alone would leave the interesting half untested: a
+ * wiring that counted the reply's prose would emit two perfectly plausible
+ * integers and be wrong about what they mean. The metric is about *generated
+ * code*, so the source has to be the collected file ops.
+ *
+ * The stream below writes one file holding an allowlisted call and one the proxy
+ * would refuse, and mentions a third call in the prose that must not be counted
+ * — which is what tells the two possible wirings apart.
+ */
+describe('handleGenerate — the hl() counters', () => {
+  function loggedLine(info: ReturnType<typeof vi.fn>): Record<string, unknown> {
+    const line = info.mock.calls
+      .map((call) => String(call[0]))
+      .find((raw) => raw.includes('generation.complete'))
+    if (line === undefined) throw new Error('no generation.complete line was written')
+    return JSON.parse(line) as Record<string, unknown>
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    readProject.mockResolvedValue({ id: 'proj-1' })
+    getDb.mockReturnValue({
+      collection: () => ({
+        limit: () => ({ select: () => ({ get: () => Promise.resolve({ docs: [] }) }) }),
+        orderBy: () => ({ limit: () => ({ get: () => Promise.resolve({ docs: [] }) }) }),
+      }),
+    })
+    readTranscript.mockResolvedValue([
+      { id: 'm1', role: 'user', content: 'build a dashboard', createdAt: '', truncated: false },
+    ])
+    appendAssistantMessage.mockImplementation((_uid, _projectId, content, truncated) =>
+      Promise.resolve({ id: 'a1', role: 'assistant', content, createdAt: '', truncated }),
+    )
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('counts the calls in the generated files, allowlisted apart from refused', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    openStream.mockResolvedValue(
+      scriptedStream([
+        // Prose. Its call must not be counted: it is not code the app will run.
+        "I will call hl('GET', '/conversations/search') too.\n\n",
+        '<genesis:file path="app.js">\n',
+        "await hl('POST', '/contacts/search', { pageLimit: 20 })\n",
+        "await hl('DELETE', '/contacts/abc123')\n",
+        '</genesis:file>\n',
+      ]),
+    )
+
+    await handleGenerate(fakeRequest(), fakeResponse().express, 'alice')
+
+    const line = loggedLine(info)
+    expect(line['hlCallsKnown']).toBe(1)
+    expect(line['hlCallsUnknown']).toBe(1)
+  })
+
+  /* A prose-only turn generated no code, so both counters are zero rather than
+   * absent — a missing field and a zero read very differently in a log sink. */
+  it('reports zero and zero for a turn that wrote no file', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    openStream.mockResolvedValue(scriptedStream(['Here is what I could build for you.']))
+
+    await handleGenerate(fakeRequest(), fakeResponse().express, 'alice')
+
+    const line = loggedLine(info)
+    expect(line['hlCallsKnown']).toBe(0)
+    expect(line['hlCallsUnknown']).toBe(0)
   })
 })
 
