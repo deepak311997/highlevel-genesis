@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
-import { latestCodeFor, resetEmulators } from '../integration/helpers'
+import { resetEmulators } from '../integration/helpers'
+import { activationLinkFor, assertEmulatorBuild, freshEmail, PASSWORD } from './helpers'
 
 /**
  * The slice's one end-to-end test, covering the demo path.
@@ -22,46 +23,10 @@ import { latestCodeFor, resetEmulators } from '../integration/helpers'
  *    renders and then fails, which looks like a working app until it isn't.
  */
 
-const PASSWORD = 'Correct-Horse-9'
-
-/** Unique per run, so a re-run does not collide with a previous account. */
-function freshEmail(): string {
-  return `e2e-${String(Date.now())}-${String(Math.floor(Math.random() * 10_000))}@example.test`
-}
-
-/**
- * The verification link, pointed at *our* action route.
- *
- * The emulator's own link targets its built-in handler; in production the
- * equivalent is the custom action URL configured on the email template. Either
- * way the oobCode is the payload, so the test rebuilds the URL the deployed app
- * would receive.
- */
-async function activationLinkFor(email: string): Promise<string> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const code = await latestCodeFor(email, 'VERIFY_EMAIL')
-    if (code !== undefined) {
-      return `/auth/action?mode=verifyEmail&oobCode=${encodeURIComponent(code.oobCode)}`
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250))
-  }
-  throw new Error(`no verification code was issued for ${email}`)
-}
-
 test.describe('Slice 01 — account and session', () => {
   test.beforeEach(async ({ page }) => {
     await resetEmulators()
-
-    // Refuse to run against anything but an emulator build. Playwright will
-    // reuse a dev server on the same port, and a development-mode server talks
-    // to *real* Firebase — which once meant this suite created accounts on the
-    // live project and failed with a confusing message about missing codes.
-    await page.goto('/signin')
-    const marker = await page.locator('html').getAttribute('data-genesis-emulator')
-    expect(
-      marker,
-      'the app under test is not an emulator build — start it with `vite --mode emulator`',
-    ).toBe('true')
+    await assertEmulatorBuild(page)
   })
 
   test('sign up, get held at the gate, verify, and reach the dashboard', async ({ page }) => {
