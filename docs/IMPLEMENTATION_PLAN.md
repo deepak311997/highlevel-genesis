@@ -800,7 +800,7 @@ still open gets settled in the discovery interview of the slice that first needs
 | File storage: Firestore vs Cloud Storage | Slice 6 | ✅ **Settled: Firestore.** Snapshots and restore stay trivial; the brief also says snapshots live in Firestore |
 | Generated app format: single-file vs multi-file | Slice 6 | ✅ **Settled: multi-file plain HTML/JS/CSS**, flat, `index.html` the entry point (Slice 6 D1). Extensions allowlisted, no directories, 20 files and 100 KB each. See `docs/slices/06-file-operations/02-prd.md` |
 | File-op wire format from the LLM | Slice 6 | ✅ **Settled: a `<genesis:file path="…">` tag pair, each tag alone on its line** (Slice 6 D2) — *not* fenced blocks, which the model emits inside generated markdown and which have no unambiguous close. Split as it streams so F4.2's boundaries are live; the resulting op set is parsed by Zod and refused whole (D9) |
-| HL knowledge: cheat-sheet vs tool-calling | Slice 9 | 🟡 Open, leaning cheat-sheet — simpler, deterministic, and cacheable |
+| HL knowledge: cheat-sheet vs tool-calling | Slice 9 | ✅ **Settled: cheat-sheet** (Slice 9, D1). Rendered at module load from `HL_ROUTES` — one table, three consumers — into the system prompt's stable prefix, behind the `cache_control` breakpoint. Tool-calling would have the model *call* HighLevel during generation; what the artefact needs is code that calls HighLevel *later*, from a browser. See `docs/slices/09-highlevel-knowledge/02-prd.md` |
 | HL API version: date-pinned vs `v3` | Slice 2 | ✅ **Settled: date-pinned** (`2021-07-28` / `2021-04-15`). v3 migration is a named README follow-up |
 
 ---
