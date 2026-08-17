@@ -51,3 +51,23 @@ which is where T4's `readProject` will read from.
 **Deviations from the plan:** none. One case beyond the plan's list — a soft-deleted project
 is excluded — because the `deletedAt` filter is R3's other half and deserved its own
 assertion rather than riding on the corrupt-document case.
+
+---
+
+## T3 — `POST /api/projects`
+
+**Red:** `describe('POST /api/projects')` — 19 cases. All 19 failed on the catch-all 404.
+
+**Green:** `handleCreateProject`, with `liveProjectCount(uid)` and `resolveLocationId(uid)`
+extracted from the start so the handler reads as its five steps. Route added with `attested`.
+
+**Refactor:** `readProjectFrom` split into `parseStored(snapshot)` plus two readers, because
+`readProject(uid, id)` — which T3 needs for the post-write re-read, since `serverTimestamp()`
+is a sentinel until it commits — has to see `deletedAt`, and `Project` deliberately has no
+such field. `parseStored` also returns `null` for an absent document without logging
+`project.unreadable`, since absence is not corruption.
+
+**ACs:** AC-1, AC-2, AC-14 (POST), AC-15 (POST), AC-18, AC-19, AC-10/AC-11 (POST).
+
+**Deviations from the plan:** none. `readProject` arrives one task earlier than the plan
+placed it (T4), because T3's re-read is its first caller.

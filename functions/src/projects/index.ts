@@ -1,7 +1,8 @@
 import { Router } from 'express'
 
 import { asyncHandler } from '../lib/errors'
-import { handleListProjects } from './handlers'
+import { handleCreateProject, handleListProjects } from './handlers'
+import { requireAppCheck } from '../auth/appCheck'
 import { withVerifiedUser } from '../auth/requireUser'
 
 /**
@@ -23,7 +24,14 @@ import { withVerifiedUser } from '../auth/requireUser'
  */
 export const projectsRouter: Router = Router()
 
+const attested = asyncHandler(requireAppCheck)
+
 // Reading is not attested: a plain authenticated read, and App Check buys
 // nothing against a caller who already holds a valid ID token. Mutations are —
 // one rule for the whole API, unchanged since Slice 2.
+//
+// `requireAppCheck` short-circuits under the emulator, so no emulator-backed
+// test can observe the difference; which routes carry `attested` is verified by
+// reading these lines, and the plan says so rather than pretending otherwise.
 projectsRouter.get('/projects', asyncHandler(withVerifiedUser(handleListProjects)))
+projectsRouter.post('/projects', attested, asyncHandler(withVerifiedUser(handleCreateProject)))
