@@ -6,9 +6,36 @@ import { describe, expect, it } from 'vitest'
 
 import {
   DEFAULT_FIRESTORE_WEBSOCKET_PORT,
+  EVENTARC_PORT,
+  HUB_PORT,
+  LOGGING_PORT,
   OFFSET,
+  TASKS_PORT,
   shiftPorts,
 } from './test-emulator-config.mjs'
+
+/*
+ * Every test below states the band it is talking about, and none reads the one
+ * the process happens to be configured with. The alternative bit us within the
+ * hour: the second checkout exports EMULATOR_PORT_OFFSET, so its suite imported
+ * an OFFSET of 300 and every assertion written as a bare 9199 failed — a red
+ * gate caused by the environment the test ran in rather than by the code under
+ * test, which is the one thing a test may never do.
+ */
+const DEFAULT_BAND = {
+  offset: 100,
+  hubPort: 4700,
+  loggingPort: 4800,
+  eventarcPort: 4600,
+  tasksPort: 4650,
+}
+const SECOND_BAND = {
+  offset: 300,
+  hubPort: 4900,
+  loggingPort: 4950,
+  eventarcPort: 4960,
+  tasksPort: 4970,
+}
 
 /**
  * The generated config's whole job is to be reachable while a `npm run dev`
@@ -44,7 +71,7 @@ function allPorts(emulators) {
 
 describe('shiftPorts', () => {
   it('moves every declared emulator port by the offset', () => {
-    const { emulators } = shiftPorts(firebaseJson())
+    const { emulators } = shiftPorts(firebaseJson(), DEFAULT_BAND)
 
     expect(emulators.auth.port).toBe(9199)
     expect(emulators.functions.port).toBe(5101)
@@ -53,7 +80,7 @@ describe('shiftPorts', () => {
   })
 
   it('keeps the settings that are not ports', () => {
-    const { emulators, firestore } = shiftPorts(firebaseJson())
+    const { emulators, firestore } = shiftPorts(firebaseJson(), DEFAULT_BAND)
 
     expect(emulators.ui.enabled).toBe(true)
     expect(emulators.singleProjectMode).toBe(true)
@@ -62,23 +89,25 @@ describe('shiftPorts', () => {
   })
 
   it('gives the hub and the logging emulator their own range', () => {
-    const { emulators } = shiftPorts(firebaseJson())
+    const { emulators } = shiftPorts(firebaseJson(), DEFAULT_BAND)
 
     expect(emulators.hub.port).toBe(4700)
     expect(emulators.logging.port).toBe(4800)
   })
 
   it("moves Firestore's websocket port, which firebase.json never declares", () => {
-    const { emulators } = shiftPorts(firebaseJson())
+    const { emulators } = shiftPorts(firebaseJson(), DEFAULT_BAND)
 
-    expect(emulators.firestore.websocketPort).toBe(DEFAULT_FIRESTORE_WEBSOCKET_PORT + OFFSET)
+    expect(emulators.firestore.websocketPort).toBe(
+      DEFAULT_FIRESTORE_WEBSOCKET_PORT + DEFAULT_BAND.offset,
+    )
   })
 
   it('moves a websocket port that firebase.json does declare, from that value', () => {
     const source = firebaseJson()
     source.emulators.firestore.websocketPort = 9300
 
-    expect(shiftPorts(source).emulators.firestore.websocketPort).toBe(9400)
+    expect(shiftPorts(source, DEFAULT_BAND).emulators.firestore.websocketPort).toBe(9400)
   })
 
   it('leaves the config it was given untouched', () => {
@@ -91,7 +120,7 @@ describe('shiftPorts', () => {
 
   it("gives the repo's own firebase.json a distinct port for every emulator", () => {
     const source = JSON.parse(readFileSync(join(ROOT, 'firebase.json'), 'utf8'))
-    const ports = allPorts(shiftPorts(source).emulators)
+    const ports = allPorts(shiftPorts(source, DEFAULT_BAND).emulators)
 
     expect(ports.length).toBeGreaterThan(0)
     expect(new Set(ports).size).toBe(ports.length)
@@ -112,7 +141,7 @@ describe('shiftPorts', () => {
  */
 describe('a second checkout gets its own band', () => {
   it('shifts every declared port by the offset it is given', () => {
-    const { emulators } = shiftPorts(firebaseJson(), { offset: 300 })
+    const { emulators } = shiftPorts(firebaseJson(), { ...DEFAULT_BAND, offset: 300 })
 
     expect(emulators.auth.port).toBe(9399)
     expect(emulators.functions.port).toBe(5301)
@@ -158,23 +187,17 @@ describe('a second checkout gets its own band', () => {
     const { emulators } = shiftPorts(firebaseJson())
 
     expect(emulators.auth.port).toBe(9099 + OFFSET)
-    expect(emulators.hub.port).toBe(4700)
-    expect(emulators.logging.port).toBe(4800)
+    expect(emulators.hub.port).toBe(HUB_PORT)
+    expect(emulators.logging.port).toBe(LOGGING_PORT)
+    expect(emulators.eventarc.port).toBe(EVENTARC_PORT)
+    expect(emulators.tasks.port).toBe(TASKS_PORT)
   })
 
   it('shares no port between two checkouts on different bands', () => {
     const source = () => JSON.parse(readFileSync(join(ROOT, 'firebase.json'), 'utf8'))
 
-    const first = allPorts(shiftPorts(source()).emulators)
-    const second = allPorts(
-      shiftPorts(source(), {
-        offset: 300,
-        hubPort: 4900,
-        loggingPort: 5000,
-        eventarcPort: 4960,
-        tasksPort: 4970,
-      }).emulators,
-    )
+    const first = allPorts(shiftPorts(source(), DEFAULT_BAND).emulators)
+    const second = allPorts(shiftPorts(source(), SECOND_BAND).emulators)
 
     expect(first).not.toHaveLength(0)
     expect(second).not.toHaveLength(0)
