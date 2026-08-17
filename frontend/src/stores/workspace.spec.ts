@@ -1808,6 +1808,67 @@ describe('the stream — files', () => {
     await running
   })
 
+  /**
+   * AC-18, P1. The first streamed file **opens a tab and creates no buffer**.
+   *
+   * That is what makes AC-24 literally true — an empty `files` touches `buffers`
+   * not at all — while still discharging the hazard Slice 6's own tests name:
+   * `file_start` does not fetch, so a buffer created here would have an empty
+   * `saved` behind a real filename, and the first keystroke would make it dirty
+   * enough for **Save** to offer to replace that file with what was typed.
+   * `editorContent` already prefers `streamingFiles`, so the arriving bytes
+   * render with no buffer entry to speak of.
+   */
+  it('opens a tab for the first streamed file without creating a buffer', async () => {
+    const store = await openedWithFiles()
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+
+    stream.push(frame('file_start', { path: 'app.js' }))
+    stream.push(frame('file_chunk', { path: 'app.js', text: 'const a = 1' }))
+    await vi.waitFor(() => {
+      expect(store.openTabs).toEqual(['app.js'])
+    })
+
+    expect(store.selectedPath).toBe('app.js')
+    expect(store.buffers).toEqual({})
+    // The bytes render anyway, because `editorContent` prefers the stream.
+    expect(store.editorContent).toBe('const a = 1')
+    expect(store.fileDirty).toBe(false)
+
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }))
+    stream.close()
+    await running
+  })
+
+  /** AC-18's second half: a strip with a tab in it is never rearranged. */
+  it('leaves the active tab alone for the whole generation', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(response({ file: { ...INDEX_FILE, content: 'old' } }))
+    await store.selectFile('index.html')
+
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    stream.push(frame('file_start', { path: 'app.js' }))
+    stream.push(frame('file_start', { path: 'styles.css' }))
+    await vi.waitFor(() => {
+      expect(store.streamingFiles['styles.css']).toBe('')
+    })
+
+    expect(store.openTabs).toEqual(['index.html'])
+    expect(store.selectedPath).toBe('index.html')
+
+    fetchMock.mockResolvedValueOnce(response(listed))
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: ['app.js'], fileError: null }))
+    stream.close()
+    await running
+
+    expect(store.openTabs).toEqual(['index.html'])
+    expect(store.selectedPath).toBe('index.html')
+  })
+
   /** AC-39's last clause: the first streamed file opens itself, once. */
   it('selects the first streamed file when nothing was selected', async () => {
     const store = await openedWithFiles()
@@ -1999,12 +2060,77 @@ describe('the stream — files', () => {
     expect(store.fileReplaced).toBe(false)
   })
 
-  /** The notice stays until the user moves on, which is what D22 promised. */
-  it('clears the replaced notice when another file is selected', async () => {
+  /**
+   * AC-22 — **every open tab** the generation rewrote is re-read, not just the
+   * active one, and the notice is per tab.
+   *
+   * With one buffer this rule had nowhere to be wrong. With a map it does: a
+   * generation that rewrites three files while two of them are open has to
+   * refresh both, or the tab the user is not looking at holds bytes the server
+   * has since replaced — and **Save** from it would put them back.
+   *
+   * D16's trigger also moves here. Slice 6 cleared the notice on selecting
+   * another file; with tabs, "another file" no longer implies leaving this buffer
+   * behind, so the trigger is the next edit *in that tab* (or closing it).
+   */
+  it('re-reads every open tab the generation rewrote, clean and dirty alike', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(response({ file: { ...INDEX_FILE, content: 'old html' } }))
+    await store.selectFile('index.html')
+    fetchMock.mockResolvedValueOnce(response({ file: { ...APP_FILE, content: 'old js' } }))
+    await store.selectFile('app.js')
+    // The active tab is dirty; the other is clean.
+    store.editContent('my unsaved edit')
+    fetchMock.mockClear()
+
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    fetchMock.mockResolvedValueOnce(response(listed))
+    fetchMock.mockResolvedValueOnce(response({ file: { ...INDEX_FILE, content: 'new html' } }))
+    fetchMock.mockResolvedValueOnce(response({ file: { ...APP_FILE, content: 'new js' } }))
+    stream.push(
+      frame('done', {
+        message: ASSISTANT_MESSAGE,
+        files: ['index.html', 'app.js'],
+        fileError: null,
+      }),
+    )
+    stream.close()
+    await running
+
+    expect(requests()).toEqual([
+      'POST /generate',
+      'GET /api/projects/proj-1/files',
+      'GET /api/projects/proj-1/files/index.html',
+      'GET /api/projects/proj-1/files/app.js',
+    ])
+
+    // The clean one was replaced silently.
+    expect(store.buffers['index.html']?.content).toBe('new html')
+    expect(store.buffers['index.html']?.replaced).toBe(false)
+    // The dirty one was replaced and says so.
+    expect(store.buffers['app.js']?.content).toBe('new js')
+    expect(store.buffers['app.js']?.replaced).toBe(true)
+    expect(store.fileReplaced).toBe(true)
+    expect(store.dirtyPaths).toEqual([])
+
+    // D16: the next edit in *that* tab clears its notice, and no other's.
+    store.editContent('typing again')
+    expect(store.buffers['app.js']?.replaced).toBe(false)
+    expect(store.buffers['index.html']?.replaced).toBe(false)
+  })
+
+  /* And the notice survives a switch away and back — it belongs to the buffer
+   * now, not to the selection (D16). */
+  it('keeps the replaced notice across a tab switch', async () => {
     const store = await openedWithFiles()
     fetchMock.mockResolvedValueOnce(response({ file: { ...INDEX_FILE, content: 'old' } }))
     await store.selectFile('index.html')
     store.editContent('my unsaved edit')
+    fetchMock.mockResolvedValueOnce(response({ file: { ...APP_FILE, content: 'js' } }))
+    await store.selectFile('app.js')
+    await store.selectFile('index.html')
 
     const stream = pushableStream()
     fetchMock.mockResolvedValueOnce(stream.response)
@@ -2018,18 +2144,88 @@ describe('the stream — files', () => {
     await running
     expect(store.fileReplaced).toBe(true)
 
-    fetchMock.mockResolvedValueOnce(response({ file: { ...APP_FILE, content: 'x' } }))
+    await store.selectFile('app.js')
+    expect(store.fileReplaced).toBe(false)
+    await store.selectFile('index.html')
+
+    expect(store.fileReplaced).toBe(true)
+  })
+
+  /**
+   * AC-23. A file that is **buffered but closed** has its entry dropped rather
+   * than re-read: re-reading every buffer ever opened would make the request
+   * count grow with the session, and dropping it keeps the answer correct — the
+   * next open fetches the server's copy.
+   */
+  it('drops a buffered but closed file the generation rewrote', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(response({ file: { ...APP_FILE, content: 'old js' } }))
+    await store.selectFile('app.js')
+    store.closeTab('app.js')
+    fetchMock.mockResolvedValueOnce(response({ file: { ...INDEX_FILE, content: 'html' } }))
+    await store.selectFile('index.html')
+    fetchMock.mockClear()
+
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    fetchMock.mockResolvedValueOnce(response(listed))
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: ['app.js'], fileError: null }))
+    stream.close()
+    await running
+
+    // Its buffer is gone, and nothing was fetched for a tab that is not open.
+    expect(store.buffers['app.js']).toBeUndefined()
+    expect(requests()).toEqual(['POST /generate', 'GET /api/projects/proj-1/files'])
+
+    fetchMock.mockClear()
+    fetchMock.mockResolvedValueOnce(response({ file: { ...APP_FILE, content: 'new js' } }))
     await store.selectFile('app.js')
 
-    expect(store.fileReplaced).toBe(false)
+    expect(requests()).toEqual(['GET /api/projects/proj-1/files/app.js'])
+    expect(store.editorContent).toBe('new js')
+  })
+
+  /**
+   * AC-24, literally. An empty `files` touches **`buffers` not at all** — not a
+   * re-read, not a drop, not a cleared flag — because nothing was stored, so
+   * there is no answer that could have changed.
+   *
+   * Asserted as a deep equality against a snapshot taken before the turn, rather
+   * than field by field: the claim is about the whole map, and a per-field check
+   * would pass over a buffer that was rebuilt with the same values but a lost
+   * `replaced`.
+   */
+  it('issues no file request and changes no buffer on a done that wrote nothing', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(response({ file: { ...INDEX_FILE, content: 'html' } }))
+    await store.selectFile('index.html')
+    fetchMock.mockResolvedValueOnce(response({ file: { ...APP_FILE, content: 'js' } }))
+    await store.selectFile('app.js')
+    store.editContent('my unsaved edit')
+    // Through JSON rather than `structuredClone`: the buffers are a Vue reactive
+    // proxy, which the structured-clone algorithm refuses, and every field here
+    // is a string, a boolean or null.
+    const before = JSON.parse(JSON.stringify(store.buffers)) as unknown
+    fetchMock.mockClear()
+
+    fetchMock.mockResolvedValueOnce(
+      cannedStream(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null })),
+    )
+    await store.retryGeneration()
+
+    expect(requests()).toEqual(['POST /generate'])
+    expect(store.buffers).toEqual(before)
+    expect(store.openTabs).toEqual(['index.html', 'app.js'])
   })
 
   /*
-   * A file that streamed and was then refused leaves a selection pointing at
-   * nothing. Cleared, so the editor shows its empty state rather than a filename
-   * with no file behind it.
+   * A file that streamed and was then refused leaves a tab pointing at nothing.
+   * Closed, so the editor shows its empty state rather than a filename with no
+   * file behind it — and the tab list goes back to what it was before the
+   * generation borrowed it.
    */
-  it('drops a selection auto-made for a file that was never stored', async () => {
+  it('closes a tab the generation opened for a file that was never stored', async () => {
     const store = await openedWithFiles()
     const stream = pushableStream()
     fetchMock.mockResolvedValueOnce(stream.response)
@@ -2050,22 +2246,24 @@ describe('the stream — files', () => {
     stream.close()
     await running
 
+    expect(store.openTabs).toEqual([])
     expect(store.selectedPath).toBeNull()
+    expect(store.buffers).toEqual({})
     expect(store.editorContent).toBe('')
   })
 
   /*
-   * The same rule, for the case that bites harder: the stream selected a file the
-   * project **already holds**, and then the set was refused. The buffer for that
-   * selection was never read — `file_start` selects, it does not fetch — so
-   * leaving it selected shows an empty textarea for a file with content behind
-   * it. `savedContent` is empty too, so the first keystroke makes it dirty and
-   * **Save** offers to replace the real file with whatever was typed.
+   * The same rule, for the case that bites harder: the stream opened a tab for a
+   * file the project **already holds**, and then the set was refused. That tab
+   * has no buffer — `file_start` opens, it does not fetch — so leaving it open
+   * shows an empty editor for a file with content behind it, and the first
+   * keystroke would make it dirty enough for **Save** to offer to replace the
+   * real file with whatever was typed.
    *
-   * The selection was the generation's, not the user's, and nothing was written,
-   * so it goes back to where it was: no selection, and no request issued (AC-40).
+   * The tab was the generation's, not the user's, and nothing was written, so it
+   * goes back to where it was: no tab, and no request issued (AC-24).
    */
-  it('drops a selection auto-made for a stored file the turn did not write', async () => {
+  it('closes a tab the generation opened for a stored file the turn did not write', async () => {
     const store = await openedWithFiles()
     const stream = pushableStream()
     fetchMock.mockResolvedValueOnce(stream.response)
@@ -2088,6 +2286,7 @@ describe('the stream — files', () => {
     stream.close()
     await running
 
+    expect(store.openTabs).toEqual([])
     expect(store.selectedPath).toBeNull()
     expect(store.editorContent).toBe('')
     expect(store.fileDirty).toBe(false)
@@ -2095,8 +2294,8 @@ describe('the stream — files', () => {
   })
 
   /*
-   * And the selection the *user* made survives a turn that did not write it —
-   * dropping that one would take away the file they were reading, and discard an
+   * And the tab the *user* opened survives a turn that did not write it —
+   * closing that one would take away the file they were reading, and discard an
    * edit to it, for a generation that changed nothing about it.
    */
   it('keeps a selection the user made through a turn that wrote nothing', async () => {

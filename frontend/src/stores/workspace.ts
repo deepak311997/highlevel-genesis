@@ -710,52 +710,73 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     const id = projectId.value
     if (id === null) return
 
-    const path = selectedPath.value
-    if (path === null) return
-
-    if (written.includes(path)) {
-      /*
-       * The open file was rewritten, so its buffer is stale whatever state it
-       * was in. A dirty one is discarded — the window is narrow, because the
-       * editor is read-only while a stream is open (D9), so this is an edit
-       * typed before the send — and the discard is **announced** (D15, D16).
-       * Silence is the one outcome that is not acceptable; a merge UI is a slice
-       * of its own.
-       */
-      const wasDirty = fileDirty.value
+    /*
+     * **Every open tab** the generation rewrote, not just the active one (D15).
+     *
+     * A generation that rewrites three files while two are open has to refresh
+     * both, or the tab the user is not looking at holds bytes the server has
+     * since replaced — and **Save** from it would put them back. The count is
+     * bounded by what is on screen, which is what makes fanning out affordable.
+     *
+     * A dirty buffer is discarded and the discard is **announced** (D16): the
+     * window is narrow, because the editor is read-only while a stream is open
+     * (D9), so this is an edit typed before the send. Silence is the one outcome
+     * that is not acceptable; a merge UI is a slice of its own.
+     *
+     * Sequential rather than `Promise.all`, because there are at most a handful
+     * of open tabs and one order is easier to reason about — and to assert —
+     * than a race between reads that each write a different buffer.
+     */
+    for (const path of openTabs.value) {
+      if (!written.includes(path)) continue
+      const buffer = buffers.value[path]
+      // A tab this generation opened has no buffer at all (P1), and an unread
+      // buffer is not a dirty one.
+      const wasDirty = buffer !== undefined && isDirty(buffer)
       ensureBuffer(path)
       await readInto(path, id, gen)
-      if (current(gen)) {
-        withBuffer(path, (buffer) => {
-          buffer.replaced = wasDirty
-        })
-      }
-      return
+      if (!current(gen)) return
+      withBuffer(path, (refreshed) => {
+        refreshed.replaced = wasDirty
+      })
     }
 
     /*
-     * The tab this generation opened for itself, on a turn that stored nothing.
-     * Two shapes, and the second is the dangerous one:
+     * A file that is **buffered but closed** has its entry dropped rather than
+     * re-read (D15). Re-reading every buffer ever opened would make the request
+     * count grow with the session for tabs nobody is looking at; dropping it
+     * keeps the answer correct, because the next open fetches the server's copy.
+     */
+    for (const path of written) {
+      if (openTabs.value.includes(path)) continue
+      if (buffers.value[path] !== undefined) dropBuffer(path)
+    }
+
+    /*
+     * The tab this generation opened for itself, on a turn that did not write it
+     * (P1). Two shapes, and the second is the dangerous one:
      *
      * - a path that streamed but was never stored — a refused op set, or an
      *   unterminated block — which leaves a filename with no file behind it;
-     * - a path the project **already holds**, whose buffer was never read,
+     * - a path the project **already holds**, whose bytes were never read,
      *   because `file_start` opens a tab and does not fetch. Left open it shows
-     *   an empty editor over a file with content, and the first keystroke makes
-     *   it dirty enough for **Save** to offer to replace that file with what was
-     *   typed.
+     *   an empty editor over a file with content, and the first keystroke would
+     *   make it dirty enough for **Save** to offer to replace that file with
+     *   what was typed.
      *
-     * Both close the tab the generation opened, which is where the panel was
-     * before it borrowed one — and no request is issued (AC-24).
+     * Both close the tab, which is where the panel was before the generation
+     * borrowed one — and no request is issued (AC-24).
      *
-     * A tab the **user** opened is never touched here, dirty included:
-     * re-reading or closing it would discard an edit for a reason they cannot
-     * see and the server never asked for.
+     * A tab the **user** opened is never touched here, dirty included: closing
+     * it would discard an edit for a reason they cannot see and the server never
+     * asked for. `selectFile` clears `autoSelected` when the user clicks that
+     * very tab, which is them adopting it.
      */
-    if (autoSelected === path || !files.value.some((entry) => entry.path === path)) {
-      autoSelected = null
-      closeTab(path)
-      dropBuffer(path)
+    const opened = autoSelected
+    autoSelected = null
+    if (opened !== null && !written.includes(opened)) {
+      closeTab(opened)
+      dropBuffer(opened)
     }
   }
 
