@@ -529,3 +529,112 @@ describe('a CRLF split across two deltas', () => {
     expect(result.ops[0]?.content).toBe('a\rb\n')
   })
 })
+
+/**
+ * The corpus, shared by the invariant (AC-9) and the property (AC-4).
+ *
+ * One list rather than two, so a shape added for one is automatically covered by
+ * the other — the malformed ones especially, since AC-9 says "including the
+ * malformed ones" and a corpus that quietly lost them would still pass.
+ */
+const FIXTURES: [name: string, text: string][] = [
+  ['empty', ''],
+  ['whitespace only', '   \n\n  '],
+  ['prose only', 'Here is a contact dashboard.\nIt lists everyone.\n'],
+  ['prose needing both repairs', '\n\n  Here it is.\n\n\n\nAnd that is all.\n\n'],
+  ['one block', `Before.\n\n${block('index.html', '<h1>Contacts</h1>\n')}\nAfter.\n`],
+  ['marker only', block('index.html', '<h1>Contacts</h1>\n')],
+  [
+    'three blocks',
+    [
+      'Three files.\n\n',
+      block('index.html', '<h1>Contacts</h1>\n'),
+      '\nStyles.\n\n',
+      block('styles.css', 'h1 { color: red }\n'),
+      '\nBehaviour.\n\n',
+      block('app.js', "console.log('hi')\n"),
+      '\nDone.\n',
+    ].join(''),
+  ],
+  ['an empty block', `Nothing in it.\n\n${block('app.js', '')}\n`],
+  [
+    'markup inside a block',
+    `Before.\n${OPEN}<!doctype html>\na < b && b > c\n\`\`\`js\n<genesis:file path="n.js">\nx</genesis:file>\n</genesis:file >\n${CLOSE}After.\n`,
+  ],
+  [
+    'CRLF throughout',
+    '<genesis:file path="app.js">\r\nconst a = 1\r\nconst b = 2\r\n</genesis:file>\r\n',
+  ],
+  ['a lone carriage return', block('app.js', 'a\rb\n')],
+  [
+    'unterminated',
+    `Here it is.\n\n<genesis:file path="index.html">\n<h1>Contacts</h1>\nstill writ`,
+  ],
+  ['closing at end of input', '<genesis:file path="app.js">\nconst a = 1\n</genesis:file>'],
+  ['opening at end of input', 'Before.\n<genesis:file path="app.js">'],
+  ['a duplicated path', `${block('app.js', 'one\n')}${block('app.js', 'two\n')}`],
+  ['a path the schema will refuse', block('../secrets.js', 'oops\n')],
+  ['an indented pair', `  <genesis:file path="app.js">\n  const a = 1\n  </genesis:file>\n`],
+  [
+    'near-delimiters in prose',
+    `x<genesis:file path="a.js">\n</genesis:file>\n<genesis:file path=b.js>\n`,
+  ],
+  ['a delimiter-shaped line past the bound', `${OPEN_HEAD}${'a'.repeat(MAX_LINE)}\nafter\n`],
+  ['no trailing newline anywhere', 'Prose with no newline at the end'],
+]
+
+describe('the message invariant (AC-9, D7, R5)', () => {
+  /*
+   * The one thing that makes Slice 5's placeholder swap safe: whatever the client
+   * accumulated from `token` frames, the server's persisted copy is the same
+   * string. Stated as an invariant rather than a habit, so a later slice adding a
+   * `.trim()` before the write fails a test instead of shipping — the drift would
+   * be in whitespace, which nobody notices until the bubble twitches.
+   */
+  it.each(FIXTURES)('holds for %s', (_name, fixture) => {
+    const { frames, result } = collect(fixture)
+
+    expect(result.messageText).toBe(tokens(frames))
+  })
+
+  /* And no file content ever reaches the chat text, on any fixture. */
+  it.each(FIXTURES)('keeps file content out of the message for %s', (_name, fixture) => {
+    const { result } = collect(fixture)
+
+    for (const op of result.ops) {
+      if (op.content.trim() === '') continue
+      expect(result.messageText).not.toContain(op.content.trim())
+    }
+  })
+
+  /* No frame is ever empty: an empty token or chunk is a lie about progress. */
+  it.each(FIXTURES)('emits no empty text frame for %s', (_name, fixture) => {
+    const { frames } = collect(fixture)
+
+    for (const frame of frames) {
+      if (frame.kind === 'token' || frame.kind === 'file_chunk') expect(frame.text).not.toBe('')
+    }
+  })
+})
+
+describe('a reply that is one block and nothing else (AC-10)', () => {
+  /*
+   * `storedMessageSchema` requires non-empty content, so a turn whose whole reply
+   * was a file would be unwritable if the marker did not exist. This is the case
+   * that makes D6's substitution load-bearing rather than cosmetic.
+   */
+  it('has the marker as its whole message', () => {
+    const { result } = collect(block('index.html', '<!doctype html>\n'))
+
+    expect(result.messageText).toBe('[file: index.html]')
+    expect(result.messageText).not.toBe('')
+  })
+
+  it('gives one marker line per file when the reply is three blocks and no prose', () => {
+    const { result } = collect(
+      `${block('index.html', 'a\n')}${block('styles.css', 'b\n')}${block('app.js', 'c\n')}`,
+    )
+
+    expect(result.messageText).toBe('[file: index.html]\n[file: styles.css]\n[file: app.js]')
+  })
+})
