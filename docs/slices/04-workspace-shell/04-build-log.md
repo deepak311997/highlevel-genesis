@@ -30,3 +30,18 @@ expected reason — `Cannot find module './schema'`.
 from the body schema and why the stored `content` has no maximum.
 
 **Deviation from the plan:** none. The plan's interface was implemented as written.
+
+## T2 — Export the project-access helpers
+
+**Red.** None, deliberately, as the plan specifies. This is a visibility change with no
+behaviour to assert; a test that only proved `readProject` is exported would be testing
+TypeScript. The check is that the suite stayed green across it, which it did.
+
+**Green.** `export` added to `readProject`, `requireProjectId` and `notFound` in
+`functions/src/projects/handlers.ts`. The PRD's D14 names `readProject` only; the same argument
+covers the other two, since the message routes owe byte-identical `invalid_id` and `not_found`
+answers on a path that carries the same `:projectId`.
+
+**Refactor.** Each doc comment extended to say it is now shared with `messages/`, and why.
+
+**Deviation from the plan:** none.

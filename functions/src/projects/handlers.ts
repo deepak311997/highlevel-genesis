@@ -78,8 +78,11 @@ function readProjectFrom(snapshot: DocumentSnapshot): Project | null {
  *
  * A malformed id and a stranger's id read identically to the caller. That is not
  * politeness — under this path shape they genuinely are the same answer.
+ *
+ * Exported for `messages/`, which owes a byte-identical `invalid_id` on a route
+ * that carries the same `:projectId`. A second copy is how the two drift.
  */
-function requireProjectId(req: Request): string {
+export function requireProjectId(req: Request): string {
   const parsed = projectIdSchema.safeParse(req.params['projectId'])
   if (!parsed.success) {
     throw new HttpError(400, 'That project could not be found.', 'invalid_id')
@@ -87,8 +90,12 @@ function requireProjectId(req: Request): string {
   return parsed.data
 }
 
-/** The one 404, so three handlers cannot describe the same state differently. */
-function notFound(): HttpError {
+/**
+ * The one 404, so no two handlers can describe the same state differently — now
+ * including the message routes, which answer for the *project* being gone and
+ * must say it in the same words.
+ */
+export function notFound(): HttpError {
   return new HttpError(404, 'That project no longer exists.', 'not_found')
 }
 
@@ -100,8 +107,13 @@ function notFound(): HttpError {
  * is also why a project belonging to somebody else is not a special case: the
  * path is composed from the token's uid, so another user's project is simply not
  * at any address this request can name.
+ *
+ * Exported and now shared with `messages/` (Slice 4, D14). "This project is
+ * gone" has to mean the same thing one path segment deeper, so the message
+ * routes reuse this definition rather than carrying a second one — absent,
+ * soft-deleted and unreadable collapse identically there too.
  */
-async function readProject(uid: string, id: string): Promise<Project | null> {
+export async function readProject(uid: string, id: string): Promise<Project | null> {
   const snapshot = await getDb()
     .doc(`${projectsPath(uid)}/${id}`)
     .get()
