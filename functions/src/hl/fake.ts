@@ -1,4 +1,7 @@
-import { Router, urlencoded, type Request } from 'express'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+import { Router, urlencoded, type Request, type Response } from 'express'
 
 /**
  * A stand-in for HighLevel, mounted only under the emulator.
@@ -81,6 +84,112 @@ function isControlRoute(path: string): boolean {
 function q(req: Request, name: string, fallback = ''): string {
   const value = req.query[name]
   return typeof value === 'string' ? value : fallback
+}
+
+/**
+ * A body field as a string, narrowed rather than coerced.
+ *
+ * `String(unknown)` would turn `{"locationId":{"$ne":null}}` into
+ * `"[object Object]"` — a value that then matches nothing and looks like a
+ * filtering bug rather than a hostile body. Anything that is not a string is
+ * treated as absent.
+ */
+function bodyField(body: Record<string, unknown>, name: string): string {
+  const value = body[name]
+  return typeof value === 'string' ? value : ''
+}
+
+/**
+ * The five rate-limit headers §5 says HighLevel sends, on **every** response.
+ *
+ * Values rather than a passthrough, because what is under test is that the
+ * proxy copies whatever it was given onto our response — so these need to be
+ * distinguishable from anything the proxy could have invented.
+ */
+const RATE_LIMITS: Record<string, string> = {
+  'X-RateLimit-Limit-Daily': '200000',
+  'X-RateLimit-Daily-Remaining': '199987',
+  'X-RateLimit-Interval-Milliseconds': '10000',
+  'X-RateLimit-Max': '100',
+  'X-RateLimit-Remaining': '97',
+}
+
+/**
+ * A recorded HighLevel payload, read **inside the handler**.
+ *
+ * Anchored on `__dirname` rather than the working directory, and never at
+ * module scope: `tests/` is not part of a deploy, so a top-level read would
+ * turn a missing fixture into a module that will not load rather than a route
+ * that is not reachable. `llm/fake.ts`'s `loadEvents` does exactly this.
+ */
+function loadFixture(name: string): Record<string, unknown> {
+  const path = resolve(__dirname, '..', '..', '..', 'tests', 'fixtures', 'highlevel', name)
+  return JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+}
+
+/**
+ * What every surface route does before it answers: attach the rate limits, and
+ * **require the two headers the real API requires**.
+ *
+ * That requirement is the point rather than fidelity for its own sake. The
+ * proxy attaching `Authorization` and `Version` is otherwise an assertion about
+ * an argument; here it is the difference between a 200 and a 401, so AC-12 is
+ * measured by whether the call worked at all.
+ *
+ * Returns false when it has already answered, so a caller reads
+ * `if (!surface(req, res)) return`.
+ */
+function surface(req: Request, res: Response): boolean {
+  for (const [name, value] of Object.entries(RATE_LIMITS)) res.set(name, value)
+
+  const authorization = req.header('authorization') ?? ''
+  if (!authorization.startsWith('Bearer ') || req.header('version') === undefined) {
+    res.status(401).json({
+      message: 'This endpoint requires an Authorization bearer token and a Version header.',
+    })
+    return false
+  }
+  return true
+}
+
+/**
+ * `__echo` — a marker id that answers with the request headers received.
+ *
+ * A marker on an ordinary parameterised row rather than a control API, so it
+ * matches the grammar exactly as a real id does and the three surface fixtures
+ * keep answering unchanged. That matters: AC-15 measures the proxy's body
+ * against those fixtures byte for byte, and a surface that had grown an echo
+ * field would have nothing clean to be measured against.
+ */
+function echoed(req: Request, res: Response, id: string): boolean {
+  if (id !== '__echo') return false
+  res.json({ headers: req.headers })
+  return true
+}
+
+/**
+ * Replay a fixture, filtered by the `locationId` the request actually carried.
+ *
+ * The filter is what turns tenant isolation into an observable result: a proxy
+ * that failed to inject the caller's own location answers with somebody else's
+ * records here, rather than passing an assertion about what it meant to send. A
+ * location with no records answers an **empty array**, not a 404 — which is what
+ * HighLevel does, and what makes "bob sees nothing of alice's" a readable
+ * result.
+ *
+ * `total` is recomputed when the fixture carries one, so the count and the array
+ * cannot disagree.
+ */
+function replay(res: Response, fixture: string, key: string, locationId: string): void {
+  const body = loadFixture(fixture)
+  const held = body[key]
+  const rows = (Array.isArray(held) ? (held as Record<string, unknown>[]) : []).filter(
+    (row) => row['locationId'] === locationId,
+  )
+
+  const out: Record<string, unknown> = { ...body, [key]: rows }
+  if (typeof body['total'] === 'number') out['total'] = rows.length
+  res.json(out)
 }
 
 function tokenBase(): Record<string, unknown> {
@@ -213,6 +322,59 @@ export function buildFakeHlRouter(enabled: boolean): Router {
 
   router.post('/__fake-hl/oauth/locationToken', (_req, res) => {
     res.status(201).json(locationToken())
+  })
+
+  /*
+   * The three surfaces F7.1 names, replayed from the recorded fixtures.
+   *
+   * Literal segments are registered before parameterised ones, because Express
+   * matches in registration order and `/calendars/events` would otherwise be
+   * swallowed by `/calendars/:calendarId`. The proxy's own matcher computes
+   * specificity instead and does not depend on this — but the stub is not the
+   * thing under test, and a stub that answered the wrong route would make a
+   * correct proxy look broken.
+   */
+  router.post('/__fake-hl/contacts/search', (req, res) => {
+    if (!surface(req, res)) return
+    const body = (req.body ?? {}) as Record<string, unknown>
+    replay(res, 'contacts-search.json', 'contacts', bodyField(body, 'locationId'))
+  })
+
+  // 201, as HighLevel answers a create — so "the status is mirrored, not
+  // flattened to 200" has something to be measured on (AC-16).
+  router.post('/__fake-hl/contacts/', (req, res) => {
+    if (!surface(req, res)) return
+    const body = (req.body ?? {}) as Record<string, unknown>
+    res.status(201).json({
+      contact: { id: 'fake-created-contact', locationId: body['locationId'] ?? null },
+    })
+  })
+
+  router.get('/__fake-hl/contacts/:contactId', (req, res) => {
+    if (!surface(req, res)) return
+    if (echoed(req, res, req.params.contactId)) return
+    res.json({ contact: { id: req.params.contactId, locationId: LOCATION_ID } })
+  })
+
+  router.get('/__fake-hl/conversations/search', (req, res) => {
+    if (!surface(req, res)) return
+    replay(res, 'conversations.json', 'conversations', q(req, 'locationId'))
+  })
+
+  router.get('/__fake-hl/calendars/', (req, res) => {
+    if (!surface(req, res)) return
+    replay(res, 'calendars.json', 'calendars', q(req, 'locationId'))
+  })
+
+  router.get('/__fake-hl/calendars/events', (req, res) => {
+    if (!surface(req, res)) return
+    replay(res, 'calendar-events.json', 'events', q(req, 'locationId'))
+  })
+
+  router.get('/__fake-hl/calendars/:calendarId', (req, res) => {
+    if (!surface(req, res)) return
+    if (echoed(req, res, req.params.calendarId)) return
+    res.json({ calendar: { id: req.params.calendarId, locationId: LOCATION_ID } })
   })
 
   /** Wrapped, exactly as the real one is — see locationDetailSchema. */

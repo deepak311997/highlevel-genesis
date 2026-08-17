@@ -1,10 +1,10 @@
 import type { Request, Response } from 'express'
 
+import { buildUpstreamBody, buildUpstreamUrl, isRouteEnabled, matchRoute, type HlRoute } from './routes'
 import { firestoreTokenDeps } from './tokenStore'
-import { isRouteEnabled, matchRoute } from './routes'
 import { logProxyEvent, type ProxyLogContext } from '../lib/log'
-import { mapTokenError, routeRefusal } from './proxyError'
-import { resolveConnection } from './token'
+import { mapTokenError, mapUpstreamStatus, routeRefusal } from './proxyError'
+import { resolveConnection, type ResolvedConnection } from './token'
 
 /**
  * The proxy itself: match, resolve, inject, forward, mirror, log.
@@ -60,6 +60,59 @@ export function logProxy(context: ProxyLogContext): void {
   })
 }
 
+/** What came back, held as text so the body is never re-serialised (D17). */
+interface UpstreamResponse {
+  status: number
+  text: string
+  headers: Headers
+}
+
+/**
+ * The raw query string, not `req.query`.
+ *
+ * `req.query` is qs-parsed, and a repeated parameter or bracket syntax cannot
+ * be round-tripped back to what the caller sent — so forwarding it would make
+ * D12's "verbatim" a claim about the common case only. Everything after the
+ * first `?` of the original URL is what the caller actually wrote.
+ */
+function rawQueryOf(req: Request): string {
+  const mark = req.originalUrl.indexOf('?')
+  return mark === -1 ? '' : req.originalUrl.slice(mark + 1)
+}
+
+/**
+ * The upstream request: **exactly four headers, all ours** (D14).
+ *
+ * Allowlisting the caller's headers to nothing is simpler than allowlisting
+ * them to something, and two of the ones a caller might send are worse than
+ * untidy — an `Authorization` of their own is credential substitution, and a
+ * `Version` of their own is a way to reach undocumented behaviour. So the
+ * header set is built from scratch here and nothing is ever copied off `req`.
+ */
+async function forwardUpstream(
+  row: HlRoute,
+  url: URL,
+  body: unknown,
+  accessToken: string,
+): Promise<UpstreamResponse> {
+  const writes = row.method === 'POST' || row.method === 'PUT'
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${accessToken}`,
+    Version: row.version,
+    Accept: 'application/json',
+  }
+  if (writes) headers['Content-Type'] = 'application/json'
+
+  const upstream = await fetch(url, {
+    method: row.method,
+    headers,
+    ...(writes ? { body: JSON.stringify(body) } : {}),
+  })
+
+  return { status: upstream.status, text: await upstream.text(), headers: upstream.headers }
+}
+
 /**
  * `<METHOD> /api/hl/proxy/<HighLevel path>` (D1).
  *
@@ -67,7 +120,9 @@ export function logProxy(context: ProxyLogContext): void {
  * has to be refused with 403 rather than fall through to the app's 404 — and the
  * bare subtree with it (P2, AC-23).
  */
-export async function handleProxy(req: Request, _res: Response, uid: string): Promise<void> {
+export async function handleProxy(req: Request, res: Response, uid: string): Promise<void> {
+  const started = Date.now()
+
   // Inside a `use` mount Express rewrites `req.url` to the remainder, so this is
   // the HighLevel path and nothing else. Undecoded, deliberately: `%2E%2E%2F`
   // has to fail the grammar as written rather than become `../` after a decode
@@ -75,10 +130,13 @@ export async function handleProxy(req: Request, _res: Response, uid: string): Pr
   const match = matchRoute(req.method, req.path)
   if (match.kind === 'invalid_path') throw routeRefusal('invalid_path')
   if (match.kind === 'not_allowed') throw routeRefusal('route_not_allowed')
-  if (!isRouteEnabled(match.row, process.env)) throw routeRefusal('route_disabled')
 
+  const { row, params } = match
+  if (!isRouteEnabled(row, process.env)) throw routeRefusal('route_disabled')
+
+  let connection: ResolvedConnection
   try {
-    await resolveConnection(uid, firestoreTokenDeps())
+    connection = await resolveConnection(uid, firestoreTokenDeps())
   } catch (err) {
     // Rethrows anything that is not a token condition, so an unexpected failure
     // reaches the terminal handler with its own log line rather than being
@@ -86,8 +144,31 @@ export async function handleProxy(req: Request, _res: Response, uid: string): Pr
     throw mapTokenError(err)
   }
 
-  // T9 attaches our four headers and forwards. Loud rather than silent until
-  // then: nothing in the suite reaches this line, and a plausible status here
-  // would hide that.
-  throw new Error('The upstream call lands in T9.')
+  const upstream = await forwardUpstream(
+    row,
+    buildUpstreamUrl(row, params, rawQueryOf(req), connection.locationId),
+    buildUpstreamBody(row, req.body, connection.locationId),
+    connection.accessToken,
+  )
+
+  // Copied before the status is decided, so a 429 still carries the numbers
+  // that explain it (D18). `api/index.ts` exposes the same list through CORS.
+  for (const name of RATE_LIMIT_HEADERS) {
+    const value = upstream.headers.get(name)
+    if (value !== null) res.setHeader(name, value)
+  }
+
+  logProxy({
+    pattern: row.pattern,
+    status: upstream.status,
+    durationMs: Date.now() - started,
+    rateLimitRemaining: upstream.headers.get('X-RateLimit-Remaining'),
+  })
+
+  if (upstream.status >= 400) throw mapUpstreamStatus(upstream.status, upstream.text)
+
+  // `send` on the text we read, never `json` on a parsed object: Slice 9's
+  // system prompt carries recorded HighLevel payloads as response-shape
+  // examples, and a re-serialised body would make every one of them a lie.
+  res.status(upstream.status).type('application/json').send(upstream.text)
 }
