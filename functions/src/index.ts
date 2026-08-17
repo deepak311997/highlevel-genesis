@@ -27,6 +27,13 @@ export const api = onRequest(
 /**
  * The streaming endpoint lives in its own function so it can carry a long
  * timeout and a warm instance without the CRUD endpoints paying for either.
+ *
+ * **Its options are declared in `./generate`, not here** — the 540-second
+ * timeout, the 512 MiB, and the `ANTHROPIC_API_KEY` secret binding. The secret
+ * is the reason: `defineSecret` is called beside the code that reads it, and a
+ * binding declared one file away from its reader is a binding that gets dropped
+ * in a refactor of the wrong file. `index.spec.ts` asserts all three off
+ * `__endpoint`, which is the only place a test can see them.
  */
 export { generate } from './generate'
 

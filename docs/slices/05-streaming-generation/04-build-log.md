@@ -255,3 +255,57 @@ string — access and refresh tokens, passwords, out-of-band codes, API keys, th
 so a number or boolean under a sensitive name is a count, an expiry or a flag. A name-based
 exclusion list would need maintaining, and the next field somebody added would not be on it. Two L1
 cases pin both directions.
+
+## T11 — Failure and interruption
+
+**Commit:** `f125282`
+
+**Tests added**
+
+| Level | File | What |
+|---|---|---|
+| L4 | `tests/integration/generate.spec.ts` | `__fail_midstream` → two `token`s then exactly one `error` code `upstream`, the partial persisted `truncated: true`, and the frame's `message` equal to it (AC-12); `__fail_upfront` → one `error`, `message: null`, nothing written (AC-13); `__refuse` → one `error` code `refused` with the user-facing copy, nothing written (AC-14); `__max_tokens` → `done` with `truncated: true` (AC-15); `__long` → `done`, stored under 800,000 bytes and over 400,000, byte-identical to the tokens the client received (AC-16); **R1 end to end** — a seeded trailing truncated assistant, and three of them, both stream normally |
+| L1 | `functions/src/generate.spec.ts` | Given a `close` mid-stream: the stream is aborted, the partial is persisted `truncated: true`, and **no frame is written to the dead socket** (AC-17); given `close` before any token, nothing is persisted (AC-18); and a completed turn is **not** recorded as an abandonment |
+
+**Green:** `res.on('close')` + `clientGone`, and `finishTurn` implementing the terminal table.
+
+### Finding 1 — the disconnect signal is `res`, not `req`
+
+The plan specified `req.on('close')`. By the time `handleGenerate` runs, `express.json()` has already
+drained the request body, so `req` has finished and emitted its own `close` — attaching there
+registers a handler for an event that has already fired, and the disconnect is never observed. `res`
+emits `close` on both a finished response and a prematurely terminated connection, and
+`res.writableEnded` is what tells the two apart.
+
+### Finding 2 — the functions emulator does not propagate a client disconnect
+
+**Measured, not assumed.** With `req.on('close')`, `req.on('aborted')`, `res.on('aborted')` and
+`res.on('close')` all instrumented, aborting a real `fetch` two tokens into a `__slow` stream gives:
+
+```
+DIAG attach close listeners
+PROBE chunk ": keep-alive"          tokens 0
+PROBE chunk "event: token …"        tokens 1
+PROBE chunk "event: token …"        tokens 2
+PROBE aborting
+{"event":"generation.complete","stopReason":"end_turn","truncated":false,"durationMs":1213,…}
+DIAG res close, writableEnded= true destroyed= true
+```
+
+No `req` event, no `aborted` event, the generation running to completion, and `res close` arriving
+only *after* the turn ended. The emulator terminates the client connection at its own proxy and
+never signals the function runtime.
+
+So AC-17 and AC-18 are driven at L1, where the signal can be delivered, and the two L4 cases are
+**removed** rather than left passing for the wrong reason — with the measurement recorded in the
+integration spec where they used to be. `it('persists the partial')` reads as proof either way, which
+is precisely why an undeliverable test is worse than none.
+
+The L1 cases were checked to discriminate: flipping the listener back to `req.on('close')` turns all
+three red. The platform half — that Cloud Run delivers the event at all — is a Slice 13 hand-check,
+beside R2's.
+
+### Also
+
+`streamGenerateUntil`, `waitFor` and `sleep` were written for the removed L4 cases and deleted with
+them rather than left as dead helpers.
