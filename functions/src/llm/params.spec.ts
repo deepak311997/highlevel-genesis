@@ -1,10 +1,12 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import type { MessageParam } from '@anthropic-ai/sdk/resources/messages'
+import type { MessageParam, TextBlockParam } from '@anthropic-ai/sdk/resources/messages'
+import type { MessageStreamParams } from '@anthropic-ai/sdk/resources/messages/messages'
 import { describe, expect, it } from 'vitest'
 
 import { buildParams, EFFORT, MAX_TOKENS, MODEL } from './params'
+import type { ProjectFile } from './projectState'
 import { SYSTEM_PROMPT } from './prompt'
 
 /**
@@ -22,9 +24,42 @@ import { SYSTEM_PROMPT } from './prompt'
  * *visible* output, which is ugly in a chat bubble today and corruption from
  * Slice 6, when that same text is parsed into files. A key appearing here later
  * should be a deliberate change with this case rewritten, not a silent one.
+ *
+ * ## Nothing here counts the stable prefix's blocks
+ *
+ * Every assertion below is written against `SYSTEM_PROMPT.length` and
+ * `.at(-1)`, never against a literal. How many blocks the prefix is split into
+ * is `prompt.ts`'s business and has changed once already; what this file owns is
+ * the *relationship* — the appended block is last, and the breakpoint is the
+ * element immediately before it. A hard-coded count here would turn an ordinary
+ * edit to the prompt into a failure in a file that has no opinion about it.
  */
 
 const CONTEXT: MessageParam[] = [{ role: 'user', content: 'build a contact dashboard' }]
+
+const FILES: readonly ProjectFile[] = [
+  { path: 'index.html', content: '<!doctype html>\n<h1>Contacts</h1>\n' },
+  { path: 'app.js', content: 'console.log("contacts")\n' },
+]
+
+/**
+ * `system` as blocks.
+ *
+ * The SDK types it `string | TextBlockParam[] | undefined`, and every decision
+ * in this slice is about the array form — a string would carry no
+ * `cache_control` at all and so no breakpoint.
+ */
+function systemBlocks(params: MessageStreamParams): TextBlockParam[] {
+  const { system } = params
+  if (system === undefined || typeof system === 'string') {
+    throw new Error('expected system to be an array of blocks')
+  }
+  return system
+}
+
+/** `cache_control` is optional *and* nullable in the SDK's types. */
+const hasBreakpoint = (block: TextBlockParam): boolean =>
+  block.cache_control !== undefined && block.cache_control !== null
 
 describe('buildParams', () => {
   /** `CLAUDE.md`'s non-negotiable, pinned exactly. */
@@ -55,9 +90,12 @@ describe('buildParams', () => {
   })
 
   /*
-   * The *same array*, not a copy and not a copy with something appended. Anything
-   * added above the breakpoint per call would make every request a cache miss
-   * once Slice 9 makes caching real, and nothing would report it.
+   * AC-13, and the cache guarantee in one line. A project with no files gets the
+   * *same array*, not a copy and not a copy with something appended — asserted
+   * by identity, because a structurally equal copy would pass a `toEqual` and
+   * still be a different object to reason about. Anything added above the
+   * breakpoint per call is a cache miss on every request, and nothing reports it
+   * but the bill.
    */
   it('sends the system prompt itself, with nothing appended', () => {
     expect(buildParams([]).system).toBe(SYSTEM_PROMPT)
@@ -83,6 +121,69 @@ describe('buildParams', () => {
       'output_config',
       'system',
     ])
+  })
+
+  /* The project's files change what one parameter *contains*, not which
+   * parameters exist. */
+  it('sends the same five parameters when the project holds files', () => {
+    expect(Object.keys(buildParams([], FILES)).sort()).toEqual([
+      'max_tokens',
+      'messages',
+      'model',
+      'output_config',
+      'system',
+    ])
+  })
+})
+
+/**
+ * AC-12 and AC-14's wiring — D11, which is one sentence: **the copy is made only
+ * when there is something volatile to append, and it is appended after the
+ * breakpoint.**
+ *
+ * Both halves matter and they fail differently. Appending above the breakpoint
+ * invalidates the cached prefix on every request whose project changed, which is
+ * every request — no error, no frame, just the bill. Copying unconditionally is
+ * harmless to the cache and merely makes AC-13 unassertable, which is how it
+ * would survive review.
+ */
+describe('the project’s files in the system array', () => {
+  it('appends exactly one block, and it is last', () => {
+    const blocks = systemBlocks(buildParams([], FILES))
+    expect(blocks).toHaveLength(SYSTEM_PROMPT.length + 1)
+    expect(blocks.slice(0, SYSTEM_PROMPT.length)).toEqual([...SYSTEM_PROMPT])
+    expect(blocks.at(-1)?.text).toContain('app.js')
+  })
+
+  /*
+   * The whole of AC-12, stated as a position rather than an index: the
+   * breakpoint is the last element of the *stable* prefix, so with a volatile
+   * block appended it is the second to last element of the array that goes out.
+   */
+  it('leaves the breakpoint on the block immediately before it', () => {
+    const blocks = systemBlocks(buildParams([], FILES))
+    expect(blocks.findIndex(hasBreakpoint)).toBe(blocks.length - 2)
+    expect(blocks.at(-2)).toBe(SYSTEM_PROMPT.at(-1))
+  })
+
+  it('carries exactly one breakpoint in the whole array, files or no files', () => {
+    expect(systemBlocks(buildParams([], FILES)).filter(hasBreakpoint)).toHaveLength(1)
+    expect(systemBlocks(buildParams([])).filter(hasBreakpoint)).toHaveLength(1)
+  })
+
+  /* Nothing volatile to append, so nothing is copied — the same assertion as
+   * AC-13's, made from the other side. */
+  it('appends nothing at all for a project holding no files', () => {
+    expect(systemBlocks(buildParams([], []))).toHaveLength(SYSTEM_PROMPT.length)
+    expect(buildParams([], []).system).toBe(SYSTEM_PROMPT)
+  })
+
+  /* The appended block is volatile content sitting after the breakpoint; a
+   * second `cache_control` on it would write a cache entry per project state
+   * and read one back never. */
+  it('appends a block carrying no cache_control of its own', () => {
+    const appended = systemBlocks(buildParams([], FILES)).at(-1)
+    expect(appended === undefined ? true : hasBreakpoint(appended)).toBe(false)
   })
 })
 
