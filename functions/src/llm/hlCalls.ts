@@ -50,12 +50,22 @@ export interface HlCall {
  * The leading `\b` is what makes `myhl('GET', '/x')` a miss: there is no word
  * boundary inside an identifier. Both string literals must open and close on the
  * same quote character (the `\1`/`\3` back-references), and the path must start
- * with `/` and contain no quote or newline — so a template literal, a variable,
- * and a concatenation are all misses rather than half-read paths. Under-reporting
- * a computed path is the correct bias: the counter would otherwise report a route
- * nobody wrote.
+ * with `/` and contain no quote or newline — so a template literal and a variable
+ * are misses rather than half-read paths.
+ *
+ * The trailing `(?=\s*[,)])` is what makes a **concatenation** a miss too, and it
+ * is load-bearing rather than tidy. Without it the pattern stops at the first
+ * closing quote, so `hl('GET', '/calendars/' + id + '/events')` yields the path
+ * `/calendars/` — a prefix of the real route which happens to be an enabled row
+ * of its own. `countHlCalls` then scores as **known** a call the proxy would
+ * refuse, which is the one outcome that makes the metric worse than no metric.
+ * Requiring the closing quote to be followed by the end of the argument (`,` or
+ * `)`) means a computed path yields nothing at all.
+ *
+ * Under-reporting a computed path is the correct bias: the counter would
+ * otherwise report a route nobody wrote.
  */
-const HL_CALL = /\bhl\s*\(\s*(['"])([A-Z]+)\1\s*,\s*(['"])(\/[^'"\n]*)\3/g
+const HL_CALL = /\bhl\s*\(\s*(['"])([A-Z]+)\1\s*,\s*(['"])(\/[^'"\n]*)\3(?=\s*[,)])/g
 
 /** Every literal `hl()` call in `code`, in source order. */
 export function extractHlCalls(code: string): HlCall[] {

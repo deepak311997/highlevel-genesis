@@ -88,10 +88,12 @@ describe('buildParams', () => {
    * rather than measured. Choosing properly needs an effort sweep against real
    * generations, which is a named manual check in the definition of done.
    *
-   * This is only safe because D14 left thinking on: `thinking: { type:
-   * 'disabled' }` is rejected outright above effort `high` on `claude-opus-5`,
-   * so the case below asserting no `thinking` key is now load-bearing for this
-   * one.
+   * The boundary is one level above this value: `thinking: { type: 'disabled' }`
+   * is accepted at effort `high` or below on `claude-opus-5` and returns a `400`
+   * at `xhigh` and `max`. So at `high` the two settings are independent, and the
+   * case below asserting no `thinking` key rests on D14's own reasoning rather
+   * than on the API refusing the combination. It is the *sweep* that would make
+   * them load-bearing on each other.
    */
   it('asks for effort high', () => {
     expect(EFFORT).toBe('high')

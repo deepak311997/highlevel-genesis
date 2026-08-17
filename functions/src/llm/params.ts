@@ -70,11 +70,20 @@ import { SYSTEM_PROMPT } from './prompt'
  * is a named manual check in the definition of done rather than a guess made
  * here.
  *
- * **This is only safe because D14 left thinking on.** `thinking: { type:
- * 'disabled' }` is rejected outright above effort `high` on `claude-opus-5`, so
- * the two decisions hold each other up: disabling thinking would now be an API
- * error rather than merely a bad idea. `max_tokens` stays 64,000, which the docs
- * call the floor for `high` and above.
+ * **A constraint the sweep inherits, stated precisely because the boundary is
+ * one level away.** On `claude-opus-5`, `thinking: { type: 'disabled' }` is
+ * accepted at effort `high` *or below* and returns a `400` at `xhigh` and `max`.
+ * At the `high` this file sets, the two settings are therefore still
+ * independent: disabling thinking would be a bad idea (D14 — the documented
+ * failure mode is `<thinking>` tags leaking into visible output, which from
+ * Slice 6 is parsed into files) but it would not be an API error. Raise `EFFORT`
+ * to `xhigh` or `max` and it becomes one, which is the thing the effort sweep in
+ * the definition of done must not discover the hard way.
+ *
+ * `max_tokens` stays 64,000. The docs name that figure as the floor to leave for
+ * `xhigh` and `max`, not for `high` — so it is headroom here rather than a
+ * requirement, and it is already the ceiling `CLAUDE.md` fixes for streaming
+ * calls.
  */
 
 export const MODEL = 'claude-opus-5'

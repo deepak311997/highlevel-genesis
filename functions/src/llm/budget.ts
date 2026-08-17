@@ -42,7 +42,14 @@ export const PROJECT_FILE_BUDGET = 120_000
 /**
  * 80,000 characters — about 20,000 tokens — of transcript.
  *
- * `CONTENT_MAX` caps one message at 4,000 characters, so this is at minimum
- * twenty full-length turns, against a collection hard-capped at 200 messages.
+ * `CONTENT_MAX` caps a *user* turn at 4,000 characters, so this is at least
+ * twenty full-length prompts, against a collection hard-capped at 200 messages.
+ *
+ * **It does not bound an assistant turn.** `storedMessageSchema` deliberately
+ * carries no maximum on `content` (Slice 6 D11 — the echo of a 4,000-character
+ * prompt is longer than 4,000 characters), so a reply is bounded only by
+ * `MAX_OUTPUT_BYTES`, at 800,000. One long generation can therefore consume this
+ * whole budget by itself, which is what makes `context.ts`'s D16 floor a path
+ * that really runs rather than a theoretical guard.
  */
 export const TRANSCRIPT_BUDGET = 80_000

@@ -32,9 +32,14 @@ function dropTrailingAssistants(messages: readonly Message[]): readonly Message[
  * that floor, a project whose last message overflowed the budget would trim to
  * nothing and answer `400 empty_context` (Slice 5 D7) on every attempt — an
  * unrecoverable project, since the only way to fix it would be to send another
- * message. `CONTENT_MAX` caps one stored message at 4,000 characters against an
- * 80,000-character budget, so it cannot arise today; the guarantee costs one
- * comparison and the alternative is unbounded.
+ * message.
+ *
+ * **This floor runs in practice; it is not a theoretical guard.** `CONTENT_MAX`
+ * bounds a *user* turn at 4,000 characters, but `storedMessageSchema` carries no
+ * maximum on `content` (Slice 6 D11), so an assistant turn is bounded only by
+ * `MAX_OUTPUT_BYTES` at 800,000. A single long generation can exceed the whole
+ * 80,000-character budget, and the turn after it trims to just the newest user
+ * message — correct under D12, and the reason this comparison earns its place.
  *
  * Whole turns only. A half-quoted turn would be a message the user never sent.
  */

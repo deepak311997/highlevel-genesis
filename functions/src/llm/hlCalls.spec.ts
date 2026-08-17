@@ -85,8 +85,34 @@ describe('extractHlCalls', () => {
     ['a template-literal path', "hl('GET', `/contacts/${id}`)"],
     ['a variable path', 'hl(method, path)'],
     ['a variable method', "hl(method, '/contacts/search')"],
+    ['a concatenated path', "hl('GET', '/calendars/' + calendarId + '/events')"],
+    ['a concatenation with one trailing operand', "hl('GET', '/contacts/' + id)"],
   ])('claims nothing for %s', (_label, code) => {
     expect(extractHlCalls(code)).toEqual([])
+  })
+
+  /*
+   * Why concatenation is the sharpest of those near misses, and why it gets its
+   * own case rather than living only in the list above.
+   *
+   * The other shapes yield nothing to misread — there is no literal to capture.
+   * A concatenation *starts* with one, so a pattern that stops at the first
+   * closing quote reads `'/calendars/' + calendarId + '/events'` as the path
+   * `/calendars/` and hands `countHlCalls` a prefix of the real route. That
+   * prefix is itself an enabled row, so the call scores **known** while the path
+   * the app actually requests — `/calendars/<id>/events`, on no allowlist — is
+   * one the proxy answers `403 route_not_allowed` on.
+   *
+   * That inverts the whole point of the counters (D19): `generation.complete`
+   * would report a clean generation for precisely the failure the metric exists
+   * to surface. Under-reporting a computed path is the correct bias; reporting a
+   * truncated one is not a rougher signal but a wrong one.
+   */
+  it('claims nothing rather than a truncated route when the path is concatenated', () => {
+    const code = "const events = await hl('GET', '/calendars/' + calendarId + '/events')"
+
+    expect(extractHlCalls(code)).toEqual([])
+    expect(countHlCalls(extractHlCalls(code), {})).toEqual({ known: 0, unknown: 0 })
   })
 
   /*

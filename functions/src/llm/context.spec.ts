@@ -242,11 +242,13 @@ describe('buildContext', () => {
 
   /*
    * AC-21, D16. The newest user turn is kept whatever the budget says, and it is
-   * returned alone. `CONTENT_MAX` caps one stored message at 4,000 characters
-   * against an 80,000-character budget, so this cannot arise today — but the
-   * guarantee is one line and the alternative is a project that answers
-   * `400 empty_context` forever, because `handleGenerate` refuses an empty
-   * context before any LLM call (Slice 5 D7).
+   * returned alone. The alternative is a project that answers `400 empty_context`
+   * forever, because `handleGenerate` refuses an empty context before any LLM
+   * call (Slice 5 D7).
+   *
+   * The 200,000-character *user* turn here is synthetic — `CONTENT_MAX` bounds a
+   * user turn at 4,000 — so this case pins the guarantee at its extreme. The case
+   * below it is the one that can actually happen.
    */
   it('keeps the newest user turn even when it alone exceeds the whole budget', () => {
     const oversized = sized('user', 2, 200_000)
@@ -256,6 +258,34 @@ describe('buildContext', () => {
 
     expect(context).toEqual([{ role: 'user', content: oversized.content }])
     expect(context.length).toBeGreaterThan(0)
+  })
+
+  /*
+   * The reachable shape of the same guarantee, and the reason D16 is not a
+   * theoretical guard.
+   *
+   * `CONTENT_MAX` bounds a user turn, but `storedMessageSchema` deliberately
+   * carries no maximum on `content` (Slice 6 D11), so an **assistant** turn is
+   * bounded only by `MAX_OUTPUT_BYTES` at 800,000. One long generation therefore
+   * exceeds the whole 80,000-character transcript budget on its own, using only
+   * values the routes can really store.
+   *
+   * What must happen next: the giant reply is dropped, the newest user turn
+   * survives, and the result is neither empty nor led by an assistant message.
+   */
+  it('drops an over-budget assistant reply and still returns a usable context', () => {
+    const asked = sized('user', 3, 500)
+    const messages = [
+      sized('user', 0, 1_000),
+      sized('assistant', 1, 1_000),
+      sized('assistant', 2, 150_000),
+      asked,
+    ]
+
+    const context = buildContext(messages)
+
+    expect(context).toEqual([{ role: 'user', content: asked.content }])
+    expect(context[0]?.role).toBe('user')
   })
 
   /* Purity again, on the path that actually slices: trimming must copy, never
