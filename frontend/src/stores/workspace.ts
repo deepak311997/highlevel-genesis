@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
 
 import { ApiError } from '@/lib/api'
+import { getFile, listFiles, saveFile as putFile, type FileMeta } from '@/lib/filesApi'
 import { streamGeneration } from '@/lib/generateApi'
 import { listMessages, sendMessage, MESSAGE_LIMIT, type Message } from '@/lib/messagesApi'
 import { getProject, type Project } from '@/lib/projectsApi'
@@ -64,10 +65,38 @@ export interface WorkspaceStore {
   streamingText: Ref<string>
   /** Kept apart from `sendError`: one renders under the composer, one above it. */
   generateError: Ref<string | null>
+  /**
+   * The project's files — **metadata only** (D19).
+   *
+   * The list route carries no `content`, so opening a workspace does not ship
+   * 20 × 100 KB of code nobody has clicked on. A file's bytes arrive when it is
+   * selected, and nowhere else.
+   */
+  files: Ref<FileMeta[]>
+  filesLoading: Ref<boolean>
+  /** Whether a list request has completed, successfully or not. */
+  filesLoaded: Ref<boolean>
+  filesError: Ref<string | null>
+  /** The file open in the editor, or `null` when nothing is selected. */
+  selectedPath: Ref<string | null>
+  /** The editor's buffer — what the user has. Two-way bound by `FileEditor`. */
+  fileContent: Ref<string>
+  /** What the server last said this file was. `fileDirty` is the two disagreeing. */
+  savedContent: Ref<string>
+  fileDirty: ComputedRef<boolean>
+  fileLoading: Ref<boolean>
+  fileError: Ref<string | null>
+  saving: Ref<boolean>
+  /** Kept apart from `fileError`: one renders beside Save, one instead of the editor. */
+  saveError: Ref<string | null>
   atLimit: ComputedRef<boolean>
   canSend: ComputedRef<boolean>
   open: (projectId: string) => Promise<void>
   loadMessages: () => Promise<void>
+  /** The file tree's Try again — this action and nothing else. */
+  loadFiles: () => Promise<void>
+  selectFile: (path: string) => Promise<void>
+  saveFile: () => Promise<void>
   send: () => Promise<void>
   /** Re-open the stream for the same transcript — no new user message (D26). */
   retryGeneration: () => Promise<void>
@@ -94,6 +123,30 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
   const generating = ref(false)
   const streamingText = ref('')
   const generateError = ref<string | null>(null)
+
+  const files = ref<FileMeta[]>([])
+  const filesLoading = ref(false)
+  const filesLoaded = ref(false)
+  const filesError = ref<string | null>(null)
+
+  const selectedPath = ref<string | null>(null)
+  const fileContent = ref('')
+  const savedContent = ref('')
+  const fileLoading = ref(false)
+  const fileError = ref<string | null>(null)
+  const saving = ref(false)
+  const saveError = ref<string | null>(null)
+
+  /**
+   * Dirty is **derived**, not maintained.
+   *
+   * A boolean would have to be set on every edit path and cleared on every load
+   * and save path, and the first one anybody forgets either enables Save for an
+   * unchanged file or, much worse, leaves it disabled over an edit. A comparison
+   * cannot go stale, and it also makes typing a change and typing it back read as
+   * clean — which is the truth.
+   */
+  const fileDirty = computed(() => fileContent.value !== savedContent.value)
 
   /**
    * The in-flight generation's controller — **in the store, not the component**
@@ -200,6 +253,7 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     generating.value = false
     streamingText.value = ''
     generateError.value = null
+    clearFileState()
 
     try {
       const fetched = await getProject(id)
@@ -220,6 +274,14 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     }
 
     await loadMessages()
+    /*
+     * Unconditionally, and after the transcript rather than instead of it: a
+     * failed transcript is the chat panel's error state, and the code panel has
+     * no business being empty because of it. Sequential for the same reason the
+     * project comes first — two requests racing to set two panels' loading flags
+     * make the order they finish in visible in the UI for no gain.
+     */
+    await loadFiles()
   }
 
   /** The transcript, on its own — this is what the chat panel's Retry calls. */
@@ -243,6 +305,130 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     } finally {
       if (current(gen)) messagesLoading.value = false
     }
+  }
+
+  /**
+   * The file tree, on its own — the code panel's **Try again**, and what a
+   * finished generation refetches (D20).
+   */
+  async function loadFiles(): Promise<void> {
+    const id = projectId.value
+    if (id === null) return
+
+    const gen = generation
+    filesLoading.value = true
+    filesError.value = null
+    try {
+      const fetched = await listFiles(id)
+      if (!current(gen)) return
+      files.value = fetched
+      filesLoaded.value = true
+    } catch (err) {
+      if (!current(gen)) return
+      // The list is left alone. A failed refetch emptying the tree would say
+      // "this project has no code", which is a different claim from "we could
+      // not reach the server" and a much worse one to make wrongly.
+      filesError.value = err instanceof Error ? err.message : 'Could not load these files.'
+    } finally {
+      if (current(gen)) filesLoading.value = false
+    }
+  }
+
+  /**
+   * Open a file in the editor: the selection first, then its bytes.
+   *
+   * The buffer is cleared before the request goes out. Left in place, the
+   * previous file's code would render under the new filename for the length of a
+   * round trip — one file's contents labelled as another's, which is a worse
+   * screen than an empty one.
+   */
+  async function selectFile(path: string): Promise<void> {
+    const id = projectId.value
+    if (id === null) return
+
+    const gen = generation
+    selectedPath.value = path
+    fileContent.value = ''
+    savedContent.value = ''
+    fileError.value = null
+    saveError.value = null
+    fileLoading.value = true
+    try {
+      const file = await getFile(id, path)
+      if (!current(gen)) return
+      fileContent.value = file.content
+      savedContent.value = file.content
+    } catch (err) {
+      if (!current(gen)) return
+      fileError.value = err instanceof Error ? err.message : 'Could not load that file.'
+    } finally {
+      if (current(gen)) fileLoading.value = false
+    }
+  }
+
+  /**
+   * Save the buffer, and take **the server's answer** back (D20).
+   *
+   * The response replaces the buffer rather than the buffer being assumed
+   * correct: the server owns `size` and both timestamps and is free to store
+   * something other than exactly what was sent. Trusting the local copy is how
+   * an editor ends up showing a document that disagrees with the server until a
+   * reload — silently, which is the failure mode this slice's risk register
+   * names twice.
+   *
+   * A failed save keeps the buffer and its dirty flag. Clearing either would
+   * throw away an edit *because* it could not be stored, which is the one
+   * outcome a save must never have.
+   */
+  async function saveFile(): Promise<void> {
+    const id = projectId.value
+    const path = selectedPath.value
+    // A second save while one is in flight would race its own response, and the
+    // later reply — which may be the earlier request — would win.
+    if (id === null || path === null || saving.value) return
+
+    const gen = generation
+    saving.value = true
+    saveError.value = null
+    try {
+      const file = await putFile(id, path, fileContent.value)
+      if (!current(gen)) return
+      fileContent.value = file.content
+      savedContent.value = file.content
+      // The list's entry for this file is now stale in `size` and `updatedAt`,
+      // and the response is the server's own word for both — so it is applied
+      // here rather than paid for with a second `GET`.
+      files.value = files.value.map((entry) =>
+        entry.path === file.path
+          ? {
+              path: file.path,
+              size: file.size,
+              createdAt: file.createdAt,
+              updatedAt: file.updatedAt,
+            }
+          : entry,
+      )
+    } catch (err) {
+      if (!current(gen)) return
+      saveError.value = err instanceof Error ? err.message : 'Could not save that file.'
+    } finally {
+      if (current(gen)) saving.value = false
+    }
+  }
+
+  /** Every file field back to its initial value — shared by `open` and `reset`. */
+  function clearFileState(): void {
+    files.value = []
+    filesLoading.value = false
+    filesLoaded.value = false
+    filesError.value = null
+    selectedPath.value = null
+    fileContent.value = ''
+    savedContent.value = ''
+    fileLoading.value = false
+    fileError.value = null
+    saving.value = false
+    saveError.value = null
   }
 
   /**
@@ -397,6 +583,7 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     generating.value = false
     streamingText.value = ''
     generateError.value = null
+    clearFileState()
   }
 
   return {
@@ -415,10 +602,25 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     generating,
     streamingText,
     generateError,
+    files,
+    filesLoading,
+    filesLoaded,
+    filesError,
+    selectedPath,
+    fileContent,
+    savedContent,
+    fileDirty,
+    fileLoading,
+    fileError,
+    saving,
+    saveError,
     atLimit,
     canSend,
     open,
     loadMessages,
+    loadFiles,
+    selectFile,
+    saveFile,
     send,
     retryGeneration: runGeneration,
     reset,
