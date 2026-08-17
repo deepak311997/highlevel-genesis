@@ -369,6 +369,26 @@ describe('the line-start rule (AC-6)', () => {
       expect(events[0]).toEqual({ kind: 'open', path })
     },
   )
+
+  /*
+   * **Length is the one path rule the grammar keeps**, and it is not validation —
+   * it is the same bound the hold-back is built on. `couldBeDelimiter` stops
+   * holding a path once it passes `PATH_MAX`, because holding an unbounded one is
+   * how a reply makes the splitter buffer without limit. A line grammar that
+   * accepted what the hold-back had already given up on would open the block when
+   * the tag arrived in one delta and not when it arrived in two, which is the
+   * chunking dependence D4 forbids — and the visible failure is the whole
+   * application landing in the chat bubble as prose.
+   */
+  it.each([
+    [PATH_MAX, true],
+    [PATH_MAX + 1, false],
+  ])('treats a %i-character path as a delimiter: %s', (length, isDelimiter) => {
+    const path = 'a'.repeat(length)
+    const events = split(`<genesis:file path="${path}">\nbody\n${CLOSE}`)
+
+    expect(events[0]?.kind === 'open').toBe(isDelimiter)
+  })
 })
 
 describe('the hold-back bound', () => {
@@ -580,6 +600,16 @@ const FIXTURES: [name: string, text: string][] = [
     `x<genesis:file path="a.js">\n</genesis:file>\n<genesis:file path=b.js>\n`,
   ],
   ['a delimiter-shaped line past the bound', `${OPEN_HEAD}${'a'.repeat(MAX_LINE)}\nafter\n`],
+  /*
+   * A **well-formed** tag whose path is longer than a name may be — the corner
+   * the corpus above never reached, and the one where the hold-back's bound and
+   * the line grammar could disagree. `couldBeDelimiter` stops holding a path once
+   * it passes `PATH_MAX`, so a split there emits the partial as prose; the line
+   * regex has to refuse the same line for the same reason, or the block opens
+   * when the tag arrives whole and does not when it arrives in two deltas — and
+   * the difference is the whole app landing in the chat bubble.
+   */
+  ['a path longer than a name may be', block(`${'a'.repeat(PATH_MAX)}.js`, 'const secret = 1\n')],
   ['no trailing newline anywhere', 'Prose with no newline at the end'],
 ]
 
