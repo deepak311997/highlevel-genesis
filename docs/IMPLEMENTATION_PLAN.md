@@ -689,22 +689,22 @@ read. `PRODUCT_SPEC.md` §7 holds the package-level version of this.
 | Tokens in Firestore scoped to the Firebase user, refresh on expiry | F1.3 | 2 | ⏭ |
 | One HighLevel location per user | F1.3 | 2 | ⏭ — falls out of Target User = Sub-account |
 | Project CRUD incl. soft-delete, scoped per user by the API | F2.1–2.3 | 3 | ✅ |
-| Server-side generation: bounded context → stream → validated file ops → persist | F3.1–3.4 | 5, 6, 9 | 🟡 F3.4's persistence half shipped in 4 — the transcript is stored and read back through the API |
-| SSE endpoint; protocol covers tokens, file boundaries, completion, errors | F4.1–4.3 | 5, 6 | 🟡 transport proven in Slice 0 |
+| Server-side generation: bounded context → stream → validated file ops → persist | F3.1–3.4 | 5, 6, 9 | 🟡 context, stream and persist shipped in 5 — the transcript is bounded, dropped of trailing prefills, streamed and written back through the API; **validated file ops are Slice 6** |
+| SSE endpoint; protocol covers tokens, file boundaries, completion, errors | F4.1–4.3 | 5, 6 | 🟡 `POST /generate` shipped in 5 — `token`, `done` and `error` frames, both error channels, keep-alives; **file boundaries are Slice 6** |
 | File tree, read file, save manual edits | F5.1 | 6 | ⏭ |
 | Snapshot per generation; list and restore | F5.2–5.3 | 11 | ⏭ |
 | shadcn-vue as the primary component library | F6.1 | 0–12 | 🟡 `button`/`input`/`label`/`card`/`alert`/`dialog`/`tabs`/`badge`/`resizable`/`scroll-area`/`separator`/`textarea` in; only `sheet` (11) and `skeleton`/`sonner` (12) owed |
 | Three-panel workspace: chat · editor · preview | F6.1 | 4 | 🟡 shell shipped — resizable at ≥1024px, tabbed below; editor and preview are labelled placeholders until 6/7 and 10 |
-| Chat panel with history and input | F6.2 | 4 | ✅ history, input and persistence; the assistant is an echo until Slice 5, and F6.2's streaming-status half goes with it |
+| Chat panel with history and input | F6.2 | 4, 5 | ✅ history, input and persistence in 4; the echo and its badge deleted in 5, replaced by a real streamed reply, a `Generating…` status, an interrupted marker and a Retry |
 | Monaco via `@guolao/vue-monaco-editor`, tabs, live tokens, read-only while streaming | F6.3 | 7 | ⏭ |
 | iframe preview showing **real** HL data, refreshes after generation | F6.4 | 10 | ⏭ — the money shot |
-| SSE client handles all event types, survives disconnects | F6.5 | 5 | ⏭ |
+| SSE client handles all event types, survives disconnects | F6.5 | 5 | 🟡 all three event types handled and chunk-split-safe by construction (the parser is driven split at every offset); the client's own abort is proven, and the **server**-side disconnect is L1-proven but undeliverable from the emulator — a Slice 13 hand-check |
 | Snapshot history in a sheet/dialog with Restore | F6.6 | 11 | ⏭ |
 | Contacts · Conversations · Calendars exposed to generated apps | F7.1 | 8 | ⏭ |
 | Authenticated proxy attaching/refreshing tokens server-side | F7.2 | 8 | ⏭ |
 | Sandbox HL account | F7.3 | 2, 13 | ⏭ — create it before Slice 2, seed it before the Loom |
 | Malformed LLM output handled without corrupting state | F8.1 | 6, 12 | ⏭ |
-| Interrupted streams: partial results preserved | F8.2 | 5, 12 | ⏭ |
+| Interrupted streams: partial results preserved | F8.2 | 5, 12 | 🟡 a partial is persisted with `truncated: true` on every interruption the emulator can reach — a mid-stream upstream failure — and marked in the transcript, with a Retry beside it; the client-disconnect trigger is the Slice 13 hand-check above |
 | Failed HL calls surfaced clearly | F8.3 | 8, 10, 12 | ⏭ |
 | Hosting + Functions deployed, live URLs in README | F9.1 | 13 | ⏭ |
 | Secrets via env/Secret Manager, `.env.example` | F9.2 | 13 | 🟡 per-package examples exist; **root `.env.example` owed** |
@@ -712,4 +712,4 @@ read. `PRODUCT_SPEC.md` §7 holds the package-level version of this.
 | Repo layout + README (setup, ≤10 decisions, ≤5 improvements, deploy notes) | F9.4 | 13 | 🟡 layout ✅, README sections owed |
 | Loom ≤5 min walking the golden path | F9.5 | 13 | ⏭ |
 | Emulators: `firebase emulators:start` documented and working | NFR | 13 | 🟡 emulators back the test suites; the documented dev path is owed |
-| Streaming mandatory — never request/response | NFR | 5 | ⏭ enforced by `CLAUDE.md` |
+| Streaming mandatory — never request/response | NFR | 5 | ✅ `messages.stream()` only, and a source scan over `functions/src` asserts `messages.create` appears in no file |

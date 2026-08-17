@@ -456,3 +456,118 @@ once and the first thing a real user does is send a second.
   functions emulator's pooled upstream socket dirty, and the *next test's* `POST /generate` comes
   back as an empty 400 — the same symptom as the bug above, from a different cause. A fulfilled
   refusal exercises the identical client path without poisoning the connection.
+
+## T20 — Documentation
+
+**Commit:** see below
+
+**Tests added:** none — prose, as the plan says.
+
+**Green:** `docs/IMPLEMENTATION_PLAN.md` §0's status table and full-suite figures, §4's Slice 5
+entry (built, with D6/D15/D16 recorded as the decisions a later slice revisits and the Slice 13
+deferrals named), §9's conformance rows for F3.1–3.4, F4.1–4.3, F6.2, F6.5 and F8.2 plus the
+*streaming mandatory* NFR row; `docs/PRODUCT_SPEC.md` §7.1's `@anthropic-ai/sdk` row marked
+shipped at the pinned `^0.117.1`, with the reason for the pin.
+
+**This task was interrupted and resumed.** A previous build session was killed part-way through
+T20; the orchestrator committed its work as `9891519`. That commit carried §0 and §4 but not §9,
+and had not touched `PRODUCT_SPEC.md`. This session finished both, then re-ran the whole suite
+from scratch rather than trusting the recorded figures — they matched exactly (see below).
+
+**§8's LLM-provider row needed no edit.** It already read `✅ Settled` with the model, the stream
+requirement, `max_tokens` and the `cache_control` breakpoint, from the plan stage. Recorded here so
+its absence from the diff is not read as an omission.
+
+**Nothing deferred out of the plan's T20.** The README's `ANTHROPIC_API_KEY` step is *by the plan*
+a Slice 13 checklist item rather than a change here, and it is written into §4's deferral list.
+
+## Final suite
+
+Run in full on `slice/05-streaming-generation`, from a clean tree, after T20 (2026-08-17):
+
+| Suite | Result | Baseline (`main` at `aaa91bb`) |
+|---|---|---|
+| `typecheck` | pass, 0 errors | pass |
+| `lint` | pass, 0 warnings | pass |
+| `test:unit` | **952** — 424 functions · 513 frontend · 15 scripts | 748 |
+| `test:rules` | **28** | 26 |
+| `test:integration` | **231** | 198 |
+| `test:e2e` | **12** | 9 |
+
+All six green. The slice added 204 unit cases (138 functions · 62 frontend · 4 scripts), 2 rules
+cases, 33 integration cases and 3 e2e cases.
+
+## Acceptance criteria — the test that proves each
+
+Every AC has at least one passing test, and every AC number is grepped out of the spec file named
+below, so this table is checkable rather than asserted.
+
+| AC | Level | Test |
+|---|---|---|
+| AC-1 | L4 | `tests/integration/generate.spec.ts` — tokens then exactly one `done` |
+| AC-2 | L4 | `tests/integration/generate.spec.ts` — one document, content = concatenated tokens, `seq: 1` |
+| AC-3 | L4 · L1 | `tests/integration/generate.spec.ts` — transcript order · `frontend/src/lib/messagesApi.spec.ts` — `truncated` off the wire |
+| AC-4 | L4 · L1 | `tests/integration/messages.spec.ts` — 201, one message, one document · `functions/src/messages/handlers.spec.ts` — `appendAssistantMessage`'s shape, `echoFor`/`messagePair` gone |
+| AC-5 | L1 | `functions/src/generate.spec.ts` — `generation.complete`'s fields, and no content |
+| AC-6 | L1 | `functions/src/llm/params.spec.ts` — model, `max_tokens`, effort, and the `messages.create` scan |
+| AC-7 | L1 | `functions/src/llm/prompt.spec.ts` — one breakpoint, on the last block, nothing volatile |
+| AC-8 | L1 | `functions/src/llm/context.spec.ts` — order and roles preserved, no extra keys |
+| AC-9 | L1 | `functions/src/llm/context.spec.ts` — one and three trailing assistants dropped |
+| AC-10 | L1 · L4 | `functions/src/llm/context.spec.ts` — both yield `[]` · `tests/integration/generate.spec.ts` — `400 empty_context` |
+| AC-11 | L1 · L4 | `functions/src/llm/stream.spec.ts` — thinking deltas make no `token` · `tests/integration/generate.spec.ts` — no thinking text on the wire |
+| AC-12 | L1 · L4 | `functions/src/llm/stream.spec.ts` — error carries text so far · `tests/integration/generate.spec.ts` — `__fail_midstream`, partial `truncated: true` |
+| AC-13 | L4 | `tests/integration/generate.spec.ts` — `__fail_upfront`, `message: null`, nothing written |
+| AC-14 | L4 | `tests/integration/generate.spec.ts` — `__refuse`, code `refused`, nothing written |
+| AC-15 | L1 · L4 | `functions/src/llm/stream.spec.ts` · `tests/integration/generate.spec.ts` — `__max_tokens` → `done`, `truncated: true` |
+| AC-16 | L1 · L4 | `functions/src/llm/stream.spec.ts` — cap, `abort()` once, valid UTF-8 · `tests/integration/generate.spec.ts` — `__long` under 800,000 bytes |
+| AC-17 | **L1** | `functions/src/generate.spec.ts` — `close` mid-stream aborts, persists `truncated: true`, writes no frame |
+| AC-18 | **L1** | `functions/src/generate.spec.ts` — `close` before any token persists nothing |
+| AC-19 | L4 · L1 | `tests/integration/generate.spec.ts` — comment frames before the first token on `__slow` · `functions/src/lib/sse.spec.ts` — the frame's bytes (Slice 0's case, retained) |
+| AC-20 | L4 | `tests/integration/generate.spec.ts` — 401, and not `text/event-stream` |
+| AC-21 | L4 | `tests/integration/generate.spec.ts` — 403, as JSON |
+| AC-22 | L4 | `tests/integration/generate.spec.ts` — alice→bob 404, bob's transcript byte-identical |
+| AC-23 | L4 | `tests/integration/generate.spec.ts` — soft-deleted, never-existed, unparseable → 404 |
+| AC-24 | L1 · L4 | `functions/src/llm/schema.spec.ts` — `.strict()` refusals · `tests/integration/generate.spec.ts` — eight bodies → 400, nothing written |
+| AC-25 | L1 | `functions/src/index.spec.ts` — secret, 540 s, 512 MiB, and the guard source scan; behaviour is AC-20/21 |
+| AC-26 | L3 | `tests/rules/firestore.spec.ts` — every operation denied, `truncated` shapes included |
+| AC-27 | L3 | `tests/rules/firestore.spec.ts` — the `users`, `projects`, `server-only` and `unknown` describes, re-run unchanged |
+| AC-28 | L1 | `frontend/src/lib/sse.spec.ts` — split at every offset, in two chunks and three |
+| AC-29 | L1 | `frontend/src/lib/sse.spec.ts` — comment, unknown name, bad JSON without desync |
+| AC-30 | L1 | `frontend/src/lib/generateApi.spec.ts` — method, path, exact body, both credentials · `frontend/src/lib/no-firestore.spec.ts` — the scan, unchanged |
+| AC-31 | L1 | `frontend/src/lib/generateApi.spec.ts` — non-ok rejects with `ApiError` and yields nothing |
+| AC-32 | L1 | `frontend/src/stores/workspace.spec.ts` — message `POST` then `/generate`, no `GET` |
+| AC-33 | L1 | `frontend/src/stores/workspace.spec.ts` — failed write opens no stream, keeps the draft |
+| AC-34 | L1 | `frontend/src/stores/workspace.spec.ts` — accumulation with `messages` unchanged, then `done` |
+| AC-35 | L1 | `frontend/src/stores/workspace.spec.ts` — `error` with a message, and with `null` |
+| AC-36 | L1 | `frontend/src/stores/workspace.spec.ts` — `retryGeneration()` writes no message |
+| AC-37 | L1 | `frontend/src/stores/workspace.spec.ts` — `reset()` and reopening both abort; a late frame mutates nothing |
+| AC-38 | L2 | `frontend/src/components/workspace/ChatPanel.spec.ts` — badge and `streaming-bubble`; `Echo mode` source scan |
+| AC-39 | L2 | `frontend/src/components/workspace/ChatPanel.spec.ts` — no badge when no stream is open |
+| AC-40 | L2 · L1 | `ChatPanel.spec.ts` — `message-interrupted` both ways · `messagesApi.spec.ts` — `truncated` carried through |
+| AC-41 | L2 | `ChatPanel.spec.ts` — `generate-error` + `generate-retry` calling `retryGeneration` once |
+| AC-42 | L2 | `MessageComposer.spec.ts` — disabled while generating, Enter issues nothing |
+| AC-43 | L2 | `ChatPanel.spec.ts` — growing `streamingText` sets `scrollTop` to `scrollHeight` |
+| AC-44 | L5 | `tests/e2e/workspace.spec.ts` — failed generation → Retry → progressive text → reload; interruption → marked partial; a second prompt; a refusal |
+
+**One AC is proven at a different level than the PRD's matrix planned.** AC-17 and AC-18 are L1,
+not L4, and the reason is measured and recorded under T11: the functions emulator terminates the
+client connection at its own proxy and never signals the function runtime, so an L4 disconnect test
+would pass for the wrong reason. The L1 cases were checked to discriminate — flipping the listener
+back to the plan's `req.on('close')` turns all three red. The platform half, that Cloud Run delivers
+the event at all, is a Slice 13 hand-check beside R2's.
+
+**AC-19, AC-27 and AC-30's second clause are carried partly by tests this slice did not change** —
+Slice 0's comment-frame case, the rules file's pre-existing denial describes, and
+`no-firestore.spec.ts`. The plan marked all three unchanged, so they carry no `AC-` label in the
+source; the mapping lives in this table instead of in a cosmetic edit to a green test.
+
+## Deferred
+
+- **The README's `ANTHROPIC_API_KEY` setup step** — Secret Manager for a deploy,
+  `functions/.secret.local` for emulator runs. By the plan's T20 this is a Slice 13 checklist item,
+  and it is recorded in `IMPLEMENTATION_PLAN.md` §4's Slice 5 deferral list.
+- **R2's hand-check** — that a real generation survives the Hosting rewrite unbuffered from
+  `asia-south1`, and that Cloud Run delivers the client disconnect. Neither is reachable from an
+  emulator; both are Slice 13.
+- **§9's rows for Slices 1–2 read stale** (`⏭ next` for work already merged). Pre-existing, outside
+  this slice's scope, and left alone deliberately rather than swept into this branch.
