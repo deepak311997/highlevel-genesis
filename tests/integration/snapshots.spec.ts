@@ -1,7 +1,15 @@
 import { Timestamp } from 'firebase-admin/firestore'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
-import { adminDb, framesOf, idTokenFor, postGenerate, resetEmulators, seedUser } from './helpers'
+import {
+  adminDb,
+  framesOf,
+  getJson,
+  idTokenFor,
+  postGenerate,
+  resetEmulators,
+  seedUser,
+} from './helpers'
 
 /**
  * Snapshots and restore, over the wire — AC-6 to AC-8 and AC-10 to AC-19.
@@ -24,6 +32,7 @@ const BOB = 'gensnap-bob@example.test'
 let aliceUid: string
 let aliceToken: string
 let bobUid: string
+let bobToken: string
 
 const auth = (token: string): Record<string, string> => ({ Authorization: `Bearer ${token}` })
 
@@ -129,6 +138,7 @@ beforeAll(async () => {
   aliceUid = await seedUser(ALICE, PASSWORD, true)
   aliceToken = await idTokenFor(ALICE, PASSWORD)
   bobUid = await seedUser(BOB, PASSWORD, true)
+  bobToken = await idTokenFor(BOB, PASSWORD)
 }, 60_000)
 
 beforeEach(async () => {
@@ -343,5 +353,177 @@ describe('a project already holding the cap (AC-10)', () => {
 
     const snapshots = await storedSnapshots(aliceUid, 'gap')
     expect(snapshots.map((snapshot) => snapshot.seq)).toEqual([2, 5, 9, 10])
+  })
+})
+
+/** One version, as the list route answers it. */
+interface SnapshotMetaBody {
+  id: string
+  seq: number
+  createdAt: string
+  origin: string
+  fileCount: number
+  totalBytes: number
+}
+
+const listPath = (projectId: string): string => `/projects/${projectId}/snapshots`
+
+async function listSnapshots(projectId: string, token = aliceToken) {
+  return getJson(listPath(projectId), auth(token))
+}
+
+/** Seed a version straight past the routes — the list has no writer of its own. */
+async function seedSnapshot(
+  uid: string,
+  projectId: string,
+  id: string,
+  seq: number,
+  origin: 'generation' | 'restore' = 'generation',
+): Promise<void> {
+  await adminDb()
+    .doc(`users/${uid}/projects/${projectId}/snapshots/${id}`)
+    .set({
+      seq,
+      createdAt: Timestamp.fromMillis(1_700_000_000_000 + seq * 1000),
+      origin,
+      fileCount: 2,
+      totalBytes: 42,
+    })
+}
+
+/**
+ * AC-11 — the list.
+ *
+ * Newest first, because a version list is read from the top: the version you
+ * want to go back to is nearly always the one you just left. And **no content**,
+ * because a project at both caps is twenty versions of twenty files of 100 KB,
+ * and opening a history sheet must not ship any of it.
+ */
+describe('GET /api/projects/:projectId/snapshots (AC-11)', () => {
+  it('answers newest first, by seq', async () => {
+    await seedProject(aliceUid, 'list')
+    await seedSnapshot(aliceUid, 'list', 'a', 1)
+    await seedSnapshot(aliceUid, 'list', 'b', 3, 'restore')
+    await seedSnapshot(aliceUid, 'list', 'c', 2)
+
+    const res = await listSnapshots('list')
+
+    expect(res.status).toBe(200)
+    const { snapshots } = res.body as { snapshots: SnapshotMetaBody[] }
+    expect(snapshots.map((snapshot) => snapshot.seq)).toEqual([3, 2, 1])
+    expect(snapshots.map((snapshot) => snapshot.id)).toEqual(['b', 'c', 'a'])
+  })
+
+  it('carries the six fields and no content', async () => {
+    await seedProject(aliceUid, 'fields')
+    await seedSnapshot(aliceUid, 'fields', 'a', 1, 'restore')
+
+    const { snapshots } = (await listSnapshots('fields')).body as {
+      snapshots: SnapshotMetaBody[]
+    }
+
+    expect(Object.keys(snapshots[0] ?? {}).sort()).toEqual([
+      'createdAt',
+      'fileCount',
+      'id',
+      'origin',
+      'seq',
+      'totalBytes',
+    ])
+    expect(snapshots[0]?.origin).toBe('restore')
+    // ISO-8601, the project's convention since Slice 2 — not a Firestore shape.
+    expect(snapshots[0]?.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+  })
+
+  it('answers an empty list for a project with no versions', async () => {
+    await seedProject(aliceUid, 'empty')
+
+    const res = await listSnapshots('empty')
+
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ snapshots: [] })
+  })
+
+  /*
+   * The cap matches `SNAPSHOT_LIMIT`, so "you are seeing every version" is a
+   * guarantee rather than a hope — an unpaginated list is only honest if it
+   * cannot truncate. A collection over the cap is reachable only by a prune that
+   * did not run, and the list still refuses to grow past it.
+   */
+  it('returns at most the cap, even when the collection holds more', async () => {
+    await seedProject(aliceUid, 'over')
+    for (let seq = 1; seq <= 25; seq += 1) {
+      await seedSnapshot(aliceUid, 'over', `s-${String(seq).padStart(2, '0')}`, seq)
+    }
+
+    const { snapshots } = (await listSnapshots('over')).body as { snapshots: SnapshotMetaBody[] }
+
+    expect(snapshots).toHaveLength(20)
+    expect(snapshots[0]?.seq).toBe(25)
+  })
+
+  /* A version nothing can read is omitted, exactly as a corrupt file is (D13). */
+  it('omits a version whose document cannot be read', async () => {
+    await seedProject(aliceUid, 'corrupt')
+    await seedSnapshot(aliceUid, 'corrupt', 'good', 2)
+    await adminDb()
+      .doc(`users/${aliceUid}/projects/corrupt/snapshots/bad`)
+      .set({ seq: 1, origin: 'sideways' })
+
+    const { snapshots } = (await listSnapshots('corrupt')).body as { snapshots: SnapshotMetaBody[] }
+
+    expect(snapshots.map((snapshot) => snapshot.id)).toEqual(['good'])
+  })
+
+  it('answers 401 without an Authorization header', async () => {
+    await seedProject(aliceUid, 'list')
+
+    const res = await getJson(listPath('list'))
+
+    expect(res.status).toBe(401)
+    expect((res.body as { code: string }).code).toBe('unauthenticated')
+  })
+
+  it('answers 403 for an unverified address', async () => {
+    const unverified = 'gensnap-unverified@example.test'
+    await seedUser(unverified, PASSWORD, false)
+    await seedProject(aliceUid, 'list')
+
+    const res = await listSnapshots('list', await idTokenFor(unverified, PASSWORD))
+
+    expect(res.status).toBe(403)
+    expect((res.body as { code: string }).code).toBe('email_unverified')
+  })
+
+  it('answers 400 invalid_id for a malformed project id', async () => {
+    const res = await getJson('/projects/not%20an%20id/snapshots', auth(aliceToken))
+
+    expect(res.status).toBe(400)
+    expect((res.body as { code: string }).code).toBe('invalid_id')
+  })
+
+  /*
+   * AC-17's list half. Another user's project is not *addressable* by a request
+   * — the path is composed from the token's uid — so this is a 404 rather than a
+   * refusal, and bob's own history is untouched by the attempt.
+   */
+  it('answers 404 for another user’s project, and leaves it alone', async () => {
+    await seedProject(bobUid, 'bobs')
+    await seedSnapshot(bobUid, 'bobs', 'b1', 1)
+
+    const res = await listSnapshots('bobs')
+
+    expect(res.status).toBe(404)
+    expect((res.body as { code: string }).code).toBe('not_found')
+    expect(await storedSnapshots(bobUid, 'bobs')).toHaveLength(1)
+    expect(((await listSnapshots('bobs', bobToken)).body as { snapshots: unknown[] }).snapshots)
+      .toHaveLength(1)
+  })
+
+  it('answers 404 for a soft-deleted project', async () => {
+    await seedProject(aliceUid, 'gone', Timestamp.fromMillis(1_700_000_900_000))
+    await seedSnapshot(aliceUid, 'gone', 'a', 1)
+
+    expect((await listSnapshots('gone')).status).toBe(404)
   })
 })
