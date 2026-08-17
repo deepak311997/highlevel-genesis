@@ -16,6 +16,9 @@ const store = reactive({
   fileReplaced: false,
   generating: false,
   saveFile: vi.fn(),
+  editContent: vi.fn((text: string) => {
+    store.editorContent = text
+  }),
 })
 
 vi.mock('@/stores/workspace', () => ({ useWorkspaceStore: () => store }))
@@ -177,14 +180,18 @@ describe('FileEditor', () => {
     expect(wrapper.find('[data-testid="file-editor-input"]').exists()).toBe(false)
   })
 
-  /** Editing writes through to the store's buffer — the panel holds no draft. */
+  /**
+   * Editing writes through to the store's **active buffer** — the panel holds no
+   * draft, and since Slice 7 it does not reach into a ref either: `editContent`
+   * is the action, because the buffer it writes depends on which tab is active.
+   */
   it('writes edits back to the store', async () => {
     openFile()
     const wrapper = mount(FileEditor)
 
     await wrapper.find('[data-testid="file-editor-input"]').setValue('<h1>People</h1>\n')
 
-    expect(store.fileContent).toBe('<h1>People</h1>\n')
+    expect(store.editContent).toHaveBeenCalledWith('<h1>People</h1>\n')
   })
 
   /*

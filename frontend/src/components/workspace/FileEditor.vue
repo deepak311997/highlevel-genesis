@@ -101,7 +101,7 @@ function save(): void {
           spellcheck="false"
           :disabled="workspace.generating"
           :aria-label="workspace.selectedPath"
-          @update:model-value="workspace.fileContent = String($event)"
+          @update:model-value="workspace.editContent(String($event))"
         />
       </div>
 
