@@ -30,6 +30,21 @@ import { HlNotConnectedError, HlReconnectRequiredError, HlRefreshUnavailableErro
 const DETAIL_MAX = 200
 
 /**
+ * The largest body worth parsing to find a two-hundred-character message.
+ *
+ * The proxy's cap allows an upstream response of 5 MiB, and every failing one
+ * arrives here. Parsing megabytes to read `message` would make the *error* path
+ * the most expensive path through the proxy — measurably so, around 12 ms of
+ * CPU and 10 MiB of heap on a 5 MiB body — on the one path whose size is chosen
+ * by upstream rather than by us.
+ *
+ * 64 KiB is roughly 700× the largest recorded HighLevel error body
+ * (`location-401-missing-scope.json` is 84 bytes). Anything past it is a page,
+ * a stack trace or a payload, none of which `detail` may carry anyway.
+ */
+const PARSEABLE_MAX = 64 * 1024
+
+/**
  * The user-facing copy, in one map beside the codes.
  *
  * F8.3's strings are read together far more often than they are read one at a
@@ -98,6 +113,8 @@ export function routeRefusal(code: RouteRefusalCode): HttpError {
  * `"[object Object]"`.
  */
 export function detailFrom(raw: string): string | undefined {
+  if (raw.length > PARSEABLE_MAX) return undefined
+
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
