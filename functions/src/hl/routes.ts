@@ -273,6 +273,19 @@ export function matchRoute(
   return { kind: 'matched', row: chosen.row, params }
 }
 
+/**
+ * Whether a flagged row may be reached, given an environment.
+ *
+ * The environment is an *argument* so this module stays pure and testable and
+ * Slice 9 can import the table without dragging `process.env` in; `proxy.ts`
+ * passes `process.env`. Exactly `'true'` enables — see `hlAllowMessageSend`'s
+ * comment for why nothing looser will do.
+ */
+export function isRouteEnabled(row: HlRoute, env: Record<string, string | undefined>): boolean {
+  if (row.flag === undefined) return true
+  return env[row.flag]?.trim() === 'true'
+}
+
 /** The one query and body key we own on every row (P1). */
 const LOCATION_KEY = 'locationId'
 

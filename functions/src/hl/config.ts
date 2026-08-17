@@ -123,3 +123,37 @@ export function hlAuthorizeBase(): string {
 export function hlApiBase(): string {
   return emulatorOverride('HL_TEST_API_BASE') ?? baseUrl('HL_API_BASE', DEFAULT_API_BASE)
 }
+
+/**
+ * Whether `POST /conversations/messages` may be reached (D5).
+ *
+ * **Exactly `'true'`, and nothing else.** The route sends a real SMS or email:
+ * it costs money, it reaches a real person, and in the sandbox it may fail for
+ * want of a provisioned number. A looser reading — "anything but empty", or a
+ * truthiness check — turns a stray `HL_ALLOW_MESSAGE_SEND=0` into a switch that
+ * is on. Off in every environment including the test suite; the row exists so
+ * the surface reads as deliberately safed rather than unimplemented.
+ */
+export function hlAllowMessageSend(): boolean {
+  return process.env['HL_ALLOW_MESSAGE_SEND']?.trim() === 'true'
+}
+
+/**
+ * How long a proxied upstream call may take before it is aborted (D27).
+ *
+ * The `api` function's own timeout is 60 s, so an unbounded upstream call would
+ * burn the whole request budget and answer nothing.
+ */
+export const UPSTREAM_TIMEOUT_MS = 20_000
+
+/**
+ * The same emulator-only override `keepAliveMs()` uses, for the same reason: a
+ * twenty-second case in a suite that runs on every push is a case people
+ * delete. The name appears in no `.env` file, so a shell value survives the
+ * emulator's `.env` precedence — and outside the emulator it is ignored
+ * outright, so no deploy can shorten the real timeout.
+ */
+export function hlUpstreamTimeoutMs(): number {
+  const raw = Number(emulatorOverride('HL_TEST_UPSTREAM_TIMEOUT_MS') ?? '')
+  return Number.isFinite(raw) && raw > 0 ? raw : UPSTREAM_TIMEOUT_MS
+}
