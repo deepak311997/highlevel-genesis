@@ -436,3 +436,28 @@ Against the baseline: +435 unit, +8 rules, +60 integration, +2 e2e. **1,730 case
 Every acceptance criterion in `02-prd.md` has a named passing test; the plan's coverage table
 holds, with the three amendments recorded above (T3's `frames`, T11's `event.truncated`, T18's
 re-read condition) and the smaller deviations noted against their tasks.
+
+## The red post-build gate, and why nothing was fixed
+
+The post-build gate went red twice, and neither failure was a defect in this slice. Both
+`.autopilot/logs/06/gate-post-build.*.log` files are kept, so this records what they were before
+someone reads them as evidence of a bug.
+
+**`gate-post-build.2/3/4.log` — the build's own midpoint, 22:35.** Three identical runs, six
+`vue-tsc` errors: `src/lib/files.spec.ts` and `src/lib/messageParts.spec.ts` could not resolve
+their modules, and `workspace.ts:296` could not narrow the stream event union. That is the red
+half of a red-green cycle caught mid-swing — the gate fired while T13–T16 were between their
+failing tests and their implementations. `files.ts`, `messageParts.ts` and the union's `error`
+arm all landed in the commits that followed, and the errors went with them.
+
+**`gate-post-build.1.log` — after the build, 23:55.** Typecheck, lint and all three unit suites
+passed; `test:rules` never started. The Firestore emulator could not bind 8180, its websocket
+9250, the hub 4700 or the logging port 4800 — every one already held, by a concurrent session's
+emulators still up. `Error: Could not start emulator hub, port taken.` Environmental, and about
+the machine rather than the branch.
+
+Confirming that: all six suites were re-run at `edccbfa` with the ports free, and every one is
+green at the counts in the table above — typecheck, lint, 1,388 unit, 36 rules, 292 integration,
+14 e2e. Both slice-06 e2e cases (`tests/e2e/files.spec.ts:39` and `:128`) are among the 14. No
+production code, test, lint rule or typecheck setting was changed to get there; there was nothing
+to change.
