@@ -207,13 +207,7 @@ describe('toMessage', () => {
   it('never emits a seq key', () => {
     const message = toMessage('msg-1', storedMessageSchema.parse({ ...complete, seq: 1 }))
 
-    expect(Object.keys(message).sort()).toEqual([
-      'content',
-      'createdAt',
-      'id',
-      'role',
-      'truncated',
-    ])
+    expect(Object.keys(message).sort()).toEqual(['content', 'createdAt', 'id', 'role', 'truncated'])
   })
 
   /** AC-40's server half: the flag is on the wire for every message. */
