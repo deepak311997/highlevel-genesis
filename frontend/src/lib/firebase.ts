@@ -1,6 +1,5 @@
 import { initializeApp, type FirebaseApp, type FirebaseOptions } from 'firebase/app'
 import { connectAuthEmulator, getAuth, type Auth } from 'firebase/auth'
-import { connectFirestoreEmulator, getFirestore, type Firestore } from 'firebase/firestore'
 
 const env = import.meta.env
 
@@ -36,18 +35,18 @@ const config: FirebaseOptions = {
 }
 
 /**
- * Firestore lives in a *named* database, not `(default)`.
+ * Auth and App Check, and deliberately **no Firestore handle**.
  *
- * `getFirestore(app)` would silently connect to `(default)`, so the id is
- * passed explicitly here and mirrored by `database` in firebase.json (which is
- * what `firebase deploy --only firestore:rules` targets) and by
- * FIRESTORE_DATABASE_ID in the functions runtime.
+ * The frontend never talks to Firestore: every read and write goes through a
+ * Cloud Function route that verifies the ID token and scopes the query by the
+ * uid inside it, and `firestore.rules` denies every client outright. An exported
+ * `db` nobody reads would be an invitation to read it — and removing it
+ * entirely is what lets the `firebase/firestore` ban be absolute, with no
+ * allowlist to keep current. See CLAUDE.md and
+ * docs/slices/02b-api-data-access/.
  */
-const databaseId = required('VITE_FIREBASE_DATABASE_ID', env.VITE_FIREBASE_DATABASE_ID)
-
 export const app: FirebaseApp = initializeApp(config)
 export const auth: Auth = getAuth(app)
-export const db: Firestore = getFirestore(app, databaseId)
 
 /**
  * Emulators are chosen by **build mode**, never by a runtime flag.
@@ -68,7 +67,6 @@ if (import.meta.env.MODE === 'emulator') {
   connectAuthEmulator(auth, `http://127.0.0.1:${import.meta.env.VITE_AUTH_EMULATOR_PORT}`, {
     disableWarnings: true,
   })
-  connectFirestoreEmulator(db, '127.0.0.1', Number(import.meta.env.VITE_FIRESTORE_EMULATOR_PORT))
 
   // A marker the e2e suite checks before it does anything. Playwright will
   // happily reuse whatever dev server is already on the port, and a

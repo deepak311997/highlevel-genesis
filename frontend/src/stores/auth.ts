@@ -1,9 +1,10 @@
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth'
-import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
 import { defineStore } from 'pinia'
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
 
-import { auth, db } from '@/lib/firebase'
+import { auth } from '@/lib/firebase'
+import { useHlStore } from '@/stores/hl'
+import { useProfileStore } from '@/stores/profile'
 
 /**
  * Session state, and the one thing the router cannot work without: a promise
@@ -15,8 +16,6 @@ import { auth, db } from '@/lib/firebase'
  * sign-in screen and then back — which is the flash the `ready` promise exists
  * to remove.
  */
-export const USERS_COLLECTION = 'users'
-
 export interface AuthStore {
   user: Ref<User | null>
   initialised: Ref<boolean>
@@ -29,7 +28,6 @@ export interface AuthStore {
   signIn: (email: string, password: string) => Promise<void>
   signOutNow: () => Promise<void>
   refreshVerification: () => Promise<boolean>
-  ensureProfile: () => Promise<void>
 }
 
 export const useAuthStore = defineStore('auth', (): AuthStore => {
@@ -71,8 +69,26 @@ export const useAuthStore = defineStore('auth', (): AuthStore => {
     await signInWithEmailAndPassword(auth, address, password)
   }
 
+  /**
+   * End the session, and empty what the session filled.
+   *
+   * Signing out is a route change, not a page load, so Pinia survives it along
+   * with everything the previous user fetched. The next person to sign in on the
+   * same browser would otherwise get a dashboard rendered from the last one's
+   * data — their address in the account card, their CRM location in the
+   * connection panel — until each refetch lands.
+   *
+   * This is lifecycle, not data access: the auth store still knows nothing about
+   * how a profile or a connection is loaded, only that both belong to a session
+   * that has just ended. Doing it here rather than in each view is what stops
+   * the next sign-out button, and the next resource store, from having to
+   * remember. A store added later joins this list; there is nowhere else it can
+   * be forgotten.
+   */
   async function signOutNow(): Promise<void> {
     await signOut(auth)
+    useProfileStore().reset()
+    useHlStore().reset()
   }
 
   /**
@@ -80,9 +96,10 @@ export const useAuthStore = defineStore('auth', (): AuthStore => {
    *
    * Both halves are required. `reload()` updates this User object, but
    * `emailVerified` also travels as a *claim inside the ID token*, and that
-   * token does not refresh on its own — Firestore rules read the claim, so
-   * without `getIdToken(true)` a just-verified user reaches the dashboard and
-   * then has every read denied by a stale claim.
+   * token does not refresh on its own — every API route reads the claim through
+   * `withVerifiedUser`, so without `getIdToken(true)` a just-verified user
+   * reaches the dashboard and then has every request answered 403 by a stale
+   * claim.
    */
   async function refreshVerification(): Promise<boolean> {
     const current = user.value
@@ -91,44 +108,6 @@ export const useAuthStore = defineStore('auth', (): AuthStore => {
     await current.reload()
     await current.getIdToken(true)
     return current.emailVerified
-  }
-
-  /**
-   * Create or touch `users/{uid}`.
-   *
-   * Idempotent and run at the start of every verified session, so a sign-up
-   * interrupted before the document was written heals itself on the next visit
-   * rather than leaving an account with no profile.
-   *
-   * Never runs while unverified: the rules require the `email_verified` claim
-   * on create, so an early call could only ever be denied.
-   *
-   * Failure is swallowed. This document is a convenience, not a precondition
-   * for having a session — refusing to let someone in because a profile write
-   * failed would trade a real capability for a cosmetic one.
-   */
-  async function ensureProfile(): Promise<void> {
-    const current = user.value
-    if (current?.emailVerified !== true) return
-
-    const ref = doc(db, USERS_COLLECTION, current.uid)
-    try {
-      const snapshot = await getDoc(ref)
-      if (snapshot.exists()) {
-        // Only the two mutable fields; the rules reject anything touching
-        // `email` or `createdAt`.
-        await updateDoc(ref, { updatedAt: serverTimestamp() })
-      } else {
-        await setDoc(ref, {
-          email: current.email ?? '',
-          displayName: current.displayName,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        })
-      }
-    } catch {
-      // Intentionally silent — see above.
-    }
   }
 
   return {
@@ -143,6 +122,5 @@ export const useAuthStore = defineStore('auth', (): AuthStore => {
     signIn,
     signOutNow,
     refreshVerification,
-    ensureProfile,
   }
 })

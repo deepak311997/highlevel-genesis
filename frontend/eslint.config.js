@@ -85,10 +85,22 @@ export default tseslint.config(
        * too, back when we sent mail ourselves and two senders would have meant
        * two differently-branded emails for one action. Firebase is now the only
        * sender, so they are the intended path and the ban is lifted.
+       *
+       * `firebase/firestore` is banned outright, with no exception and so no
+       * allowlist to keep current. `patterns` rather than `paths` so the
+       * subpaths — `firebase/firestore/lite` among them — are covered by the
+       * same entry.
        */
       'no-restricted-imports': [
         'error',
         {
+          patterns: [
+            {
+              group: ['firebase/firestore', 'firebase/firestore/*'],
+              message:
+                'The frontend never talks to Firestore directly. Every read and write goes through a Cloud Function route that verifies the ID token and scopes the query by the uid in it — see CLAUDE.md and docs/slices/02b-api-data-access/.',
+            },
+          ],
           paths: [
             {
               name: 'firebase/auth',

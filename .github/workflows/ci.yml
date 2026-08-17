@@ -72,3 +72,10 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # The third layer of the Firestore ban, and the only one that can see a
+      # transitive pull: the ESLint rule and the frontend/src source scan both
+      # read our own code, so neither would notice a dependency importing the
+      # SDK on our behalf. Runs after Build because it reads the artefact.
+      - name: No Firestore SDK in the bundle
+        run: node scripts/check-no-firestore.mjs frontend/dist

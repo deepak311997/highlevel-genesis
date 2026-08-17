@@ -17,7 +17,7 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 | 0 — Rails | ✅ merged to `main` |
 | 1 — Account & session | ✅ merged to `main` |
 | 2 — HighLevel connection | ✅ merged to `main` |
-| 2b — API-only data access | ⏭ next — a retroactive architecture change, and a prerequisite for 3 |
+| 2b — API-only data access | ✅ shipped — PR open, awaiting merge |
 | 3–13 | not started |
 
 **Slices from here run unattended.** `scripts/autopilot.sh` drives the five-stage loop
@@ -32,8 +32,16 @@ been red since Slice 1: `vite.config.ts` threw at config load on any checkout wi
 8080 — the *development* emulator — so off CI it "passed" by finding a dev session, loading
 its rules over that session's and calling `clearFirestore()` on it.
 
-**Suite, measured after the review's fixes:** typecheck 0 · lint 0 · **275 unit** ·
-16 rules · 34 integration · **2 e2e**.
+**Suite, re-run in full on `slice/02b-api-data-access` at ship time (2026-08-17):**
+typecheck 0 · lint 0 · **476 unit** (183 functions · 282 frontend · 11 scripts) ·
+**12 rules** · **86 integration** · **4 e2e**. All six green.
+
+The rules suite went 19 cases on `main` to 12 — it shrank, deliberately. Slice 2b collapsed
+`users/{uid}` to deny-all, so the four `assertSucceeds` cases that asserted a *permitted*
+client write have nothing left to permit, and the field-level allowlist cases they anchored
+went with them. Every remaining case is an `assertFails`; there is no `assertSucceeds`
+import in the file any more, which is the statement `firestore.rules` should now make.
+(The `16 rules` figure this line previously carried predated Slice 2.)
 
 **Scope grew in Slice 1 and it was the right call**, but it needs saying out loud: what the
 brief specifies as "email + password sign up/sign in" shipped as a non-disclosing

@@ -8,15 +8,19 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { consumeRedirect } from '@/lib/redirect'
 import { useAuthStore } from '@/stores/auth'
+import { useProfileStore } from '@/stores/profile'
 
 /**
  * The blocking gate.
  *
  * A signed-in but unverified user is held here and cannot reach any
  * application route. The session is allowed to exist while they wait, which is
- * safe because it can do nothing: Firestore rules deny an unverified token
- * every read and write, so this screen is an affordance layered over an
- * enforcement boundary that already holds.
+ * safe because it can do nothing: every API route runs through
+ * `withVerifiedUser`, which reads `email_verified` off the ID token and answers
+ * 403 without it, and `firestore.rules` denies every client outright. So this
+ * screen is an affordance layered over an enforcement boundary that already
+ * holds — server-side, where a route guard cannot be bypassed by not using a
+ * browser.
  *
  * Polls rather than requiring a click, so verifying in a second tab releases
  * this one on its own.
@@ -37,6 +41,7 @@ type State =
   | { kind: 'failed'; message: string }
 
 const auth = useAuthStore()
+const profile = useProfileStore()
 const router = useRouter()
 const state = ref<State>({ kind: 'waiting' })
 const stillUnverified = ref(false)
@@ -57,16 +62,16 @@ let timer: ReturnType<typeof setInterval> | undefined
  * Release the user, but only after the ID token has been refreshed.
  *
  * `refreshVerification` forces that refresh. Skipping it is the trap: the
- * dashboard would load and then fail every Firestore read against a stale
- * `email_verified` claim — a working page followed by permission errors, which
- * is far harder to diagnose than a page that simply does not load.
+ * dashboard would load and then have every API call answered 403 against a
+ * stale `email_verified` claim — a working page followed by permission errors,
+ * which is far harder to diagnose than a page that simply does not load.
  */
 async function releaseIfVerified(): Promise<boolean> {
   const verified = await auth.refreshVerification()
   if (!verified) return false
 
   stop()
-  await auth.ensureProfile()
+  await profile.ensure()
   await router.push(consumeRedirect(router.getRoutes().map((r) => r.path)))
   return true
 }

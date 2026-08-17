@@ -22,8 +22,9 @@ let cached: Firestore | undefined
  *
  * 1. It does not call `getFirestore()` with no argument, which would connect to
  *    `(default)` — a database this project does not keep its data in. The id is
- *    mirrored by `database` in firebase.json and VITE_FIREBASE_DATABASE_ID in
- *    the frontend.
+ *    mirrored by `database` in firebase.json. There is no frontend counterpart
+ *    any more: the browser has no Firestore handle, because every read and
+ *    write goes through a route on this side.
  * 2. It does not read the environment at module scope. `firebase deploy` loads
  *    and analyses the module before injecting functions/.env, so a top-level
  *    throw fails the deploy rather than the request. Resolving on first use

@@ -33,6 +33,8 @@ export interface HlStore {
   connect: () => Promise<void>
   disconnect: () => Promise<void>
   noteCallbackError: (code: string) => void
+  /** Forget everything fetched for the session that just ended. */
+  reset: () => void
 }
 
 export const useHlStore = defineStore('hl', (): HlStore => {
@@ -121,6 +123,21 @@ export const useHlStore = defineStore('hl', (): HlStore => {
     lastError.value = code
   }
 
+  /**
+   * A connection belongs to one account, and signing out is a route change
+   * rather than a page load — so without this the next person to sign in on the
+   * same browser sees the last one's CRM location named in the panel until their
+   * own refresh lands. `status` matters as much as the rest: left non-null, it
+   * suppresses the loading state that would otherwise hide the stale value.
+   */
+  function reset(): void {
+    status.value = null
+    loading.value = false
+    busy.value = false
+    error.value = null
+    lastError.value = null
+  }
+
   return {
     status,
     loading,
@@ -134,5 +151,6 @@ export const useHlStore = defineStore('hl', (): HlStore => {
     connect,
     disconnect,
     noteCallbackError,
+    reset,
   }
 })

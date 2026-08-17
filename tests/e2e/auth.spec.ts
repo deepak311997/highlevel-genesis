@@ -15,9 +15,11 @@ import { latestCodeFor, resetEmulators } from '../integration/helpers'
  *  - `/auth/action` renders while the session is signed-in-and-unverified. Every
  *    other route redirects in that state, and if this one did too, verification
  *    would be unreachable — a deadlock no amount of component testing catches.
- *  - The dashboard loads *and its Firestore read succeeds* after verifying,
- *    which is only true because the ID token was refreshed. Without that the
- *    page renders and then fails, which looks like a working app until it isn't.
+ *  - The dashboard loads *and its profile request succeeds* after verifying,
+ *    which is only true because the ID token was refreshed: `withVerifiedUser`
+ *    reads `email_verified` off the token on every API route, so a stale claim
+ *    turns the account card into an error state. Without the refresh the page
+ *    renders and then fails, which looks like a working app until it isn't.
  */
 
 const PASSWORD = 'Correct-Horse-9'
@@ -106,14 +108,25 @@ test.describe('Slice 01 — account and session', () => {
     await page.click('button:has-text("Continue")')
     await expect(page).toHaveURL(/\/dashboard/)
 
-    // Reading this element means the Firestore-backed session is live and the
-    // refreshed token satisfied the rules.
+    /*
+     * AC-28. The address on this card came from `PUT /api/users/me` — there is
+     * no Firestore client in the bundle at all — so reading it means the
+     * refreshed ID token satisfied `withVerifiedUser`'s `email_verified` check
+     * on the profile route. `account-member-since` is asserted alongside it
+     * because it is derived from the stored `createdAt`, which only exists if
+     * the server actually wrote the document.
+     */
+    await expect(page.getByTestId('account-card')).toBeVisible()
     await expect(page.getByTestId('dashboard-email')).toHaveText(email)
+    await expect(page.getByTestId('account-member-since')).toContainText('Member since')
 
-    // Session persists across a full reload.
+    // Session persists across a full reload — and so does the profile, which on
+    // the second visit is a touch rather than a create.
     await page.reload()
     await expect(page).toHaveURL(/\/dashboard/)
+    await expect(page.getByTestId('account-card')).toBeVisible()
     await expect(page.getByTestId('dashboard-email')).toHaveText(email)
+    await expect(page.getByTestId('account-member-since')).toContainText('Member since')
 
     await page.click('button:has-text("Sign out")')
     await expect(page).toHaveURL(/\/signin/)

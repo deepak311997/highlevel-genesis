@@ -2,7 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const refreshVerification = vi.hoisted(() => vi.fn())
-const ensureProfile = vi.hoisted(() => vi.fn())
+const ensure = vi.hoisted(() => vi.fn())
 const signOutNow = vi.hoisted(() => vi.fn())
 const sendEmailVerification = vi.hoisted(() => vi.fn())
 const markVerificationSent = vi.hoisted(() => vi.fn())
@@ -19,10 +19,11 @@ vi.mock('@/stores/auth', () => ({
     },
     markVerificationSent,
     refreshVerification,
-    ensureProfile,
     signOutNow,
   }),
 }))
+
+vi.mock('@/stores/profile', () => ({ useProfileStore: () => ({ ensure }) }))
 
 vi.mock('firebase/auth', () => ({ sendEmailVerification }))
 
@@ -56,7 +57,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.useFakeTimers()
   refreshVerification.mockResolvedValue(false)
-  ensureProfile.mockResolvedValue(undefined)
+  ensure.mockResolvedValue(undefined)
   signOutNow.mockResolvedValue(undefined)
   sendEmailVerification.mockResolvedValue(undefined)
   consumeRedirect.mockReturnValue('/dashboard')
@@ -99,14 +100,14 @@ describe('VerifyEmailView', () => {
     expect(push).toHaveBeenCalledWith('/dashboard')
   })
 
-  it('writes the profile once released', async () => {
+  it('ensures the profile once released', async () => {
     refreshVerification.mockResolvedValue(true)
     const wrapper = mount(VerifyEmailView)
 
     await clickButton(wrapper, "I've verified")
     await flushPromises()
 
-    expect(ensureProfile).toHaveBeenCalled()
+    expect(ensure).toHaveBeenCalled()
   })
 
   it('returns the user to where they were originally headed', async () => {

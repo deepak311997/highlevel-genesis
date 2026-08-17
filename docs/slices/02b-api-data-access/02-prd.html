@@ -1,0 +1,838 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>One Door — Slice 02b design companion</title>
+
+<style>
+  /* ---------------------------------------------------------------
+     Identity: a sealed room with one door. The slice is about
+     removing a second way in, so the page is drawn in flat plan —
+     hairline rules, plate labels, one accent for the single route
+     that remains and one for everything the wall now refuses.
+     Every colour is a token, so both themes come from one set.
+     ------------------------------------------------------------ */
+  :root {
+    --paper:      #f4f5f6;
+    --surface:    #ffffff;
+    --surface-2:  #e9ebed;
+    --ink:        #14181c;
+    --ink-soft:   #4c555e;
+    --ink-faint:  #7b848d;
+    --rule:       #d2d6da;
+    --rule-soft:  #e3e6e8;
+
+    /* the one route through the wall */
+    --route:      #0f6b70;
+    --route-wash: #e0efef;
+    /* what the wall refuses */
+    --deny:       #a3242b;
+    --deny-wash:  #f8e7e8;
+    /* the server side of the boundary */
+    --server:     #3b4790;
+    --server-wash:#e7e9f6;
+    /* stored data */
+    --store:      #86560f;
+    --store-wash: #f6ecdc;
+    /* a good outcome */
+    --good:       #226b4f;
+    --good-wash:  #e2efe8;
+
+    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+    --measure: 68ch;
+    --gutter: clamp(1.15rem, 4vw, 3rem);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0d1116;
+      --surface:    #151b21;
+      --surface-2:  #1d252d;
+      --ink:        #e5e9ec;
+      --ink-soft:   #a6b0ba;
+      --ink-faint:  #77828d;
+      --rule:       #29323b;
+      --rule-soft:  #202830;
+
+      --route:      #5fc9ce;
+      --route-wash: #10282a;
+      --deny:       #ea8388;
+      --deny-wash:  #2d1a1c;
+      --server:     #9aa4e6;
+      --server-wash:#1a1e33;
+      --store:      #dfa95c;
+      --store-wash: #2a2115;
+      --good:       #6dbf98;
+      --good-wash:  #13251d;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #0d1116;
+    --surface:    #151b21;
+    --surface-2:  #1d252d;
+    --ink:        #e5e9ec;
+    --ink-soft:   #a6b0ba;
+    --ink-faint:  #77828d;
+    --rule:       #29323b;
+    --rule-soft:  #202830;
+    --route:      #5fc9ce;
+    --route-wash: #10282a;
+    --deny:       #ea8388;
+    --deny-wash:  #2d1a1c;
+    --server:     #9aa4e6;
+    --server-wash:#1a1e33;
+    --store:      #dfa95c;
+    --store-wash: #2a2115;
+    --good:       #6dbf98;
+    --good-wash:  #13251d;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.62;
+  }
+
+  .wrap {
+    max-width: 1060px;
+    margin: 0 auto;
+    padding: clamp(2rem, 6vw, 4.5rem) var(--gutter) 6rem;
+  }
+
+  .prose { max-width: var(--measure); }
+
+  /* ---- masthead ---------------------------------------------- */
+  header.masthead {
+    border-top: 3px solid var(--ink);
+    border-bottom: 1px solid var(--rule);
+    padding: 1.1rem 0 1.6rem;
+    margin-bottom: 2.6rem;
+  }
+
+  .kicker {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 0.9rem;
+  }
+
+  h1 {
+    font-size: clamp(2.1rem, 6vw, 3.4rem);
+    line-height: 1.02;
+    letter-spacing: -0.02em;
+    font-weight: 800;
+    margin: 0 0 0.7rem;
+  }
+
+  .standfirst {
+    font-size: clamp(1.02rem, 2.2vw, 1.2rem);
+    color: var(--ink-soft);
+    max-width: var(--measure);
+    margin: 0 0 1.3rem;
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem 1.4rem;
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    color: var(--ink-faint);
+  }
+  .meta b { color: var(--ink-soft); font-weight: 600; }
+
+  h2 {
+    font-size: clamp(1.3rem, 3vw, 1.65rem);
+    letter-spacing: -0.01em;
+    font-weight: 750;
+    margin: 3.4rem 0 0.5rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid var(--rule);
+  }
+
+  h3 {
+    font-size: 1.02rem;
+    font-weight: 700;
+    margin: 2rem 0 0.4rem;
+  }
+
+  p { margin: 0 0 1rem; }
+  .prose p { max-width: var(--measure); }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.87em;
+    background: var(--surface-2);
+    border-radius: 3px;
+    padding: 0.08em 0.34em;
+  }
+
+  strong { font-weight: 680; }
+
+  /* ---- figures ------------------------------------------------ */
+  figure {
+    margin: 1.9rem 0 2.4rem;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    padding: 1.25rem 1.25rem 1rem;
+  }
+
+  .scroll { overflow-x: auto; }
+
+  figure svg { display: block; width: 100%; height: auto; min-width: 660px; }
+
+  figcaption {
+    margin-top: 0.9rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--rule-soft);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: var(--ink-soft);
+  }
+  figcaption b { color: var(--ink); font-weight: 650; }
+
+  /* svg text defaults */
+  .svg-label { font-family: var(--font-body); font-size: 13px; font-weight: 650; fill: var(--ink); }
+  .svg-sub   { font-family: var(--font-mono); font-size: 11px; fill: var(--ink-soft); }
+  .svg-tiny  { font-family: var(--font-mono); font-size: 10px; fill: var(--ink-faint); }
+  .svg-panel { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.13em; text-transform: uppercase; fill: var(--ink-faint); }
+  .svg-num   { font-family: var(--font-mono); font-size: 11px; font-weight: 700; fill: var(--surface); }
+
+  .box       { fill: var(--surface-2); stroke: var(--rule); stroke-width: 1.5; }
+  .box-server{ fill: var(--server-wash); stroke: var(--server); stroke-width: 1.5; }
+  .box-store { fill: var(--store-wash); stroke: var(--store); stroke-width: 1.5; }
+  .box-deny  { fill: var(--deny-wash); stroke: var(--deny); stroke-width: 1.5; }
+  .box-good  { fill: var(--good-wash); stroke: var(--good); stroke-width: 1.5; }
+  .box-route { fill: var(--route-wash); stroke: var(--route); stroke-width: 1.5; }
+
+  .ln-route  { stroke: var(--route); stroke-width: 2; fill: none; }
+  .ln-server { stroke: var(--server); stroke-width: 2; fill: none; }
+  .ln-store  { stroke: var(--store); stroke-width: 2; fill: none; }
+  .ln-deny   { stroke: var(--deny); stroke-width: 2; fill: none; }
+  .ln-good   { stroke: var(--good); stroke-width: 2; fill: none; }
+  .ln-wall   { stroke: var(--ink-faint); stroke-width: 1.5; stroke-dasharray: 5 5; fill: none; }
+
+  /* One marker per colour — context-stroke renders black where it is
+     unsupported, which is invisible on paper and wrong on ink. */
+  .mk-route  { fill: var(--route); }
+  .mk-server { fill: var(--server); }
+  .mk-store  { fill: var(--store); }
+  .mk-deny   { fill: var(--deny); }
+  .mk-good   { fill: var(--good); }
+
+  .fill-route { fill: var(--route); }
+  .fill-deny  { fill: var(--deny); }
+  .fill-good  { fill: var(--good); }
+  .fill-ink   { fill: var(--ink); }
+  .t-route { fill: var(--route); font-weight: 650; }
+  .t-deny  { fill: var(--deny);  font-weight: 650; }
+  .t-good  { fill: var(--good);  font-weight: 650; }
+
+  /* ---- endpoint cards ---------------------------------------- */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+    gap: 1rem;
+    margin: 1.6rem 0 2rem;
+  }
+
+  .card {
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    background: var(--surface);
+    padding: 1.05rem 1.15rem 1.15rem;
+  }
+
+  .card .verb {
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    font-weight: 700;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-bottom: 0.15rem;
+  }
+  .card .verb .m { color: var(--route); }
+  .card .verb .p { color: var(--ink); }
+
+  .card .note { font-size: 0.82rem; color: var(--ink-faint); margin: 0 0 0.8rem; }
+
+  .rows { display: grid; gap: 0.36rem; }
+
+  .row {
+    display: grid;
+    grid-template-columns: 3.4rem 1fr;
+    gap: 0.7rem;
+    align-items: start;
+    font-size: 0.83rem;
+    line-height: 1.45;
+  }
+
+  .status {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 0.78rem;
+    padding: 0.08rem 0.32rem;
+    border-radius: 3px;
+    text-align: center;
+  }
+  .s2 { color: var(--good); background: var(--good-wash); }
+  .s4 { color: var(--deny); background: var(--deny-wash); }
+
+  .row code { background: none; padding: 0; color: var(--ink-soft); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.85rem; }
+  .chip {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0.16rem 0.44rem;
+    border-radius: 999px;
+    border: 1px solid var(--rule);
+    color: var(--ink-soft);
+    background: var(--surface-2);
+  }
+  .chip.on { color: var(--route); border-color: var(--route); background: var(--route-wash); }
+  .chip.off { color: var(--ink-faint); }
+
+  /* ---- tables -------------------------------------------------- */
+  .tablewrap { overflow-x: auto; margin: 1.4rem 0 2rem; }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 560px;
+    font-size: 0.87rem;
+  }
+
+  th, td {
+    text-align: left;
+    vertical-align: top;
+    padding: 0.6rem 0.8rem 0.6rem 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+
+  th {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 600;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  td.id { font-family: var(--font-mono); font-weight: 700; color: var(--deny); white-space: nowrap; }
+
+  /* ---- pointer ------------------------------------------------- */
+  .pointer {
+    border-left: 3px solid var(--route);
+    background: var(--route-wash);
+    padding: 0.9rem 1.1rem;
+    border-radius: 0 8px 8px 0;
+    font-size: 0.9rem;
+    margin: 2rem 0;
+    max-width: var(--measure);
+  }
+  .pointer p { margin: 0; }
+
+  footer {
+    margin-top: 4rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid var(--rule);
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--ink-faint);
+  }
+</style>
+</head>
+
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <p class="kicker">Genesis · Slice 02b · design companion</p>
+  <h1>One door</h1>
+  <p class="standfirst">
+    The browser had two ways to reach the database. This slice removes one of them, and the
+    interesting part is not the route it adds — it is the shape of the route, chosen so that the
+    mistake this slice exists to prevent has nowhere to happen.
+  </p>
+  <div class="meta">
+    <span><b>Spec</b> F9.4</span>
+    <span><b>Branch</b> slice/02b-api-data-access</span>
+    <span><b>Depends on</b> Slice 2</span>
+    <span><b>Date</b> 2026-08-17</span>
+  </div>
+</header>
+
+<div class="prose">
+  <p>
+    The acceptance criteria, the decisions and the test matrix live in
+    <code>02-prd.md</code>, which is the contract the build is graded against. This page carries
+    only the four things that are faster to see than to read: the boundary that moves, the trap
+    the route shape closes, where a failed profile fetch lands, and where the slice's risk sits
+    across the five test levels.
+  </p>
+</div>
+
+<h2>The boundary, before and after</h2>
+
+<div class="prose">
+  <p>
+    Slice 1 let the browser write <code>users/{uid}</code> directly, with Firestore rules as the
+    enforcement. Slice 2 kept <code>hlConnections/{uid}</code> unreachable from any client and put
+    a Cloud Function in front of it. Both patterns are defensible; carrying both is not, because
+    the rules file then has to be read twice — once as enforcement, once as backstop — and
+    nothing in it says which block is which.
+  </p>
+</div>
+
+<figure>
+  <div class="scroll">
+  <svg viewBox="0 0 940 356" role="img"
+       aria-label="Two panels. Before: the browser reaches Firestore twice — once through the api Cloud Function and once directly with the client SDK, where owner-scoped rules decide. After: the direct arrow is gone and stopped at the wall; the browser reaches Firestore only through the api function, and every rules block reads deny.">
+    <defs>
+      <marker id="f1-route" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path class="mk-route" d="M0,0 L10,5 L0,10 z"/>
+      </marker>
+      <marker id="f1-store" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path class="mk-store" d="M0,0 L10,5 L0,10 z"/>
+      </marker>
+      <marker id="f1-deny" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path class="mk-deny" d="M0,0 L10,5 L0,10 z"/>
+      </marker>
+    </defs>
+
+    <!-- ============ PANEL A : BEFORE ============ -->
+    <text class="svg-panel" x="14" y="20">Before — main, today</text>
+
+    <!-- trust boundary -->
+    <line class="ln-wall" x1="196" y1="40" x2="196" y2="316"/>
+    <text class="svg-tiny" x="200" y="312">trust boundary</text>
+
+    <!-- browser -->
+    <rect class="box" x="14" y="96" width="140" height="66" rx="7"/>
+    <text class="svg-label" x="30" y="124">Vue SPA</text>
+    <text class="svg-sub"   x="30" y="142">firebase/auth</text>
+    <text class="svg-sub"   x="30" y="156" style="fill: var(--store);">firebase/firestore</text>
+
+    <!-- function -->
+    <rect class="box-server" x="246" y="62" width="196" height="56" rx="7"/>
+    <text class="svg-label" x="262" y="86">Cloud Function <tspan class="svg-sub">api</tspan></text>
+    <text class="svg-sub"   x="262" y="104">token → uid → Admin SDK</text>
+
+    <!-- firestore -->
+    <rect class="box-store" x="246" y="180" width="196" height="112" rx="7"/>
+    <text class="svg-label" x="262" y="204">Firestore</text>
+    <text class="svg-sub"   x="262" y="226">users/{uid}</text>
+    <text class="svg-sub"   x="262" y="240" style="fill: var(--store);">allow read, write: if owner</text>
+    <text class="svg-sub"   x="262" y="262">hlConnections/{uid}</text>
+    <text class="svg-sub"   x="262" y="276" style="fill: var(--deny);">allow read, write: if false</text>
+
+    <!-- arrows -->
+    <path class="ln-route" d="M154,112 C200,104 208,90 246,90" marker-end="url(#f1-route)"/>
+    <text class="svg-tiny" x="160" y="82">/api/hl/*</text>
+
+    <path class="ln-store" d="M154,146 C200,152 210,196 246,214" marker-end="url(#f1-store)"/>
+    <text class="svg-tiny" x="118" y="196">getDoc · setDoc · updateDoc</text>
+    <text class="svg-tiny" x="118" y="210">rules are the enforcement</text>
+
+    <path class="ln-server" d="M344,118 L344,180" marker-end="url(#f1-route)" style="stroke: var(--server);"/>
+
+    <!-- ============ PANEL B : AFTER ============ -->
+    <line class="ln-wall" x1="470" y1="14" x2="470" y2="330" style="stroke: var(--rule); stroke-dasharray: none;"/>
+
+    <text class="svg-panel" x="502" y="20">After — this slice</text>
+
+    <!-- the wall: solid, not dashed -->
+    <line x1="684" y1="40" x2="684" y2="316" style="stroke: var(--deny); stroke-width: 3;"/>
+    <text class="svg-tiny" x="688" y="312" style="fill: var(--deny);">rules deny every client</text>
+
+    <!-- browser -->
+    <rect class="box" x="502" y="96" width="140" height="66" rx="7"/>
+    <text class="svg-label" x="518" y="124">Vue SPA</text>
+    <text class="svg-sub"   x="518" y="142">firebase/auth</text>
+    <text class="svg-sub"   x="518" y="156" style="fill: var(--ink-faint);">no firestore SDK</text>
+
+    <!-- the one door -->
+    <rect class="box-route" x="660" y="70" width="48" height="40" rx="4"/>
+    <text class="svg-tiny" x="666" y="94" style="fill: var(--route); font-weight: 700;">door</text>
+
+    <!-- function -->
+    <rect class="box-server" x="734" y="62" width="192" height="56" rx="7"/>
+    <text class="svg-label" x="750" y="86">Cloud Function <tspan class="svg-sub">api</tspan></text>
+    <text class="svg-sub"   x="750" y="104">uid from the token, always</text>
+
+    <!-- firestore -->
+    <rect class="box-store" x="734" y="180" width="192" height="112" rx="7"/>
+    <text class="svg-label" x="750" y="204">Firestore</text>
+    <text class="svg-sub"   x="750" y="226">users/{uid}</text>
+    <text class="svg-sub"   x="750" y="240" style="fill: var(--deny);">allow read, write: if false</text>
+    <text class="svg-sub"   x="750" y="262">hlConnections/{uid}</text>
+    <text class="svg-sub"   x="750" y="276" style="fill: var(--deny);">allow read, write: if false</text>
+
+    <!-- allowed arrow through the door -->
+    <path class="ln-route" d="M642,110 C666,102 676,92 734,90" marker-end="url(#f1-route)"/>
+    <text class="svg-tiny" x="608" y="80">/api/users/me</text>
+
+    <!-- blocked arrow -->
+    <path class="ln-deny" d="M642,146 C660,154 664,180 672,196" stroke-dasharray="5 4"/>
+    <line class="ln-deny" x1="662" y1="188" x2="686" y2="212"/>
+    <line class="ln-deny" x1="686" y1="188" x2="662" y2="212"/>
+    <text class="svg-tiny" x="502" y="212" style="fill: var(--deny);">client SDK removed —</text>
+    <text class="svg-tiny" x="502" y="226" style="fill: var(--deny);">and denied if it returned</text>
+
+    <path class="ln-server" d="M830,118 L830,180" marker-end="url(#f1-route)" style="stroke: var(--server);"/>
+    <text class="svg-tiny" x="838" y="154">Admin SDK</text>
+  </svg>
+  </div>
+  <figcaption>
+    <b>The claim:</b> after this slice every <code>match</code> block in <code>firestore.rules</code>
+    is a denial. That is what turns the rules file from a mixed document — part enforcement, part
+    backstop — into a single statement, and it is what makes a mistake inside a route a bug
+    rather than a breach. The cost is real and named in the PRD: no <code>onSnapshot</code>,
+    so liveness is a refetch after a mutation.
+  </figcaption>
+</figure>
+
+<h2>The trap, and why the path closes it</h2>
+
+<div class="prose">
+  <p>
+    <code>IMPLEMENTATION_PLAN.md</code> names the hazard for this slice exactly: <em>a route that
+    authenticates the caller and then trusts a <code>uid</code> from the request body.</em> The
+    usual defence is an equality check between the token's uid and the one in the request. It
+    works, and it is one forgotten line — or one copy-paste into the next route — away from a
+    cross-tenant write. So the defence here is not a check. It is a request shape with nowhere to
+    put the second uid.
+  </p>
+</div>
+
+<figure>
+  <div class="scroll">
+  <svg viewBox="0 0 940 404" role="img"
+       aria-label="Two request designs compared. The rejected design routes on a uid path parameter, so a request authenticated as alice can name bob and only an equality check stands between them; if that check is missing the handler writes bob's document. The chosen design routes on the literal word me and rejects unknown body keys, so a request has no field capable of naming bob and the handler can only ever write the token's own uid.">
+    <defs>
+      <marker id="f2-deny" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path class="mk-deny" d="M0,0 L10,5 L0,10 z"/>
+      </marker>
+      <marker id="f2-good" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path class="mk-good" d="M0,0 L10,5 L0,10 z"/>
+      </marker>
+    </defs>
+
+    <!-- ROW A : rejected -->
+    <text class="svg-panel" x="14" y="22">Rejected — uid in the path, guarded by a check</text>
+
+    <rect class="box" x="14" y="38" width="336" height="132" rx="7"/>
+    <text class="svg-sub" x="30" y="62" style="fill: var(--ink-faint);">request, authenticated as alice</text>
+    <text class="svg-sub" x="30" y="86">Authorization: Bearer …</text>
+    <text class="svg-tiny" x="240" y="86" style="fill: var(--good);">uid = alice ✓</text>
+    <text class="svg-sub" x="30" y="112" style="fill: var(--deny);">PUT /api/users/<tspan style="font-weight:700">bob</tspan></text>
+    <text class="svg-tiny" x="240" y="112" style="fill: var(--deny);">a second uid</text>
+    <text class="svg-sub" x="30" y="138">{ }</text>
+    <text class="svg-tiny" x="30" y="158" style="fill: var(--ink-faint);">two identities in one request; code decides</text>
+
+    <path class="ln-deny" d="M356,104 L436,104" marker-end="url(#f2-deny)"/>
+
+    <rect class="box-deny" x="446" y="38" width="480" height="132" rx="7"/>
+    <text class="svg-label" x="464" y="62">The handler must remember to compare them</text>
+    <text class="svg-sub" x="464" y="88" style="fill: var(--ink-soft);">if (req.params.uid !== tokenUid) throw 403   ← present: safe</text>
+    <text class="svg-sub" x="464" y="110" style="fill: var(--deny); font-weight: 700;">…line omitted, or copied without it   ← alice writes bob</text>
+    <text class="svg-tiny" x="464" y="136" style="fill: var(--ink-soft);">The failure is silent: tests written by the same author</text>
+    <text class="svg-tiny" x="464" y="150" style="fill: var(--ink-soft);">call the route with their own uid and pass.</text>
+
+    <!-- ROW B : chosen -->
+    <text class="svg-panel" x="14" y="238">Chosen — the second uid is inexpressible</text>
+
+    <rect class="box" x="14" y="254" width="336" height="132" rx="7"/>
+    <text class="svg-sub" x="30" y="278" style="fill: var(--ink-faint);">request, authenticated as alice</text>
+    <text class="svg-sub" x="30" y="302">Authorization: Bearer …</text>
+    <text class="svg-tiny" x="240" y="302" style="fill: var(--good);">uid = alice ✓</text>
+    <text class="svg-sub" x="30" y="328" style="fill: var(--route);">PUT /api/users/<tspan style="font-weight:700">me</tspan></text>
+    <text class="svg-tiny" x="240" y="328" style="fill: var(--route);">no parameter</text>
+    <text class="svg-sub" x="30" y="354" style="fill: var(--deny);">{ "uid": "bob" }</text>
+    <text class="svg-tiny" x="240" y="354" style="fill: var(--deny);">→ 400</text>
+    <text class="svg-tiny" x="30" y="374" style="fill: var(--ink-faint);">one identity in the request, and it is the token's</text>
+
+    <path class="ln-good" d="M356,320 L436,320" marker-end="url(#f2-good)"/>
+
+    <rect class="box-good" x="446" y="254" width="480" height="132" rx="7"/>
+    <text class="svg-label" x="464" y="278">There is nothing for the handler to get wrong</text>
+    <text class="svg-sub" x="464" y="304" style="fill: var(--ink-soft);">doc(`users/${uidFromToken}`)   ← the only uid in scope</text>
+    <text class="svg-sub" x="464" y="326" style="fill: var(--good); font-weight: 700;">z.strict() → an unknown key is 400 invalid_body</text>
+    <text class="svg-tiny" x="464" y="352" style="fill: var(--ink-soft);">Omitting a guard cannot cause the breach, because</text>
+    <text class="svg-tiny" x="464" y="366" style="fill: var(--ink-soft);">there is no guard — only new code could reintroduce it.</text>
+  </svg>
+  </div>
+  <figcaption>
+    <b>Read the two left-hand cards, not the right.</b> The difference that matters is upstream of
+    the handler: the rejected request carries two identities and asks code to pick; the chosen one
+    carries a single identity that the caller cannot forge. AC-8 and AC-10 assert the second row —
+    a body naming another user is a 400, and that user's document is provably untouched afterwards.
+  </figcaption>
+</figure>
+
+<h2>Where a failed profile fetch lands</h2>
+
+<div class="prose">
+  <p>
+    Slice 1 swallowed profile failures on purpose: a profile is a convenience, not a precondition
+    for having a session, and refusing entry over a failed write would trade a real capability for
+    a cosmetic one. That half stands. What changes is that there is now a card whose job is to say
+    so — every exit below ends somewhere a person can read, and none of them ends in a lost session.
+  </p>
+</div>
+
+<figure>
+  <div class="scroll">
+  <svg viewBox="0 0 940 402" role="img"
+       aria-label="One entry — the dashboard mounting and calling ensure — fans into six exits: a profile is returned and the card loads; a null profile shows the setting-up empty state; an unreadable stored document is treated as null and logged; a 401 shows an error card and the router guard handles a genuinely dead session; a 403 tells the user to verify their address; a network failure shows a connection error. Every exit keeps the rest of the dashboard working, and all but the first offer a Retry.">
+    <defs>
+      <marker id="f3-good" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path class="mk-good" d="M0,0 L10,5 L0,10 z"/>
+      </marker>
+      <marker id="f3-store" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path class="mk-store" d="M0,0 L10,5 L0,10 z"/>
+      </marker>
+      <marker id="f3-deny" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path class="mk-deny" d="M0,0 L10,5 L0,10 z"/>
+      </marker>
+    </defs>
+
+    <!-- entry -->
+    <rect class="box-route" x="14" y="158" width="176" height="76" rx="7"/>
+    <text class="svg-label" x="30" y="184">/dashboard mounts</text>
+    <text class="svg-sub"   x="30" y="204">profile.ensure()</text>
+    <text class="svg-sub"   x="30" y="220">PUT /api/users/me</text>
+
+    <!-- fan lines -->
+    <path class="ln-good"  d="M190,180 C260,180 260,42 330,42"   marker-end="url(#f3-good)"/>
+    <path class="ln-store" d="M190,188 C260,188 260,102 330,102" marker-end="url(#f3-store)"/>
+    <path class="ln-store" d="M190,196 C260,196 260,162 330,162" marker-end="url(#f3-store)"/>
+    <path class="ln-deny"  d="M190,204 C260,204 260,222 330,222" marker-end="url(#f3-deny)"/>
+    <path class="ln-deny"  d="M190,212 C260,212 260,282 330,282" marker-end="url(#f3-deny)"/>
+    <path class="ln-deny"  d="M190,220 C260,220 260,342 330,342" marker-end="url(#f3-deny)"/>
+
+    <!-- exits -->
+    <rect class="box-good" x="330" y="18" width="152" height="48" rx="6"/>
+    <text class="svg-sub" x="344" y="40" style="fill: var(--good); font-weight: 700;">200 { profile }</text>
+    <text class="svg-tiny" x="344" y="56">the ordinary case</text>
+    <text class="svg-sub" x="504" y="40">Card shows name · address · member since</text>
+    <text class="svg-tiny" x="504" y="56" style="fill: var(--ink-faint);">AC-18 · no retry needed</text>
+
+    <rect class="box-store" x="330" y="78" width="152" height="48" rx="6"/>
+    <text class="svg-sub" x="344" y="100" style="fill: var(--store); font-weight: 700;">200 { profile: null }</text>
+    <text class="svg-tiny" x="344" y="116">not created yet</text>
+    <text class="svg-sub" x="504" y="100">Empty state — “Setting up your profile…”</text>
+    <text class="svg-tiny" x="504" y="116" style="fill: var(--ink-faint);">AC-19 · the ensure creates it</text>
+
+    <rect class="box-store" x="330" y="138" width="152" height="48" rx="6"/>
+    <text class="svg-sub" x="344" y="160" style="fill: var(--store); font-weight: 700;">stored doc corrupt</text>
+    <text class="svg-tiny" x="344" y="176">parse fails, fail closed</text>
+    <text class="svg-sub" x="504" y="160">Same empty state; <tspan class="svg-sub">profile.unreadable</tspan> logged</text>
+    <text class="svg-tiny" x="504" y="176" style="fill: var(--ink-faint);">AC-11 · the next PUT repairs it</text>
+
+    <rect class="box-deny" x="330" y="198" width="152" height="48" rx="6"/>
+    <text class="svg-sub" x="344" y="220" style="fill: var(--deny); font-weight: 700;">401 unauthenticated</text>
+    <text class="svg-tiny" x="344" y="236">token missing or expired</text>
+    <text class="svg-sub" x="504" y="220">Error card + Retry; the guard owns a dead session</text>
+    <text class="svg-tiny" x="504" y="236" style="fill: var(--ink-faint);">AC-20 · sign-out still works</text>
+
+    <rect class="box-deny" x="330" y="258" width="152" height="48" rx="6"/>
+    <text class="svg-sub" x="344" y="280" style="fill: var(--deny); font-weight: 700;">403 email_unverified</text>
+    <text class="svg-tiny" x="344" y="296">stale claim in the token</text>
+    <text class="svg-sub" x="504" y="280">“Verify your email address first.” + Retry</text>
+    <text class="svg-tiny" x="504" y="296" style="fill: var(--ink-faint);">AC-20 · retry after getIdToken(true)</text>
+
+    <rect class="box-deny" x="330" y="318" width="152" height="48" rx="6"/>
+    <text class="svg-sub" x="344" y="340" style="fill: var(--deny); font-weight: 700;">network / cold start</text>
+    <text class="svg-tiny" x="344" y="356">ApiError status 0</text>
+    <text class="svg-sub" x="504" y="340">“Check your connection and try again.” + Retry</text>
+    <text class="svg-tiny" x="504" y="356" style="fill: var(--ink-faint);">AC-20 · AC-21 keeps the page usable</text>
+
+    <text class="svg-tiny" x="14" y="266" style="fill: var(--ink-faint);">No exit signs the user out.</text>
+    <text class="svg-tiny" x="14" y="282" style="fill: var(--ink-faint);">No exit blocks the connection panel.</text>
+  </svg>
+  </div>
+  <figcaption>
+    <b>Two exits deliberately share a destination.</b> A missing document and an unreadable one both
+    render the empty state, because “we cannot use this” and “it is not here yet” are the same thing
+    to a user and the same thing to the repair path — the next ensure overwrites either. Reporting
+    the corrupt case as an error would put a screen on the page that nobody can act on.
+  </figcaption>
+</figure>
+
+<h2>The two endpoints</h2>
+
+<div class="cards">
+  <div class="card">
+    <div class="verb"><span class="m">GET</span><span class="p">/api/users/me</span></div>
+    <p class="note">The read the account card renders.</p>
+    <div class="rows">
+      <div class="row"><span class="status s2">200</span><span><code>{ profile }</code> — email, displayName, ISO-8601 createdAt and updatedAt</span></div>
+      <div class="row"><span class="status s2">200</span><span><code>{ profile: null }</code> — no document yet, or one that fails to parse</span></div>
+      <div class="row"><span class="status s4">401</span><span><code>unauthenticated</code> — missing, malformed or expired ID token</span></div>
+      <div class="row"><span class="status s4">403</span><span><code>email_unverified</code> — valid token, unverified address</span></div>
+    </div>
+    <div class="chips">
+      <span class="chip on">ID token</span>
+      <span class="chip on">email_verified</span>
+      <span class="chip off">App Check — not required</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="verb"><span class="m">PUT</span><span class="p">/api/users/me</span></div>
+    <p class="note">Idempotent ensure — create if absent, touch if present.</p>
+    <div class="rows">
+      <div class="row"><span class="status s2">200</span><span><code>{ profile }</code> — <code>createdAt</code> set once and never rewritten, <code>updatedAt</code> advanced</span></div>
+      <div class="row"><span class="status s4">400</span><span><code>invalid_body</code> — any key outside <code>{ displayName?: string | null }</code>, wrong type, or over 80 characters</span></div>
+      <div class="row"><span class="status s4">401</span><span><code>unauthenticated</code></span></div>
+      <div class="row"><span class="status s4">403</span><span><code>email_unverified</code></span></div>
+    </div>
+    <div class="chips">
+      <span class="chip on">ID token</span>
+      <span class="chip on">email_verified</span>
+      <span class="chip on">App Check</span>
+      <span class="chip on">zod .strict()</span>
+    </div>
+  </div>
+</div>
+
+<div class="pointer">
+  <p>
+    <strong>One rule across the whole API, inherited from Slice 2:</strong> mutations are attested,
+    plain authenticated reads are not. App Check buys nothing against a caller who already holds a
+    valid ID token, and adding it to a read that runs on every dashboard visit would cost a
+    reCAPTCHA round trip for no gain.
+  </p>
+</div>
+
+<h2>Where the risk sits</h2>
+
+<div class="prose">
+  <p>
+    Twenty-eight acceptance criteria, and their distribution is itself a design statement. Eleven
+    of them are L4 — the routes, exercised end to end against the emulators — because that is where
+    a mistake in this slice leaks another tenant's data. The five L3 rules tests are all denials,
+    which is what the backstop looks like when the enforcement has moved.
+  </p>
+</div>
+
+<figure>
+  <div class="scroll">
+  <svg viewBox="0 0 940 268" role="img"
+       aria-label="Acceptance criteria by test level: eleven at L4 integration, five each at L1 unit, L2 component and L3 rules, one at L5 end to end, and one enforced by lint and CI. The L4 bar is more than twice any other, matching where the slice's tenant-isolation risk lives.">
+    <!-- scale: 11 units → 594px, 54px per unit, bars start x=150 -->
+
+    <text class="svg-panel" x="14" y="20">acceptance criteria by level</text>
+
+    <!-- L1 -->
+    <text class="svg-label" x="14" y="60">L1 unit</text>
+    <rect class="box" x="150" y="44" width="270" height="22" rx="3"/>
+    <text class="svg-sub" x="430" y="60">5 — schemas, parseBody, the clients and stores, the source scan</text>
+
+    <!-- L2 -->
+    <text class="svg-label" x="14" y="98">L2 component</text>
+    <rect class="box" x="150" y="82" width="270" height="22" rx="3"/>
+    <text class="svg-sub" x="430" y="98">5 — the account card's four states, plus the dashboard around it</text>
+
+    <!-- L3 -->
+    <text class="svg-label" x="14" y="136">L3 rules</text>
+    <rect class="box-deny" x="150" y="120" width="270" height="22" rx="3"/>
+    <text class="svg-sub" x="430" y="136">5 — every one a denial, including the two re-asserted collections</text>
+
+    <!-- L4 -->
+    <text class="svg-label" x="14" y="174">L4 integration</text>
+    <rect class="box-server" x="150" y="158" width="594" height="22" rx="3"/>
+    <text class="svg-sub" x="754" y="174">11 — the routes</text>
+
+    <!-- L5 -->
+    <text class="svg-label" x="14" y="212">L5 e2e</text>
+    <rect class="box-good" x="150" y="196" width="54" height="22" rx="3"/>
+    <text class="svg-sub" x="214" y="212">1 — an assertion added to the existing golden path, not a new spec</text>
+
+    <!-- lint -->
+    <text class="svg-label" x="14" y="250">lint + CI</text>
+    <rect class="box-route" x="150" y="234" width="54" height="22" rx="3"/>
+    <text class="svg-sub" x="214" y="250">1 — the ban that keeps the Firestore SDK out of the bundle</text>
+  </svg>
+  </div>
+  <figcaption>
+    <b>The last row is the unusual one.</b> An architectural guarantee that lives only in
+    <code>CLAUDE.md</code> is a convention until the first hurried commit, so this one is enforced
+    three ways: an ESLint <code>no-restricted-imports</code> ban, a unit test that scans the source
+    in case the ESLint config is the thing that gets edited, and a CI check that greps the built
+    bundle for <code>firestore.googleapis.com</code> — a string measured to be present on
+    <code>main</code> today and contributed by exactly one module.
+  </figcaption>
+</figure>
+
+<h2>Risks</h2>
+
+<div class="tablewrap">
+  <table>
+    <thead>
+      <tr><th>#</th><th>Risk</th><th>Mitigation</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="id">R1</td>
+        <td>A route that authenticates the caller and then trusts a <code>uid</code> from the request.</td>
+        <td>Structural, not procedural — <code>/me</code> gives the request nowhere to put one, and <code>.strict()</code> rejects a body that tries. Asserted by AC-8 and AC-10.</td>
+      </tr>
+      <tr>
+        <td class="id">R2</td>
+        <td>The rules rewrite loosens something while deleting now-dead helpers.</td>
+        <td>The L3 suite is rewritten in the same commit and every case is a denial; AC-15 and AC-16 re-assert the collections that were not the subject of the change.</td>
+      </tr>
+      <tr>
+        <td class="id">R3</td>
+        <td><code>dist</code> still carries the Firestore SDK through a transitive import.</td>
+        <td>Measured before the PRD was written: the marker is present today and contributed by <code>lib/firebase.ts</code> alone. If it survives the build stage, the fix belongs in this slice.</td>
+      </tr>
+      <tr>
+        <td class="id">R4</td>
+        <td>Extracting <code>apiClient</code> out of <code>hlApi</code> regresses Slice 2's connection panel.</td>
+        <td>The extraction is verbatim and <code>hlApi.spec.ts</code> is not modified — an unchanged suite over refactored code is the assertion (AC-23).</td>
+      </tr>
+      <tr>
+        <td class="id">R5</td>
+        <td>The account card is new UI in a slice whose demo line is “the app behaves exactly as before”.</td>
+        <td>It is the minimum that makes the slice vertical: without a visible read path, the only proof of <code>GET /api/users/me</code> is an L4 test. Scope is capped at render-only — nothing in this slice writes <code>displayName</code>.</td>
+      </tr>
+      <tr>
+        <td class="id">R6</td>
+        <td>Removing the frontend's database environment variables breaks a path that still reads them.</td>
+        <td>All five references located during discovery and named in the PRD's in-scope list; AC-27 asserts a boot with neither variable set.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<footer>
+  Genesis · Slice 02b — API-only data access · design companion to <code>02-prd.md</code>, which
+  remains the contract. Decisions D1–D22, acceptance criteria AC-1–AC-28 and the full test matrix
+  live there.
+</footer>
+
+</div>
+</body>
+</html>

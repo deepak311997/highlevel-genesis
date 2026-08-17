@@ -5,11 +5,8 @@ import type { User } from 'firebase/auth'
 const onAuthStateChanged = vi.hoisted(() => vi.fn())
 const signInWithEmailAndPassword = vi.hoisted(() => vi.fn())
 const signOut = vi.hoisted(() => vi.fn())
-const getDoc = vi.hoisted(() => vi.fn())
-const setDoc = vi.hoisted(() => vi.fn())
-const updateDoc = vi.hoisted(() => vi.fn())
 
-vi.mock('@/lib/firebase', () => ({ auth: { name: 'auth' }, db: { name: 'db' } }))
+vi.mock('@/lib/firebase', () => ({ auth: { name: 'auth' } }))
 
 vi.mock('firebase/auth', () => ({
   onAuthStateChanged,
@@ -17,15 +14,9 @@ vi.mock('firebase/auth', () => ({
   signOut,
 }))
 
-vi.mock('firebase/firestore', () => ({
-  doc: (_db: unknown, ...path: string[]) => ({ path: path.join('/') }),
-  getDoc,
-  setDoc,
-  updateDoc,
-  serverTimestamp: () => 'SERVER_TIMESTAMP',
-}))
-
 const { useAuthStore } = await import('./auth')
+const { useProfileStore } = await import('./profile')
+const { useHlStore } = await import('./hl')
 
 /** Hand the store a user, as Firebase would. */
 function emit(user: Partial<User> | null): void {
@@ -48,9 +39,6 @@ function fakeUser(overrides: Partial<User> = {}): Partial<User> {
 beforeEach(() => {
   setActivePinia(createPinia())
   vi.clearAllMocks()
-  getDoc.mockResolvedValue({ exists: () => false })
-  setDoc.mockResolvedValue(undefined)
-  updateDoc.mockResolvedValue(undefined)
 })
 
 afterEach(() => {
@@ -124,6 +112,39 @@ describe('session state', () => {
     expect(signOut).toHaveBeenCalledOnce()
   })
 
+  /*
+   * Signing out is a route change, not a page load: Pinia survives it, and so
+   * does everything the previous session fetched. Without this, the next person
+   * to sign in on the same browser gets the dashboard rendered from the last
+   * one's data — their address in the account card, their location in the
+   * connection panel — until each refetch lands, which on a cold function is
+   * seconds of one user's details on another user's screen.
+   *
+   * Cleared here rather than in each view, because the session ends in exactly
+   * one place and a sign-out button added later must not have to remember.
+   */
+  it('empties the stores holding the previous session’s data', async () => {
+    const store = useAuthStore()
+    const profile = useProfileStore()
+    const hl = useHlStore()
+    signOut.mockResolvedValue(undefined)
+
+    profile.profile = {
+      email: 'alice@example.test',
+      displayName: null,
+      createdAt: '',
+      updatedAt: '',
+    }
+    profile.loaded = true
+    hl.status = { connected: false }
+
+    await store.signOutNow()
+
+    expect(profile.profile).toBeNull()
+    expect(profile.loaded).toBe(false)
+    expect(hl.status).toBeNull()
+  })
+
   it('signs in through Firebase', async () => {
     const store = useAuthStore()
     signInWithEmailAndPassword.mockResolvedValue({})
@@ -167,71 +188,5 @@ describe('refreshVerification', () => {
     emit(null)
 
     await expect(store.refreshVerification()).resolves.toBe(false)
-  })
-})
-
-describe('ensureProfile', () => {
-  it('creates the document with exactly the allowlisted fields', async () => {
-    const store = useAuthStore()
-    emit(fakeUser())
-
-    await store.ensureProfile()
-
-    expect(setDoc).toHaveBeenCalledWith(
-      { path: 'users/alice' },
-      {
-        email: 'alice@example.test',
-        displayName: null,
-        createdAt: 'SERVER_TIMESTAMP',
-        updatedAt: 'SERVER_TIMESTAMP',
-      },
-    )
-  })
-
-  it('touches only updatedAt when the document already exists', async () => {
-    getDoc.mockResolvedValue({ exists: () => true })
-    const store = useAuthStore()
-    emit(fakeUser())
-
-    await store.ensureProfile()
-
-    expect(setDoc).not.toHaveBeenCalled()
-    expect(updateDoc).toHaveBeenCalledWith(
-      { path: 'users/alice' },
-      { updatedAt: 'SERVER_TIMESTAMP' },
-    )
-  })
-
-  /**
-   * The rules require the email_verified claim on create, so an early write
-   * could only ever be denied — and the gate has not released the user yet.
-   */
-  it('does not write while the address is unverified', async () => {
-    const store = useAuthStore()
-    emit(fakeUser({ emailVerified: false }))
-
-    await store.ensureProfile()
-
-    expect(getDoc).not.toHaveBeenCalled()
-    expect(setDoc).not.toHaveBeenCalled()
-  })
-
-  it('does not write without a session', async () => {
-    const store = useAuthStore()
-    emit(null)
-
-    await store.ensureProfile()
-
-    expect(setDoc).not.toHaveBeenCalled()
-  })
-
-  // AC-45: the profile is a convenience, not a precondition for a session.
-  it('never throws when the write fails', async () => {
-    setDoc.mockRejectedValue(new Error('permission-denied'))
-    const store = useAuthStore()
-    emit(fakeUser())
-
-    await expect(store.ensureProfile()).resolves.toBeUndefined()
-    expect(store.isSignedIn).toBe(true)
   })
 })

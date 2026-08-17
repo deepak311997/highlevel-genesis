@@ -5,7 +5,7 @@ const applyActionCode = vi.hoisted(() => vi.fn())
 const confirmPasswordReset = vi.hoisted(() => vi.fn())
 const verifyPasswordResetCode = vi.hoisted(() => vi.fn())
 const refreshVerification = vi.hoisted(() => vi.fn())
-const ensureProfile = vi.hoisted(() => vi.fn())
+const ensure = vi.hoisted(() => vi.fn())
 const query = vi.hoisted((): { value: Record<string, string | undefined> } => ({ value: {} }))
 
 vi.mock('firebase/auth', () => ({
@@ -17,8 +17,10 @@ vi.mock('firebase/auth', () => ({
 vi.mock('@/lib/firebase', () => ({ auth: {} }))
 
 vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => ({ refreshVerification, ensureProfile }),
+  useAuthStore: () => ({ refreshVerification }),
 }))
+
+vi.mock('@/stores/profile', () => ({ useProfileStore: () => ({ ensure }) }))
 
 vi.mock('vue-router', () => ({
   RouterLink: { template: '<a><slot /></a>' },
@@ -45,7 +47,7 @@ beforeEach(() => {
   confirmPasswordReset.mockResolvedValue(undefined)
   verifyPasswordResetCode.mockResolvedValue('alice@example.test')
   refreshVerification.mockResolvedValue(true)
-  ensureProfile.mockResolvedValue(undefined)
+  ensure.mockResolvedValue(undefined)
 })
 
 describe('AuthActionView — verifying an email', () => {
@@ -61,7 +63,7 @@ describe('AuthActionView — verifying an email', () => {
     await mountWith({ mode: 'verifyEmail', oobCode: 'ABC' })
 
     expect(refreshVerification).toHaveBeenCalled()
-    expect(ensureProfile).toHaveBeenCalled()
+    expect(ensure).toHaveBeenCalled()
   })
 })
 
