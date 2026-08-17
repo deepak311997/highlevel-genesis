@@ -36,8 +36,14 @@ import {
  * One function, so the list and the by-id read cannot disagree about what
  * "unusable" means: the list omits what this rejects and `GET` by id answers 404
  * for it, which is the same decision reached from two directions.
+ *
+ * Exported for its own unit test rather than only through the routes: a corrupt
+ * project is *silent* by design — omitted from the list, 404 by id, which from
+ * outside is indistinguishable from a deleted one — so the log line is the only
+ * warning anybody gets, and it deserves an assertion that does not need an
+ * emulator to make.
  */
-function parseStored(snapshot: DocumentSnapshot): StoredProject | null {
+export function parseStored(snapshot: DocumentSnapshot): StoredProject | null {
   // An absent document is not corruption, so it is not logged as such.
   if (!snapshot.exists) return null
 
