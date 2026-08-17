@@ -163,3 +163,18 @@ test at any level can catch it missing. Verified by reading the entry against
 field, in that order.
 
 **ACs:** AC-21, AC-22, AC-23 (the existing suites are untouched and still pass).
+
+---
+
+## T8 — `projectsApi.ts`
+
+**Red:** `frontend/src/lib/projectsApi.spec.ts` — 9 cases, mocking `@/lib/apiClient` as
+`profileApi.spec.ts` does. Failed on the missing module.
+
+**Green:** `frontend/src/lib/projectsApi.ts` — `Project`, `CreateProjectInput`,
+`PatchProjectInput`, and the four functions over `request`, with `encodeURIComponent` on
+every id-bearing path.
+
+**ACs:** AC-33 (paths, verbs, bodies).
+
+**Deviations from the plan:** none.
