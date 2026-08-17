@@ -269,3 +269,26 @@ the fields.
 **Deviations from the plan:** none. One case beyond the plan's list — `project: null` renders
 nothing to confirm — because the card nulls its selection as the dialog closes, so the
 component sees `null` for at least one render.
+
+---
+
+## T13 — `ProjectsCard.vue`
+
+**Red:** `frontend/src/components/ProjectsCard.spec.ts` — 13 cases: mount fetches; loading with
+no rows; loading before the request has started; rows with name, description and "Updated
+17 Aug 2026"; no description line when there is none; rows are not links (D12); empty state
+with a **New project** button and no error; error with a working **Try again**; error takes
+precedence over both loading and stale rows; and the three dialog-opening paths.
+
+**Green:** `frontend/src/components/ProjectsCard.vue`, branches in `AccountCard`'s order —
+error → `loading || !loaded` → rows → empty.
+
+**Refactor, as the plan left it to be decided here:** the `Intl.DateTimeFormat` was an *exact*
+duplicate of `AccountCard`'s — same locale, same options, same UTC pin — so it is lifted to
+`frontend/src/lib/date.ts` as `formatDay(iso)`, with `frontend/src/lib/date.spec.ts` covering
+the format, the time-zone pin (23:30 UTC must not roll into the next day) and the unparseable
+cases. `AccountCard.vue` now uses it too, and its own suite passes unchanged.
+
+**ACs:** AC-24, AC-25, AC-26, AC-27.
+
+**Deviations from the plan:** none.
