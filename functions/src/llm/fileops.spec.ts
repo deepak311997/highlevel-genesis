@@ -403,3 +403,129 @@ describe('the hold-back bound', () => {
     expect(splitter.push('le path="a.js">\n')).toEqual([{ kind: 'open', path: 'a.js' }])
   })
 })
+
+/**
+ * A block that never closes, and the repairs (AC-7, AC-8, D16).
+ *
+ * The unterminated case is the one F8.1 is mostly about: a cut-off turn's last
+ * block is unterminated by construction, and what must not happen is half a file
+ * reaching the collection.
+ */
+
+describe('a block that is never closed (AC-7)', () => {
+  const TEXT = `Here it is.\n\n<genesis:file path="index.html">\n<h1>Contacts</h1>\nstill writ`
+
+  it('reports the path as unterminated and records no op', () => {
+    const { result } = collect(TEXT)
+
+    expect(result.unterminated).toBe('index.html')
+    expect(result.ops).toEqual([])
+  })
+
+  it('emits no file_end for it', () => {
+    const { frames } = collect(TEXT)
+
+    expect(frames.filter((frame) => frame.kind === 'file_end')).toHaveLength(0)
+  })
+
+  /** Its content reaches the chat in no form at all. */
+  it('puts none of its content in a token frame', () => {
+    const { frames, result } = collect(TEXT)
+
+    for (const needle of ['<h1>', 'Contacts', 'still writ']) {
+      expect(tokens(frames)).not.toContain(needle)
+      expect(result.messageText).not.toContain(needle)
+    }
+  })
+
+  /*
+   * The marker token *was* emitted, and that is correct: the message says a file
+   * was attempted, and the tree says by omission that none was stored (D7's
+   * rejected alternative).
+   */
+  it('keeps the marker it already emitted', () => {
+    expect(collect(TEXT).result.messageText).toBe('Here it is.\n\n[file: index.html]')
+  })
+
+  /* Two files, the second unterminated: the first is still a complete op. */
+  it('keeps an earlier closed block while reporting the later open one', () => {
+    const { result } = collect(
+      `${block('index.html', '<h1>x</h1>\n')}<genesis:file path="app.js">\nconst a = 1\n`,
+    )
+
+    expect(result.ops).toEqual([{ path: 'index.html', content: '<h1>x</h1>\n' }])
+    expect(result.unterminated).toBe('app.js')
+  })
+})
+
+describe('the line-ending and trailing-newline repairs (AC-8)', () => {
+  it('rewrites CRLF content to LF and ends it with exactly one newline', () => {
+    const { result } = collect(
+      '<genesis:file path="app.js">\r\nconst a = 1\r\nconst b = 2\r\n</genesis:file>\r\n',
+    )
+
+    expect(result.ops).toEqual([{ path: 'app.js', content: 'const a = 1\nconst b = 2\n' }])
+  })
+
+  it('collapses a run of trailing blank lines to exactly one newline', () => {
+    const { result } = collect(block('app.js', 'const a = 1\n\n\n\n'))
+
+    expect(result.ops[0]?.content).toBe('const a = 1\n')
+  })
+
+  /* Blank lines *inside* a file are code, so they survive untouched. */
+  it('leaves blank lines inside the body alone', () => {
+    const { result } = collect(block('app.js', 'a\n\n\n\nb\n'))
+
+    expect(result.ops[0]?.content).toBe('a\n\n\n\nb\n')
+  })
+
+  /* Spaces and tabs are meaningful in code, so only newline runs are held. */
+  it('preserves trailing spaces on the last line', () => {
+    const { result } = collect(block('app.js', 'const a = 1   \n'))
+
+    expect(result.ops[0]?.content).toBe('const a = 1   \n')
+  })
+
+  /** A block with nothing in it is an empty file, not a file holding a newline. */
+  it('gives an empty block empty content and emits no chunk', () => {
+    const { frames, result } = collect(block('app.js', ''))
+
+    expect(result.ops).toEqual([{ path: 'app.js', content: '' }])
+    expect(frames.filter((frame) => frame.kind === 'file_chunk')).toHaveLength(0)
+  })
+
+  it('treats a block of blank lines as an empty file too', () => {
+    expect(collect(block('app.js', '\n\n\n')).result.ops[0]?.content).toBe('')
+  })
+
+  /** A close tag that ends the input carries no newline, and still closes (P1). */
+  it('closes a block whose close tag ends the input', () => {
+    const { frames, result } = collect('<genesis:file path="app.js">\nconst a = 1\n</genesis:file>')
+
+    expect(result.ops).toEqual([{ path: 'app.js', content: 'const a = 1\n' }])
+    expect(chunksFor(frames, 'app.js')).toBe('const a = 1\n')
+  })
+})
+
+describe('a CRLF split across two deltas', () => {
+  /* One character wide, and the same hazard as a split tag. */
+  it('repairs a line ending whose \\r and \\n arrived separately', () => {
+    const collector = createFileCollector()
+    const frames = [
+      ...collector.push('<genesis:file path="app.js">\nconst a = 1\r'),
+      ...collector.push('\nconst b = 2\n</genesis:file>\n'),
+    ]
+    const result = collector.finish()
+
+    expect(result.ops).toEqual([{ path: 'app.js', content: 'const a = 1\nconst b = 2\n' }])
+    expect(chunksFor([...frames, ...result.frames], 'app.js')).toBe('const a = 1\nconst b = 2\n')
+  })
+
+  /* A lone `\r` that never gets its `\n` is content, not a line ending. */
+  it('keeps a carriage return that is not part of a line ending', () => {
+    const { result } = collect(block('app.js', 'a\rb\n'))
+
+    expect(result.ops[0]?.content).toBe('a\rb\n')
+  })
+})
