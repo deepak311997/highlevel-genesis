@@ -93,6 +93,8 @@ describe('shiftPorts', () => {
 
     expect(emulators.hub.port).toBe(4700)
     expect(emulators.logging.port).toBe(4800)
+    // Not derived from the offset: 4400 + 100 is the logging emulator's own default.
+    expect(emulators.hub.port).not.toBe(4400 + DEFAULT_BAND.offset)
   })
 
   it("moves Firestore's websocket port, which firebase.json never declares", () => {
