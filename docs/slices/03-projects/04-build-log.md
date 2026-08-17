@@ -246,7 +246,7 @@ expression rather than two branches — and the same expression is what disables
 nothing has changed, which is how the empty-patch 400 is never issued from the UI.
 
 **One correction during green:** `data-testid` on `<DialogContent>` never reached the DOM.
-That component's root is `DialogPortal`, which renders an overlay *and* the content — a
+That component's root is `DialogPortal`, which renders an overlay _and_ the content — a
 multi-root fragment, so Vue drops fallthrough attributes on it. The id moved to an inner
 `<div>`, with a comment saying why.
 
@@ -283,7 +283,7 @@ precedence over both loading and stale rows; and the three dialog-opening paths.
 **Green:** `frontend/src/components/ProjectsCard.vue`, branches in `AccountCard`'s order —
 error → `loading || !loaded` → rows → empty.
 
-**Refactor, as the plan left it to be decided here:** the `Intl.DateTimeFormat` was an *exact*
+**Refactor, as the plan left it to be decided here:** the `Intl.DateTimeFormat` was an _exact_
 duplicate of `AccountCard`'s — same locale, same options, same UTC pin — so it is lifted to
 `frontend/src/lib/date.ts` as `formatDay(iso)`, with `frontend/src/lib/date.spec.ts` covering
 the format, the time-zone pin (23:30 UTC must not roll into the next day) and the unparseable
@@ -313,7 +313,7 @@ imports go. No `dashboard-empty` reference remains anywhere in the repo.
 
 ## T15 — End to end
 
-**Order swapped, deliberately.** The plan put the helper extraction in T15's *refactor* step,
+**Order swapped, deliberately.** The plan put the helper extraction in T15's _refactor_ step,
 but the new spec needs `signUpAndVerify` to exist, and taking a third copy only to delete it
 minutes later would have been theatre. So the extraction went first, exactly as P-R3 asks it
 to be verified: both existing suites were run before the move (4 passed) and again after it
@@ -334,3 +334,96 @@ Every step is followed by a reload, and that is the assertion carrying the weigh
 that only updated component state would pass every other check.
 
 **ACs:** AC-34.
+
+---
+
+## T15b — `project.unreadable` gets an assertion (one cycle beyond the plan)
+
+Walking the ACs at the end found AC-20's third clause — "and a `project.unreadable` event is
+logged" — with no test behind it. The first two clauses were covered at L4; the log line was
+not, at any level, and the plan's task list did not name it either.
+
+That clause is not decoration. A corrupt project is **silent** by design: omitted from the
+list and 404 by id, which from outside is indistinguishable from one that was deleted. The log
+line is the only thing that ever says a document is broken rather than gone.
+
+**Red:** `functions/src/projects/handlers.spec.ts` — four cases over a fake `DocumentSnapshot`:
+a usable document parses; an unparseable one returns `null` **and** emits one
+`project.unreadable` line with `outcome: 'invalid'`; no field of the document appears in that
+line; an absent document returns `null` **without** logging, since absence is not corruption
+and logging it would fill the sink with every 404 a probing client can produce.
+
+**Green:** `parseStored` exported, with a comment saying why it is exported.
+
+**ACs:** AC-20 (the logging clause).
+
+---
+
+## Acceptance criteria — the test that proves each
+
+| AC    | Level   | Test                                                                                                                                                                                                                                                                                       |
+| ----- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| AC-1  | L4      | `projects.spec.ts` › POST › creates a project, returns 201, and stores an explicit null deletedAt                                                                                                                                                                                          |
+| AC-2  | L4      | POST › trims a description on the way in                                                                                                                                                                                                                                                   |
+| AC-3  | L4      | GET list › returns the live projects, updatedAt descending, in the wire shape                                                                                                                                                                                                              |
+| AC-4  | L4      | GET list › answers 200 with an empty array rather than 404 when there are none                                                                                                                                                                                                             |
+| AC-5  | L4      | GET by id › returns a project by its id                                                                                                                                                                                                                                                    |
+| AC-6  | L4      | PATCH › renames, preserving createdAt and advancing updatedAt                                                                                                                                                                                                                              |
+| AC-7  | L4      | PATCH › clears a description with an explicit null, and leaves it alone when absent                                                                                                                                                                                                        |
+| AC-8  | L4      | DELETE › soft-deletes: the document remains, and the list and GET stop seeing it                                                                                                                                                                                                           |
+| AC-9  | L4      | DELETE › is idempotent, and does not overwrite the first deletedAt; › answers 200 for an id that never existed, creating nothing                                                                                                                                                           |
+| AC-10 | L4      | five × "refuses an unauthenticated caller with 401", one per route                                                                                                                                                                                                                         |
+| AC-11 | L4      | five × "refuses an unverified caller with 403", one per route                                                                                                                                                                                                                              |
+| AC-12 | L4      | GET by id › answers 404 for bob's project id presented with alice's token; PATCH › answers 404 for bob's project and leaves his document untouched; DELETE › answers 200 for bob's project id and leaves his document untouched                                                            |
+| AC-13 | L4      | GET list › returns only alice's projects, with bob's seeded alongside                                                                                                                                                                                                                      |
+| AC-14 | L1 + L4 | `schema.spec.ts` › rejects a body carrying %s (both body schemas); POST › refuses a body carrying %s, writing nothing; PATCH › refuses a body carrying %s, changing nothing                                                                                                                |
+| AC-15 | L1 + L4 | `schema.spec.ts` name/description limit cases; POST and PATCH refusal cases                                                                                                                                                                                                                |
+| AC-16 | L1 + L4 | `schema.spec.ts` › rejects an empty body with a message naming what is required; PATCH › refuses an empty body, and does not move updatedAt                                                                                                                                                |
+| AC-17 | L1 + L4 | `schema.spec.ts` › projectIdSchema rejects `''`/`..`/`.`/`a/b`/`a b`/`a.b`/`a!b`/65 chars; three × "refuses the malformed id %s with 400" on GET, PATCH and DELETE                                                                                                                         |
+| AC-18 | L4      | POST › refuses a 101st live project with 409, writing nothing; › allows a create when half of a full collection is soft-deleted                                                                                                                                                            |
+| AC-19 | L4      | POST › takes locationId from the connection, and null when there is none                                                                                                                                                                                                                   |
+| AC-20 | L1 + L4 | `schema.spec.ts` › rejects a document with no name/createdAt/updatedAt; GET list › omits a document that cannot be parsed, and returns its siblings; GET by id and PATCH › answers 404 for a document that cannot be parsed; `handlers.spec.ts` › logs project.unreadable and returns null |
+| AC-21 | L3      | `firestore.spec.ts` › users/{uid}/projects/{projectId} › five owner cases (read, list, create, update, delete)                                                                                                                                                                             |
+| AC-22 | L3      | › denies a different signed-in user, however verified they are; › denies an unauthenticated client                                                                                                                                                                                         |
+| AC-23 | L3      | the four pre-existing describes, untouched and still passing                                                                                                                                                                                                                               |
+| AC-24 | L2      | `ProjectsCard.spec.ts` › shows a loading state and no rows while the first request is in flight                                                                                                                                                                                            |
+| AC-25 | L2      | › renders one row per project, with its name, description and updated date                                                                                                                                                                                                                 |
+| AC-26 | L2      | › shows the empty state and a New project button, and no error                                                                                                                                                                                                                             |
+| AC-27 | L2      | › shows the error with a Retry that re-issues the request                                                                                                                                                                                                                                  |
+| AC-28 | L2      | `DashboardView.spec.ts` › still renders the connection panel and the projects card when the profile fails                                                                                                                                                                                  |
+| AC-29 | L1 + L2 | `stores/projects.spec.ts` › create › issues the POST and then refetches the list; `ProjectFormDialog.spec.ts` › starts empty, with submit disabled; › enables submit once a name is entered, and creates on submit                                                                         |
+| AC-30 | L2      | `ProjectFormDialog.spec.ts` › stays open with the server's message and the entered values when create fails                                                                                                                                                                                |
+| AC-31 | L1 + L2 | store › rename › issues the PATCH and then refetches; dialog › pre-fills from the project and says Rename; › sends only the name when only the name changed                                                                                                                                |
+| AC-32 | L1 + L2 | store › remove › issues the DELETE and then refetches; `ProjectDeleteDialog.spec.ts` › names the project it is about to delete; › removes the project and closes on confirm; › issues no request when cancelled                                                                            |
+| AC-33 | L1      | `projectsApi.spec.ts` (all 9); store › load › issues GET /api/projects carrying both headers, plus "carries both headers on the mutation" × 3; `lib/no-firestore.spec.ts`, unchanged                                                                                                       |
+| AC-34 | L5      | `tests/e2e/projects.spec.ts` › create a project, rename it, delete it, and end where you started                                                                                                                                                                                           |
+
+**Two things carry no test, by construction, both called out in the plan and both verified by
+reading:**
+
+1. **The composite index (D7, R2).** `firestore.indexes.json`'s entry is `projects`,
+   COLLECTION scope, `deletedAt` ASCENDING then `updatedAt` DESCENDING.
+   `handleListProjects` queries `.where('deletedAt','==',null).orderBy('updatedAt','desc')`.
+   Field for field, in that order. ✅
+2. **App Check on the three mutations (D22).** `functions/src/projects/index.ts`: `POST`,
+   `PATCH` and `DELETE` each carry `attested`; the two `GET`s do not. ✅
+
+## Suite at build completion
+
+`npm test` and `npm run test:e2e`, both green:
+
+| Suite       | Count                                           |
+| ----------- | ----------------------------------------------- |
+| typecheck   | 0 errors                                        |
+| lint        | 0 warnings                                      |
+| unit        | 602 (239 functions · 352 frontend · 11 scripts) |
+| rules       | 19                                              |
+| integration | 155                                             |
+| e2e         | 6                                               |
+
+## Deferred
+
+Nothing. Every task in the plan is done and no work was found that the plan does not cover.
+
+The out-of-scope rows in the PRD stand as written — no workspace screen, no clickable rows, no
+restore surface, no pagination, no `locationId` change after create.
