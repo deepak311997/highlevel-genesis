@@ -226,8 +226,8 @@ breaks it: run backwards, the floor would protect the *assistant* turn, the user
 behind it would not fit beside 200,000 characters, and the result would be empty — a
 permanent `400 empty_context` on the Retry path.
 
-- `19a4966` test: trim the transcript from the oldest end, and never lead with an assistant
-- `dd39c4a` feat: trim the transcript to budget and drop leading assistant turns
+- `c1409e0` test: trim the transcript from the oldest end, and never lead with an assistant
+- `dd33712` feat: trim the transcript to budget and drop leading assistant turns
 
 ### T9 — Reading the files → AC-14, AC-27 (support)
 
@@ -242,7 +242,7 @@ document. Verified red: five failures, `readProjectFiles is not a function`.
 schema, since the schema is the entire difference between them. **The queries are not
 merged**, and `readFileList`'s projection is unchanged.
 
-- `abbf46a` test: readProjectFiles returns content in path order, capped, skipping the corrupt
+- `36342fe` test: readProjectFiles returns content in path order, capped, skipping the corrupt
 - `8307e56` feat: add readProjectFiles beside readFileList, content and all
 
 ### T10 — Extracting `hl()` calls, and the golden reply → AC-23, AC-25
