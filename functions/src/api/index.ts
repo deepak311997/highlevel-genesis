@@ -4,6 +4,7 @@ import express, { type Express } from 'express'
 import { authRouter } from '../auth'
 import { errorHandler } from '../lib/errors'
 import { hlRouter } from '../hl'
+import { projectsRouter } from '../projects'
 import { usersRouter } from '../users'
 import { healthRouter } from './health'
 
@@ -60,6 +61,8 @@ export function createApiApp(): Express {
   app.use('/api', hlRouter)
   app.use('/', usersRouter)
   app.use('/api', usersRouter)
+  app.use('/', projectsRouter)
+  app.use('/api', projectsRouter)
 
   app.use((_req, res) => {
     res.status(404).json({ error: 'Not found', code: 'not_found' })
