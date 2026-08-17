@@ -39,3 +39,26 @@ and a task that leaves a suite red so a later one can fix it is a task that cann
 its own — which is the plan's own argument for handling R9 inside T2. Same rule, applied one task
 earlier. Nothing else moved.
 
+
+## T2 — One document per `POST`, and the echo deleted
+
+**Commit:** `bc9f3a0`
+
+**Tests added / changed**
+
+| Level | File | What |
+|---|---|---|
+| L1 | `functions/src/messages/handlers.spec.ts` | The `echoFor` and `messagePair` describes are deleted. `appendAssistantMessage` writes `{ role: 'assistant', seq: 1, truncated }` under the right path, stamps a `serverTimestamp()` sentinel, returns the committed document in wire shape with no `seq`, and fails closed on a document it cannot read back |
+| L1 | `frontend/src/lib/messagesApi.spec.ts` | `sendMessage` resolves to **one** `Message`; an empty `messages` envelope rejects; `listMessages` carries `truncated` through |
+| L1 | `frontend/src/stores/workspace.spec.ts` | `send()` appends the one returned message |
+| L4 | `tests/integration/messages.spec.ts` | `POST` answers 201 with exactly one message and writes exactly one document, `seq: 0`, `truncated: false`; no `"You said:"` text reaches Firestore; each turn gets its own commit timestamp; the cap accepts at 198 → 199 and refuses at 199 |
+| L5 | `tests/e2e/workspace.spec.ts` | The transcript is one bubble and no reply — the placeholder T19 replaces |
+
+**Green:** `readTranscript` extracted (one definition of "what is in this transcript", shared by the
+list route and `/generate`); `appendAssistantMessage` added; `echoFor`/`messagePair` deleted;
+`handleCreateMessage` writes one document via a shared `readBackOrFail`; `messagesApi.sendMessage`
+returns `Message`; the store appends one.
+
+**Note.** The cap check stays `count + 2 > MESSAGE_LIMIT` even though one document is written, per
+D4 — the reply needs room. `frontend/src/stores/auth.spec.ts` needed a `truncated` on its inline
+message fixture; that is a type consequence of T1, not a behaviour change.
