@@ -638,3 +638,123 @@ describe('a reply that is one block and nothing else (AC-10)', () => {
     expect(result.messageText).toBe('[file: index.html]\n[file: styles.css]\n[file: app.js]')
   })
 })
+
+/**
+ * Chunking invariance (AC-4, D4, R1) — **the slice's one real hazard**.
+ *
+ * `<genesis:` is nine characters and a text delta is whatever the SDK felt like
+ * sending, so `<genesis:fi` + `le path="a.js">` is an ordinary pair of deltas. A
+ * naive per-delta scan misses the tag, leaks it into the chat bubble as prose,
+ * and never opens the file — **and it passes every hand-written test above**,
+ * because a hand-written test chunks on whole tags. Only a property driven at
+ * every offset catches it, which is the same technique `frontend/src/lib/sse.ts`
+ * already uses for the frame parser one layer down.
+ */
+
+/**
+ * Adjacent frames of one kind folded together.
+ *
+ * How many frames a body arrives in **is** the chunking, so comparing frame
+ * arrays directly would be asserting the opposite of the property. What must be
+ * invariant is the sequence of boundaries and the bytes between them.
+ */
+function normalise(frames: CollectorFrame[]): CollectorFrame[] {
+  const merged: CollectorFrame[] = []
+
+  for (const frame of frames) {
+    const last = merged.at(-1)
+    if (last?.kind === 'token' && frame.kind === 'token') {
+      merged[merged.length - 1] = { kind: 'token', text: last.text + frame.text }
+      continue
+    }
+    if (last?.kind === 'file_chunk' && frame.kind === 'file_chunk' && last.path === frame.path) {
+      merged[merged.length - 1] = {
+        kind: 'file_chunk',
+        path: frame.path,
+        text: last.text + frame.text,
+      }
+      continue
+    }
+    merged.push(frame)
+  }
+
+  return merged
+}
+
+/** Push a text as the given list of chunks and gather everything it produced. */
+function drive(chunks: string[]): { frames: CollectorFrame[]; result: CollectResult } {
+  const collector = createFileCollector()
+  const frames: CollectorFrame[] = []
+  for (const chunk of chunks) frames.push(...collector.push(chunk))
+  const result = collector.finish()
+  return { frames: normalise([...frames, ...result.frames]), result }
+}
+
+describe('the emitted stream does not depend on how the text was chunked', () => {
+  it.each(FIXTURES)('is identical at every split offset for %s', (_name, fixture) => {
+    const whole = drive([fixture])
+
+    for (let offset = 0; offset <= fixture.length; offset += 1) {
+      const split = drive([fixture.slice(0, offset), fixture.slice(offset)])
+
+      expect(split.frames).toEqual(whole.frames)
+      expect(split.result.messageText).toBe(whole.result.messageText)
+      expect(split.result.ops).toEqual(whole.result.ops)
+      expect(split.result.unterminated).toBe(whole.result.unterminated)
+    }
+  })
+
+  /* And the worst chunking there is: one character at a time. */
+  it.each(FIXTURES)('is identical one character at a time for %s', (_name, fixture) => {
+    const whole = drive([fixture])
+    // UTF-16 code units rather than code points: the harsher chunking, and the
+    // one a stream can actually produce.
+    const perCharacter = drive(Array.from(fixture, (_unused, index) => fixture.charAt(index)))
+
+    expect(perCharacter.frames).toEqual(whole.frames)
+    expect(perCharacter.result.messageText).toBe(whole.result.messageText)
+    expect(perCharacter.result.ops).toEqual(whole.result.ops)
+    expect(perCharacter.result.unterminated).toBe(whole.result.unterminated)
+  })
+
+  /* Empty deltas happen, and must change nothing. */
+  it.each(FIXTURES)('is unaffected by empty pushes for %s', (_name, fixture) => {
+    const whole = drive([fixture])
+    const padded = drive(['', fixture.slice(0, 3), '', fixture.slice(3), ''])
+
+    expect(padded.frames).toEqual(whole.frames)
+    expect(padded.result.ops).toEqual(whole.result.ops)
+  })
+
+  /** R1's named shape, written out so the regression has a name in the report. */
+  it('parses a delimiter split mid-tag', () => {
+    const { result } = drive(['Before.\n<genesis:fi', 'le path="a.js">\nbody\n</genesis:file>\n'])
+
+    expect(result.ops).toEqual([{ path: 'a.js', content: 'body\n' }])
+    expect(result.messageText).toBe('Before.\n[file: a.js]')
+  })
+
+  it('parses a close tag split mid-tag', () => {
+    const { result } = drive(['<genesis:file path="a.js">\nbody\n</gene', 'sis:file>\n'])
+
+    expect(result.ops).toEqual([{ path: 'a.js', content: 'body\n' }])
+  })
+
+  it('parses a CRLF split between its two characters', () => {
+    const { result } = drive(['<genesis:file path="a.js">\r', '\nbody\r', '\n</genesis:file>\r\n'])
+
+    expect(result.ops).toEqual([{ path: 'a.js', content: 'body\n' }])
+  })
+
+  /* A path split across three deltas, which a long filename makes likely. */
+  it('parses a path split across several deltas', () => {
+    const { result } = drive([
+      '<genesis:file path="ind',
+      'ex',
+      '.html">\n<h1>x</h1>\n</genesis:',
+      'file>\n',
+    ])
+
+    expect(result.ops).toEqual([{ path: 'index.html', content: '<h1>x</h1>\n' }])
+  })
+})

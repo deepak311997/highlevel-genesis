@@ -100,10 +100,28 @@ export function createFileSplitter(): FileSplitter {
   let path: string | null = null
   /** The held-back partial line. Never longer than `MAX_LINE` plus a `\r`. */
   let pending = ''
-  /** Whether `pending` sits at the start of a line and could still be a tag. */
-  let holding = true
+  /**
+   * Whether what comes next begins a line.
+   *
+   * **The bug this exists for is R1's, found by AC-4's property and by nothing
+   * else.** Once a partial line has been emitted — because it could not be a
+   * delimiter, or because it grew past `MAX_LINE` — the rest of that line arrives
+   * in a later push and is *not* at a line start. Without this flag the tail
+   * `</genesis:file>\n` of the prose line `x</genesis:file>` reads as a close tag
+   * when the two halves arrive in separate deltas and as prose when they arrive
+   * together, which is exactly the chunking dependence D4 forbids.
+   *
+   * It is also the hold predicate's precondition: a partial that is not at a line
+   * start cannot become a delimiter, so it is never held.
+   */
+  let atLineStart = true
 
-  /** One complete line, its `\n` included. */
+  /** Whatever a line is when it is not a delimiter. */
+  function textEvent(line: string): SplitEvent {
+    return { kind: mode === 'file' ? 'content' : 'prose', text: line }
+  }
+
+  /** One complete line, its `\n` included, known to start at a line start. */
   function takeLine(line: string): SplitEvent {
     const body = line.slice(0, -1)
 
@@ -116,7 +134,7 @@ export function createFileSplitter(): FileSplitter {
         // break immediately after the open tag is dropped", for free.
         return { kind: 'open', path }
       }
-      return { kind: 'prose', text: line }
+      return textEvent(line)
     }
 
     if (CLOSE_LINE.test(body)) {
@@ -126,7 +144,7 @@ export function createFileSplitter(): FileSplitter {
       return { kind: 'close', path: closed }
     }
 
-    return { kind: 'content', text: line }
+    return textEvent(line)
   }
 
   /**
@@ -187,20 +205,22 @@ export function createFileSplitter(): FileSplitter {
         buffer = buffer.slice(newline + 1)
         // D16's CRLF repair, applied to the line rather than to the buffer, so a
         // `\r` that is not part of a line ending survives untouched.
-        events.push(takeLine(raw.endsWith('\r\n') ? `${raw.slice(0, -2)}\n` : raw))
+        const line = raw.endsWith('\r\n') ? `${raw.slice(0, -2)}\n` : raw
+        // Only a line that began at a line start can be a delimiter.
+        events.push(atLineStart ? takeLine(line) : textEvent(line))
         // A completed line puts us back at a line start.
-        holding = true
+        atLineStart = true
       }
 
-      if (holding && buffer.length <= MAX_LINE && couldBeDelimiter(buffer)) {
+      if (atLineStart && buffer.length <= MAX_LINE && couldBeDelimiter(buffer)) {
         pending = buffer + carry
         return events
       }
 
       if (buffer !== '') {
-        events.push({ kind: mode === 'file' ? 'content' : 'prose', text: buffer })
+        events.push(textEvent(buffer))
+        atLineStart = false
       }
-      holding = false
       pending = carry
       return events
     },
@@ -209,6 +229,8 @@ export function createFileSplitter(): FileSplitter {
       const line = pending
       pending = ''
       if (line === '') return []
+      // The tail of a line already partly emitted is text, not a delimiter.
+      if (!atLineStart) return [textEvent(line)]
 
       if (mode === 'prose') {
         const open = OPEN_LINE.exec(line)
@@ -217,7 +239,7 @@ export function createFileSplitter(): FileSplitter {
           path = open[1] ?? ''
           return [{ kind: 'open', path }]
         }
-        return [{ kind: 'prose', text: line }]
+        return [textEvent(line)]
       }
 
       if (CLOSE_LINE.test(line)) {
@@ -227,7 +249,7 @@ export function createFileSplitter(): FileSplitter {
         return [{ kind: 'close', path: closed }]
       }
 
-      return [{ kind: 'content', text: line }]
+      return [textEvent(line)]
     },
   }
 }
