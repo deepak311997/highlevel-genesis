@@ -4,7 +4,7 @@ const request = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/apiClient', () => ({ request }))
 
-const { FILE_BYTES_MAX, FILE_LIMIT, getFile, listFiles, saveFile } = await import('./filesApi')
+const { FILE_BYTES_MAX, getFile, listFiles, saveFile } = await import('./filesApi')
 
 /**
  * The typed client for the three file routes (AC-35).
@@ -113,15 +113,17 @@ describe('path encoding', () => {
   })
 })
 
-describe('the mirrored caps', () => {
+describe('the mirrored cap', () => {
   /*
    * Duplicated rather than imported — the functions package is not reachable from
-   * `frontend/`, which is `MESSAGE_LIMIT`'s precedent. They exist on this side so
+   * `frontend/`, which is `MESSAGE_LIMIT`'s precedent. It exists on this side so
    * the editor can disable **Save** before a request the server would refuse, and
-   * this pins them to the server's numbers.
+   * this pins it to the server's number.
+   *
+   * The file cap is not mirrored: the client cannot create a file (D19), so it
+   * has no path to the twentieth one and nothing to withhold when it gets there.
    */
   it('matches the server', () => {
     expect(FILE_BYTES_MAX).toBe(100_000)
-    expect(FILE_LIMIT).toBe(20)
   })
 })

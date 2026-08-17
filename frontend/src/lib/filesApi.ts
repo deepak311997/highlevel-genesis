@@ -31,16 +31,21 @@ export interface FileContent extends FileMeta {
 }
 
 /**
- * The server's caps, mirrored.
+ * The server's byte cap, mirrored.
  *
  * Duplicated rather than imported: the functions package is not reachable from
  * `frontend/`, the same reason `messagesApi.ts` restates `MESSAGE_LIMIT` and
- * `projectsApi.ts` restates the wire shape. They exist on this side so the editor
- * can disable **Save** before issuing a request the server would refuse, and
- * their L1 test pins them to the server's numbers.
+ * `projectsApi.ts` restates the wire shape. It exists on this side so the editor
+ * can disable **Save** before issuing a request the server would refuse, and its
+ * L1 test pins it to the server's number.
+ *
+ * The **file cap is deliberately not mirrored.** Nothing here could act on it:
+ * the client cannot create a file — `PUT` refuses to (D19) and there is no
+ * `POST` — so a browser has no path to the twentieth file and no button to
+ * withhold. The one writer that can reach the cap is the generator, on the
+ * server, where `FILE_LIMIT` lives.
  */
 export const FILE_BYTES_MAX = 100_000
-export const FILE_LIMIT = 20
 
 /**
  * Both segments are server-generated strings that reached us over the wire, so

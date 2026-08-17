@@ -58,8 +58,6 @@ export const PATH_MAX = 64
  */
 export const FILE_EXTENSIONS = ['css', 'html', 'js', 'json', 'md'] as const
 
-export type FileExtension = (typeof FILE_EXTENSIONS)[number]
-
 /**
  * One place composes the path, from `projectsPath` rather than a second `'users'`
  * literal, so the four segments cannot drift.

@@ -11,14 +11,7 @@
  */
 export { ANTHROPIC_API_KEY, openStream } from './client'
 export { buildContext } from './context'
-export {
-  createFileCollector,
-  createFileSplitter,
-  CLOSE_TAG,
-  MAX_INDENT,
-  OPEN_HEAD,
-  OPEN_TAIL,
-} from './fileops'
+export { createFileCollector } from './fileops'
 export type { CollectorFrame, CollectResult, FileCollector } from './fileops'
 export { buildParams, EFFORT, MAX_TOKENS, MODEL } from './params'
 export { SYSTEM_PROMPT } from './prompt'
