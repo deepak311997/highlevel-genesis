@@ -302,6 +302,37 @@ describe('buildUpstreamUrl', () => {
     expect(url.searchParams.has('locationId')).toBe(false)
     expect(url.searchParams.get('fields')).toBe('email')
   })
+
+  /*
+   * P1's claim is "a caller-supplied location never reaches HighLevel, on any
+   * route" — and an exact-key `delete` does not deliver it. `locationId[]=x`,
+   * `locationId[0]=x` and `LocationId=x` all survive it, and a `qs`-backed
+   * upstream (Nest's default, which HighLevel is built on) parses the first two
+   * back into the same field. Whether they would win is upstream's business;
+   * the point is that the sentence has to be true here rather than nearly true.
+   */
+  it('drops a locationId however the caller spelled it', () => {
+    const { row, params } = matched('GET', '/calendars/')
+
+    const url = buildUpstreamUrl(
+      row,
+      params,
+      'LocationId=theirs&locationId[]=theirs&locationId[0]=theirs&LOCATIONID=theirs&limit=5',
+      LOCATION,
+    )
+
+    expect(url.search).not.toContain('theirs')
+    expect(url.searchParams.getAll('locationId')).toEqual([LOCATION])
+    expect(url.searchParams.get('limit')).toBe('5')
+  })
+
+  it('leaves a field that merely begins the same way', () => {
+    const { row, params } = matched('GET', '/calendars/')
+
+    const url = buildUpstreamUrl(row, params, 'locationIdentifier=keep-me', LOCATION)
+
+    expect(url.searchParams.get('locationIdentifier')).toBe('keep-me')
+  })
 })
 
 describe('buildUpstreamBody', () => {
@@ -344,6 +375,16 @@ describe('buildUpstreamBody', () => {
     expect(out).toEqual({ type: 'SMS' })
   })
 
+  it('drops a body locationId however the caller spelled it', () => {
+    const out = buildUpstreamBody(
+      rowFor('/contacts/search'),
+      { LocationId: 'theirs', 'locationId[]': 'theirs', locationIdentifier: 'keep-me', page: 1 },
+      LOCATION,
+    ) as Record<string, unknown>
+
+    expect(out).toEqual({ locationId: LOCATION, locationIdentifier: 'keep-me', page: 1 })
+  })
+
   it.each([['a string'], [42], [null], [['an', 'array']]])(
     'forwards a non-object body (%s) unchanged',
     (body) => {
@@ -375,12 +416,25 @@ describe('isRouteEnabled', () => {
     expect(isRouteEnabled(search, { HL_ALLOW_MESSAGE_SEND: 'false' })).toBe(true)
   })
 
-  it.each([{}, { HL_ALLOW_MESSAGE_SEND: '' }, { HL_ALLOW_MESSAGE_SEND: 'false' }])(
-    'keeps a flagged row disabled for %o',
-    (env) => {
-      expect(isRouteEnabled(send, env)).toBe(false)
-    },
-  )
+  /*
+   * Exactly `'true'`, and nothing else. A looser reading — "anything but
+   * empty", or a truthiness check — turns a stray `HL_ALLOW_MESSAGE_SEND=0` in
+   * somebody's shell into a switch that is on, for a route that sends a real
+   * SMS or email (D5, R5).
+   */
+  it.each([
+    {},
+    { HL_ALLOW_MESSAGE_SEND: '' },
+    { HL_ALLOW_MESSAGE_SEND: '   ' },
+    { HL_ALLOW_MESSAGE_SEND: 'false' },
+    { HL_ALLOW_MESSAGE_SEND: '0' },
+    { HL_ALLOW_MESSAGE_SEND: '1' },
+    { HL_ALLOW_MESSAGE_SEND: 'no' },
+    { HL_ALLOW_MESSAGE_SEND: 'yes' },
+    { HL_ALLOW_MESSAGE_SEND: 'TRUE' },
+  ])('keeps a flagged row disabled for %o', (env) => {
+    expect(isRouteEnabled(send, env)).toBe(false)
+  })
 
   it('enables a flagged row only when its variable is exactly true', () => {
     expect(isRouteEnabled(send, { HL_ALLOW_MESSAGE_SEND: 'true' })).toBe(true)

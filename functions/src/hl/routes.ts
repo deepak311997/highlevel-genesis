@@ -174,8 +174,14 @@ export const HL_ROUTES: readonly HlRoute[] = [
 ]
 
 /**
- * The parameter grammar — **the same rule as `projectIdSchema`**, deliberately
- * one rule in the codebase rather than two that drift.
+ * The parameter grammar — **the same shape as `projectIdSchema`'s**, and a
+ * second copy of it on purpose.
+ *
+ * Shared would be wrong: that rule describes a Genesis project id, this one
+ * describes a HighLevel record id, and they are two namespaces that happen to
+ * agree today. Coupling them would mean a future widening on one side silently
+ * widening what may be substituted into an upstream URL, which is the one place
+ * in this codebase a widening must be deliberate.
  *
  * HighLevel ids are 20–24 character alphanumerics. Excluding `/`, `.`, `%` and
  * every other URL metacharacter by construction is what makes the re-encoding in
@@ -290,6 +296,26 @@ export function isRouteEnabled(row: HlRoute, env: Record<string, string | undefi
 const LOCATION_KEY = 'locationId'
 
 /**
+ * Whether a caller's key is a `locationId` under another spelling.
+ *
+ * An exact-key `delete` does not deliver P1's sentence. HTTP header and query
+ * parsers are widely case-insensitive, and `qs` — which Nest, and so HighLevel,
+ * parses queries with — folds `locationId[]=x` and `locationId[0]=x` back into
+ * the same field. So the three spellings that survive an exact match are
+ * precisely the three a caller trying to smuggle a location would reach for.
+ *
+ * Exact-or-bracketed rather than a prefix test, so a genuine field that merely
+ * begins the same way — `locationIdentifier` — is not swallowed with them. We
+ * do not control HighLevel's field list and must not delete from it by guess.
+ */
+function isLocationKey(name: string): boolean {
+  const lowered = name.toLowerCase()
+  return (
+    lowered === LOCATION_KEY.toLowerCase() || lowered.startsWith(`${LOCATION_KEY.toLowerCase()}[`)
+  )
+}
+
+/**
  * The upstream URL, assembled from **the matched row** and never from a string.
  *
  * The signature is the argument: it takes an `HlRoute`, which only
@@ -327,7 +353,9 @@ export function buildUpstreamUrl(
   // repeated parameter or bracket syntax back to what the caller sent, and D12
   // promises verbatim forwarding.
   const query = new URLSearchParams(rawQuery)
-  query.delete(LOCATION_KEY)
+  for (const name of [...new Set(query.keys())]) {
+    if (isLocationKey(name)) query.delete(name)
+  }
   if (row.locationIn === 'query') query.set(LOCATION_KEY, locationId)
   url.search = query.toString()
 
@@ -352,7 +380,9 @@ export function buildUpstreamBody(row: HlRoute, body: unknown, locationId: strin
   if (typeof body !== 'object' || body === null || Array.isArray(body)) return body
 
   const out: Record<string, unknown> = { ...(body as Record<string, unknown>) }
-  Reflect.deleteProperty(out, LOCATION_KEY)
+  for (const name of Object.keys(out)) {
+    if (isLocationKey(name)) Reflect.deleteProperty(out, name)
+  }
   if (row.locationIn === 'body') out[LOCATION_KEY] = locationId
   return out
 }
