@@ -83,6 +83,27 @@ describe('createProjectBodySchema — what a caller may send', () => {
   })
 
   /*
+   * "No description" has exactly one representation, and it is `null`.
+   *
+   * A field left empty and a field left as spaces are the same statement, and
+   * `null` is the one the rest of the stack reads: the card's `v-if` hides a
+   * falsy description, and the rename dialog decides what changed by comparing
+   * its trimmed field — `null` — against the stored value. A stored `''` is
+   * therefore invisible on screen and yet unequal in the data, which is how a
+   * dialog comes to report an unchanged project as changed and to offer a Save
+   * that alters nothing.
+   */
+  it.each([
+    ['an empty string', ''],
+    ['whitespace only', '   '],
+  ])('stores %s as a null description rather than a second kind of empty', (_label, value) => {
+    expect(createProjectBodySchema.parse({ name: 'A', description: value })).toEqual({
+      name: 'A',
+      description: null,
+    })
+  })
+
+  /*
    * AC-14. Every one of these is a field the server owns — the id is generated,
    * `locationId` comes from `hlConnections/{uid}`, the timestamps come from the
    * server clock, and there is no `ownerUid` at all because the path is the
@@ -146,6 +167,15 @@ describe('patchProjectBodySchema — what a caller may change', () => {
   /* An explicit null is how a description is cleared — distinct from absent. */
   it('accepts an explicit null description', () => {
     expect(patchProjectBodySchema.parse({ description: null })).toEqual({ description: null })
+  })
+
+  /* And so is an emptied field: clearing the box is the same request as sending
+   * `null`, so it reaches the document as the same value. */
+  it.each([
+    ['an empty string', ''],
+    ['whitespace only', '   '],
+  ])('clears the description when it is %s', (_label, value) => {
+    expect(patchProjectBodySchema.parse({ description: value })).toEqual({ description: null })
   })
 
   it.each(['ownerUid', 'id', 'locationId', 'createdAt', 'deletedAt'])(
