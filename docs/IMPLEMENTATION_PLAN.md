@@ -23,7 +23,7 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 | 5 — Streaming generation | ✅ merged to `main` |
 | 6 — File operations | ✅ merged to `main` |
 | 7 | not started |
-| 8 — HighLevel API proxy | 🔵 built on `slice/08-highlevel-proxy`, in review |
+| 8 — HighLevel API proxy | ✅ built, reviewed, PR open from `slice/08-highlevel-proxy` |
 | 9–13 | not started |
 
 **Slice 8 ran ahead of 7**, which §4's dependency line permits: it depends on 2 alone,
@@ -41,9 +41,21 @@ been red since Slice 1: `vite.config.ts` threw at config load on any checkout wi
 8080 — the *development* emulator — so off CI it "passed" by finding a dev session, loading
 its rules over that session's and calling `clearFirestore()` on it.
 
-**Suite, re-run in full on `slice/06-file-operations` at ship time, rebased on `main`
-(2026-08-18):** typecheck 0 · lint 0 · **1,404 unit** (750 functions · 635 frontend ·
-19 scripts) · **36 rules** · **292 integration** · **14 e2e**. All six green — 1,746 cases.
+**Suite, re-run in full on `slice/08-highlevel-proxy` at ship time, rebased on `main`
+(2026-08-18):** typecheck 0 · lint 0 · **1,627 unit** (922 functions · 684 frontend ·
+21 scripts) · **38 rules** · **325 integration** · **14 e2e**. All six green — 2,004 cases.
+
+Slice 8 added 223 unit cases (172 functions · 49 frontend · 2 scripts), 2 rules cases and
+33 integration cases. Thirty-three of the unit cases are its review's own, written test-first
+for the ten findings that review fixed — two of them in files that exist only because of it,
+`hl/tokenStore.spec.ts` and `hl/index.spec.ts`. The e2e count does not move: AC-48 extends
+Slice 2's existing connect walk in `tests/e2e/highlevel.spec.ts` rather than adding a case,
+so pressing **Check data access** is asserted inside the run that connected the account.
+
+**The one thing Slice 8 could not discharge:** the definition of done's manual sandbox check —
+one `curl` per surface against the real account, confirming the fixtures recorded on 2026-08-14
+still match the live shapes. The unattended sessions had no HighLevel credentials. It is the
+item R6 rests on, and it is called out in the PR rather than left in a checklist.
 
 Slice 6 added 447 unit cases (326 functions · 121 frontend), 8 rules cases, 60 integration
 cases and 2 e2e cases — twelve of the unit cases are its review's own, written test-first
