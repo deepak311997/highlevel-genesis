@@ -189,7 +189,13 @@ describe('session state', () => {
       updatedAt: '',
     }
     workspace.messages = [
-      { id: 'msg-1', role: 'user', content: 'build a contact dashboard', createdAt: '' },
+      {
+        id: 'msg-1',
+        role: 'user',
+        content: 'build a contact dashboard',
+        createdAt: '',
+        truncated: false,
+      },
     ]
     workspace.messagesLoaded = true
     workspace.draft = 'half a sentence'

@@ -6,7 +6,14 @@ import { getAppCheckService } from '../lib/firebase'
 import { logAuthEvent } from '../lib/log'
 
 /**
- * App Check on `/auth/register` — attestation that the caller is our app.
+ * App Check — attestation that the caller is our app.
+ *
+ * Written for `/auth/register` in Slice 1 and applied on every router since; the
+ * argument below is still the strongest case for it, but it is no longer the only
+ * one. From Slice 5 it also guards `POST /generate`, where the question it answers
+ * is not "how often" but "is this our app at all" on **the first endpoint whose
+ * refusal saves money** — an unattested caller there spends against the Anthropic
+ * bill rather than merely consuming a Firestore read (D12, R5).
  *
  * `register` is the one endpoint that is public, unauthenticated, and creates
  * accounts. The throttle bounds how fast any single address or IP can be hit,

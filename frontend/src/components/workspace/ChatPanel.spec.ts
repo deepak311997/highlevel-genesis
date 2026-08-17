@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
@@ -17,7 +20,11 @@ const store = reactive({
   messagesLoading: false,
   messagesLoaded: false,
   messagesError: null as string | null,
+  generating: false,
+  streamingText: '',
+  generateError: null as string | null,
   loadMessages: vi.fn(),
+  retryGeneration: vi.fn(),
 })
 
 vi.mock('@/stores/workspace', () => ({ useWorkspaceStore: () => store }))
@@ -53,17 +60,37 @@ const USER: Message = {
   role: 'user',
   content: 'build a contact dashboard',
   createdAt: '2026-08-17T09:05:00.000Z',
+  truncated: false,
 }
 
 const ASSISTANT: Message = {
   id: 'msg-2',
   role: 'assistant',
-  content: 'You said: build a contact dashboard',
+  content: 'Here is a contact dashboard',
   createdAt: '2026-08-17T09:05:00.000Z',
+  truncated: false,
 }
 
 /* The composer owns the store and has a suite of its own. */
 const MOUNT = { global: { stubs: { MessageComposer: true } } }
+
+/**
+ * Built by concatenation and scanned for below, `no-firestore.spec.ts`'s trick:
+ * the scanner must not find the string it is looking for in its own source.
+ */
+const NEEDLE = 'Echo' + ' mode'
+
+/** Skipped for the same reason. */
+const SELF = 'ChatPanel.spec.ts'
+
+function sourceFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) return sourceFiles(path)
+    if (entry.name === SELF) return []
+    return /\.(ts|vue)$/.test(entry.name) ? [path] : []
+  })
+}
 
 const BUBBLE = '[data-testid="message-bubble"]'
 const VIEWPORT = '[data-reka-scroll-area-viewport]'
@@ -87,6 +114,9 @@ beforeEach(() => {
   store.messagesLoading = false
   store.messagesLoaded = false
   store.messagesError = null
+  store.generating = false
+  store.streamingText = ''
+  store.generateError = null
   vi.clearAllMocks()
 })
 
@@ -134,7 +164,7 @@ describe('ChatPanel', () => {
     expect(bubbles).toHaveLength(2)
     expect(bubbles.map((bubble) => bubble.attributes('data-role'))).toEqual(['user', 'assistant'])
     expect(bubbles[0]?.text()).toContain('build a contact dashboard')
-    expect(bubbles[1]?.text()).toContain('You said: build a contact dashboard')
+    expect(bubbles[1]?.text()).toContain('Here is a contact dashboard')
   })
 
   /** AC-29's time half — pinned by `formatTime`, so this is a fixed string. */
@@ -188,12 +218,25 @@ describe('ChatPanel', () => {
     expect(wrapper.find('[data-testid="chat-loading"]').exists()).toBe(false)
   })
 
-  /* D7, D19. The badge says out loud that the reply is not intelligence. Both it
-   * and the echo disappear together in Slice 5. */
-  it('says it is in echo mode', () => {
+  /*
+   * AC-38's second clause. Slice 4 said the badge and the echo would go together,
+   * and they have. A source scan as well as a render check, because the string
+   * living on in a component nobody mounted in this suite would be exactly the
+   * kind of leftover a render assertion misses.
+   */
+  it('says nothing about echo mode', () => {
     store.messagesLoaded = true
+    store.messages = [USER, ASSISTANT]
 
-    expect(mount(ChatPanel, MOUNT).text()).toContain('Echo mode')
+    expect(mount(ChatPanel, MOUNT).text()).not.toContain('Echo mode')
+  })
+
+  it('has no "Echo mode" anywhere under frontend/src', () => {
+    const offenders = sourceFiles(join(process.cwd(), 'src')).filter((path) =>
+      readFileSync(path, 'utf8').includes(NEEDLE),
+    )
+
+    expect(offenders).toEqual([])
   })
 
   /* The composer renders in every branch except loading: there is nothing to say
@@ -246,5 +289,166 @@ describe('ChatPanel', () => {
     await flushPromises()
 
     expect(wrapper.find<HTMLElement>(VIEWPORT).element.scrollTop).toBe(640)
+  })
+})
+
+/**
+ * The streaming states — the four Slice 4 shipped, plus the three this slice adds.
+ *
+ * The badge and the placeholder bubble are what discharge D14's cost: adaptive
+ * thinking means the first token can be seconds away, and a labelled wait is a
+ * different experience from a frozen screen.
+ */
+describe('ChatPanel while a stream is open', () => {
+  /** AC-38. */
+  it('shows a Generating… badge and a bubble carrying the accumulated text', () => {
+    store.messagesLoaded = true
+    store.messages = [USER]
+    store.generating = true
+    store.streamingText = 'Here is a cont'
+
+    const wrapper = mount(ChatPanel, MOUNT)
+
+    expect(wrapper.text()).toContain('Generating…')
+    const bubble = wrapper.find('[data-testid="streaming-bubble"]')
+    expect(bubble.exists()).toBe(true)
+    expect(bubble.text()).toContain('Here is a cont')
+  })
+
+  /* The placeholder sits inside the transcript list, so one scroll mechanism
+   * covers both it and the finished bubbles. */
+  it('renders the placeholder inside the transcript, after the last bubble', () => {
+    store.messagesLoaded = true
+    store.messages = [USER]
+    store.generating = true
+    store.streamingText = 'Here is'
+
+    const wrapper = mount(ChatPanel, MOUNT)
+    const items = wrapper.findAll('[data-testid="chat-transcript"] > li')
+
+    expect(items).toHaveLength(2)
+    expect(items.at(-1)?.attributes('data-testid')).toBe('streaming-bubble')
+  })
+
+  /*
+   * The empty state cannot collide with a stream: the user's message is appended
+   * before the stream opens, so `bubbles.length` is never 0 while generating.
+   * Asserted rather than argued, because the two branches are mutually exclusive
+   * in the template and a future edit could make them overlap.
+   */
+  it('shows the placeholder rather than the empty state', () => {
+    store.messagesLoaded = true
+    store.messages = [USER]
+    store.generating = true
+
+    const wrapper = mount(ChatPanel, MOUNT)
+
+    expect(wrapper.find('[data-testid="chat-empty"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="streaming-bubble"]').exists()).toBe(true)
+  })
+
+  /** AC-39. */
+  it('renders no badge and no placeholder when no stream is open', () => {
+    store.messagesLoaded = true
+    store.messages = [USER, ASSISTANT]
+
+    const wrapper = mount(ChatPanel, MOUNT)
+
+    expect(wrapper.text()).not.toContain('Generating…')
+    expect(wrapper.find('[data-testid="streaming-bubble"]').exists()).toBe(false)
+  })
+})
+
+describe('ChatPanel — the interrupted marker', () => {
+  /*
+   * AC-40. One flag for four causes — a client disconnect, a mid-stream failure,
+   * `stop_reason: 'max_tokens'` and the byte cap (D23) — so the panel has one
+   * thing to render and the user has one thing to understand.
+   */
+  it('marks a truncated message and leaves a complete one unmarked', () => {
+    store.messagesLoaded = true
+    store.messages = [{ ...ASSISTANT, truncated: true }, ASSISTANT]
+
+    const wrapper = mount(ChatPanel, MOUNT)
+    const bubbles = wrapper.findAll(BUBBLE)
+
+    expect(bubbles[0]?.find('[data-testid="message-interrupted"]').exists()).toBe(true)
+    expect(bubbles[1]?.find('[data-testid="message-interrupted"]').exists()).toBe(false)
+  })
+
+  it('says what the marker means rather than only showing an icon', () => {
+    store.messagesLoaded = true
+    store.messages = [{ ...ASSISTANT, truncated: true }]
+
+    expect(mount(ChatPanel, MOUNT).find('[data-testid="message-interrupted"]').text()).toMatch(
+      /interrupted/i,
+    )
+  })
+})
+
+describe('ChatPanel — the generation error', () => {
+  /** AC-41. */
+  it("shows the server's message and a Retry that calls retryGeneration once", async () => {
+    store.messagesLoaded = true
+    store.messages = [USER]
+    store.generateError = 'The reply was interrupted. Try again.'
+
+    const wrapper = mount(ChatPanel, MOUNT)
+
+    const error = wrapper.find('[data-testid="generate-error"]')
+    expect(error.exists()).toBe(true)
+    expect(error.text()).toContain('The reply was interrupted. Try again.')
+
+    await wrapper.find('[data-testid="generate-retry"]').trigger('click')
+    expect(store.retryGeneration).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows no generation error when there is none', () => {
+    store.messagesLoaded = true
+    store.messages = [USER]
+
+    expect(mount(ChatPanel, MOUNT).find('[data-testid="generate-error"]').exists()).toBe(false)
+  })
+
+  /*
+   * The transcript stays on screen beside the error. A failed generation does not
+   * invalidate the conversation, and hiding it would lose the partial the server
+   * just persisted — which is the thing F8.2 exists to preserve.
+   */
+  it('keeps the transcript visible beside the error', () => {
+    store.messagesLoaded = true
+    store.messages = [USER, { ...ASSISTANT, truncated: true }]
+    store.generateError = 'The reply was interrupted. Try again.'
+
+    const wrapper = mount(ChatPanel, MOUNT)
+
+    expect(wrapper.findAll(BUBBLE)).toHaveLength(2)
+    expect(wrapper.find('[data-testid="message-interrupted"]').exists()).toBe(true)
+  })
+})
+
+describe('ChatPanel — scrolling while tokens arrive', () => {
+  /*
+   * AC-43. The growing reply has to stay in view, and the two heights are the
+   * point: measuring once on mount would leave the viewport a screen behind by
+   * the third token.
+   */
+  it('scrolls to the bottom as streamingText grows', async () => {
+    store.messagesLoaded = true
+    store.messages = [USER]
+    store.generating = true
+    store.streamingText = 'Here'
+    scrollHeight = 200
+
+    const wrapper = mount(ChatPanel, { ...MOUNT, attachTo: document.body })
+    await flushPromises()
+    const viewport = wrapper.find<HTMLElement>(VIEWPORT).element
+    expect(viewport.scrollTop).toBe(200)
+
+    scrollHeight = 640
+    store.streamingText = 'Here is a contact dashboard'
+    await flushPromises()
+
+    expect(viewport.scrollTop).toBe(640)
   })
 })

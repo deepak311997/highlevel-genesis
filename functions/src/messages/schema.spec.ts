@@ -139,12 +139,15 @@ describe('storedMessageSchema — what Firestore hands back', () => {
   })
 
   /*
-   * D11. The stored schema carries **no maximum** on content: the echo of a
-   * 4,000-character prompt is longer than one, and a stored document is not a
-   * request body. A maximum here would make the server's own write unreadable.
+   * D11, and it matters far more now than it did in Slice 4. The stored schema
+   * carries **no maximum** on content: a generated reply runs to `max_tokens`,
+   * which is three orders of magnitude past the 4,000-character request-body
+   * limit. A maximum here would make the server's own write unreadable. What
+   * bounds a stored reply is the 800,000-byte accumulation cap (D22), enforced
+   * where the text is accumulated rather than where it is parsed.
    */
   it('accepts stored content longer than the request-body maximum', () => {
-    const long = `You said: ${'a'.repeat(CONTENT_MAX)}`
+    const long = 'a'.repeat(CONTENT_MAX * 10)
 
     expect(storedMessageSchema.safeParse({ ...complete, content: long }).success).toBe(true)
   })
@@ -152,6 +155,33 @@ describe('storedMessageSchema — what Firestore hands back', () => {
   it('rejects a non-integer or negative seq', () => {
     expect(storedMessageSchema.safeParse({ ...complete, seq: 1.5 }).success).toBe(false)
     expect(storedMessageSchema.safeParse({ ...complete, seq: -1 }).success).toBe(false)
+  })
+
+  /*
+   * R7, D24. Slice 4's documents have no `truncated` key at all, and a required
+   * field here would make every message written before this slice unreadable —
+   * silently emptying every transcript that already exists. The default is a
+   * migration, and it is deliberately **not** a `.catch`: D27's rule is about a
+   * *corrupt* field, and accepting a corrupt one would be accepting a document
+   * that is wrong about itself.
+   */
+  it('parses a Slice-4-shaped document and reads it as not truncated', () => {
+    const parsed = storedMessageSchema.safeParse(complete)
+
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data.truncated).toBe(false)
+  })
+
+  it('round-trips truncated: true', () => {
+    const parsed = storedMessageSchema.safeParse({ ...complete, truncated: true })
+
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data.truncated).toBe(true)
+  })
+
+  /* Present but not a boolean is corruption, not absence — so it fails closed. */
+  it.each(['yes', 1, null])('rejects a truncated field of %s', (truncated) => {
+    expect(storedMessageSchema.safeParse({ ...complete, truncated }).success).toBe(false)
   })
 })
 
@@ -164,6 +194,7 @@ describe('toMessage', () => {
       role: 'user',
       content: 'build a contact dashboard',
       createdAt: '2023-11-14T22:13:20.000Z',
+      truncated: false,
     })
   })
 
@@ -176,6 +207,13 @@ describe('toMessage', () => {
   it('never emits a seq key', () => {
     const message = toMessage('msg-1', storedMessageSchema.parse({ ...complete, seq: 1 }))
 
-    expect(Object.keys(message).sort()).toEqual(['content', 'createdAt', 'id', 'role'])
+    expect(Object.keys(message).sort()).toEqual(['content', 'createdAt', 'id', 'role', 'truncated'])
+  })
+
+  /** AC-40's server half: the flag is on the wire for every message. */
+  it('carries truncated onto the wire shape', () => {
+    const stored = storedMessageSchema.parse({ ...complete, truncated: true })
+
+    expect(toMessage('msg-1', stored).truncated).toBe(true)
   })
 })

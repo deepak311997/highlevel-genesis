@@ -15,12 +15,11 @@ import { firestoreTimestamp } from '../users/schema'
  *
  * **`role` is not in the body schema, and that is the security decision of the
  * slice** (D5). The server assigns it, so a body carrying one is a 400 under
- * `.strict()` rather than a key we happened not to read. It matters because from
- * Slice 5 on the transcript *is* the LLM's context: a client that could author an
- * assistant turn could write its own future prompt, into a context that also
- * carries HighLevel API knowledge and the user's project files. Today the reply
- * is an echo, so the same body is harmless — which is exactly why it has to be
- * refused now, while nothing depends on it being allowed.
+ * `.strict()` rather than a key we happened not to read. Slice 4 recorded that it
+ * would matter from Slice 5 on, and it now does: the transcript *is* the LLM's
+ * context, so a client that could author an assistant turn could write its own
+ * future prompt into a context that will also carry HighLevel API knowledge and
+ * the user's project files. Refused before anything depended on it being allowed.
  *
  * **The path is the ownership.** A message lives under its project, which lives
  * under its owner's uid — the one `withVerifiedUser` read off the ID token — so
@@ -85,6 +84,24 @@ export const storedMessageSchema = z.object({
   content: z.string().min(1),
   seq: z.number().int().min(0),
   createdAt: firestoreTimestamp,
+  /**
+   * Whether the reply stopped short of what the model had to say (D24).
+   *
+   * `true` for a client disconnect, a mid-stream failure, `stop_reason:
+   * 'max_tokens'`, and the 800,000-byte accumulation cap. One flat boolean
+   * rather than a discriminated union on `role`: the union is the right instinct
+   * in general, and for a single flag it doubles the schema a reviewer reads and
+   * buys nothing.
+   *
+   * **Defaulted, not `.catch`ed**, and the difference is D27's rule holding.
+   * Slice 4's documents do not carry this field at all, so a required one would
+   * make every message written before this slice unreadable — silently emptying
+   * every existing transcript (R7). A default on an *absent* field is a
+   * migration. A `.catch` on a *corrupt* one would be silently accepting a
+   * document that is wrong about itself, which is the thing D27 forbids: a
+   * `truncated: 'yes'` is a bug somewhere, not an old document.
+   */
+  truncated: z.boolean().default(false),
 })
 
 export type StoredMessage = z.infer<typeof storedMessageSchema>
@@ -103,6 +120,7 @@ export interface Message {
   role: 'user' | 'assistant'
   content: string
   createdAt: string
+  truncated: boolean
 }
 
 export function toMessage(id: string, stored: StoredMessage): Message {
@@ -111,5 +129,6 @@ export function toMessage(id: string, stored: StoredMessage): Message {
     role: stored.role,
     content: stored.content,
     createdAt: stored.createdAt.toDate().toISOString(),
+    truncated: stored.truncated,
   }
 }

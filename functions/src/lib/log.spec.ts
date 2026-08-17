@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { describeError, logAuthEvent, redact, REDACTED, type AuthLogContext } from './log'
+import {
+  describeError,
+  logAuthEvent,
+  logGenerationEvent,
+  redact,
+  REDACTED,
+  type AuthLogContext,
+  type GenerationLogContext,
+} from './log'
 
 describe('redact', () => {
   it.each([
@@ -48,6 +56,25 @@ describe('redact', () => {
     const out = redact({ note: link }) as Record<string, unknown>
 
     expect(out['note']).toBe(REDACTED)
+  })
+
+  /*
+   * The one exclusion from the substring net, and the reason it is by *type*.
+   * `inputTokens` and `cacheReadInputTokens` match `token`, and redacting them
+   * would empty the generation line of the only numbers it exists to carry —
+   * silently, because a redacted field still looks deliberate. Every credential
+   * this codebase handles is a string, so the type is the honest discriminator.
+   */
+  it('keeps a numeric value under a sensitive-looking name', () => {
+    const out = redact({ inputTokens: 214, cacheReadInputTokens: 0, expiresIn: 3600 })
+
+    expect(out).toEqual({ inputTokens: 214, cacheReadInputTokens: 0, expiresIn: 3600 })
+  })
+
+  it('still redacts a string under the same name', () => {
+    const out = redact({ inputTokens: 'sk-not-a-count' }) as Record<string, unknown>
+
+    expect(out['inputTokens']).toBe(REDACTED)
   })
 
   it('keeps fields that carry no secret, so the log stays useful', () => {
@@ -197,5 +224,83 @@ describe('logAuthEvent', () => {
     logAuthEvent('register.failed', { password: 'hunter2' } as never)
 
     expect(JSON.stringify(info.mock.calls[0])).not.toContain('hunter2')
+  })
+})
+
+/**
+ * The generation log line — F3.4's "generation metadata", in a log rather than
+ * in Firestore (D25).
+ *
+ * Nothing in the product reads it, and an unread field is a schema to maintain,
+ * a wire shape to version and a test to write for a value whose only consumer is
+ * a human debugging. The log is where that human looks anyway, and it is also how
+ * D16's cache claim gets verified in production once Slice 9 makes caching real.
+ *
+ * `GenerationLogContext` is a **second typed context rather than a widening of
+ * `AuthLogContext`**, and the reason is the comment above that interface: it is
+ * narrow on purpose, with no free-form body. A generation line that could carry
+ * an arbitrary string would be one refactor away from carrying a prompt.
+ */
+describe('logGenerationEvent', () => {
+  let info: ReturnType<typeof vi.fn>
+
+  const context: GenerationLogContext = {
+    model: 'claude-opus-5',
+    stopReason: 'end_turn',
+    truncated: false,
+    durationMs: 4210,
+    inputTokens: 214,
+    outputTokens: 638,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+  }
+
+  beforeEach(() => {
+    info = vi.fn()
+    vi.stubGlobal('console', { ...console, info, error: vi.fn() })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('writes one line, parseable as a single JSON object', () => {
+    logGenerationEvent('generation.complete', context)
+
+    expect(info).toHaveBeenCalledTimes(1)
+    const line: unknown = JSON.parse(String(info.mock.calls[0]?.[0]))
+    expect(typeof line).toBe('object')
+  })
+
+  /* The four token counts are the point of the line — `cacheReadInputTokens`
+   * most of all, since it is how D16's no-op becomes observable in Slice 9. */
+  it('carries the event, the model, the stop reason and the four token counts', () => {
+    logGenerationEvent('generation.complete', context)
+
+    expect(JSON.parse(String(info.mock.calls[0]?.[0]))).toEqual({
+      event: 'generation.complete',
+      ...context,
+    })
+  })
+
+  /*
+   * The enforcement point is the type, so the test asserts on the type as well
+   * as the output. A `content` or `prompt` field here would put the user's own
+   * prose — and the model's — into a log sink that outlives the request.
+   */
+  it('has no field for message content', () => {
+    const widened: GenerationLogContext = { ...context }
+    // @ts-expect-error — `content` is not part of GenerationLogContext, deliberately.
+    widened.content = 'build a contact dashboard'
+
+    logGenerationEvent('generation.complete', context)
+
+    expect(String(info.mock.calls[0]?.[0])).not.toContain('build a contact dashboard')
+  })
+
+  it('redacts a secret that reaches it despite the typed context', () => {
+    logGenerationEvent('generation.complete', { ...context, apiKey: 'sk-leaked' } as never)
+
+    expect(String(info.mock.calls[0]?.[0])).not.toContain('sk-leaked')
   })
 })

@@ -17,7 +17,7 @@ vi.mock('@/lib/appCheck', () => ({
   appCheckHeader: () => Promise.resolve({ 'X-Firebase-AppCheck': 'app-check-token' }),
 }))
 
-const { request } = await import('./apiClient')
+const { authHeaders, request } = await import('./apiClient')
 const { ApiError } = await import('./api')
 
 /**
@@ -128,5 +128,45 @@ describe('request', () => {
     fetchMock.mockResolvedValue(response({ profile: null }))
 
     await expect(request('/api/profile')).resolves.toEqual({ profile: null })
+  })
+})
+
+/**
+ * The credential minting, shared rather than repeated (D32).
+ *
+ * A streaming call cannot use `request` — it must not read the body as JSON —
+ * so the choice was to share this or to write it twice. `apiClient` exists
+ * *because* the same logic once lived privately inside two typed clients and the
+ * copies diverged; adding a third copy for `generateApi` would be repeating the
+ * exact mistake this module was extracted to fix.
+ */
+describe('authHeaders', () => {
+  it('returns both headers that authenticate a call', async () => {
+    await expect(authHeaders()).resolves.toEqual({
+      Authorization: 'Bearer id-token-1',
+      'X-Firebase-AppCheck': 'app-check-token',
+    })
+  })
+
+  /* Rotated roughly hourly, so a cached one turns an open tab into 401s. */
+  it('reads a fresh ID token each time', async () => {
+    await authHeaders()
+    await authHeaders()
+
+    expect(getIdToken).toHaveBeenCalledTimes(2)
+  })
+
+  it('rejects with a 401 ApiError when nobody is signed in', async () => {
+    currentUser.value = null
+
+    await expect(authHeaders()).rejects.toBeInstanceOf(ApiError)
+    await expect(authHeaders()).rejects.toMatchObject({ status: 401 })
+  })
+
+  /* One implementation, so `request` and the stream opener cannot drift. */
+  it('is what request sends', async () => {
+    await request('/api/anything')
+
+    expect(lastCall()[1].headers).toMatchObject(await authHeaders())
   })
 })

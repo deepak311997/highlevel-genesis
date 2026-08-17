@@ -31,11 +31,20 @@ export function asyncHandler(
 }
 
 /**
- * Terminal error handler.
+ * The terminal error handler, and the one JSON envelope every route answers with.
  *
  * Known `HttpError`s are surfaced verbatim; anything else becomes a generic 500
- * so an internal message never reaches a client. Express identifies an error
- * handler by its four-argument signature, so `next` must stay in the list.
+ * so an internal message never reaches a client.
+ *
+ * `/generate` reaches this too. It is a separate `onRequest` function, but it is
+ * an Express app rather than a hand-rolled wrapper precisely so that it can
+ * mount this — its refusals before the flush are byte-identical to every other
+ * route's, and a client needs one way to read a failure rather than two.
+ * `terminalErrorHandler` in `generate.ts` delegates here and only takes over
+ * once the headers are gone and the status line is spent.
+ *
+ * Express identifies an error handler by its four-argument signature, so `next`
+ * must stay in the list even though nothing reads it.
  */
 export function errorHandler(
   err: unknown,

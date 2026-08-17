@@ -274,15 +274,22 @@ describe('users/{uid}/projects/{projectId}', () => {
 })
 
 /**
- * Exactly what `POST /api/projects/:projectId/messages` writes, so the denial is
- * on the rule and not on the shape.
+ * Exactly what the two writers put in the collection, so the denial is on the
+ * rule and not on the shape.
+ *
+ * There are two writers now: `POST /api/projects/:projectId/messages` writes the
+ * user turn, and `/generate` writes the assistant turn at the stream's terminal
+ * event. Both carry `truncated`, which is the field this slice adds — and
+ * `truncated: true` gets its own variant below, because a rule that denied a
+ * document could in principle have been written to allow one shape of it.
  */
-function message(role: 'user' | 'assistant' = 'user') {
+function message(role: 'user' | 'assistant' = 'user', truncated = false) {
   return {
     role,
-    content: role === 'user' ? 'build a contact dashboard' : 'You said: build a contact dashboard',
+    content: role === 'user' ? 'build a contact dashboard' : 'Here is a contact dashboard',
     seq: role === 'user' ? 0 : 1,
     createdAt: serverTimestamp(),
+    truncated,
   }
 }
 
@@ -322,7 +329,9 @@ describe('users/{uid}/projects/{projectId}/messages/{messageId}', () => {
   it('denies a verified owner listing their own transcript', async () => {
     await seedMessage()
 
-    await assertFails(getDocs(collection(verified('alice'), 'users/alice/projects/proj-1/messages')))
+    await assertFails(
+      getDocs(collection(verified('alice'), 'users/alice/projects/proj-1/messages')),
+    )
   })
 
   /* The one that would let a client author an assistant turn. */
@@ -334,6 +343,39 @@ describe('users/{uid}/projects/{projectId}/messages/{messageId}', () => {
     )
     await assertFails(
       setDoc(doc(alice, 'users/alice/projects/proj-1/messages/forged'), message('assistant')),
+    )
+  })
+
+  /*
+   * AC-26's new clause. Slice 5 gives the collection a `truncated` field, and the
+   * definition of done requires the denial re-proven in the commit that changes
+   * a collection's shape. **No rules change was needed** (D35): a Firestore rule
+   * that denies a document denies it whatever fields it has, so this is a
+   * re-proof rather than a new guarantee — and re-proving it is cheaper than
+   * assuming it, because "rules say nothing about fields" is exactly the kind of
+   * thing that is true until someone writes a field-level condition.
+   *
+   * The interrupted shape gets its own case because it is the one a client would
+   * most want to forge: an assistant turn the server never generated, marked as
+   * though a real generation had produced it.
+   */
+  it('denies a verified owner creating a truncated assistant message', async () => {
+    await assertFails(
+      setDoc(
+        doc(verified('alice'), 'users/alice/projects/proj-1/messages/forged-partial'),
+        message('assistant', true),
+      ),
+    )
+  })
+
+  /* And updating an existing one to claim it was interrupted. */
+  it('denies a verified owner flipping truncated on a message', async () => {
+    await seedMessage()
+
+    await assertFails(
+      updateDoc(doc(verified('alice'), 'users/alice/projects/proj-1/messages/msg-1'), {
+        truncated: true,
+      }),
     )
   })
 
@@ -365,7 +407,10 @@ describe('users/{uid}/projects/{projectId}/messages/{messageId}', () => {
     await assertFails(getDoc(doc(mallory, 'users/alice/projects/proj-1/messages/msg-1')))
     await assertFails(getDocs(collection(mallory, 'users/alice/projects/proj-1/messages')))
     await assertFails(
-      setDoc(doc(mallory, 'users/alice/projects/proj-1/messages/injected'), message('assistant')),
+      setDoc(
+        doc(mallory, 'users/alice/projects/proj-1/messages/injected'),
+        message('assistant', true),
+      ),
     )
     await assertFails(
       updateDoc(doc(mallory, 'users/alice/projects/proj-1/messages/msg-1'), { content: 'stolen' }),

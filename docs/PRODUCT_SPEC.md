@@ -175,7 +175,7 @@ substitutes for a named package without a recorded decision.
 | TypeScript | `typescript` ^6, `vue-tsc` | both | ✅ `strict` + four extra flags (see CLAUDE.md) |
 | **ShadCN for Vue (`shadcn-vue`)** | `shadcn-vue` CLI + vendored components | frontend | ✅ see §7.2 — *this one needs reading* |
 | **Monaco (`@guolao/vue-monaco-editor`)** | `@guolao/vue-monaco-editor`, `monaco-editor` | frontend | ⏳ Slice 7 — use the exact package, not `monaco-editor-vue3` |
-| **Claude (`@anthropic-ai/sdk`)** | `@anthropic-ai/sdk` | functions | ⏳ Slice 5 — model `claude-opus-5`, `client.messages.stream()` only |
+| **Claude (`@anthropic-ai/sdk`)** | `@anthropic-ai/sdk` ^0.117.1 | functions | ✅ installed in Slice 5 — model `claude-opus-5`, `client.messages.stream()` only, `max_tokens: 64000`; the pin is deliberate, that release types `output_config.effort` and `MessageStreamParams` so no cast is needed |
 | Firebase Auth / Firestore / Functions / Hosting | `firebase` (web), `firebase-admin`, `firebase-functions` v7 (v2 API), `firebase-tools` | all | ✅ installed |
 | Live preview: Sandpack / WebContainers / **srcdoc** | none — `srcdoc` + a hand-written runtime shim | frontend | ⏳ Slice 10 (decision: §6.1) |
 

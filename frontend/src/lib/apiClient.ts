@@ -14,15 +14,27 @@ import { auth } from './firebase'
  */
 
 /**
- * The ID token for the current user.
+ * Everything that authenticates a call: the ID token, and the App Check token.
  *
- * Read per request rather than cached: Firebase rotates it roughly hourly, and
- * a stale one produces a 401 on a tab that has merely been left open.
+ * The ID token is read per request rather than cached — Firebase rotates it
+ * roughly hourly, and a stale one produces a 401 on a tab that has merely been
+ * left open.
+ *
+ * **Exported because the streaming call cannot use `request`** (D32). It must
+ * not read its body as JSON, so the choice was to share the credential minting
+ * or to write it a second time — and this module exists precisely because the
+ * same logic once lived privately inside two typed clients and the copies
+ * diverged, leaving one of them telling a throttled user "something went wrong"
+ * instead of to wait. A third copy would repeat that.
  */
-async function authHeader(): Promise<Record<string, string>> {
+export async function authHeaders(): Promise<Record<string, string>> {
   const user = auth.currentUser
   if (user === null) throw new ApiError('Sign in and try again.', 401)
-  return { Authorization: `Bearer ${await user.getIdToken()}` }
+
+  return {
+    Authorization: `Bearer ${await user.getIdToken()}`,
+    ...(await appCheckHeader()),
+  }
 }
 
 /**
@@ -33,8 +45,7 @@ async function authHeader(): Promise<Record<string, string>> {
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = {
     ...(init.headers as Record<string, string> | undefined),
-    ...(await authHeader()),
-    ...(await appCheckHeader()),
+    ...(await authHeaders()),
   }
 
   let res: Response
