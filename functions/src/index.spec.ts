@@ -174,6 +174,32 @@ describe('the guards on the money-spending routes', () => {
     expect(source).not.toMatch(/snapshotsRouter\.get\([^)]*attested/)
   })
 
+  /**
+   * AC-19's structural half for the write route.
+   *
+   * The restore is the one route here that writes, and the only route in this
+   * codebase that *deletes* a user's files — so an unattested caller who could
+   * reach it could roll a project back to any version it holds.
+   *
+   * Structural for the same reason the file routes' is: `requireAppCheck`
+   * short-circuits under the emulator, so no emulator-backed test can see the
+   * difference between a route that carries it and one that does not.
+   */
+  it('attests the snapshot restore', () => {
+    const source = read('snapshots/index.ts')
+
+    expect(source).toMatch(
+      /snapshotsRouter\.post\(\s*'\/projects\/:projectId\/snapshots\/:snapshotId\/restore',\s*attested/,
+    )
+  })
+
+  it('guards both snapshot routes with withVerifiedUser', () => {
+    const source = read('snapshots/index.ts')
+    const guarded = source.match(/withVerifiedUser\(/g) ?? []
+
+    expect(guarded).toHaveLength(2)
+  })
+
   /** No user identifier in either path — not `:uid`, not `me`. */
   it('names the resource and never the user in the snapshot routes', () => {
     const source = read('snapshots/index.ts')

@@ -3,12 +3,15 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import {
   adminDb,
+  API_BASE,
   framesOf,
   getJson,
   idTokenFor,
   postGenerate,
+  postJson,
   resetEmulators,
   seedUser,
+  type JsonResponse,
 } from './helpers'
 
 /**
@@ -525,5 +528,413 @@ describe('GET /api/projects/:projectId/snapshots (AC-11)', () => {
     await seedSnapshot(aliceUid, 'gone', 'a', 1)
 
     expect((await listSnapshots('gone')).status).toBe(404)
+  })
+})
+
+/**
+ * The restore route, with **no body at all**.
+ *
+ * `postJson` always sends a `Content-Type` and a serialised body, which is
+ * exactly the shape the route refuses — so the ordinary call needs a bare
+ * `fetch`. The refusal itself is asserted with `postJson`, which is the closest
+ * thing to a real caller getting it wrong.
+ */
+async function restore(
+  projectId: string,
+  snapshotId: string,
+  token: string | null = aliceToken,
+): Promise<JsonResponse> {
+  const res = await fetch(`${API_BASE}${listPath(projectId)}/${snapshotId}/restore`, {
+    method: 'POST',
+    headers: token === null ? {} : auth(token),
+  })
+  const raw = await res.text()
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    parsed = raw
+  }
+  return { status: res.status, body: parsed, raw, headers: res.headers }
+}
+
+interface RestoreBody {
+  files: { path: string; size: number; createdAt: string; updatedAt: string }[]
+  changed: boolean
+}
+
+const codeOf = (res: JsonResponse): string => (res.body as { code?: string }).code ?? ''
+
+/** Generate twice, so the project has version 1 (3 files) and version 2 (4). */
+async function twoVersions(projectId: string): Promise<StoredSnapshotDoc[]> {
+  await seedProject(aliceUid, projectId)
+  await turn(projectId, 'build a contact dashboard')
+  await turn(projectId, '__alt_files add an about page')
+  return storedSnapshots(aliceUid, projectId)
+}
+
+/**
+ * AC-12 — a restore makes the file set **equal** to the version's.
+ *
+ * The negative is the case R3 is about: a restore that writes but does not
+ * delete leaves version 1's `index.html` beside version 2's `about.html` — a
+ * hybrid of two versions that looks fine in the tree and breaks in the preview.
+ * `about.html` being gone is therefore asserted directly, not inferred from a
+ * count.
+ */
+describe('restoring an earlier version (AC-12)', () => {
+  it('writes back every file byte for byte and deletes what the version does not hold', async () => {
+    const versions = await twoVersions('back')
+    const copies = await snapshotFiles(aliceUid, 'back', versions[0]?.id ?? '')
+
+    const res = await restore('back', versions[0]?.id ?? '')
+
+    expect(res.status).toBe(200)
+    const live = await storedFiles(aliceUid, 'back')
+    expect(live.map((file) => file.path)).toEqual(copies.map((file) => file.path))
+    expect(live.map((file) => file.content)).toEqual(copies.map((file) => file.content))
+    expect(live.map((file) => file.path)).not.toContain('about.html')
+  })
+
+  it('answers changed: true and a files list equal to a fresh GET', async () => {
+    const versions = await twoVersions('equal')
+
+    const res = await restore('equal', versions[0]?.id ?? '')
+
+    const body = res.body as RestoreBody
+    expect(body.changed).toBe(true)
+    expect((await getJson('/projects/equal/files', auth(aliceToken))).body).toEqual({
+      files: body.files,
+    })
+  })
+
+  /* A rewrite merges, so the date the file was first generated survives a restore. */
+  it('keeps createdAt on a file the version and the project both hold', async () => {
+    const versions = await twoVersions('created')
+    const before = await storedFiles(aliceUid, 'created')
+
+    await restore('created', versions[0]?.id ?? '')
+
+    const after = await storedFiles(aliceUid, 'created')
+    const original = before.find((file) => file.path === 'index.html')
+    expect(after.find((file) => file.path === 'index.html')?.createdAt.toMillis()).toBe(
+      original?.createdAt.toMillis(),
+    )
+  })
+})
+
+/**
+ * AC-13 — the safety snapshot, which is D9's whole argument.
+ *
+ * A confirmation modal asks the user to be certain; a snapshot of what was there
+ * makes being wrong survivable. The test that matters is the second half:
+ * restoring the safety snapshot returns the project to where it started, so the
+ * undo has an undo.
+ */
+describe('the safety snapshot (AC-13)', () => {
+  it('records what was there, marked a restore, at the highest seq', async () => {
+    const versions = await twoVersions('safety')
+    const before = await storedFiles(aliceUid, 'safety')
+
+    await restore('safety', versions[0]?.id ?? '')
+
+    const after = await storedSnapshots(aliceUid, 'safety')
+    const newest = after[after.length - 1]
+    expect(newest?.origin).toBe('restore')
+    expect(newest?.seq).toBe(3)
+    expect(newest?.fileCount).toBe(4)
+    const copies = await snapshotFiles(aliceUid, 'safety', newest?.id ?? '')
+    expect(copies.map((file) => [file.path, file.content])).toEqual(
+      before.map((file) => [file.path, file.content]),
+    )
+  })
+
+  it('restores back to the later version when the safety snapshot is restored', async () => {
+    const versions = await twoVersions('undo')
+    await restore('undo', versions[0]?.id ?? '')
+    const safety = (await storedSnapshots(aliceUid, 'undo')).slice(-1)[0]
+
+    await restore('undo', safety?.id ?? '')
+
+    const live = await storedFiles(aliceUid, 'undo')
+    expect(live.map((file) => file.path)).toEqual([
+      'about.html',
+      'app.js',
+      'index.html',
+      'styles.css',
+    ])
+  })
+})
+
+/**
+ * AC-14 — restoring the version a project already is writes **nothing**.
+ *
+ * Not an optimisation. Writing would advance every file's `updatedAt` and mint a
+ * safety snapshot of a state nothing changed — so the history would fill with
+ * versions recording that nothing happened, and the prune would push real ones
+ * out to make room for them.
+ */
+describe('restoring the version the project already is (AC-14)', () => {
+  it('writes no snapshot, touches no file, and answers changed: false', async () => {
+    const versions = await twoVersions('noop')
+    const before = await storedFiles(aliceUid, 'noop')
+    const snapshotsBefore = await storedSnapshots(aliceUid, 'noop')
+
+    const res = await restore('noop', versions[1]?.id ?? '')
+
+    expect((res.body as RestoreBody).changed).toBe(false)
+    expect(await storedSnapshots(aliceUid, 'noop')).toHaveLength(snapshotsBefore.length)
+    const after = await storedFiles(aliceUid, 'noop')
+    expect(after.map((file) => file.updatedAt.toMillis())).toEqual(
+      before.map((file) => file.updatedAt.toMillis()),
+    )
+  })
+
+  it('still answers the project’s files, so a caller has one shape to read', async () => {
+    const versions = await twoVersions('noop-body')
+
+    const res = await restore('noop-body', versions[1]?.id ?? '')
+
+    expect((res.body as RestoreBody).files.map((file) => file.path)).toEqual([
+      'about.html',
+      'app.js',
+      'index.html',
+      'styles.css',
+    ])
+  })
+})
+
+/** AC-15 — a project with nothing to lose gets no safety snapshot (D9). */
+describe('restoring into a project with no files (AC-15)', () => {
+  it('writes the version’s files and takes no safety snapshot', async () => {
+    const versions = await twoVersions('emptied')
+    for (const file of await storedFiles(aliceUid, 'emptied')) {
+      await adminDb().doc(`users/${aliceUid}/projects/emptied/files/${file.id}`).delete()
+    }
+    const before = await storedSnapshots(aliceUid, 'emptied')
+
+    const res = await restore('emptied', versions[0]?.id ?? '')
+
+    expect(res.status).toBe(200)
+    expect((await storedFiles(aliceUid, 'emptied')).map((file) => file.path)).toEqual([
+      'app.js',
+      'index.html',
+      'styles.css',
+    ])
+    expect(await storedSnapshots(aliceUid, 'emptied')).toHaveLength(before.length)
+  })
+})
+
+/**
+ * AC-16 — a version that is there and cannot be trusted.
+ *
+ * All-or-nothing on the **read** side as well as the write side: a version one
+ * document short would restore an app missing a file, and a version with one
+ * corrupt document would restore an app with a hole in it. Both are worse than
+ * refusing, because both look like they worked.
+ */
+describe('a version that cannot be read whole (AC-16)', () => {
+  it('answers 409 and writes nothing when a copied file is missing', async () => {
+    const versions = await twoVersions('short')
+    const target = versions[0]?.id ?? ''
+    await adminDb()
+      .doc(`users/${aliceUid}/projects/short/snapshots/${target}/files/app.js`)
+      .delete()
+    const before = await storedFiles(aliceUid, 'short')
+    const snapshotsBefore = await storedSnapshots(aliceUid, 'short')
+
+    const res = await restore('short', target)
+
+    expect(res.status).toBe(409)
+    expect(codeOf(res)).toBe('snapshot_unreadable')
+    expect(await storedFiles(aliceUid, 'short')).toEqual(before)
+    expect(await storedSnapshots(aliceUid, 'short')).toHaveLength(snapshotsBefore.length)
+  })
+
+  it('answers 409 and writes nothing when a copied file will not parse', async () => {
+    const versions = await twoVersions('corrupted')
+    const target = versions[0]?.id ?? ''
+    await adminDb()
+      .doc(`users/${aliceUid}/projects/corrupted/snapshots/${target}/files/app.js`)
+      .set({ path: 'app.js', size: 3 })
+    const before = await storedFiles(aliceUid, 'corrupted')
+
+    const res = await restore('corrupted', target)
+
+    expect(res.status).toBe(409)
+    expect(codeOf(res)).toBe('snapshot_unreadable')
+    expect(await storedFiles(aliceUid, 'corrupted')).toEqual(before)
+  })
+
+  it('says nothing was changed, in so many words', async () => {
+    const versions = await twoVersions('wording')
+    const target = versions[0]?.id ?? ''
+    await adminDb()
+      .doc(`users/${aliceUid}/projects/wording/snapshots/${target}/files/app.js`)
+      .delete()
+
+    const res = await restore('wording', target)
+
+    expect((res.body as { error: string }).error).toContain('Nothing was changed.')
+  })
+})
+
+/** AC-17 — every way a version can fail to be this caller's, and one answer. */
+describe('a version that is not this caller’s to restore (AC-17)', () => {
+  it('answers 404 for another user’s version and leaves their project alone', async () => {
+    await seedProject(bobUid, 'bobs-project')
+    await seedPrompt(bobUid, 'bobs-project', 'build a contact dashboard')
+    await postGenerate({ projectId: 'bobs-project' }, auth(bobToken))
+    const bobs = await storedSnapshots(bobUid, 'bobs-project')
+    const before = await storedFiles(bobUid, 'bobs-project')
+
+    const res = await restore('bobs-project', bobs[0]?.id ?? '')
+
+    expect(res.status).toBe(404)
+    expect(await storedFiles(bobUid, 'bobs-project')).toEqual(before)
+    expect(await storedSnapshots(bobUid, 'bobs-project')).toHaveLength(bobs.length)
+  })
+
+  it('answers 404 for a soft-deleted project', async () => {
+    const versions = await twoVersions('deleted')
+    await adminDb()
+      .doc(`users/${aliceUid}/projects/deleted`)
+      .update({ deletedAt: Timestamp.fromMillis(1_700_000_900_000) })
+
+    expect((await restore('deleted', versions[0]?.id ?? '')).status).toBe(404)
+  })
+
+  /* A version id is scoped to its project, so one of alice's own is still a 404. */
+  it('answers 404 for a version id belonging to another of the caller’s projects', async () => {
+    const versions = await twoVersions('source')
+    await seedProject(aliceUid, 'target')
+
+    const res = await restore('target', versions[0]?.id ?? '')
+
+    expect(res.status).toBe(404)
+    expect(codeOf(res)).toBe('not_found')
+  })
+
+  it('answers 404 for a version that never existed', async () => {
+    await seedProject(aliceUid, 'nothing')
+
+    expect((await restore('nothing', 'nosuchversion')).status).toBe(404)
+  })
+
+  it('answers 400 invalid_id for a malformed project id, before any read', async () => {
+    const res = await restore('not%20an%20id', 'whatever')
+
+    expect(res.status).toBe(400)
+    expect(codeOf(res)).toBe('invalid_id')
+  })
+
+  /*
+   * P1. A malformed version id and a malformed project id are two failures one
+   * segment apart; they share a status and a code and **not** a sentence, so a
+   * caller who mistyped the version is not told they mistyped the project.
+   */
+  it('answers 400 invalid_id for a malformed version id, in its own words', async () => {
+    await seedProject(aliceUid, 'malformed')
+
+    const res = await restore('malformed', 'a%2Fb')
+
+    expect(res.status).toBe(400)
+    expect(codeOf(res)).toBe('invalid_id')
+    expect((res.body as { error: string }).error).toBe('That version could not be found.')
+  })
+})
+
+/**
+ * AC-18 — `FILE_LIMIT` is never exceeded at any point.
+ *
+ * Because the writes and the deletes are in one batch, the union state — 20 old
+ * plus 20 new — never exists. A restore that deleted in a second commit would
+ * pass through 40 files, and a crash between the two would leave it there.
+ */
+describe('a full restore over a full project (AC-18)', () => {
+  it('ends with exactly the version’s twenty files', async () => {
+    await seedProject(aliceUid, 'twenty')
+    const snapshotRef = adminDb().collection(`users/${aliceUid}/projects/twenty/snapshots`).doc()
+    await snapshotRef.set({
+      seq: 1,
+      createdAt: Timestamp.fromMillis(1_700_000_000_000),
+      origin: 'generation',
+      fileCount: 20,
+      totalBytes: 20,
+    })
+    for (let index = 0; index < 20; index += 1) {
+      const path = `old-${String(index).padStart(2, '0')}.js`
+      await adminDb().doc(`users/${aliceUid}/projects/twenty/files/${path}`).set({
+        path,
+        content: 'x',
+        size: 1,
+        createdAt: Timestamp.fromMillis(1_700_000_000_000),
+        updatedAt: Timestamp.fromMillis(1_700_000_000_000),
+      })
+      const copied = `new-${String(index).padStart(2, '0')}.js`
+      await snapshotRef.collection('files').doc(copied).set({ path: copied, content: 'y', size: 1 })
+    }
+
+    const res = await restore('twenty', snapshotRef.id)
+
+    expect(res.status).toBe(200)
+    const live = await storedFiles(aliceUid, 'twenty')
+    expect(live).toHaveLength(20)
+    expect(live.every((file) => file.path.startsWith('new-'))).toBe(true)
+  })
+})
+
+/** AC-19's behavioural half — the guards, and the body that must not be there. */
+describe('the restore route’s guards (AC-19)', () => {
+  it('answers 401 without an Authorization header', async () => {
+    await seedProject(aliceUid, 'guarded')
+
+    const res = await restore('guarded', 'someversion', null)
+
+    expect(res.status).toBe(401)
+    expect(codeOf(res)).toBe('unauthenticated')
+  })
+
+  it('answers 403 for an unverified address', async () => {
+    const unverified = 'gensnap-unverified-restore@example.test'
+    await seedUser(unverified, PASSWORD, false)
+    await seedProject(aliceUid, 'guarded')
+
+    const res = await restore('guarded', 'someversion', await idTokenFor(unverified, PASSWORD))
+
+    expect(res.status).toBe(403)
+    expect(codeOf(res)).toBe('email_unverified')
+  })
+
+  /*
+   * The version to restore is named by the URL, so there is nothing for a caller
+   * to say in a body — and a route that ignored one would be a route where a
+   * later field could be smuggled past review.
+   */
+  it('answers 400 invalid_body for a request carrying anything at all', async () => {
+    const versions = await twoVersions('bodied')
+    const before = await storedFiles(aliceUid, 'bodied')
+
+    const res = await postJson(
+      `${listPath('bodied')}/${versions[0]?.id ?? ''}/restore`,
+      { snapshotId: versions[1]?.id },
+      auth(aliceToken),
+    )
+
+    expect(res.status).toBe(400)
+    expect(codeOf(res)).toBe('invalid_body')
+    expect(await storedFiles(aliceUid, 'bodied')).toEqual(before)
+  })
+
+  it('accepts an empty JSON object, which is what a bodyless request parses as', async () => {
+    const versions = await twoVersions('emptybody')
+
+    const res = await postJson(
+      `${listPath('emptybody')}/${versions[0]?.id ?? ''}/restore`,
+      {},
+      auth(aliceToken),
+    )
+
+    expect(res.status).toBe(200)
   })
 })
