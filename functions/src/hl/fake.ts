@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { appendFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 
 import { Router, urlencoded, type Request, type Response } from 'express'
 
@@ -55,31 +56,64 @@ const SECOND_LOCATION_ID = 'aB9zzQ1CtZJTlymH8ySo'
 const consumedCodes = new Set<string>()
 
 /**
- * How many requests the stub has received since the last reset.
+ * The two counters the suite reads, and **why they are not module variables**.
  *
- * **The only way to observe a call that was never made.** A refusal that
- * short-circuits before the upstream request and one that forwards and then
- * fails are indistinguishable from the caller's side — both answer an error —
- * so the tests for "no upstream call was made" need the far side to say so.
+ * They exist because some assertions are about a request that was *not* made. A
+ * refusal that short-circuits before the upstream call and one that forwards
+ * and then fails are indistinguishable from the caller's side — both answer an
+ * error — so the far side has to say so. And AC-26 is sharper still: not "was
+ * anything sent" but "was it sent **once**", which nothing on the caller's side
+ * can see, because a rotation that ran twice still answers every caller
+ * successfully.
  *
- * Module state, which assumes the request and the read land in the same
- * process. `consumedCodes` above already makes that assumption and the functions
- * emulator has honoured it; unlike the token exchange there is nothing to carry
- * this on the input instead, because the whole point is to count requests that
- * carry nothing.
+ * A module variable cannot carry either. The functions emulator runs a **pool
+ * of worker processes**, and every one of these requests is *nested* — the
+ * proxy, running inside an invocation, calls back into the emulator to reach
+ * this stub, so that call is necessarily served by a different worker than the
+ * one that will serve the test's read. A per-process counter therefore reads
+ * zero however many calls were made, which is worse than no counter at all:
+ * every `expect(await upstreamCalls()).toBe(0)` would pass without ever having
+ * looked.
+ *
+ * A file in the temp directory is the smallest thing genuinely shared across
+ * those workers. Firestore would also work and was rejected: it would add a
+ * collection to the data model, a block to `firestore.rules` and an L3 case, all
+ * for state that exists only under the emulator and never ships.
+ *
+ * Keyed by `FIRESTORE_EMULATOR_HOST`, which is unique per port band, because two
+ * checkouts of this repo run their suites side by side on the same machine —
+ * that collision is exactly what `EMULATOR_PORT_OFFSET` exists for, and a
+ * constant path here would reintroduce it.
  */
-let receivedCalls = 0
+function counterPath(name: string): string {
+  const band = (process.env['FIRESTORE_EMULATOR_HOST'] ?? 'default').replace(/[^\w.-]/g, '_')
+  const dir = join(tmpdir(), `genesis-fake-hl-${band}`)
+  mkdirSync(dir, { recursive: true })
+  return join(dir, `${name}.tally`)
+}
 
 /**
- * How many refresh grants have been asked for since the last reset.
+ * One byte per event, appended.
  *
- * Separate from {@link receivedCalls} because the property it exists to prove
- * is different in kind: not "was anything sent" but "was it sent **once**". A
- * concurrent rotation that ran twice would still answer every caller
- * successfully, so the count is the only evidence D23's short-circuit is doing
- * anything at all.
+ * `O_APPEND` is atomic for a write this small, so two workers incrementing at
+ * once cannot lose one — which matters precisely in AC-26's concurrent case,
+ * the one place a read-modify-write counter would undercount and *pass*.
  */
-let refreshGrants = 0
+function tally(name: string): void {
+  appendFileSync(counterPath(name), '.')
+}
+
+function tallied(name: string): number {
+  try {
+    return readFileSync(counterPath(name), 'utf8').length
+  } catch {
+    return 0
+  }
+}
+
+function clearTally(name: string): void {
+  rmSync(counterPath(name), { force: true })
+}
 
 /**
  * Control routes are spelled `__name` and are not counted.
@@ -299,27 +333,27 @@ export function buildFakeHlRouter(enabled: boolean): Router {
   router.use('/__fake-hl', urlencoded({ extended: false }))
 
   router.use('/__fake-hl', (req, _res, next) => {
-    if (!isControlRoute(req.path)) receivedCalls += 1
+    if (!isControlRoute(req.path)) tally('calls')
     next()
   })
 
   router.get('/__fake-hl/__calls', (_req, res) => {
-    res.json({ total: receivedCalls })
+    res.json({ total: tallied('calls') })
   })
 
   // Reset rather than a fresh process: the tests run against one long-lived
   // emulator, so `beforeEach` needs a way to zero it.
   router.delete('/__fake-hl/__calls', (_req, res) => {
-    receivedCalls = 0
+    clearTally('calls')
     res.json({ ok: true })
   })
 
   router.get('/__fake-hl/__refresh-count', (_req, res) => {
-    res.json({ total: refreshGrants })
+    res.json({ total: tallied('refreshes') })
   })
 
   router.delete('/__fake-hl/__refresh-count', (_req, res) => {
-    refreshGrants = 0
+    clearTally('refreshes')
     res.json({ ok: true })
   })
 
@@ -353,7 +387,7 @@ export function buildFakeHlRouter(enabled: boolean): Router {
     if (body['grant_type'] === 'refresh_token') {
       // Counted before the outcome is decided: what AC-26 asks is how many
       // refresh requests *reached* HighLevel, not how many succeeded.
-      refreshGrants += 1
+      tally('refreshes')
       const token = body['refresh_token'] ?? ''
       if (token.startsWith('dead-')) {
         res

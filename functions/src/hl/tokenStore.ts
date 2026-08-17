@@ -1,11 +1,21 @@
-import { FieldValue } from 'firebase-admin/firestore'
+import { FieldValue, Timestamp } from 'firebase-admin/firestore'
 import { z } from 'zod'
 
 import { CONNECTIONS } from './connection'
 import { firestoreTimestamp } from '../users/schema'
 import { getDb } from '../lib/firebase'
+import { isDefinitiveRefreshFailure } from './proxyError'
 import { logAuthEvent } from '../lib/log'
-import type { ConnectionSnapshot, TokenDeps } from './token'
+import { refreshTokens } from './exchange'
+import {
+  HlNotConnectedError,
+  HlReconnectRequiredError,
+  HlRefreshUnavailableError,
+  isFresh,
+  type ConnectionSnapshot,
+  type TokenDeps,
+} from './token'
+import type { TokenResponse } from './schema'
 
 /**
  * The Firestore side of {@link TokenDeps} — the adapter Slice 2 deferred.
@@ -47,14 +57,29 @@ const storedTokensSchema = z.object({
   needsReconnect: z.boolean().catch(false),
 })
 
-function snapshotOf(data: unknown): ConnectionSnapshot | undefined {
+type StoredTokens = z.infer<typeof storedTokensSchema>
+
+function parseStored(data: unknown): StoredTokens | undefined {
   const parsed = storedTokensSchema.safeParse(data)
   if (!parsed.success) {
     logAuthEvent('hl.tokens.unreadable', { outcome: 'invalid' })
     return undefined
   }
+  return parsed.data
+}
 
-  const { accessToken, expiresAt, locationId, needsReconnect } = parsed.data
+/**
+ * The projection the port sees — and it is **narrower on purpose**.
+ *
+ * `ConnectionSnapshot` carries no `refreshToken`, so `token.ts`'s pure decision
+ * layer cannot hold one, cannot log one and cannot return one. The refresh
+ * token is read exactly once, inside the transaction below, where the only
+ * thing done with it is to spend it. Projecting here rather than passing
+ * `parsed.data` around is what keeps that true by construction instead of by
+ * everyone remembering.
+ */
+function snapshotOf(stored: StoredTokens): ConnectionSnapshot {
+  const { accessToken, expiresAt, locationId, needsReconnect } = stored
   return { accessToken, expiresAtMs: expiresAt.toMillis(), locationId, needsReconnect }
 }
 
@@ -85,15 +110,110 @@ export function firestoreTokenDeps(): TokenDeps {
     read: async (uid: string): Promise<ConnectionSnapshot | undefined> => {
       const snapshot = await getDb().doc(`${CONNECTIONS}/${uid}`).get()
       if (!snapshot.exists) return undefined
-      return snapshotOf(snapshot.data())
+      const stored = parseStored(snapshot.data())
+      return stored === undefined ? undefined : snapshotOf(stored)
     },
 
-    // T11 replaces this with the transactional rotation (D22, D23). Left to
-    // throw plainly rather than to answer a plausible status, so that reaching
-    // it before then is a 500 in a log and not a quiet `502 hl_unavailable`
-    // that reads like a HighLevel blip.
-    refresh: (): Promise<string> => {
-      throw new Error('The transactional refresh lands in T11.')
-    },
+    refresh: (uid: string): Promise<string> => rotate(uid),
   }
+}
+
+/** What the transaction body decided, so the throwing happens outside it. */
+type Rotation =
+  | { kind: 'gone' }
+  | { kind: 'dead' }
+  | { kind: 'reused'; accessToken: string }
+  | { kind: 'rotated'; accessToken: string }
+
+/**
+ * Rotate the connection's tokens, transactionally (D22, D23).
+ *
+ * ## Why the network call is inside the transaction
+ *
+ * Because that is what makes it safe, not in spite of it. HighLevel rotates
+ * refresh tokens on use: each refresh issues a new one and invalidates the one
+ * presented. So two callers who both find an expired access token would both
+ * try to rotate, one would win, and the loser would present a token that had
+ * already been spent — `invalid_grant`, and a connection dead until the user
+ * reinstalls.
+ *
+ * Two properties close that, and both live in this function:
+ *
+ * 1. Firestore read-write transactions are **pessimistic**. The second caller's
+ *    `tx.get` on this document blocks until the first commits, so the two do not
+ *    race — they queue.
+ * 2. The body **re-reads and short-circuits**. Having waited, the second caller
+ *    finds a token the first already rotated and returns it, and a transaction
+ *    that Firestore *retried* re-enters here and does the same. That is what
+ *    stops a retry from re-spending a refresh token.
+ *
+ * The honest residue, which the PRD measured rather than assumed: if locking
+ * ever failed to serialise the two, both would refresh, both would succeed, and
+ * one refresh token would be orphaned — survivable, because HighLevel accepts a
+ * reused refresh token at least once (§3, corrected 2026-08-16).
+ *
+ * ## The mistake this shape exists to avoid
+ *
+ * **On `invalid_grant` the transaction must commit.** The refusal is carried out
+ * as a returned sentinel and thrown *after* `runTransaction` resolves, because
+ * throwing from inside the body would abort it and discard `needsReconnect:
+ * true` along with everything else — and the failure would read like a
+ * Firestore bug rather than a control-flow one.
+ *
+ * The rejected alternative is a `lease` field claimed in one transaction with
+ * the network call outside it: correct, and the right answer for a system with
+ * real concurrency, but it buys a lock with an expiry policy, a stale-lease
+ * sweep and a third failure mode, for a hazard that has been measured to be
+ * survivable.
+ */
+async function rotate(uid: string): Promise<string> {
+  const db = getDb()
+  const ref = db.doc(`${CONNECTIONS}/${uid}`)
+
+  const outcome = await db.runTransaction<Rotation>(async (tx) => {
+    const snapshot = await tx.get(ref)
+    const stored = snapshot.exists ? parseStored(snapshot.data()) : undefined
+    if (stored === undefined) return { kind: 'gone' }
+
+    // Property 2. Somebody else may have rotated while this caller was blocked
+    // on their lock, and a retried transaction re-enters here.
+    if (isFresh(stored.expiresAt.toMillis(), Date.now())) {
+      return { kind: 'reused', accessToken: stored.accessToken }
+    }
+
+    let next: TokenResponse
+    try {
+      next = await refreshTokens(stored.refreshToken)
+    } catch (err) {
+      if (isDefinitiveRefreshFailure(err)) {
+        /*
+         * The flag, and **nothing else**. In particular the refresh token is
+         * left exactly as it is: §3's first rule is never to destroy a token
+         * that may still be valid, and reconnecting overwrites the document
+         * anyway, so clearing it buys nothing and costs the one piece of
+         * evidence a support conversation would want.
+         */
+        tx.update(ref, { needsReconnect: true, updatedAt: FieldValue.serverTimestamp() })
+        return { kind: 'dead' }
+      }
+
+      // Aborts the transaction, so nothing at all is written (D26). A 5xx, a
+      // network error and a timeout say nothing about the connection, and a
+      // blip recorded as a dead connection is unrecoverable without a
+      // reinstall.
+      throw new HlRefreshUnavailableError()
+    }
+
+    tx.update(ref, {
+      accessToken: next.access_token,
+      refreshToken: next.refresh_token,
+      expiresAt: Timestamp.fromMillis(Date.now() + next.expires_in * 1000),
+      updatedAt: FieldValue.serverTimestamp(),
+    })
+    return { kind: 'rotated', accessToken: next.access_token }
+  })
+
+  if (outcome.kind === 'gone') throw new HlNotConnectedError()
+  if (outcome.kind === 'dead') throw new HlReconnectRequiredError()
+  return outcome.accessToken
 }

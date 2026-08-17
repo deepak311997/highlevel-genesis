@@ -1,7 +1,15 @@
 import { Timestamp } from 'firebase-admin/firestore'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
-import { adminDb, deleteJson, getJson, idTokenFor, postJson, resetEmulators, seedUser } from './helpers'
+import {
+  adminDb,
+  deleteJson,
+  getJson,
+  idTokenFor,
+  postJson,
+  resetEmulators,
+  seedUser,
+} from './helpers'
 
 /**
  * `/api/hl/proxy/**` — the boundary, over the wire.
@@ -113,7 +121,11 @@ describe('the proxy boundary', () => {
   })
 
   it('refuses a caller whose email is not verified', async () => {
-    const res = await postJson('/api/hl/proxy/contacts/search', { pageLimit: 1 }, auth(unverifiedToken))
+    const res = await postJson(
+      '/api/hl/proxy/contacts/search',
+      { pageLimit: 1 },
+      auth(unverifiedToken),
+    )
 
     expect(res.status).toBe(403)
     expect((res.body as { code?: string }).code).toBe('email_unverified')
@@ -293,11 +305,7 @@ describe('the upstream call', () => {
   })
 
   it('mirrors a 201 on a create rather than flattening it to 200', async () => {
-    const res = await postJson(
-      '/api/hl/proxy/contacts/',
-      { firstName: 'Casey' },
-      auth(aliceToken),
-    )
+    const res = await postJson('/api/hl/proxy/contacts/', { firstName: 'Casey' }, auth(aliceToken))
 
     expect(res.status).toBe(201)
   })
