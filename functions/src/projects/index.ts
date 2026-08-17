@@ -1,7 +1,12 @@
 import { Router } from 'express'
 
 import { asyncHandler } from '../lib/errors'
-import { handleCreateProject, handleGetProject, handleListProjects } from './handlers'
+import {
+  handleCreateProject,
+  handleGetProject,
+  handleListProjects,
+  handlePatchProject,
+} from './handlers'
 import { requireAppCheck } from '../auth/appCheck'
 import { withVerifiedUser } from '../auth/requireUser'
 
@@ -36,3 +41,8 @@ const attested = asyncHandler(requireAppCheck)
 projectsRouter.get('/projects', asyncHandler(withVerifiedUser(handleListProjects)))
 projectsRouter.post('/projects', attested, asyncHandler(withVerifiedUser(handleCreateProject)))
 projectsRouter.get('/projects/:projectId', asyncHandler(withVerifiedUser(handleGetProject)))
+projectsRouter.patch(
+  '/projects/:projectId',
+  attested,
+  asyncHandler(withVerifiedUser(handlePatchProject)),
+)

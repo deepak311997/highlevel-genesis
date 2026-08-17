@@ -9,6 +9,7 @@ import { logAuthEvent } from '../lib/log'
 import { parseBody } from '../lib/parse'
 import {
   createProjectBodySchema,
+  patchProjectBodySchema,
   LIST_LIMIT,
   PROJECT_LIMIT,
   projectIdSchema,
@@ -237,6 +238,53 @@ export async function handleGetProject(req: Request, res: Response, uid: string)
 
   const project = await readProject(uid, id)
   if (project === null) throw notFound()
+
+  res.json({ project })
+}
+
+/**
+ * Rename a project, change its description, or both.
+ *
+ * `PATCH` rather than `PUT` because the update is genuinely partial: a rename
+ * need not resend the description, and clearing the description need not resend
+ * the name.
+ *
+ * Deliberately not transactional (P2). The document has one writer — its owner,
+ * through this route — so the read-then-update buys nothing a transaction would,
+ * and `handlePutProfile`'s transaction exists for a different reason: two tabs
+ * racing to *create* the same document.
+ */
+export async function handlePatchProject(req: Request, res: Response, uid: string): Promise<void> {
+  const id = requireProjectId(req)
+
+  /*
+   * Body before read, so a refused body costs no Firestore call and writes
+   * nothing — including an `updatedAt` that would reorder the list for a request
+   * that changed nothing.
+   */
+  const body = parseBody(patchProjectBodySchema, req)
+
+  if ((await readProject(uid, id)) === null) throw notFound()
+
+  const patch: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() }
+  /*
+   * Present-versus-absent, not truthy-versus-falsy. An explicit `null` clears
+   * the description; an absent key leaves whatever is stored alone. Collapsing
+   * the two would make every rename wipe the description.
+   */
+  if ('name' in body) patch['name'] = body.name
+  if ('description' in body) patch['description'] = body.description ?? null
+
+  await getDb()
+    .doc(`${projectsPath(uid)}/${id}`)
+    .update(patch)
+
+  // Re-read, because `serverTimestamp()` is a sentinel until it commits.
+  const project = await readProject(uid, id)
+  if (project === null) {
+    logAuthEvent('project.unreadable', { outcome: 'invalid', detail: 'after patch' })
+    throw new HttpError(500, 'Internal error', 'internal')
+  }
 
   res.json({ project })
 }

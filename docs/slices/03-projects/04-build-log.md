@@ -97,3 +97,21 @@ double-dot segments before the request is sent. `has%20space` was added alongsid
 is the same class of case and free.
 
 **Deviations from the plan:** none.
+
+---
+
+## T5 — `PATCH /api/projects/:projectId`
+
+**Red:** `patchJson` added to `tests/integration/helpers.ts`, then
+`describe('PATCH /api/projects/:projectId')` — 22 cases.
+
+**Green:** `handlePatchProject` — id, then body, then read, then a patch built with
+present-versus-absent semantics, then a re-read for the committed timestamps. No transaction
+(P2): one writer per document.
+
+**ACs:** AC-6, AC-7, AC-12 (update), AC-16, AC-17 (PATCH), AC-20 (PATCH), AC-14/AC-15 (PATCH),
+AC-10/AC-11 (PATCH).
+
+**Deviations from the plan:** none. The cross-tenant case compares bob's whole stored document
+before and after with `toEqual`, which covers "including its `updatedAt`" without naming
+fields one at a time.
