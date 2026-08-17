@@ -45,7 +45,25 @@ export function projectsPath(uid: string): string {
 }
 
 const name = z.string().trim().min(1).max(NAME_MAX)
-const description = z.string().trim().max(DESCRIPTION_MAX).nullable()
+
+/**
+ * A description, or `null` — and **`null` is the only way to say "none"**.
+ *
+ * The trim happens before the limit, so padding cannot be smuggled past it; the
+ * transform is what stops the trim from inventing a second empty. Without it a
+ * caller who sends `''` or `'   '` stores `''`, which no screen can tell apart
+ * from `null` — the card hides a falsy description either way — while the rename
+ * dialog, which decides what changed by comparing its trimmed field against the
+ * stored value, reads the two as different and offers a Save that alters
+ * nothing. One state, one representation, decided at the boundary rather than
+ * re-decided by each reader.
+ */
+const description = z
+  .string()
+  .trim()
+  .max(DESCRIPTION_MAX)
+  .nullable()
+  .transform((value) => (value === '' ? null : value))
 
 /**
  * The `POST` body.
