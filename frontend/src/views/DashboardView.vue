@@ -3,18 +3,18 @@ import { onMounted } from 'vue'
 
 import AccountCard from '@/components/AccountCard.vue'
 import ConnectionPanel from '@/components/ConnectionPanel.vue'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import ProjectsCard from '@/components/ProjectsCard.vue'
 import { useProfileStore } from '@/stores/profile'
 
 /**
- * Placeholder. Slice 3 replaces the projects card with the real list; what
- * matters here is that a protected route exists for the guard to protect, and
- * that the profile is ensured once per verified session.
+ * The dashboard: the account, the HighLevel connection, and the projects.
  *
- * The ensure is fired and not awaited, and the failure is the account card's to
- * render rather than this view's to handle: a profile is a convenience, not a
- * precondition for a session, so a failed request must leave the connection
- * panel and sign-out working.
+ * Each card owns its own store, its own request and its own four states, and
+ * this view owns none of them. The ensure below is fired and not awaited, and
+ * its failure is the account card's to render rather than this view's to handle:
+ * a profile is a convenience, not a precondition for a session, so a failed
+ * request must leave the connection panel, the projects card and sign-out
+ * working.
  */
 const profile = useProfileStore()
 
@@ -31,15 +31,6 @@ onMounted(() => {
 
     <ConnectionPanel />
 
-    <Card>
-      <CardHeader>
-        <CardTitle>Projects</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p data-testid="dashboard-empty" class="text-sm text-muted-foreground">
-          No projects yet. Creating them arrives in the next slice.
-        </p>
-      </CardContent>
-    </Card>
+    <ProjectsCard />
   </div>
 </template>

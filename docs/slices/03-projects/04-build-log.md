@@ -292,3 +292,19 @@ cases. `AccountCard.vue` now uses it too, and its own suite passes unchanged.
 **ACs:** AC-24, AC-25, AC-26, AC-27.
 
 **Deviations from the plan:** none.
+
+---
+
+## T14 — Dashboard wiring
+
+**Red:** `frontend/src/views/DashboardView.spec.ts` — the two `dashboard-empty` assertions
+become assertions about a stubbed `ProjectsCard`, one of them the AC-28 case (a failed profile
+ensure still leaves the connection panel and the projects card rendered).
+
+**Green:** `DashboardView.vue`'s placeholder `Card` is replaced by `<ProjectsCard />`, its
+stale "Slice 3 replaces the projects card" comment is rewritten, and the now-unused `Card`
+imports go. No `dashboard-empty` reference remains anywhere in the repo.
+
+**ACs:** AC-28.
+
+**Deviations from the plan:** none.
