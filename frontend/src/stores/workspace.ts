@@ -293,9 +293,11 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
          * case the same rendering path as the successful one — and what stops an
          * id-less bubble that disagrees with the server on the next load.
          */
-        if (event.message !== null) messages.value = [...messages.value, event.message]
-        generateError.value = event.error
-        return
+        if (event.type === 'error') {
+          if (event.message !== null) messages.value = [...messages.value, event.message]
+          generateError.value = event.error
+          return
+        }
       }
     } catch (err) {
       if (!current(gen)) return
