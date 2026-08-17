@@ -2,12 +2,21 @@ import type { Request, RequestHandler, Response, NextFunction } from 'express'
 
 import { describeError } from './log'
 
-/** An error with an HTTP status that is safe to show a user. */
+/**
+ * An error with an HTTP status that is safe to show a user.
+ *
+ * `detail` is the fourth field and the narrowest: **upstream's own text about
+ * the request**, never ours about our internals (D19). A proxied HighLevel
+ * failure carries their message so the preview can say what was actually wrong
+ * with the call, and a generated app can act on it. Nothing else should use it —
+ * an internal message belongs in a log, not on the wire.
+ */
 export class HttpError extends Error {
   constructor(
     readonly status: number,
     message: string,
     readonly code = 'error',
+    readonly detail?: string,
   ) {
     super(message)
     this.name = 'HttpError'
@@ -53,7 +62,14 @@ export function errorHandler(
   _next: NextFunction,
 ): void {
   if (err instanceof HttpError) {
-    res.status(err.status).json({ error: err.message, code: err.code })
+    // Spread rather than assignment: `exactOptionalPropertyTypes` distinguishes
+    // an absent key from an explicit `undefined`, and the wire shape should
+    // agree — a client reads `detail` as a string or as nothing, never as null.
+    res.status(err.status).json({
+      error: err.message,
+      code: err.code,
+      ...(err.detail === undefined ? {} : { detail: err.detail }),
+    })
     return
   }
 
