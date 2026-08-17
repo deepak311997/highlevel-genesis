@@ -428,6 +428,143 @@ describe('users/{uid}/projects/{projectId}/messages/{messageId}', () => {
   })
 })
 
+/**
+ * Exactly what `stageFileWrites` and `PUT .../files/:path` put in the collection,
+ * so the denial is on the rule and not on the shape.
+ *
+ * The document id **is** the filename (D13), which is why every case below
+ * addresses `.../files/index.html` rather than an opaque id: a rule written
+ * against a path segment is a rule that could behave differently for a
+ * filename-shaped id than for an auto-id one.
+ */
+function file() {
+  return {
+    path: 'index.html',
+    content: '<!doctype html>\n<h1>Contacts</h1>\n',
+    size: 33,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }
+}
+
+async function seedFile(uid = 'alice', projectId = 'proj-1', id = 'index.html'): Promise<void> {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(asModular(ctx.firestore()), `users/${uid}/projects/${projectId}/files/${id}`), {
+      ...file(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+  })
+}
+
+describe('users/{uid}/projects/{projectId}/files/{fileId}', () => {
+  /*
+   * AC-32. The owner is the most privileged client there is, and every one of
+   * their five operations is denied — the browser has `lib/filesApi.ts` and
+   * nothing else.
+   *
+   * Rules do **not** cascade into subcollections, so neither `match /users/{uid}`
+   * nor `match /users/{uid}/projects/{projectId}` says anything about this path.
+   * The block being tested is required rather than decorative, and these cases
+   * are what would catch a later rule granting a parent recursively.
+   *
+   * The write cases matter most, and for a reason specific to this slice: the
+   * files *are* the generated application. A client that could write here could
+   * put its own JavaScript into a project and have Slice 10's preview run it.
+   */
+  it('denies a verified owner reading one of their own files', async () => {
+    await seedFile()
+
+    await assertFails(
+      getDoc(doc(verified('alice'), 'users/alice/projects/proj-1/files/index.html')),
+    )
+  })
+
+  it('denies a verified owner listing their own file tree', async () => {
+    await seedFile()
+
+    await assertFails(getDocs(collection(verified('alice'), 'users/alice/projects/proj-1/files')))
+  })
+
+  /* The one that would let a client put its own code into a project. */
+  it('denies a verified owner creating a file', async () => {
+    await assertFails(
+      setDoc(doc(verified('alice'), 'users/alice/projects/proj-1/files/app.js'), file()),
+    )
+  })
+
+  /* Saving an edit is `PUT`'s job; a client cannot even reach the document. */
+  it('denies a verified owner updating one of their own files', async () => {
+    await seedFile()
+
+    await assertFails(
+      updateDoc(doc(verified('alice'), 'users/alice/projects/proj-1/files/index.html'), {
+        content: '<script>fetch("https://evil.test")</script>',
+        updatedAt: serverTimestamp(),
+      }),
+    )
+  })
+
+  /* Generations never delete (D18) and there is no delete route, so neither may
+   * a client. */
+  it('denies a verified owner deleting one of their own files', async () => {
+    await seedFile()
+
+    await assertFails(
+      deleteDoc(doc(verified('alice'), 'users/alice/projects/proj-1/files/index.html')),
+    )
+  })
+
+  /** AC-32, from a stranger. */
+  it('denies a different signed-in user, however verified they are', async () => {
+    await seedFile()
+    const mallory = verified('mallory')
+
+    await assertFails(getDoc(doc(mallory, 'users/alice/projects/proj-1/files/index.html')))
+    await assertFails(getDocs(collection(mallory, 'users/alice/projects/proj-1/files')))
+    await assertFails(setDoc(doc(mallory, 'users/alice/projects/proj-1/files/evil.js'), file()))
+    await assertFails(
+      updateDoc(doc(mallory, 'users/alice/projects/proj-1/files/index.html'), {
+        content: 'stolen',
+      }),
+    )
+    await assertFails(deleteDoc(doc(mallory, 'users/alice/projects/proj-1/files/index.html')))
+  })
+
+  it('denies an unauthenticated client', async () => {
+    await seedFile()
+    const anon = anonymous()
+
+    await assertFails(getDoc(doc(anon, 'users/alice/projects/proj-1/files/index.html')))
+    await assertFails(getDocs(collection(anon, 'users/alice/projects/proj-1/files')))
+    await assertFails(setDoc(doc(anon, 'users/alice/projects/proj-1/files/anon.js'), file()))
+  })
+})
+
+describe('the rules file changed, so every prior denial is re-asserted', () => {
+  /*
+   * AC-33. Each of these has its own cases above; this one walks them together in
+   * a single pass, and exists because **the rules file was edited this slice**.
+   * A rewrite is exactly the moment a collection quietly loses its denial along
+   * with a helper it shared with something else, and a single failing `it` naming
+   * the whole surface is easier to read in a report than one of thirty.
+   */
+  it('denies a verified owner one operation on every collection', async () => {
+    await seedProfile()
+    await seedProject()
+    await seedMessage()
+    await seedFile()
+    const alice = verified('alice')
+
+    await assertFails(getDoc(doc(alice, 'users/alice')))
+    await assertFails(getDoc(doc(alice, 'users/alice/projects/proj-1')))
+    await assertFails(getDoc(doc(alice, 'users/alice/projects/proj-1/messages/msg-1')))
+    await assertFails(getDoc(doc(alice, 'users/alice/projects/proj-1/files/index.html')))
+    await assertFails(getDoc(doc(alice, 'hlConnections/alice')))
+    await assertFails(getDoc(doc(alice, 'authThrottle/email:abc')))
+  })
+})
+
 describe('server-only collections', () => {
   /*
    * AC-15 — re-asserted because the rules file was rewritten. These two were

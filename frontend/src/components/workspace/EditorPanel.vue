@@ -1,13 +1,20 @@
 <script setup lang="ts">
+import FileEditor from '@/components/workspace/FileEditor.vue'
+import FileTree from '@/components/workspace/FileTree.vue'
+import { Separator } from '@/components/ui/separator'
+
 /**
- * Where the file tree and the editor go — **a labelled placeholder** (D18).
+ * The code panel — a screen now rather than a labelled placeholder (D18's debt,
+ * paid).
  *
- * It is structure, not a screen: no request, no data and no failure mode, so the
- * loading/empty/error rule has nothing to attach to. That rule applies in full to
- * the workspace route and to the chat panel, which do have all three.
+ * Composition and nothing else: the tree and the editor each own their four
+ * states, and this holds the header and decides only where the two sit. The
+ * split is horizontal at every width, because the tree is short and the editor
+ * wants the height — and because the narrow layout already spends its width on
+ * one panel at a time.
  *
- * It names the slices that fill it so the empty space reads as planned rather than
- * unfinished — files and the tree in Slice 6, Monaco in Slice 7.
+ * The editor is a textarea until Slice 7 swaps in Monaco. That swap touches
+ * `FileEditor.vue` and nothing here.
  */
 </script>
 
@@ -17,10 +24,22 @@
       <h2 class="text-sm font-semibold">Code</h2>
     </header>
 
-    <div class="flex flex-1 items-center justify-center p-6">
-      <p class="max-w-xs text-center text-sm text-muted-foreground">
-        Generated files arrive in Slice 6, and the editor in Slice 7.
-      </p>
+    <Separator />
+
+    <!-- Capped rather than free-growing: a project at the 20-file limit would
+         otherwise take the whole panel and leave the editor a sliver.
+
+         **The cap scrolls.** `max-height` alone leaves the tree its content
+         height, so `FileTree`'s own scroller never overflows and never scrolls —
+         and `overflow-hidden` here would then clip the rows past 14rem with
+         nothing to reach them by. The scrolling belongs on the element that
+         imposes the limit, which is this one. -->
+    <div class="max-h-56 shrink-0 overflow-y-auto">
+      <FileTree />
     </div>
+
+    <Separator />
+
+    <FileEditor />
   </section>
 </template>

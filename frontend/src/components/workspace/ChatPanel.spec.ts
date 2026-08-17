@@ -23,6 +23,7 @@ const store = reactive({
   generating: false,
   streamingText: '',
   generateError: null as string | null,
+  generateFileError: null as string | null,
   loadMessages: vi.fn(),
   retryGeneration: vi.fn(),
 })
@@ -117,6 +118,7 @@ beforeEach(() => {
   store.generating = false
   store.streamingText = ''
   store.generateError = null
+  store.generateFileError = null
   vi.clearAllMocks()
 })
 
@@ -450,5 +452,119 @@ describe('ChatPanel — scrolling while tokens arrive', () => {
     await flushPromises()
 
     expect(viewport.scrollTop).toBe(640)
+  })
+})
+
+/**
+ * AC-46, D29 — the transcript renders **chips, not code**.
+ *
+ * The stored message carries `[file: index.html]` marker lines where a file went
+ * (D6), so a bubble that rendered its content raw would read like a build log with
+ * what looks like a bug in it. `splitMessageContent` is the decision and has its
+ * own L1 tests; what is asserted here is that both the persisted bubble and the
+ * streaming placeholder use it — the live text and the stored text are the same
+ * string (D7), so anything else is two renderings of one thing.
+ */
+describe('ChatPanel — file chips', () => {
+  const WITH_FILES: Message = {
+    ...ASSISTANT,
+    content: 'Here is a contact dashboard.\n\n[file: index.html]\n[file: app.js]\n\nOpen it.',
+  }
+
+  it('renders the prose as text and each marker as a chip', () => {
+    store.messagesLoaded = true
+    store.messages = [WITH_FILES]
+
+    const wrapper = mount(ChatPanel, MOUNT)
+    const bubble = wrapper.find(BUBBLE)
+
+    expect(bubble.findAll('[data-testid="file-chip"]').map((chip) => chip.text())).toEqual([
+      'index.html',
+      'app.js',
+    ])
+    expect(bubble.text()).toContain('Here is a contact dashboard.')
+    expect(bubble.text()).toContain('Open it.')
+  })
+
+  /* The bubble must never carry the code itself — the whole point of D6. */
+  it('renders no marker line as raw text', () => {
+    store.messagesLoaded = true
+    store.messages = [WITH_FILES]
+
+    const wrapper = mount(ChatPanel, MOUNT)
+
+    expect(wrapper.find(BUBBLE).text()).not.toContain('[file:')
+  })
+
+  it('renders no chip for a message without markers', () => {
+    store.messagesLoaded = true
+    store.messages = [ASSISTANT]
+
+    const wrapper = mount(ChatPanel, MOUNT)
+
+    expect(wrapper.find('[data-testid="file-chip"]').exists()).toBe(false)
+  })
+
+  /** The placeholder is the same string, so it renders the same way (D7). */
+  it('renders chips in the streaming placeholder too', () => {
+    store.messagesLoaded = true
+    store.messages = [USER]
+    store.generating = true
+    store.streamingText = 'Here it is.\n\n[file: index.html]\n'
+
+    const wrapper = mount(ChatPanel, MOUNT)
+    const bubble = wrapper.find('[data-testid="streaming-bubble"]')
+
+    expect(bubble.findAll('[data-testid="file-chip"]').map((chip) => chip.text())).toEqual([
+      'index.html',
+    ])
+    expect(bubble.text()).toContain('Here it is.')
+  })
+
+  /*
+   * A half-arrived marker is still prose until it closes, so the bubble shows the
+   * partial line rather than flickering a chip in and out on every token.
+   */
+  it('leaves a half-arrived marker as text', () => {
+    store.messagesLoaded = true
+    store.messages = [USER]
+    store.generating = true
+    store.streamingText = 'Here it is.\n\n[file: ind'
+
+    const wrapper = mount(ChatPanel, MOUNT)
+
+    expect(wrapper.find('[data-testid="streaming-bubble"]').text()).toContain('[file: ind')
+    expect(wrapper.find('[data-testid="file-chip"]').exists()).toBe(false)
+  })
+})
+
+/**
+ * A turn whose files were refused (D8, D17).
+ *
+ * Its own notice rather than `generateError`'s: the reply itself succeeded and is
+ * in the transcript, so offering the Retry that belongs to a failed generation
+ * would be the wrong action for the wrong problem.
+ */
+describe('ChatPanel — the generation’s file error', () => {
+  it('renders the file error with no retry', () => {
+    store.messagesLoaded = true
+    store.messages = [ASSISTANT]
+    store.generateFileError = 'That reply left “app.js” unfinished, so nothing was saved.'
+
+    const wrapper = mount(ChatPanel, MOUNT)
+
+    expect(wrapper.find('[data-testid="generate-file-error"]').text()).toContain(
+      'That reply left “app.js” unfinished, so nothing was saved.',
+    )
+    expect(wrapper.find('[data-testid="generate-retry"]').exists()).toBe(false)
+  })
+
+  it('renders nothing when the turn wrote its files cleanly', () => {
+    store.messagesLoaded = true
+    store.messages = [ASSISTANT]
+
+    const wrapper = mount(ChatPanel, MOUNT)
+
+    expect(wrapper.find('[data-testid="generate-file-error"]').exists()).toBe(false)
   })
 })

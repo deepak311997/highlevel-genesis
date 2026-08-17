@@ -17,22 +17,69 @@
       }
     }
   },
-  { "type": "content_block_start", "index": 0, "content_block": { "type": "text", "text": "" } },
   {
-    "type": "content_block_delta",
+    "type": "content_block_start",
     "index": 0,
-    "delta": { "type": "text_delta", "text": "Here is a contact dashboard. " }
+    "content_block": {
+      "type": "text",
+      "text": ""
+    }
   },
   {
     "type": "content_block_delta",
     "index": 0,
-    "delta": { "type": "text_delta", "text": "It lists everyone in your account and stops mid-" }
+    "delta": {
+      "type": "text_delta",
+      "text": "Here is a contact dashboard. "
+    }
   },
-  { "type": "content_block_stop", "index": 0 },
+  {
+    "type": "content_block_delta",
+    "index": 0,
+    "delta": {
+      "type": "text_delta",
+      "text": "It lists everyone in your account and stops mid-"
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 0,
+    "delta": {
+      "type": "text_delta",
+      "text": "\n\n"
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 0,
+    "delta": {
+      "type": "text_delta",
+      "text": "<genesis:file path=\"index.html\">\n"
+    }
+  },
+  {
+    "type": "content_block_delta",
+    "index": 0,
+    "delta": {
+      "type": "text_delta",
+      "text": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <title>Cont"
+    }
+  },
+  {
+    "type": "content_block_stop",
+    "index": 0
+  },
   {
     "type": "message_delta",
-    "delta": { "stop_reason": "max_tokens", "stop_sequence": null },
-    "usage": { "output_tokens": 64000 }
+    "delta": {
+      "stop_reason": "max_tokens",
+      "stop_sequence": null
+    },
+    "usage": {
+      "output_tokens": 64000
+    }
   },
-  { "type": "message_stop" }
+  {
+    "type": "message_stop"
+  }
 ]

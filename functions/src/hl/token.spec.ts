@@ -22,7 +22,9 @@ const NOW = 1_700_000_000_000
 
 function deps(overrides: Partial<TokenDeps> = {}): TokenDeps {
   return {
-    read: vi.fn().mockResolvedValue({ accessToken: 'stored-token', expiresAtMs: NOW + 60 * 60_000 }),
+    read: vi
+      .fn()
+      .mockResolvedValue({ accessToken: 'stored-token', expiresAtMs: NOW + 60 * 60_000 }),
     refresh: vi.fn().mockResolvedValue('rotated-token'),
     ...overrides,
   }

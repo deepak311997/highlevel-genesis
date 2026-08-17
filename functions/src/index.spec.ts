@@ -122,4 +122,32 @@ describe('the guards on the money-spending routes', () => {
       /messagesRouter\.post\(\s*'\/projects\/:projectId\/messages',\s*attested/,
     )
   })
+
+  /**
+   * AC-31's structural half — which file routes are attested.
+   *
+   * The behavioural half is `tests/integration/files.spec.ts`'s 401 and 403 over
+   * the wire. Attestation itself cannot be proven there: `requireAppCheck`
+   * short-circuits under the emulator, so no emulator-backed test can observe the
+   * difference between a route that carries it and one that does not. Reading the
+   * router is the only way, and the plan says so rather than pretending otherwise.
+   */
+  it('attests the file PUT and neither of the file GETs', () => {
+    const source = read('files/index.ts')
+
+    expect(source).toContain('withVerifiedUser')
+    expect(source).toMatch(
+      /filesRouter\.put\(\s*'\/projects\/:projectId\/files\/:path',\s*attested/,
+    )
+    // Reading is a plain authenticated read: App Check buys nothing against a
+    // caller who already holds a valid ID token (D28, unchanged since Slice 2).
+    expect(source).not.toMatch(/filesRouter\.get\([^)]*attested/)
+  })
+
+  it('guards all three file routes with withVerifiedUser', () => {
+    const source = read('files/index.ts')
+    const guarded = source.match(/withVerifiedUser\(/g) ?? []
+
+    expect(guarded).toHaveLength(3)
+  })
 })

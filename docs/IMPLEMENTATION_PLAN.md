@@ -10,7 +10,7 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 
 ---
 
-## 0. Where we are — 2026-08-17
+## 0. Where we are — 2026-08-18
 
 | Slice | State |
 |---|---|
@@ -21,7 +21,8 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 | 3 — Projects | ✅ merged to `main` |
 | 4 — Workspace shell & chat persistence | ✅ merged to `main` |
 | 5 — Streaming generation | ✅ merged to `main` |
-| 6–13 | not started |
+| 6 — File operations | ✅ built, reviewed, PR open from `slice/06-file-operations` |
+| 7–13 | not started |
 
 **Slices from here run unattended.** `scripts/autopilot.sh` drives the five-stage loop
 one slice at a time — a fresh session per stage, the suite run by the orchestrator rather
@@ -35,9 +36,28 @@ been red since Slice 1: `vite.config.ts` threw at config load on any checkout wi
 8080 — the *development* emulator — so off CI it "passed" by finding a dev session, loading
 its rules over that session's and calling `clearFirestore()` on it.
 
-**Suite, re-run in full on `slice/05-streaming-generation` at ship time (2026-08-17):**
-typecheck 0 · lint 0 · **953 unit** (424 functions · 514 frontend · 15 scripts) ·
-**28 rules** · **232 integration** · **12 e2e**. All six green — 1,225 cases.
+**Suite, re-run in full on `slice/06-file-operations` at ship time, rebased on `main`
+(2026-08-18):** typecheck 0 · lint 0 · **1,404 unit** (750 functions · 635 frontend ·
+19 scripts) · **36 rules** · **292 integration** · **14 e2e**. All six green — 1,746 cases.
+
+Slice 6 added 447 unit cases (326 functions · 121 frontend), 8 rules cases, 60 integration
+cases and 2 e2e cases — twelve of the unit cases are its review's own, written test-first
+for the three defects that review found. The scripts suite went 15 → 19 on `main` rather
+than in this slice: `99e3f2d` made the emulator port band selectable so two autopilot
+checkouts can run the suite at once, and brought four cases with it.
+
+**Two findings from Slice 6 that Slice 7 inherits:**
+
+- **A scroll cap must be set on the element that scrolls.** `EditorPanel.vue` capped the file
+  tree with `max-h-56 … overflow-hidden` while the scroller lived one level in, inside a
+  container sized by its own content — so it never overflowed and never scrolled, and thirteen
+  of twenty rows were on the page and unreachable. Invisible at every level this project tests
+  at: jsdom computes no layout, and the L4/L5 fixtures write three files, which fit. Slice 7
+  puts Monaco in this panel and inherits the same geometry.
+- **`stores/workspace.ts` is ~850 lines** and Slice 7 adds Monaco's state to it. D24's "one
+  store, not two" is still right and its mitigation held — the pure parts went to `lib/files.ts`
+  — but the file half is now a coherent unit that could become a `useProjectFiles` composable
+  the store consumes, which is not a second store. Decided in Slice 7, with Monaco in hand.
 
 Slice 5 added 205 unit cases (138 functions · 63 frontend · 4 scripts), 2 rules cases,
 34 integration cases and 3 e2e cases. Five of those cases are the review's own, written
@@ -419,6 +439,26 @@ rejects path traversal and oversized files, L3 file rules, L5 generate → tree 
 edit → save → reload.
 **Demo:** generate, see files appear in the tree, edit one, reload, edit persisted.
 
+✅ **Shipped.** The reply is split into files **as it streams**, by a line-oriented state
+machine between the stream mapper and the SSE framing — so `file_start` / `file_chunk` /
+`file_end` are live boundaries rather than a second parse at the end. The wire format is a
+`<genesis:file path="…">` tag pair on its own line (D2); the op set is validated as **one set,
+refused whole** (D9), and a turn's message and every file it wrote commit in a single
+`WriteBatch` (D11). Three routes expose the collection, none naming a user. The editor is
+read-only while a stream is open (D21), which closes the only collision that actually happens.
+
+Two things the build learned that the plan had not:
+
+- **The chunking-invariance property found a real bug** (T7). Once a partial line has been
+  emitted, the rest of it arrives in a later push and is *not* at a line start — so
+  `x</genesis:file>` closed a block when the two halves arrived in separate deltas and did not
+  when they arrived together. All 65 hand-written cases passed, because a hand-written test
+  chunks on whole tags.
+- **A whole path segment of `..` never reaches the file handler.** URL normalisation collapses
+  `/files/..` and `/files/%2E%2E` before routing, so the request resolves one segment up.
+  Measured, not assumed; the case asserts the negative that matters rather than the 400 the
+  plan expected.
+
 ---
 
 ### Slice 7 — Monaco editor
@@ -674,8 +714,8 @@ still open gets settled in the discovery interview of the slice that first needs
 | Google SSO alongside email + password | Slice 1 | ✅ **Settled: out** (Slice 1, D1). Not required by the brief |
 | Preview runtime: `srcdoc` vs Sandpack | Slice 10 | ✅ **Settled: `srcdoc` + shim.** The *credential-passing mechanism* into an opaque-origin iframe is still open — decide it in Slice 10 discovery |
 | File storage: Firestore vs Cloud Storage | Slice 6 | ✅ **Settled: Firestore.** Snapshots and restore stay trivial; the brief also says snapshots live in Firestore |
-| Generated app format: single-file vs multi-file | Slice 6 | 🟡 Open. Leaning multi-file plain HTML/JS/CSS — reliable LLM output, trivial preview |
-| File-op wire format from the LLM | Slice 6 | 🟡 Open. Leaning fenced blocks with path headers over tool-use JSON; whichever wins, it is parsed by a Zod schema |
+| Generated app format: single-file vs multi-file | Slice 6 | ✅ **Settled: multi-file plain HTML/JS/CSS**, flat, `index.html` the entry point (Slice 6 D1). Extensions allowlisted, no directories, 20 files and 100 KB each. See `docs/slices/06-file-operations/02-prd.md` |
+| File-op wire format from the LLM | Slice 6 | ✅ **Settled: a `<genesis:file path="…">` tag pair, each tag alone on its line** (Slice 6 D2) — *not* fenced blocks, which the model emits inside generated markdown and which have no unambiguous close. Split as it streams so F4.2's boundaries are live; the resulting op set is parsed by Zod and refused whole (D9) |
 | HL knowledge: cheat-sheet vs tool-calling | Slice 9 | 🟡 Open, leaning cheat-sheet — simpler, deterministic, and cacheable |
 | HL API version: date-pinned vs `v3` | Slice 2 | ✅ **Settled: date-pinned** (`2021-07-28` / `2021-04-15`). v3 migration is a named README follow-up |
 
@@ -693,9 +733,9 @@ read. `PRODUCT_SPEC.md` §7 holds the package-level version of this.
 | Tokens in Firestore scoped to the Firebase user, refresh on expiry | F1.3 | 2 | ⏭ |
 | One HighLevel location per user | F1.3 | 2 | ⏭ — falls out of Target User = Sub-account |
 | Project CRUD incl. soft-delete, scoped per user by the API | F2.1–2.3 | 3 | ✅ |
-| Server-side generation: bounded context → stream → validated file ops → persist | F3.1–3.4 | 5, 6, 9 | 🟡 context, stream and persist shipped in 5 — the transcript is bounded, dropped of trailing prefills, streamed and written back through the API; **validated file ops are Slice 6** |
-| SSE endpoint; protocol covers tokens, file boundaries, completion, errors | F4.1–4.3 | 5, 6 | 🟡 `POST /generate` shipped in 5 — `token`, `done` and `error` frames, both error channels, keep-alives; **file boundaries are Slice 6** |
-| File tree, read file, save manual edits | F5.1 | 6 | ⏭ |
+| Server-side generation: bounded context → stream → validated file ops → persist | F3.1–3.4 | 5, 6, 9 | 🟡 all four shipped — context, stream and persist in 5; **validated file ops in 6**, parsed as they stream and refused as one set. Only the HighLevel knowledge in the context is owed, in 9 |
+| SSE endpoint; protocol covers tokens, file boundaries, completion, errors | F4.1–4.3 | 5, 6 | ✅ `POST /generate` — `token`, `file_start`, `file_chunk`, `file_end`, `done` and `error` frames, both error channels, keep-alives |
+| File tree, read file, save manual edits | F5.1 | 6 | ✅ shipped — three routes (list without content, read one, `PUT` an edit), a tree that fills in as the reply streams, and a textarea that Slice 7 swaps for Monaco |
 | Snapshot per generation; list and restore | F5.2–5.3 | 11 | ⏭ |
 | shadcn-vue as the primary component library | F6.1 | 0–12 | 🟡 `button`/`input`/`label`/`card`/`alert`/`dialog`/`tabs`/`badge`/`resizable`/`scroll-area`/`separator`/`textarea` in; only `sheet` (11) and `skeleton`/`sonner` (12) owed |
 | Three-panel workspace: chat · editor · preview | F6.1 | 4 | 🟡 shell shipped — resizable at ≥1024px, tabbed below; editor and preview are labelled placeholders until 6/7 and 10 |
@@ -707,7 +747,7 @@ read. `PRODUCT_SPEC.md` §7 holds the package-level version of this.
 | Contacts · Conversations · Calendars exposed to generated apps | F7.1 | 8 | ⏭ |
 | Authenticated proxy attaching/refreshing tokens server-side | F7.2 | 8 | ⏭ |
 | Sandbox HL account | F7.3 | 2, 13 | ⏭ — create it before Slice 2, seed it before the Loom |
-| Malformed LLM output handled without corrupting state | F8.1 | 6, 12 | ⏭ |
+| Malformed LLM output handled without corrupting state | F8.1 | 6, 12 | 🟡 shipped in 6 — a bad path, a duplicate, an oversized file, an over-cap set and an unterminated block each refuse the **whole** turn's files, name the reason on screen, and leave the stored tree byte-identical. The message still commits. Slice 12 covers the rest of F8 |
 | Interrupted streams: partial results preserved | F8.2 | 5, 12 | 🟡 a partial is persisted with `truncated: true` on every interruption the emulator can reach — a mid-stream upstream failure — and marked in the transcript, with a Retry beside it; the client-disconnect trigger is the Slice 13 hand-check above |
 | Failed HL calls surfaced clearly | F8.3 | 8, 10, 12 | ⏭ |
 | Hosting + Functions deployed, live URLs in README | F9.1 | 13 | ⏭ |

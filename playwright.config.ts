@@ -15,6 +15,10 @@ const PORT = process.env['E2E_PORT'] ?? '5173'
 
 export default defineConfig({
   testDir: './tests/e2e',
+  // Calls the functions emulator once before any test does, so the cold start of
+  // the Node worker is paid here rather than inside the first assertion that
+  // happens to touch the API. See tests/e2e/globalSetup.ts.
+  globalSetup: './tests/e2e/globalSetup.ts',
   // One emulator, shared by every test, and each clears it before running —
   // so a parallel run has one test wiping another's account mid-flight. The
   // rules and integration suites set fileParallelism: false for the same

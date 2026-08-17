@@ -104,10 +104,20 @@ function deferred(): { promise: Promise<Response>; settle: (value: Response) => 
   return { promise, settle }
 }
 
-/** The happy path: the project resolves, then an empty transcript. */
+const INDEX_FILE = {
+  path: 'index.html',
+  size: 24,
+  createdAt: '2026-08-17T09:00:00.000Z',
+  updatedAt: '2026-08-17T09:00:00.000Z',
+}
+
+const APP_FILE = { ...INDEX_FILE, path: 'app.js', size: 11 }
+
+/** The happy path: the project resolves, then an empty transcript, then no files. */
 function respondOpenOk(): void {
   fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
   fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+  fetchMock.mockResolvedValueOnce(response({ files: [] }))
 }
 
 beforeEach(() => {
@@ -131,8 +141,12 @@ describe('open', () => {
 
     await store.open('proj-1')
 
-    expect(requests()).toEqual(['GET /api/projects/proj-1', 'GET /api/projects/proj-1/messages'])
-    for (const index of [0, 1]) {
+    expect(requests()).toEqual([
+      'GET /api/projects/proj-1',
+      'GET /api/projects/proj-1/messages',
+      'GET /api/projects/proj-1/files',
+    ])
+    for (const index of [0, 1, 2]) {
       expect(headersOf(index)['Authorization']).toBe('Bearer id-token-1')
       expect(headersOf(index)['X-Firebase-AppCheck']).toBe('app-check-token')
     }
@@ -213,12 +227,14 @@ describe('open', () => {
   it('drops the previous project’s messages when a different id is opened', async () => {
     fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
     fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [] }))
     const store = useWorkspaceStore()
     await store.open('proj-1')
     expect(store.messages).toHaveLength(1)
 
     fetchMock.mockResolvedValueOnce(response({ project: { ...PROJECT, id: 'proj-2' } }))
     fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [] }))
     await store.open('proj-2')
 
     expect(store.messages).toEqual([])
@@ -246,6 +262,7 @@ describe('a response that arrives for a project that is no longer open', () => {
     const stale = store.open('proj-1')
     fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
     fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [] }))
     await store.open('proj-2')
 
     slow.settle(response({ project: PROJECT }))
@@ -258,6 +275,7 @@ describe('a response that arrives for a project that is no longer open', () => {
       'GET /api/projects/proj-1',
       'GET /api/projects/proj-2',
       'GET /api/projects/proj-2/messages',
+      'GET /api/projects/proj-2/files',
     ])
   })
 
@@ -270,6 +288,7 @@ describe('a response that arrives for a project that is no longer open', () => {
     const stale = store.open('proj-1')
     fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
     fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [] }))
     await store.open('proj-2')
 
     slow.settle(response({ error: 'That project no longer exists.' }, 404))
@@ -292,6 +311,7 @@ describe('a response that arrives for a project that is no longer open', () => {
 
     fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
     fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [] }))
     await store.open('proj-2')
 
     slow.settle(response({ messages: [USER_MESSAGE, ASSISTANT_MESSAGE] }))
@@ -316,6 +336,7 @@ describe('a response that arrives for a project that is no longer open', () => {
 
     fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
     fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [] }))
     await store.open('proj-2')
 
     slow.settle(response({ messages: [USER_MESSAGE] }, 201))
@@ -346,6 +367,7 @@ describe('the draft and the send error across projects', () => {
 
     fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
     fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [] }))
     await store.open('proj-2')
 
     expect(store.draft).toBe('')
@@ -382,6 +404,7 @@ describe('loadMessages', () => {
   it('re-issues the transcript request when called again', async () => {
     fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
     fetchMock.mockResolvedValueOnce(response({ error: 'Something went wrong.' }, 500))
+    fetchMock.mockResolvedValueOnce(response({ files: [] }))
     const store = useWorkspaceStore()
     await store.open('proj-1')
     expect(store.messagesError).toBe('Something went wrong.')
@@ -392,6 +415,7 @@ describe('loadMessages', () => {
     expect(requests()).toEqual([
       'GET /api/projects/proj-1',
       'GET /api/projects/proj-1/messages',
+      'GET /api/projects/proj-1/files',
       'GET /api/projects/proj-1/messages',
     ])
     expect(store.messagesError).toBeNull()
@@ -403,6 +427,7 @@ describe('loadMessages', () => {
   it('records a failure without disturbing the project', async () => {
     fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
     fetchMock.mockResolvedValueOnce(response({ error: 'Could not load the conversation.' }, 500))
+    fetchMock.mockResolvedValueOnce(response({ files: [] }))
     const store = useWorkspaceStore()
 
     await store.open('proj-1')
@@ -626,6 +651,7 @@ describe('reset', () => {
   it('empties everything', async () => {
     fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
     fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE] }))
     const store = useWorkspaceStore()
     await store.open('proj-1')
     store.draft = 'half a sentence'
@@ -644,6 +670,19 @@ describe('reset', () => {
     expect(store.draft).toBe('')
     expect(store.sending).toBe(false)
     expect(store.sendError).toBeNull()
+    /* The code panel goes with the rest of it: a file list belongs to one account
+     * and one project, and signing out is a route change rather than a page load. */
+    expect(store.files).toEqual([])
+    expect(store.filesLoading).toBe(false)
+    expect(store.filesLoaded).toBe(false)
+    expect(store.filesError).toBeNull()
+    expect(store.selectedPath).toBeNull()
+    expect(store.fileContent).toBe('')
+    expect(store.fileDirty).toBe(false)
+    expect(store.fileLoading).toBe(false)
+    expect(store.fileError).toBeNull()
+    expect(store.saving).toBe(false)
+    expect(store.saveError).toBeNull()
   })
 })
 
@@ -979,6 +1018,7 @@ describe('a stream that outlives the screen it was opened for', () => {
 
     fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
     fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [] }))
     await store.open('proj-2')
 
     stream.push(frame('done', { message: ASSISTANT_MESSAGE }))
@@ -1013,5 +1053,931 @@ describe('canSend while generating', () => {
     await running
 
     expect(store.canSend).toBe(true)
+  })
+})
+
+/**
+ * The files half of the same store (D24).
+ *
+ * `fetch` is stubbed rather than `filesApi`, exactly as above, so what is asserted
+ * is the request that would go on the wire — the path, the method and the body —
+ * and not that one module called another.
+ *
+ * Two shapes of the list matter and both are tested: the list *response*, which is
+ * metadata only and never carries content (D19), and the read of one file, which
+ * is the only thing that does. Splitting them is what keeps opening a workspace
+ * from shipping 20 × 100 KB of code nobody has clicked on.
+ */
+describe('the file list', () => {
+  /** AC-37. The list is part of opening a project, not of clicking the panel. */
+  it('fills the list and marks it loaded', async () => {
+    fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE, APP_FILE] }))
+    const store = useWorkspaceStore()
+
+    await store.open('proj-1')
+
+    expect(store.files).toEqual([INDEX_FILE, APP_FILE])
+    expect(store.filesLoaded).toBe(true)
+    expect(store.filesLoading).toBe(false)
+    expect(store.filesError).toBeNull()
+  })
+
+  it('is loading while the list request is in flight', async () => {
+    fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    const slow = deferred()
+    fetchMock.mockReturnValueOnce(slow.promise)
+    const store = useWorkspaceStore()
+
+    const opening = store.open('proj-1')
+    await vi.waitFor(() => {
+      expect(store.filesLoading).toBe(true)
+    })
+    slow.settle(response({ files: [] }))
+    await opening
+
+    expect(store.filesLoading).toBe(false)
+  })
+
+  /*
+   * AC-37's second half. A failed refetch must not empty a tree that already has
+   * files in it: the panel would then read as "this project has no code", which is
+   * a different and much worse statement than "we could not reach the server".
+   */
+  it('records a failure and leaves any existing list in place', async () => {
+    fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE] }))
+    const store = useWorkspaceStore()
+    await store.open('proj-1')
+
+    fetchMock.mockResolvedValueOnce(response({ error: 'Could not load these files.' }, 500))
+    await store.loadFiles()
+
+    expect(store.filesError).toBe('Could not load these files.')
+    expect(store.files).toEqual([INDEX_FILE])
+  })
+
+  /** The panel's Try again, which is this action and nothing else. */
+  it('re-issues the list request and clears a previous failure', async () => {
+    fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ error: 'Something went wrong.' }, 500))
+    const store = useWorkspaceStore()
+    await store.open('proj-1')
+    expect(store.filesError).toBe('Something went wrong.')
+
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE] }))
+    await store.loadFiles()
+
+    expect(requests()).toEqual([
+      'GET /api/projects/proj-1',
+      'GET /api/projects/proj-1/messages',
+      'GET /api/projects/proj-1/files',
+      'GET /api/projects/proj-1/files',
+    ])
+    expect(store.filesError).toBeNull()
+    expect(store.files).toEqual([INDEX_FILE])
+  })
+
+  /* A failed transcript is the chat panel's problem; the code panel loads anyway. */
+  it('loads the files even when the transcript failed', async () => {
+    fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ error: 'Could not load the conversation.' }, 500))
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE] }))
+    const store = useWorkspaceStore()
+
+    await store.open('proj-1')
+
+    expect(store.messagesError).toBe('Could not load the conversation.')
+    expect(store.files).toEqual([INDEX_FILE])
+  })
+
+  it('does nothing without a project open', async () => {
+    await useWorkspaceStore().loadFiles()
+
+    expect(requests()).toEqual([])
+  })
+
+  /* The same staleness rule the transcript has: one project's list must not land
+   * in another's panel. */
+  it('does not render the previous project’s list', async () => {
+    respondOpenOk()
+    const store = useWorkspaceStore()
+    await store.open('proj-1')
+
+    const slow = deferred()
+    fetchMock.mockReturnValueOnce(slow.promise)
+    const stale = store.loadFiles()
+
+    fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [] }))
+    await store.open('proj-2')
+
+    slow.settle(response({ files: [INDEX_FILE, APP_FILE] }))
+    await stale
+
+    expect(store.files).toEqual([])
+    expect(store.filesLoading).toBe(false)
+    expect(store.filesError).toBeNull()
+  })
+})
+
+/**
+ * Selecting a file, and the buffer that comes with it (AC-38).
+ *
+ * `savedContent` is what the server last said and `fileContent` is what the user
+ * has; `fileDirty` is the two disagreeing. Kept as two strings rather than one
+ * string and a boolean, because a boolean has to be *maintained* on every edit
+ * path and a comparison cannot go stale.
+ */
+describe('selectFile', () => {
+  const stored = { ...INDEX_FILE, content: '<h1>Contacts</h1>\n' }
+
+  async function openedWithFiles(): Promise<ReturnType<typeof useWorkspaceStore>> {
+    fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE, APP_FILE] }))
+    const store = useWorkspaceStore()
+    await store.open('proj-1')
+    fetchMock.mockClear()
+    return store
+  }
+
+  it('fetches the file and fills the buffer, clean', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(response({ file: stored }))
+
+    await store.selectFile('index.html')
+
+    expect(requests()).toEqual(['GET /api/projects/proj-1/files/index.html'])
+    expect(store.selectedPath).toBe('index.html')
+    expect(store.fileContent).toBe('<h1>Contacts</h1>\n')
+    expect(store.fileDirty).toBe(false)
+    expect(store.fileLoading).toBe(false)
+    expect(store.fileError).toBeNull()
+  })
+
+  it('is dirty once the buffer is edited', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(response({ file: stored }))
+    await store.selectFile('index.html')
+
+    store.fileContent = '<h1>People</h1>\n'
+
+    expect(store.fileDirty).toBe(true)
+  })
+
+  /*
+   * The previous file's content is dropped before the request goes out. Left in
+   * place it would render under the new filename for the length of a round trip —
+   * one file's code labelled as another's, which is worse than an empty editor.
+   */
+  it('clears the previous file’s buffer while the next one loads', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(response({ file: stored }))
+    await store.selectFile('index.html')
+
+    const slow = deferred()
+    fetchMock.mockReturnValueOnce(slow.promise)
+    const selecting = store.selectFile('app.js')
+    await vi.waitFor(() => {
+      expect(store.fileLoading).toBe(true)
+    })
+
+    expect(store.selectedPath).toBe('app.js')
+    expect(store.fileContent).toBe('')
+
+    slow.settle(response({ file: { ...APP_FILE, content: 'console.log(1)' } }))
+    await selecting
+
+    expect(store.fileContent).toBe('console.log(1)')
+  })
+
+  it('records a failed read as an error with an empty buffer', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(response({ error: 'That file no longer exists.' }, 404))
+
+    await store.selectFile('index.html')
+
+    expect(store.fileError).toBe('That file no longer exists.')
+    expect(store.selectedPath).toBe('index.html')
+    expect(store.fileContent).toBe('')
+    expect(store.fileDirty).toBe(false)
+  })
+
+  it('does not render a read that lands after another project was opened', async () => {
+    const store = await openedWithFiles()
+    const slow = deferred()
+    fetchMock.mockReturnValueOnce(slow.promise)
+    const stale = store.selectFile('index.html')
+
+    fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [] }))
+    await store.open('proj-2')
+
+    slow.settle(response({ file: stored }))
+    await stale
+
+    expect(store.selectedPath).toBeNull()
+    expect(store.fileContent).toBe('')
+    expect(store.fileLoading).toBe(false)
+  })
+})
+
+/**
+ * Saving an edit (AC-38's second half).
+ *
+ * The response replaces the buffer rather than the buffer being trusted. The
+ * server owns `size` and both timestamps and is free to store something other
+ * than exactly what was sent; taking its answer is the same liveness rule the
+ * rest of the app follows, and it is what stops the editor from showing a
+ * document that disagrees with the server until a reload.
+ */
+describe('saveFile', () => {
+  const stored = { ...INDEX_FILE, content: '<h1>Contacts</h1>\n' }
+
+  async function openedOnIndex(): Promise<ReturnType<typeof useWorkspaceStore>> {
+    fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE, APP_FILE] }))
+    const store = useWorkspaceStore()
+    await store.open('proj-1')
+    fetchMock.mockResolvedValueOnce(response({ file: stored }))
+    await store.selectFile('index.html')
+    fetchMock.mockClear()
+    return store
+  }
+
+  it('PUTs the buffer and takes the server’s answer back', async () => {
+    const store = await openedOnIndex()
+    store.fileContent = '<h1>People</h1>\n'
+    const saved = {
+      ...stored,
+      content: '<h1>People</h1>\n',
+      size: 16,
+      updatedAt: '2026-08-17T10:00:00.000Z',
+    }
+    fetchMock.mockResolvedValueOnce(response({ file: saved }))
+
+    await store.saveFile()
+
+    expect(requests()).toEqual(['PUT /api/projects/proj-1/files/index.html'])
+    const init = (fetchMock.mock.calls[0]?.[1] ?? {}) as RequestInit
+    expect(init.body).toBe(JSON.stringify({ content: '<h1>People</h1>\n' }))
+    expect(store.fileContent).toBe('<h1>People</h1>\n')
+    expect(store.fileDirty).toBe(false)
+    expect(store.saving).toBe(false)
+    expect(store.saveError).toBeNull()
+  })
+
+  /* The list carries the size the tree may show, so the saved document's new
+   * metadata replaces the stale entry — the response, not a second GET. */
+  it('refreshes the saved file’s entry in the list', async () => {
+    const store = await openedOnIndex()
+    store.fileContent = '<h1>People</h1>\n'
+    const saved = {
+      ...stored,
+      content: '<h1>People</h1>\n',
+      size: 16,
+      updatedAt: '2026-08-17T10:00:00.000Z',
+    }
+    fetchMock.mockResolvedValueOnce(response({ file: saved }))
+
+    await store.saveFile()
+
+    expect(store.files).toEqual([
+      {
+        path: 'index.html',
+        size: 16,
+        createdAt: INDEX_FILE.createdAt,
+        updatedAt: '2026-08-17T10:00:00.000Z',
+      },
+      APP_FILE,
+    ])
+  })
+
+  /*
+   * A failed save keeps the user's work. Clearing the buffer, or marking it clean,
+   * would throw away an edit *because* it could not be stored — the one outcome a
+   * save must never have.
+   */
+  it('keeps the buffer dirty and records the error when the save fails', async () => {
+    const store = await openedOnIndex()
+    store.fileContent = '<h1>People</h1>\n'
+    fetchMock.mockResolvedValueOnce(response({ error: 'Could not save that file.' }, 500))
+
+    await store.saveFile()
+
+    expect(store.saveError).toBe('Could not save that file.')
+    expect(store.fileContent).toBe('<h1>People</h1>\n')
+    expect(store.fileDirty).toBe(true)
+    expect(store.saving).toBe(false)
+  })
+
+  it('clears a previous save error on the next successful save', async () => {
+    const store = await openedOnIndex()
+    store.fileContent = '<h1>People</h1>\n'
+    fetchMock.mockResolvedValueOnce(response({ error: 'Could not save that file.' }, 500))
+    await store.saveFile()
+    expect(store.saveError).not.toBeNull()
+
+    fetchMock.mockResolvedValueOnce(response({ file: { ...stored, content: '<h1>People</h1>\n' } }))
+    await store.saveFile()
+
+    expect(store.saveError).toBeNull()
+  })
+
+  it('issues no request with nothing selected', async () => {
+    respondOpenOk()
+    const store = useWorkspaceStore()
+    await store.open('proj-1')
+    fetchMock.mockClear()
+
+    await store.saveFile()
+
+    expect(requests()).toEqual([])
+  })
+
+  it('issues no second request while a save is already in flight', async () => {
+    const store = await openedOnIndex()
+    store.fileContent = '<h1>People</h1>\n'
+    const slow = deferred()
+    fetchMock.mockReturnValueOnce(slow.promise)
+    const first = store.saveFile()
+    await vi.waitFor(() => {
+      expect(store.saving).toBe(true)
+    })
+
+    await store.saveFile()
+
+    expect(requests()).toEqual(['PUT /api/projects/proj-1/files/index.html'])
+    slow.settle(response({ file: { ...stored, content: '<h1>People</h1>\n' } }))
+    await first
+  })
+
+  it('does not apply a save that lands after another project was opened', async () => {
+    const store = await openedOnIndex()
+    store.fileContent = '<h1>People</h1>\n'
+    const slow = deferred()
+    fetchMock.mockReturnValueOnce(slow.promise)
+    const stale = store.saveFile()
+
+    fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [] }))
+    await store.open('proj-2')
+
+    slow.settle(response({ file: stored }))
+    await stale
+
+    expect(store.selectedPath).toBeNull()
+    expect(store.fileContent).toBe('')
+    expect(store.saving).toBe(false)
+    expect(store.saveError).toBeNull()
+  })
+})
+
+/**
+ * The generation fans out into the files as well as the transcript (D24).
+ *
+ * This is the reason the two live in one store. A `file_chunk` and a `token` come
+ * from the same stream, are guarded by the same generation counter and are dropped
+ * by the same `reset` — split across two stores they would need two of each, kept
+ * in lockstep by hand.
+ *
+ * The streamed bytes are **watched, not stored** (D20). The server repairs content
+ * and computes `size` and the timestamps, so what the browser saw arrive is not
+ * necessarily what was written; `done` is what makes the client go and ask.
+ */
+describe('the stream — files', () => {
+  const listed = { files: [INDEX_FILE, APP_FILE] }
+
+  /** Open a project that already has two files, and clear the request log. */
+  async function openedWithFiles(): Promise<ReturnType<typeof useWorkspaceStore>> {
+    fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response(listed))
+    const store = useWorkspaceStore()
+    await store.open('proj-1')
+    fetchMock.mockClear()
+    return store
+  }
+
+  const fileFrames = (...paths: string[]): string[] =>
+    paths.flatMap((path) => [
+      frame('file_start', { path }),
+      frame('file_chunk', { path, text: `// ${path}\n` }),
+      frame('file_chunk', { path, text: 'done\n' }),
+      frame('file_end', { path }),
+    ])
+
+  /**
+   * AC-39. The tree is the union of stored and streaming, streaming marked, and
+   * each buffer holds **its own** chunks — the frames repeat their path precisely
+   * so that interleaved files cannot bleed into each other (D5).
+   */
+  it('shows streaming files in the tree and routes each chunk by its path', async () => {
+    const store = await openedWithFiles()
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+
+    stream.push(frame('file_start', { path: 'styles.css' }))
+    stream.push(frame('file_start', { path: 'app.js' }))
+    stream.push(frame('file_chunk', { path: 'styles.css', text: 'body{}' }))
+    stream.push(frame('file_chunk', { path: 'app.js', text: 'const a' }))
+    stream.push(frame('file_chunk', { path: 'app.js', text: ' = 1' }))
+
+    await vi.waitFor(() => {
+      expect(store.streamingFiles['app.js']).toBe('const a = 1')
+    })
+    expect(store.streamingFiles['styles.css']).toBe('body{}')
+    expect(store.fileTree).toEqual([
+      { path: 'index.html', writing: false },
+      { path: 'app.js', writing: true },
+      { path: 'styles.css', writing: true },
+    ])
+
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }))
+    stream.close()
+    await running
+  })
+
+  /** AC-39's last clause: the first streamed file opens itself, once. */
+  it('selects the first streamed file when nothing was selected', async () => {
+    const store = await openedWithFiles()
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+
+    stream.push(frame('file_start', { path: 'app.js' }))
+    stream.push(frame('file_start', { path: 'styles.css' }))
+    await vi.waitFor(() => {
+      expect(store.selectedPath).toBe('app.js')
+    })
+
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }))
+    stream.close()
+    await running
+  })
+
+  /*
+   * And **only** if nothing was selected. Moving a user off the file they were
+   * reading, mid-reply, is the panel taking the screen away from them.
+   */
+  it('leaves an existing selection alone', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(response({ file: { ...INDEX_FILE, content: 'old' } }))
+    await store.selectFile('index.html')
+
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    stream.push(frame('file_start', { path: 'app.js' }))
+    stream.push(frame('file_chunk', { path: 'app.js', text: 'x' }))
+    await vi.waitFor(() => {
+      expect(store.streamingFiles['app.js']).toBe('x')
+    })
+
+    expect(store.selectedPath).toBe('index.html')
+
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }))
+    stream.close()
+    await running
+  })
+
+  /** The editor shows the bytes arriving for the file it has open. */
+  it('renders the streaming buffer for the selected file', async () => {
+    const store = await openedWithFiles()
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+
+    stream.push(frame('file_start', { path: 'app.js' }))
+    stream.push(frame('file_chunk', { path: 'app.js', text: 'const a = 1' }))
+    await vi.waitFor(() => {
+      expect(store.editorContent).toBe('const a = 1')
+    })
+
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }))
+    stream.close()
+    await running
+  })
+
+  /**
+   * AC-40. A non-empty `files` is the signal to go and ask (D20): the list comes
+   * back with the server's `size` and timestamps, and the open file comes back
+   * with the *repaired* content, which is not necessarily what streamed.
+   */
+  it('refetches the list and re-reads the open file on a done that wrote files', async () => {
+    const store = await openedWithFiles()
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+
+    for (const raw of fileFrames('app.js')) stream.push(raw)
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE, { ...APP_FILE, size: 20 }] }))
+    fetchMock.mockResolvedValueOnce(response({ file: { ...APP_FILE, content: '// repaired\n' } }))
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: ['app.js'], fileError: null }))
+    stream.close()
+    await running
+
+    expect(requests()).toEqual([
+      'POST /generate',
+      'GET /api/projects/proj-1/files',
+      'GET /api/projects/proj-1/files/app.js',
+    ])
+    expect(store.files).toEqual([INDEX_FILE, { ...APP_FILE, size: 20 }])
+    expect(store.fileContent).toBe('// repaired\n')
+    expect(store.fileDirty).toBe(false)
+    expect(store.streamingFiles).toEqual({})
+  })
+
+  /*
+   * AC-40's second half. An empty `files` means nothing was stored — a prose-only
+   * reply, or a refused op set — and a refetch would be a request whose answer
+   * cannot have changed.
+   */
+  it('issues no file request on a done that wrote nothing, and still clears the buffers', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(response({ file: { ...INDEX_FILE, content: 'old' } }))
+    await store.selectFile('index.html')
+    fetchMock.mockClear()
+
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    stream.push(frame('file_start', { path: 'app.js' }))
+    stream.push(frame('file_chunk', { path: 'app.js', text: 'x' }))
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }))
+    stream.close()
+    await running
+
+    expect(requests()).toEqual(['POST /generate'])
+    expect(store.streamingFiles).toEqual({})
+    expect(store.fileContent).toBe('old')
+  })
+
+  /*
+   * A file the generation did not touch keeps its buffer, dirty or not. Re-reading
+   * every open file on every generation would discard an edit for a reason the
+   * user cannot see and the server never asked for.
+   */
+  it('leaves a file the generation did not write alone', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(response({ file: { ...INDEX_FILE, content: 'old' } }))
+    await store.selectFile('index.html')
+    store.fileContent = 'my edit'
+    fetchMock.mockClear()
+
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    fetchMock.mockResolvedValueOnce(response(listed))
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: ['app.js'], fileError: null }))
+    stream.close()
+    await running
+
+    expect(requests()).toEqual(['POST /generate', 'GET /api/projects/proj-1/files'])
+    expect(store.fileContent).toBe('my edit')
+    expect(store.fileDirty).toBe(true)
+    expect(store.fileReplaced).toBe(false)
+  })
+
+  /**
+   * AC-41, D22. The window is narrow — the panel is read-only while a stream is
+   * open (D21) — so this is an edit typed *before* the send. The server's content
+   * wins, and the discard is **announced**: silence is the one thing that is not
+   * acceptable, and a merge UI is a slice of its own.
+   */
+  it('replaces a dirty buffer the generation rewrote and says so', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(response({ file: { ...INDEX_FILE, content: 'old' } }))
+    await store.selectFile('index.html')
+    store.fileContent = 'my unsaved edit'
+    fetchMock.mockClear()
+
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    fetchMock.mockResolvedValueOnce(response(listed))
+    fetchMock.mockResolvedValueOnce(response({ file: { ...INDEX_FILE, content: 'regenerated' } }))
+    stream.push(
+      frame('done', { message: ASSISTANT_MESSAGE, files: ['index.html'], fileError: null }),
+    )
+    stream.close()
+    await running
+
+    expect(store.fileContent).toBe('regenerated')
+    expect(store.fileDirty).toBe(false)
+    expect(store.fileReplaced).toBe(true)
+  })
+
+  it('replaces a clean buffer without the notice', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(response({ file: { ...INDEX_FILE, content: 'old' } }))
+    await store.selectFile('index.html')
+    fetchMock.mockClear()
+
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    fetchMock.mockResolvedValueOnce(response(listed))
+    fetchMock.mockResolvedValueOnce(response({ file: { ...INDEX_FILE, content: 'regenerated' } }))
+    stream.push(
+      frame('done', { message: ASSISTANT_MESSAGE, files: ['index.html'], fileError: null }),
+    )
+    stream.close()
+    await running
+
+    expect(store.fileContent).toBe('regenerated')
+    expect(store.fileReplaced).toBe(false)
+  })
+
+  /** The notice stays until the user moves on, which is what D22 promised. */
+  it('clears the replaced notice when another file is selected', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(response({ file: { ...INDEX_FILE, content: 'old' } }))
+    await store.selectFile('index.html')
+    store.fileContent = 'my unsaved edit'
+
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    fetchMock.mockResolvedValueOnce(response(listed))
+    fetchMock.mockResolvedValueOnce(response({ file: { ...INDEX_FILE, content: 'regenerated' } }))
+    stream.push(
+      frame('done', { message: ASSISTANT_MESSAGE, files: ['index.html'], fileError: null }),
+    )
+    stream.close()
+    await running
+    expect(store.fileReplaced).toBe(true)
+
+    fetchMock.mockResolvedValueOnce(response({ file: { ...APP_FILE, content: 'x' } }))
+    await store.selectFile('app.js')
+
+    expect(store.fileReplaced).toBe(false)
+  })
+
+  /*
+   * A file that streamed and was then refused leaves a selection pointing at
+   * nothing. Cleared, so the editor shows its empty state rather than a filename
+   * with no file behind it.
+   */
+  it('drops a selection auto-made for a file that was never stored', async () => {
+    const store = await openedWithFiles()
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+
+    stream.push(frame('file_start', { path: 'secrets.js' }))
+    stream.push(frame('file_chunk', { path: 'secrets.js', text: 'x' }))
+    await vi.waitFor(() => {
+      expect(store.selectedPath).toBe('secrets.js')
+    })
+    stream.push(
+      frame('done', {
+        message: ASSISTANT_MESSAGE,
+        files: [],
+        fileError: 'That reply tried to write to “../secrets.js”, which is not a filename.',
+      }),
+    )
+    stream.close()
+    await running
+
+    expect(store.selectedPath).toBeNull()
+    expect(store.editorContent).toBe('')
+  })
+
+  /*
+   * The same rule, for the case that bites harder: the stream selected a file the
+   * project **already holds**, and then the set was refused. The buffer for that
+   * selection was never read — `file_start` selects, it does not fetch — so
+   * leaving it selected shows an empty textarea for a file with content behind
+   * it. `savedContent` is empty too, so the first keystroke makes it dirty and
+   * **Save** offers to replace the real file with whatever was typed.
+   *
+   * The selection was the generation's, not the user's, and nothing was written,
+   * so it goes back to where it was: no selection, and no request issued (AC-40).
+   */
+  it('drops a selection auto-made for a stored file the turn did not write', async () => {
+    const store = await openedWithFiles()
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+
+    stream.push(frame('file_start', { path: 'app.js' }))
+    stream.push(frame('file_chunk', { path: 'app.js', text: 'const a = 1' }))
+    await vi.waitFor(() => {
+      expect(store.selectedPath).toBe('app.js')
+    })
+    fetchMock.mockClear()
+
+    stream.push(
+      frame('done', {
+        message: ASSISTANT_MESSAGE,
+        files: [],
+        fileError: 'Genesis could not save the generated files: "../x.js" is not a file name.',
+      }),
+    )
+    stream.close()
+    await running
+
+    expect(store.selectedPath).toBeNull()
+    expect(store.editorContent).toBe('')
+    expect(store.fileDirty).toBe(false)
+    expect(requests()).toEqual([])
+  })
+
+  /*
+   * And the selection the *user* made survives a turn that did not write it —
+   * dropping that one would take away the file they were reading, and discard an
+   * edit to it, for a generation that changed nothing about it.
+   */
+  it('keeps a selection the user made through a turn that wrote nothing', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(response({ file: { ...APP_FILE, content: 'const a = 1\n' } }))
+    await store.selectFile('app.js')
+    store.fileContent = 'my unsaved edit'
+
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }))
+    stream.close()
+    await running
+
+    expect(store.selectedPath).toBe('app.js')
+    expect(store.fileContent).toBe('my unsaved edit')
+    expect(store.fileDirty).toBe(true)
+  })
+
+  /** AC-42. */
+  it('records a fileError and clears it on the next generation', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(
+      cannedStream(
+        frame('done', {
+          message: ASSISTANT_MESSAGE,
+          files: [],
+          fileError: 'That reply left “app.js” unfinished, so nothing was saved.',
+        }),
+      ),
+    )
+    await store.retryGeneration()
+    expect(store.generateFileError).toBe(
+      'That reply left “app.js” unfinished, so nothing was saved.',
+    )
+
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    await vi.waitFor(() => {
+      expect(store.generating).toBe(true)
+    })
+
+    expect(store.generateFileError).toBeNull()
+
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }))
+    stream.close()
+    await running
+  })
+
+  /**
+   * AC-43, D21, R4. The one collision that actually happens is a generation's
+   * batch against the editor's PUT, and this closes the window at its source
+   * rather than detecting it afterwards.
+   */
+  it('issues no save while a stream is open', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(response({ file: { ...INDEX_FILE, content: 'old' } }))
+    await store.selectFile('index.html')
+    store.fileContent = 'my edit'
+    fetchMock.mockClear()
+
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    // Waiting on the request rather than on `generating`: the flag is set a tick
+    // before `fetch` is reached, so clearing the log on it races the very call
+    // this case is about not seeing a second of.
+    await vi.waitFor(() => {
+      expect(requests()).toEqual(['POST /generate'])
+    })
+    fetchMock.mockClear()
+
+    await store.saveFile()
+
+    expect(requests()).toEqual([])
+    expect(store.fileDirty).toBe(true)
+
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }))
+    stream.close()
+    await running
+  })
+
+  /* A stream that failed wrote nothing (AC-21's store half), so the watched bytes
+   * go and the stored list is left exactly as it was. */
+  it('drops the streaming buffers when the stream ends in an error', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(
+      cannedStream(
+        frame('file_start', { path: 'app.js' }),
+        frame('file_chunk', { path: 'app.js', text: 'const a = 1' }),
+        frame('error', {
+          error: 'The reply was interrupted.',
+          code: 'upstream_error',
+          message: null,
+        }),
+      ),
+    )
+
+    await store.retryGeneration()
+
+    expect(store.streamingFiles).toEqual({})
+    expect(store.files).toEqual([INDEX_FILE, APP_FILE])
+    expect(store.generateError).toBe('The reply was interrupted.')
+  })
+
+  /** AC-43's second half, over every field this task added. */
+  it('returns every streaming field to its initial value on reset', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(
+      cannedStream(
+        frame('file_start', { path: 'app.js' }),
+        frame('file_chunk', { path: 'app.js', text: 'x' }),
+        frame('done', {
+          message: ASSISTANT_MESSAGE,
+          files: [],
+          fileError: 'Something was refused.',
+        }),
+      ),
+    )
+    await store.retryGeneration()
+    expect(store.generateFileError).not.toBeNull()
+
+    store.reset()
+
+    expect(store.streamingFiles).toEqual({})
+    expect(store.fileTree).toEqual([])
+    expect(store.editorContent).toBe('')
+    expect(store.fileReplaced).toBe(false)
+    expect(store.generateFileError).toBeNull()
+  })
+
+  it('returns them to their initial value when another project is opened', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(
+      cannedStream(
+        frame('done', {
+          message: ASSISTANT_MESSAGE,
+          files: [],
+          fileError: 'Something was refused.',
+        }),
+      ),
+    )
+    await store.retryGeneration()
+
+    fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [] }))
+    await store.open('proj-2')
+
+    expect(store.generateFileError).toBeNull()
+    expect(store.fileTree).toEqual([])
+  })
+
+  /*
+   * The whole reason the counter exists, on the file half: a `done` for the
+   * project you have left must not refetch into the one you are looking at.
+   */
+  it('does not refetch into a project that is no longer open', async () => {
+    const store = await openedWithFiles()
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    stream.push(frame('file_start', { path: 'app.js' }))
+    await vi.waitFor(() => {
+      expect(store.generating).toBe(true)
+    })
+
+    fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [] }))
+    await store.open('proj-2')
+    fetchMock.mockClear()
+
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: ['app.js'], fileError: null }))
+    stream.close()
+    await running
+
+    expect(requests()).toEqual([])
+    expect(store.files).toEqual([])
+    expect(store.streamingFiles).toEqual({})
   })
 })

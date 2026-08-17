@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { RouterLinkStub, enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
@@ -17,10 +20,31 @@ const store = reactive({
   draft: '',
   sending: false,
   sendError: null as string | null,
+  generating: false,
+  streamingText: '',
+  generateError: null as string | null,
+  files: [] as unknown[],
+  filesLoading: false,
+  filesLoaded: true,
+  filesError: null as string | null,
+  selectedPath: null as string | null,
+  fileContent: '',
+  fileDirty: false,
+  fileLoading: false,
+  fileError: null as string | null,
+  saving: false,
+  saveError: null as string | null,
+  fileTree: [] as { path: string; writing: boolean }[],
+  editorContent: '',
+  fileReplaced: false,
+  generateFileError: null as string | null,
   atLimit: false,
   canSend: false,
   open: vi.fn(),
   loadMessages: vi.fn(),
+  loadFiles: vi.fn(),
+  selectFile: vi.fn(),
+  saveFile: vi.fn(),
   send: vi.fn(),
 })
 
@@ -62,6 +86,28 @@ const MOUNT = {
   global: {
     stubs: { RouterLink: RouterLinkStub, MessageComposer: true },
   },
+}
+
+const SRC = join(import.meta.dirname, '..')
+
+/**
+ * Every `.vue` under `src`, so the scan below can look at what is **rendered**.
+ *
+ * Templates only, not whole files: `sse.ts` and `generateApi.spec.ts` name Slice 6
+ * in doc comments, correctly and permanently, and a scan that could not tell those
+ * from a placeholder would either fail forever or have to be weakened until it
+ * proved nothing.
+ */
+function componentFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) return componentFiles(path)
+    return entry.name.endsWith('.vue') ? [path] : []
+  })
+}
+
+function templateOf(source: string): string {
+  return /<template>([\s\S]*)<\/template>/.exec(source)?.[1] ?? ''
 }
 
 const CHAT = '[data-testid="chat-panel"]'
@@ -207,7 +253,7 @@ describe('WorkspaceView', () => {
     expect(wrapper.find('[data-testid="workspace-retry"]').exists()).toBe(false)
   })
 
-  /** AC-23. All three at once, and the placeholders name their slices. */
+  /** AC-23, and AC-47: the code panel is a screen now, not a label. */
   it('renders all three panels side by side at 1024px and wider', async () => {
     store.project = PROJECT
     wide()
@@ -218,8 +264,8 @@ describe('WorkspaceView', () => {
     expect(wrapper.find(CHAT).exists()).toBe(true)
     expect(wrapper.find(EDITOR).exists()).toBe(true)
     expect(wrapper.find(PREVIEW).exists()).toBe(true)
-    expect(wrapper.find(EDITOR).text()).toContain('Slice 6')
-    expect(wrapper.find(EDITOR).text()).toContain('Slice 7')
+    expect(wrapper.find(`${EDITOR} [data-testid="file-tree"]`).exists()).toBe(true)
+    expect(wrapper.find(`${EDITOR} [data-testid="file-editor"]`).exists()).toBe(true)
     expect(wrapper.find(PREVIEW).text()).toContain('Slice 10')
     // The tabbed tree is not merely hidden — it is not mounted (see the header).
     expect(wrapper.find('[data-testid="workspace-tabs"]').exists()).toBe(false)
@@ -246,6 +292,40 @@ describe('WorkspaceView', () => {
 
     expect(wrapper.find(PREVIEW).exists()).toBe(true)
     expect(wrapper.find(CHAT).exists()).toBe(false)
+  })
+
+  /**
+   * AC-47's other half. The two layouts are two component trees, not one tree with
+   * CSS on it, so "the code panel is a screen" has to be asserted on both — a
+   * placeholder left behind in the tabbed tree is invisible to a test that only
+   * ever looks at the wide one.
+   */
+  it('renders the tree and the editor in the Code tab below 1024px', async () => {
+    store.project = PROJECT
+    narrow()
+
+    const wrapper = mount(WorkspaceView, MOUNT)
+    await flushPromises()
+    const code = wrapper.findAll('[role="tab"]')[1]
+    await code?.trigger('mousedown', { button: 0, ctrlKey: false })
+    await flushPromises()
+
+    expect(wrapper.find(`${EDITOR} [data-testid="file-tree"]`).exists()).toBe(true)
+    expect(wrapper.find(`${EDITOR} [data-testid="file-editor"]`).exists()).toBe(true)
+  })
+
+  /**
+   * AC-47's negative half: the placeholder is gone from **the app**, not just from
+   * the two trees above. `ChatPanel.spec.ts`'s scan, for its reason — a needle
+   * built by concatenation so the scanner cannot find it in its own source.
+   */
+  it('renders no “arrives in Slice 6” text anywhere in the app', () => {
+    const needle = 'Slice ' + '6'
+    const offenders = componentFiles(SRC).filter((file) =>
+      templateOf(readFileSync(file, 'utf8')).includes(needle),
+    )
+
+    expect(offenders).toEqual([])
   })
 
   /** AC-26. The first thing in the product to read the `locationId` Slice 3 stores. */

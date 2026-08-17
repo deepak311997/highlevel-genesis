@@ -92,10 +92,7 @@ export function sealState(uid: string, now = Date.now()): string {
   const cipher = createCipheriv('aes-256-gcm', getKey(), iv)
   const payload: StatePayload = { uid, exp: now + STATE_TTL_MS }
 
-  const ciphertext = Buffer.concat([
-    cipher.update(JSON.stringify(payload), 'utf8'),
-    cipher.final(),
-  ])
+  const ciphertext = Buffer.concat([cipher.update(JSON.stringify(payload), 'utf8'), cipher.final()])
 
   return Buffer.concat([iv, ciphertext, cipher.getAuthTag()]).toString('base64url')
 }

@@ -30,11 +30,7 @@ import type { TokenResponse } from './schema'
 
 /** Every way this can end. The SPA has copy for each. */
 export type CallbackOutcome =
-  | 'connected'
-  | 'denied'
-  | 'invalid_state'
-  | 'exchange_failed'
-  | 'wrong_account_type'
+  'connected' | 'denied' | 'invalid_state' | 'exchange_failed' | 'wrong_account_type'
 
 /**
  * Relative on purpose. Through the Hosting rewrite the function and the SPA are
@@ -49,7 +45,10 @@ function redirectTo(res: Response, outcome: CallbackOutcome): void {
       ? '/hl/callback?status=connected'
       : `/hl/callback?status=error&code=${outcome}`
 
-  logAuthEvent('hl.callback', { outcome: outcome === 'connected' ? 'ok' : 'invalid', detail: outcome })
+  logAuthEvent('hl.callback', {
+    outcome: outcome === 'connected' ? 'ok' : 'invalid',
+    detail: outcome,
+  })
   res.redirect(302, target)
 }
 

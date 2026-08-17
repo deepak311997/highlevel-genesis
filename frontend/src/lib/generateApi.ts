@@ -32,13 +32,23 @@ import { createSseParser } from './sse'
  *
  * `frontend/` has no Zod dependency and `messagesApi.ts` already establishes
  * that the typed clients assert the wire shape by hand. Adding a package for
- * three payloads is not the trade. Unrecognised events are skipped, which is
- * also what lets Slice 6 add `file_start` without changing this file.
+ * three payloads is not the trade. Unrecognised events are skipped, and a
+ * malformed one is skipped rather than thrown: a stream that died on one bad
+ * frame would lose the whole reply, terminal event included.
+ *
+ * ## Every file frame repeats its path (D5)
+ *
+ * That is what lets the store route a chunk without tracking a mode — and what
+ * stops a client that dropped a `file_start` from putting code in the chat
+ * bubble. `token` keeps its meaning and carries chat text only.
  */
 
 export type GenerateEvent =
   | { type: 'token'; text: string }
-  | { type: 'done'; message: Message }
+  | { type: 'file_start'; path: string }
+  | { type: 'file_chunk'; path: string; text: string }
+  | { type: 'file_end'; path: string }
+  | { type: 'done'; message: Message; files: string[]; fileError: string | null }
   | { type: 'error'; error: string; code: string; message: Message | null }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -61,6 +71,35 @@ function asMessage(value: unknown): Message | null {
   return { id, role, content, createdAt, truncated: truncated === true }
 }
 
+/**
+ * The paths a generation wrote, or an empty list.
+ *
+ * Tolerant by design: a `done` from a server that predates the file half, or one
+ * whose new fields arrived malformed, must still replace the placeholder bubble.
+ * Defaulting is the difference between "no files were written" and a broken
+ * reply — and an empty list is exactly what "no files were written" means, so the
+ * fallback is also the truthful answer.
+ */
+function asFiles(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  /*
+   * Built by narrowing rather than asserted with `as`: `Array.isArray` proves
+   * only that this is an array, and one entry that is not a string makes the
+   * whole list untrustworthy rather than partially usable — the paths are what
+   * the store refetches by.
+   */
+  const paths: string[] = []
+  for (const entry of value) {
+    if (typeof entry !== 'string') return []
+    paths.push(entry)
+  }
+  return paths
+}
+
+function asFileError(value: unknown): string | null {
+  return typeof value === 'string' ? value : null
+}
+
 function toEvent(name: string, data: unknown): GenerateEvent | null {
   if (!isRecord(data)) return null
 
@@ -68,9 +107,27 @@ function toEvent(name: string, data: unknown): GenerateEvent | null {
     return typeof data['text'] === 'string' ? { type: 'token', text: data['text'] } : null
   }
 
+  if (name === 'file_start' || name === 'file_end') {
+    const path = data['path']
+    if (typeof path !== 'string') return null
+    return name === 'file_start' ? { type: 'file_start', path } : { type: 'file_end', path }
+  }
+
+  if (name === 'file_chunk') {
+    const { path, text } = data
+    if (typeof path !== 'string' || typeof text !== 'string') return null
+    return { type: 'file_chunk', path, text }
+  }
+
   if (name === 'done') {
     const message = asMessage(data['message'])
-    return message === null ? null : { type: 'done', message }
+    if (message === null) return null
+    return {
+      type: 'done',
+      message,
+      files: asFiles(data['files']),
+      fileError: asFileError(data['fileError']),
+    }
   }
 
   if (name === 'error') {

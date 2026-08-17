@@ -71,6 +71,25 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // --- generated files ----------------------------------------------
+    // A subcollection of a project, so both the owner's uid and the project
+    // id are part of the document path and the API scopes by the uid from
+    // the token alone. The document id *is* the filename (D13).
+    //
+    // Written only by /generate's one batch per turn and by
+    // PUT /api/projects/:projectId/files/:path. Read only by the two GETs.
+    //
+    // These documents *are* the generated application, so a client that could
+    // write here could put its own JavaScript into a project and have the
+    // preview run it.
+    //
+    // Rules do not cascade into subcollections, so neither the users block nor
+    // the projects block says anything about this path. Required, not
+    // decorative.
+    match /users/{uid}/projects/{projectId}/files/{fileId} {
+      allow read, write: if false;
+    }
+
     // --- everything else ----------------------------------------------
     // Collections are added slice by slice, each with its own denial test.
     // Nothing is reachable until it is.

@@ -39,9 +39,49 @@ export interface TokenPayload {
   text: string
 }
 
-/** `event: done` — the persisted assistant turn. Always the last frame. */
+/**
+ * `event: file_start` — a block opened, emitted before any chunk for that path.
+ *
+ * The path is **syntax only** at this point (D8): validation happens once, at the
+ * terminal, over the whole op set. So an unstorable path does get a `file_start`
+ * and does appear in the tree while it streams, and is gone the moment the tree
+ * refetches at `done`. A transient entry that corrects itself is a better trade
+ * than two validators that can disagree.
+ */
+export interface FileStartPayload {
+  path: string
+}
+
+/**
+ * `event: file_chunk` — content for one path, tags excluded, repairs applied.
+ *
+ * **The path is repeated on every chunk**, which is D5's whole point: a client
+ * that drops or fails to understand a `file_start` cannot then misroute code into
+ * the chat bubble. A mode flag would invite exactly that failure.
+ */
+export interface FileChunkPayload {
+  path: string
+  text: string
+}
+
+/** `event: file_end` — the block closed cleanly. An unterminated block gets none. */
+export interface FileEndPayload {
+  path: string
+}
+
+/**
+ * `event: done` — the persisted assistant turn. Always the last frame.
+ *
+ * `files` is the paths actually **written**, sorted (P8), and empty when none
+ * were. `fileError` is one user-facing sentence or `null`. The client keys its
+ * refetch off `files`: a non-empty list means the server has repaired content and
+ * computed `size` and the timestamps, so the bytes the browser watched arrive are
+ * not necessarily the bytes that were stored (D20).
+ */
 export interface DonePayload {
   message: Message
+  files: string[]
+  fileError: string | null
 }
 
 /**

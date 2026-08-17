@@ -148,7 +148,10 @@ describe('streamGeneration — the events', () => {
     await expect(collect()).resolves.toEqual([
       { type: 'token', text: 'Here is ' },
       { type: 'token', text: 'a contact dashboard' },
-      { type: 'done', message: MESSAGE },
+      // From Slice 6 a `done` always carries `files` and `fileError`; a server
+      // that sends neither defaults to "no files were written", which is the
+      // truthful answer as well as the safe one.
+      { type: 'done', message: MESSAGE, files: [], fileError: null },
     ])
   })
 
@@ -197,13 +200,20 @@ describe('streamGeneration — the events', () => {
     await expect(collect()).resolves.toEqual([{ type: 'token', text: 'a contact dashboard' }])
   })
 
-  /* Unrecognised events are skipped rather than thrown — Slice 6 adds handlers. */
+  /*
+   * Unrecognised events are skipped rather than thrown, which is what let Slice 6
+   * add the three file events without changing anything above this line. The
+   * example moved from `file_start` to a name nothing sends, because `file_start`
+   * is recognised now.
+   */
   it('skips an event it does not recognise', async () => {
     fetchMock.mockResolvedValue(
-      streaming([frame('file_start', { path: 'src/app.js' }), frame('done', { message: MESSAGE })]),
+      streaming([frame('snapshot', { id: 'snap-1' }), frame('done', { message: MESSAGE })]),
     )
 
-    await expect(collect()).resolves.toEqual([{ type: 'done', message: MESSAGE }])
+    await expect(collect()).resolves.toEqual([
+      { type: 'done', message: MESSAGE, files: [], fileError: null },
+    ])
   })
 
   it('skips a token frame whose payload is the wrong shape', async () => {
@@ -211,7 +221,9 @@ describe('streamGeneration — the events', () => {
       streaming([frame('token', { text: 42 }), frame('done', { message: MESSAGE })]),
     )
 
-    await expect(collect()).resolves.toEqual([{ type: 'done', message: MESSAGE }])
+    await expect(collect()).resolves.toEqual([
+      { type: 'done', message: MESSAGE, files: [], fileError: null },
+    ])
   })
 })
 
@@ -267,5 +279,100 @@ describe('streamGeneration — refusals', () => {
     fetchMock.mockResolvedValue(bodiless())
 
     await expect(collect()).rejects.toBeInstanceOf(ApiError)
+  })
+})
+
+/**
+ * The file half of the protocol (AC-36, D5).
+ *
+ * Every frame repeats its path, which is what lets the store route a chunk
+ * without tracking a mode — and what stops a client that dropped a `file_start`
+ * from misrouting code into the chat bubble. Malformed frames are **skipped**
+ * rather than thrown, because a stream that dies on one bad frame loses the whole
+ * reply including the terminal event.
+ */
+describe('the file events', () => {
+  it('yields file_start, file_chunk and file_end as typed events', async () => {
+    fetchMock.mockResolvedValue(
+      streaming([
+        frame('file_start', { path: 'index.html' }),
+        frame('file_chunk', { path: 'index.html', text: '<h1>x</h1>\n' }),
+        frame('file_end', { path: 'index.html' }),
+        frame('done', { message: MESSAGE, files: ['index.html'], fileError: null }),
+      ]),
+    )
+
+    expect(await collect()).toEqual([
+      { type: 'file_start', path: 'index.html' },
+      { type: 'file_chunk', path: 'index.html', text: '<h1>x</h1>\n' },
+      { type: 'file_end', path: 'index.html' },
+      { type: 'done', message: MESSAGE, files: ['index.html'], fileError: null },
+    ])
+  })
+
+  it('carries files and fileError off a done frame', async () => {
+    fetchMock.mockResolvedValue(
+      streaming([
+        frame('done', {
+          message: MESSAGE,
+          files: ['app.js', 'index.html'],
+          fileError: 'Genesis could not save the generated files.',
+        }),
+      ]),
+    )
+
+    expect(await collect()).toEqual([
+      {
+        type: 'done',
+        message: MESSAGE,
+        files: ['app.js', 'index.html'],
+        fileError: 'Genesis could not save the generated files.',
+      },
+    ])
+  })
+
+  /*
+   * A `done` from a server that predates the file half — or one whose fields
+   * arrived malformed — must still replace the placeholder bubble. Defaulting is
+   * the difference between "no files were written" and a broken reply.
+   */
+  it.each([
+    ['no new fields at all', { message: MESSAGE }],
+    ['a non-array files', { message: MESSAGE, files: 'index.html', fileError: null }],
+    ['a files carrying non-strings', { message: MESSAGE, files: [1, 2], fileError: null }],
+    ['a non-string fileError', { message: MESSAGE, files: [], fileError: 42 }],
+  ])('defaults a done with %s to no files and no error', async (_label, data) => {
+    fetchMock.mockResolvedValue(streaming([frame('done', data)]))
+
+    expect(await collect()).toEqual([
+      { type: 'done', message: MESSAGE, files: [], fileError: null },
+    ])
+  })
+
+  it.each([
+    ['a file_start with no path', 'file_start', {}],
+    ['a file_start with a numeric path', 'file_start', { path: 7 }],
+    ['a file_chunk with no path', 'file_chunk', { text: 'x' }],
+    ['a file_chunk with no text', 'file_chunk', { path: 'app.js' }],
+    ['a file_end with no path', 'file_end', {}],
+  ])('skips %s rather than throwing', async (_label, name, data) => {
+    fetchMock.mockResolvedValue(
+      streaming([
+        frame(name, data),
+        frame('done', { message: MESSAGE, files: [], fileError: null }),
+      ]),
+    )
+
+    expect(await collect()).toEqual([
+      { type: 'done', message: MESSAGE, files: [], fileError: null },
+    ])
+  })
+
+  /* An empty chunk is legal — the server never sends one, and skipping it would
+   * be a client deciding what the protocol means. */
+  it('keeps a file_chunk carrying an empty string', async () => {
+    fetchMock.mockResolvedValue(streaming([frame('file_chunk', { path: 'app.js', text: '' })]))
+
+    expect(await collect()).toEqual([{ type: 'file_chunk', path: 'app.js', text: '' }])
   })
 })

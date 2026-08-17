@@ -27,6 +27,26 @@ describe('encodeSse', () => {
   })
 })
 
+/**
+ * D5. One frame type per destination, and `file_chunk` is what keeps `token`
+ * honest: reusing `token` between the boundaries would make its meaning depend
+ * on a mode the client has to track, and a client that dropped a `file_start`
+ * would then route code into the chat bubble.
+ */
+describe('the file frames', () => {
+  it.each(['file_start', 'file_chunk', 'file_end'] as const)('encodes %s', (name) => {
+    expect(encodeSse(name, { path: 'app.js' })).toBe(`event: ${name}\ndata: {"path":"app.js"}\n\n`)
+  })
+
+  /* Every frame repeats the path, so it is self-describing. */
+  it('keeps a chunk of code on one data line, path included', () => {
+    const frame = encodeSse('file_chunk', { path: 'app.js', text: 'const a = 1\nconst b = 2\n' })
+
+    expect(frame.slice(0, -2).split('\n')).toHaveLength(2)
+    expect(frame).toContain('"path":"app.js"')
+  })
+})
+
 describe('encodeSseComment', () => {
   it('emits a comment frame that carries no event', () => {
     expect(encodeSseComment()).toBe(': keep-alive\n\n')

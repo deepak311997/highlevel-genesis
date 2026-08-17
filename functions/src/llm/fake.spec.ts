@@ -134,11 +134,98 @@ describe('marker selection', () => {
     expect(Buffer.byteLength(outcome.text, 'utf8')).toBeGreaterThan(MAX_OUTPUT_BYTES / 2)
   })
 
+  /*
+   * D26's four malformed cases. They are fixtures rather than L1-only inputs
+   * because F8.1 is a *user-facing* requirement: the error has to be provable
+   * over the wire, and an L1 test of `validateFileOps` asserts intent where what
+   * F8.1 needs is the assertion that no document exists.
+   */
+  it('replies with prose and no file block at all for __no_files', async () => {
+    const events = await run('__no_files what can you build')
+
+    expect(terminal(events)).toMatchObject({ kind: 'end', truncated: false })
+    expect(text(events)).not.toContain('<genesis:file')
+    expect(text(events)).toContain('CRM connection')
+  })
+
+  it('writes a path we cannot store for __bad_path', async () => {
+    expect(text(await run('__bad_path build a contact dashboard'))).toContain(
+      '<genesis:file path="../secrets.js">',
+    )
+  })
+
+  it('leaves its last block open for __unterminated', async () => {
+    const reply = text(await run('__unterminated build a contact dashboard'))
+
+    expect(reply).toContain('<genesis:file path="index.html">')
+    expect(reply).not.toContain('</genesis:file>')
+  })
+
+  it('writes one path twice for __dup_files', async () => {
+    const reply = text(await run('__dup_files build a contact dashboard'))
+
+    expect(reply.split('<genesis:file path="app.js">')).toHaveLength(3)
+  })
+
   it('replays the ordinary reply for __slow, just later', async () => {
     const events = await run('__slow build a contact dashboard')
 
     expect(terminal(events)).toMatchObject({ kind: 'end', truncated: false })
     expect(text(events)).toContain('Here is a contact dashboard.')
+  })
+})
+
+/**
+ * `reply.json` is the fixture five other suites already depend on (R8).
+ *
+ * D26 keeps its **prose byte-for-byte** and appends the file blocks, so Slice 5's
+ * assertions — progressive text, `truncated`, the accumulated content — are about
+ * text that has not moved. This pins that promise rather than trusting it: the
+ * five recorded prose deltas are written out here, so a future edit that
+ * "tidies" them fails in one obvious place instead of in five suites at once.
+ */
+describe('the default fixture keeps its prose and grows files', () => {
+  const PROSE = [
+    'Here is a contact dashboard. ',
+    'It lists everyone in your account, ',
+    'newest first, with a search box above the list. ',
+    "Clicking a row opens that contact's details. ",
+    'Every value is read from your CRM account.',
+  ]
+
+  it('opens with the five recorded prose deltas, unchanged', async () => {
+    const events = await run('build a contact dashboard')
+    const spoken = events.filter((event) => event.kind === 'token').map((event) => event.text)
+
+    expect(spoken.slice(0, PROSE.length)).toEqual(PROSE)
+  })
+
+  it('goes on to write three files', async () => {
+    const reply = text(await run('build a contact dashboard'))
+
+    for (const path of ['index.html', 'styles.css', 'app.js']) {
+      expect(reply).toContain(`<genesis:file path="${path}">`)
+    }
+    expect(reply.split('</genesis:file>')).toHaveLength(4)
+  })
+
+  /*
+   * The block text is split across several deltas per file, so the streamed path
+   * is exercised rather than delivered whole — which is what makes the frame
+   * ordering in `generate-files.spec.ts` a real assertion.
+   */
+  it('splits each block across several deltas', async () => {
+    const events = await run('build a contact dashboard')
+
+    expect(events.filter((event) => event.kind === 'token').length).toBeGreaterThan(15)
+  })
+
+  /** P6, AC-22: `max-tokens.json` now has an opened block to be cut short in. */
+  it('cuts __max_tokens short inside an open block', async () => {
+    const reply = text(await run('__max_tokens write me an epic'))
+
+    expect(reply).toContain('<genesis:file path="index.html">')
+    expect(reply).not.toContain('</genesis:file>')
   })
 })
 

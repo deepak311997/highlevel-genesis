@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 
+import MessageBody from '@/components/workspace/MessageBody.vue'
 import MessageComposer from '@/components/workspace/MessageComposer.vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -165,7 +166,9 @@ function retry(): void {
               class="flex max-w-[85%] flex-col gap-1 rounded-lg border border-border p-3"
               :class="message.role === 'user' ? 'self-end bg-secondary' : 'self-start bg-card'"
             >
-              <p class="whitespace-pre-wrap text-sm">{{ message.content }}</p>
+              <!-- Prose and chips, never code (D6, D29). The same component the
+                   placeholder below uses, because they render the same string. -->
+              <MessageBody :content="message.content" />
               <div class="flex items-center gap-2">
                 <!-- A timestamp that will not parse yields no line at all (D29). -->
                 <span
@@ -201,7 +204,7 @@ function retry(): void {
               data-role="assistant"
               class="flex max-w-[85%] flex-col gap-1 self-start rounded-lg border border-border bg-card p-3"
             >
-              <p class="whitespace-pre-wrap text-sm">{{ workspace.streamingText }}</p>
+              <MessageBody :content="workspace.streamingText" />
               <span class="text-xs text-muted-foreground">Generating…</span>
             </li>
           </ul>
@@ -232,6 +235,23 @@ function retry(): void {
       <Button variant="outline" size="sm" data-testid="generate-retry" @click="retry()">
         Retry
       </Button>
+    </div>
+
+    <!--
+      A turn whose files were refused (D8, D17). Its own notice rather than
+      `generateError`'s, and deliberately without a Retry: the reply itself
+      succeeded and is in the transcript above, so the action that belongs to a
+      failed generation is the wrong action for this problem. What went wrong is
+      the model's output, and the fix is the next prompt.
+    -->
+    <div
+      v-if="workspace.generateFileError"
+      data-testid="generate-file-error"
+      class="border-t border-border p-3"
+    >
+      <Alert>
+        <AlertDescription>{{ workspace.generateFileError }}</AlertDescription>
+      </Alert>
     </div>
 
     <MessageComposer v-if="showComposer" />

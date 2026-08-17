@@ -6,7 +6,7 @@
  * is written, which escapes newlines to `\n` and keeps each frame on one line.
  */
 
-export type SseEventName = 'token' | 'file_start' | 'file_end' | 'done' | 'error'
+export type SseEventName = 'token' | 'file_start' | 'file_chunk' | 'file_end' | 'done' | 'error'
 
 /** Encode one SSE frame, terminator included. */
 export function encodeSse(event: SseEventName, data: unknown): string {
