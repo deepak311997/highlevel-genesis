@@ -24,11 +24,16 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 | 6 — File operations | ✅ merged to `main` |
 | 7 — Monaco editor | ✅ merged to `main` |
 | 8 — HighLevel API proxy | ✅ merged to `main` |
-| 9 — HighLevel knowledge injection | ✅ built, reviewed, PR open from `slice/09-highlevel-knowledge` |
-| 10–13 | not started |
+| 9 — HighLevel knowledge injection | ✅ merged to `main` |
+| 10 | not started |
+| 11 — Snapshots & restore | 🔵 building on `slice/11-snapshots-restore` |
+| 12–13 | not started |
 
 **Slice 8 ran ahead of 7**, which §4's dependency line permits: it depends on 2 alone,
-and 2 merged on day 1. Nothing in 7 is owed to it.
+and 2 merged on day 1. Nothing in 7 is owed to it. **Slice 11 runs ahead of 9 and 10**
+for the same reason: §4 makes it depend on 6 alone. It adds no frame to the SSE protocol,
+nothing to the system prompt and nothing to the preview, so neither of the slices it passes
+is owed anything by it either.
 
 **Slices from here run unattended.** `scripts/autopilot.sh` drives the five-stage loop
 one slice at a time — a fresh session per stage, the suite run by the orchestrator rather
@@ -662,6 +667,49 @@ sheet reads better against a three-panel workspace than a modal that covers it.
 twice → restore first → files match.
 **Demo:** generate, generate again, restore version one.
 
+**Built 2026-08-18** on `slice/11-snapshots-restore`. A new `functions/src/snapshots/` half —
+`plan.ts` (the pure boundary: the resulting-set merge, the `seq` allocation, the prune selection
+and the set-equality check), `schema.ts` (the stored shapes, `SNAPSHOT_LIMIT = 20`, and Slice 6's
+`id === path` invariant one collection deeper), `handlers.ts` (`stageSnapshot` plus the two route
+handlers) and `index.ts` (the router, mounted after `filesRouter`) — around it `readFilePaths`
+becoming `readStoredFiles` in `files/`, an `AssistantTurn` object replacing
+`appendAssistantMessage`'s positional parameters, and two deny-all rules blocks. On the frontend:
+the vendored `sheet`, `snapshotsApi.ts`, the store's list and `restoreSnapshot()`, and a
+**History** sheet opened from the code panel header. No new index, no change to the SSE protocol,
+no change to the prompt.
+
+**Five properties worth carrying forward**, each one a place a later change would quietly undo the
+slice:
+
+- **A snapshot is the project's whole file set, not the turn's writes** (D1). A generation that
+  rewrites `app.js` alone leaves `index.html` untouched, so a copy of the turn's writes is a copy
+  of *part* of an app — and restoring it would produce exactly the half-restored, silently-broken
+  state Slice 6's D9 refuses on the write path.
+- **The files hang off the snapshot in a subcollection, id = path** (D3), by arithmetic rather
+  than taste: `FILE_LIMIT` × `FILE_BYTES_MAX` is 2,000,000 bytes against Firestore's
+  1,048,576-byte document limit, so an inline `Record<path, content>` fails on precisely the
+  largest, most valuable projects.
+- **The snapshot commits on the turn's own `WriteBatch`** (D4) — message, file writes, snapshot,
+  its file documents and any prune staged once and committed once, worst case 63 writes. Two
+  commits would leave a crash window in which the tree has moved on and the history has not, which
+  is the state a user opens the sheet to escape.
+- **Restore makes the file set *equal* the version's**, deleting every file that version does not
+  hold (D7). It is the only operation in the product that deletes a file document, and it is what
+  Slice 6's D18 kept generations non-destructive *for*. It snapshots the current state first (D9),
+  refuses whole on an unreadable copy (409 `snapshot_unreadable`, D8), and writes nothing at all
+  when the project already **is** that version (D10) — without that check, a double-click would
+  fill a twenty-row history with copies of one moment and prune the versions that mattered.
+- **Rules do not cascade, so `…/snapshots/{snapshotId}/files/{fileId}` needs its own deny-all
+  block** (D15) — the easy miss, and the one holding the actual generated code: a client that
+  could write there could plant its own JavaScript and have a later restore hand it to Slice 10's
+  preview.
+
+**The fixture is load-bearing, not convenience** (D24). The LLM fake replays one reply, so two
+generations produce byte-identical files and a restore that did nothing at all would pass every
+level. `__alt_files` → `reply-alt.json` rewrites one file and adds a fourth, which is what makes
+both halves of D7 — content restored, later file deleted — assertable at L4 and visible at L5.
+`reply.json` is untouched, so nothing that already passed moved.
+
 ---
 
 ### Slice 12 — Error handling & state hardening
@@ -851,14 +899,14 @@ read. `PRODUCT_SPEC.md` §7 holds the package-level version of this.
 | Server-side generation: bounded context → stream → validated file ops → persist | F3.1–3.4 | 5, 6, 9 | 🟡 all four shipped — context, stream and persist in 5; **validated file ops in 6**, parsed as they stream and refused as one set. Only the HighLevel knowledge in the context is owed, in 9 |
 | SSE endpoint; protocol covers tokens, file boundaries, completion, errors | F4.1–4.3 | 5, 6 | ✅ `POST /generate` — `token`, `file_start`, `file_chunk`, `file_end`, `done` and `error` frames, both error channels, keep-alives |
 | File tree, read file, save manual edits | F5.1 | 6, 7 | ✅ shipped — three routes (list without content, read one, `PUT` an edit), a tree that fills in as the reply streams, and Monaco over it since 7 |
-| Snapshot per generation; list and restore | F5.2–5.3 | 11 | ⏭ |
-| shadcn-vue as the primary component library | F6.1 | 0–12 | 🟡 `button`/`input`/`label`/`card`/`alert`/`dialog`/`tabs`/`badge`/`resizable`/`scroll-area`/`separator`/`textarea` in; only `sheet` (11) and `skeleton`/`sonner` (12) owed |
+| Snapshot per generation; list and restore | F5.2–5.3 | 11 | ✅ shipped — every turn that stores files also stores a copy of the project's **whole** file set, on the turn's own batch and in its one commit; twenty kept per project, the twenty-first pruning the oldest *and its file documents*. `GET /api/projects/:projectId/snapshots` lists them newest-first by a stored `seq` (so pruning cannot renumber a version out from under the user), and `POST …/snapshots/:snapshotId/restore` makes the file set equal that version exactly — deleting what the version does not hold — after snapshotting what was there, so the one destructive operation in the product is itself undoable. Neither path names a user |
+| shadcn-vue as the primary component library | F6.1 | 0–12 | 🟡 `button`/`input`/`label`/`card`/`alert`/`dialog`/`tabs`/`badge`/`resizable`/`scroll-area`/`separator`/`textarea`/`sheet` in — `sheet` vendored by the CLI in 11, like every other one, so its provenance stays diffable; only `skeleton`/`sonner` (12) owed |
 | Three-panel workspace: chat · editor · preview | F6.1 | 4, 6, 7 | 🟡 shell shipped — resizable at ≥1024px, tabbed below; the code panel is a real screen since 6 and Monaco since 7. Only the preview is still a labelled placeholder, until 10 |
 | Chat panel with history and input | F6.2 | 4, 5 | ✅ history, input and persistence in 4; the echo and its badge deleted in 5, replaced by a real streamed reply, a `Generating…` status, an interrupted marker and a Retry |
 | Monaco via `@guolao/vue-monaco-editor`, tabs, live tokens, read-only while streaming | F6.3 | 7 | ✅ shipped — the named package with `monaco-editor` pinned `0.52.2` and bundled locally (no CDN); a hand-rolled tab strip over one buffer per path, so an unsaved edit survives a tab switch; chunks applied as **append edits** with the view following the tail; `readOnly` with a message for the length of a stream |
 | iframe preview showing **real** HL data, refreshes after generation | F6.4 | 10 | ⏭ — the money shot |
 | SSE client handles all event types, survives disconnects | F6.5 | 5 | 🟡 all three event types handled and chunk-split-safe by construction (the parser is driven split at every offset); the client's own abort is proven, and the **server**-side disconnect is L1-proven but undeliverable from the emulator — a Slice 13 hand-check |
-| Snapshot history in a sheet/dialog with Restore | F6.6 | 11 | ⏭ |
+| Snapshot history in a sheet/dialog with Restore | F6.6 | 11 | ✅ shipped — a shadcn-vue `sheet`, opened by **History** in the code panel header because versions are versions *of the files*; rows newest-first with their version number, origin (*Generation* / *Before restore*), file count, size and time. **Restore** confirms **inline in the row** rather than in a second overlay over a sheet, is disabled for the length of a stream — in the component *and* in the store, because a keyboard path does not go through the button — and open tabs reconcile behind it: re-read, or closed outright when the restore deleted the file |
 | Contacts · Conversations · Calendars exposed to generated apps | F7.1 | 8 | ✅ thirteen allowlisted rows over `<METHOD> /api/hl/proxy/**` — contacts search/get/create/update, conversations search/get/messages/send, calendars list/get/events/appointment/free-slots. `POST /conversations/messages` ships **disabled** behind `HL_ALLOW_MESSAGE_SEND` (D5): it sends a real message. The table is data, so 9 renders it and 13 documents it from the same rows |
 | Authenticated proxy attaching/refreshing tokens server-side | F7.2 | 8 | ✅ ID token + `email_verified` + App Check on the caller's side; on HighLevel's side our `Authorization`, the row's `Version`, `Accept` and nothing of the caller's — the token is attached and rotated server-side and the browser never sees one |
 | Sandbox HL account | F7.3 | 2, 13 | ⏭ — create it before Slice 2, seed it before the Loom |
