@@ -455,3 +455,5 @@ orchestrator's own run rather than from a claim — the numbers are in the *Suit
 Not performed: this session is unattended and has no browser to drive by hand. The plan's twelve
 manual steps are covered mechanically — steps 3–10 and 12 by `tests/e2e/snapshots.spec.ts`, step 11
 by `SnapshotSheet.spec.ts` › *disables every Restore during a generation, with the reason on screen*.
+
+<!-- build-complete -->
