@@ -17,6 +17,7 @@ vi.mock('firebase/auth', () => ({
 const { useAuthStore } = await import('./auth')
 const { useProfileStore } = await import('./profile')
 const { useHlStore } = await import('./hl')
+const { useProjectsStore } = await import('./projects')
 
 /** Hand the store a user, as Firebase would. */
 function emit(user: Partial<User> | null): void {
@@ -143,6 +144,31 @@ describe('session state', () => {
     expect(profile.profile).toBeNull()
     expect(profile.loaded).toBe(false)
     expect(hl.status).toBeNull()
+  })
+
+  /* Every resource store joins this list; there is nowhere else it can be
+   * forgotten, which is the whole reason sign-out owns the clearing. */
+  it('empties the project list too', async () => {
+    const store = useAuthStore()
+    const projects = useProjectsStore()
+    signOut.mockResolvedValue(undefined)
+
+    projects.projects = [
+      {
+        id: 'proj-1',
+        name: 'Contact dashboard',
+        description: null,
+        locationId: null,
+        createdAt: '',
+        updatedAt: '',
+      },
+    ]
+    projects.loaded = true
+
+    await store.signOutNow()
+
+    expect(projects.projects).toEqual([])
+    expect(projects.loaded).toBe(false)
   })
 
   it('signs in through Firebase', async () => {
