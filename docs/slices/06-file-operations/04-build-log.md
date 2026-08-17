@@ -204,3 +204,76 @@ The "no Firestore read before a refusal" clause of AC-27 is made observable: a `
 against a project id that does not exist could only be a 404 if the lookup had happened first.
 
 Commit: `cf755ce`.
+
+## T13 — The system prompt learns the format (AC-34, D25)
+
+A second `TextBlockParam` describing the tag pair, the flat-filename rule, the extension
+allowlist, both caps, and that a reply with no files is a complete answer rather than a failure
+(D17). `cache_control` moves to it, so the breakpoint is still the last element of the stable
+prefix.
+
+Every value in it is interpolated from the module that decides it — the tag pair from
+`fileops.ts`, the extensions and the caps from `files/schema.ts` — and the spec imports the same
+constants to assert it. That is the assertion that catches the silent failure: a prompt
+documenting a grammar the parser no longer speaks has no symptom except the model producing
+output we reject.
+
+Slice 5's "belongs to a later slice" case keeps its needles and changes what it asserts (P9): a
+triple-backtick fence is the delimiter D2 rejected, and `FILE:` and `file_start` are two
+spellings it is not, so their absence now pins the sentinel format rather than the block's
+absence.
+
+Commit: `d424356`.
+
+## Interruption — the session that built T1–T13 ended at a usage limit
+
+The build session was cut off mid-T14 at 22:35. T1–T13 were committed; T14, T15 and T16's spec
+files survived in a stash and were restored here. `main` had not moved, and HEAD (`d424356`) was
+re-verified green — typecheck, lint, 514 unit tests — before the stash was applied. The three
+tasks below were then finished and committed one at a time, each with the working tree green,
+rather than as one recovery commit.
+
+## T14 — The typed file client (AC-35)
+
+`frontend/src/lib/filesApi.ts` + `filesApi.spec.ts`, 10 L1 cases. `listFiles`, `getFile` and
+`saveFile` over `apiClient.request`, so each carries the ID token and the App Check header the
+way every other typed client does. No path names a user. The filename is percent-encoded into
+the URL — the two sides agreeing, rather than the client relying on the server's refusal.
+
+`FILE_BYTES_MAX` and `FILE_LIMIT` are mirrored rather than imported, the precedent
+`messagesApi.ts` set with `MESSAGE_LIMIT`: `frontend/` cannot reach `functions/`, and the editor
+needs them to disable **Save** before issuing a request that would be refused.
+
+Commit: `9bb34cd`.
+
+## T15 — The stream client learns three events (AC-36)
+
+`generateApi.ts` gains `file_start`, `file_chunk`, `file_end`, and `done` gains `files` and
+`fileError`, with 12 further L1 cases. The new `done` fields are read tolerantly — a malformed
+one defaults rather than rejecting the frame, because a `done` that fails to parse leaves the
+placeholder bubble on screen forever.
+
+**Deviation.** `asFiles` narrows entry by entry instead of the plan's `value as string[]`, which
+ESLint's `no-unnecessary-type-assertion` rejects and `CLAUDE.md` would reject anyway. One
+non-string member makes the whole list untrustworthy rather than partly usable: the store
+refetches by exactly these paths.
+
+**One existing file changed, minimally.** `stores/workspace.ts`'s terminal handling read as the
+generation loop's fall-through while `GenerateEvent` had three members. With six, the three file
+frames would have fallen into it and had a `path` read as an error message, so the `error` case
+became an explicit branch. The file frames are not consumed yet — that is T18 — and the compiler
+is what forced the question here rather than at runtime.
+
+Commit: `25b0808`.
+
+## T16 — The pure client helpers (AC-44, AC-45, AC-46's L1 halves)
+
+`frontend/src/lib/files.ts` and `messageParts.ts`, 27 L1 cases. Three decisions made once, so
+the components reflect them rather than re-derive them: `compareFilePaths` (entry point first,
+then alphabetical, plain `<` rather than `localeCompare` over a known ASCII subset),
+`mergeFileTree` (the union, so a first write appears and a rewrite appears once), `utf8Bytes`
+(the cap's unit — `String.length` would enable a Save the server refuses), and
+`splitMessageContent` (whole-line marker match only, and it has to behave on a message cut off
+mid-marker because the streaming placeholder is the same string).
+
+Commit: `280ef0b`.
