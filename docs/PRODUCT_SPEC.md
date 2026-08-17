@@ -148,10 +148,10 @@ Firestore — NAMED database `hl-genesis` (not `(default)`)
 
 ## 6. Key Design Decisions to Make (input for phasing)
 1. **Preview runtime:** iframe `srcdoc` (simplest, full control) vs Sandpack vs WebContainers — recommend `srcdoc` with a small runtime shim that injects the proxy base URL + auth
-2. **Generated app format:** single-file HTML+JS vs multi-file Vue app — single-file or plain HTML/JS/CSS multi-file keeps preview trivial and LLM output reliable
+2. **Generated app format:** single-file HTML+JS vs multi-file Vue app — single-file or plain HTML/JS/CSS multi-file keeps preview trivial and LLM output reliable ✅ **settled in Slice 6: flat multi-file plain HTML/JS/CSS, `index.html` the entry point** (`docs/slices/06-file-operations/02-prd.md`)
 3. **SSE transport:** Cloud Functions v2 (onRequest) supports streaming responses — verify region/runtime; fallback is chunked fetch
-4. **LLM provider:** Claude (`@anthropic-ai/sdk`) with streaming; structured file-ops format (e.g., fenced blocks with file-path headers or tool-use JSON)
-5. **File storage:** Firestore documents (files are small text) vs Cloud Storage — Firestore keeps snapshots/restore trivial
+4. **LLM provider:** Claude (`@anthropic-ai/sdk`) with streaming; structured file-ops format (e.g., fenced blocks with file-path headers or tool-use JSON) ✅ **settled: a `<genesis:file path="…">` tag pair, each tag alone on its line**, split as it streams (Slice 6)
+5. **File storage:** Firestore documents (files are small text) vs Cloud Storage — Firestore keeps snapshots/restore trivial ✅ **settled: Firestore**, one document per file under `users/{uid}/projects/{projectId}/files`, the document id *is* the filename (Slice 6)
 6. **HL knowledge injection:** curated endpoint cheat-sheet in the system prompt vs tool-calling — cheat-sheet is simpler and deterministic
 
 Items 1–6 above were leanings when this spec was written. Their current state — decided,

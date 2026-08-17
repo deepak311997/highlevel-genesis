@@ -384,3 +384,55 @@ drift impossible rather than unlikely, at the cost of one file.
 the action belonging to a failed generation is the wrong action here.
 
 Commit: `7c96247`.
+
+## T23 — The demo line, in a browser (AC-48)
+
+`tests/e2e/files.spec.ts`, two walks: the reply streaming into the tree with an edit that
+survives a reload, and a refused file set that leaves the tree untouched. 12 → 14 e2e cases.
+
+Two assertions here cannot be made anywhere else. **A file row is on screen while the
+`Generating…` badge still is** — a buffering dev proxy would deliver every `file_chunk` at
+once, after which the tree filling in simultaneously with the reply finishing would look
+identical to a broken one. **And an edit survives a reload**, which is the whole of "save an
+edit": a `PUT` that answers 200 and stores nothing passes every other level.
+
+**The first run of the edit case failed, and the failure was the test's.** Save is disabled
+*while* a request is in flight as well as after it succeeds, so `toBeDisabled()` could not tell
+"stored" from "still going" — and `page.reload()` then aborted the very `PUT` under test. It
+waits on the response now, and asserts its status.
+
+`openNewProject` moved to `tests/e2e/helpers.ts`, the plan's stated trigger reached one copy
+early: a second suite needs it, and a second copy is where two specs start to disagree about
+what an open workspace looks like.
+
+Commit: `9374127`.
+
+## T24 — The documents catch up
+
+No failing test first, and the reason stands as the plan stated it: these are prose records,
+and a string-matching test over a markdown table would fail on a reword.
+
+`docs/IMPLEMENTATION_PLAN.md` — §0's status row and suite counts; §4's Slice 6 entry marked
+shipped, carrying the two findings the build made that the plan had not (the chunking property's
+real bug, and the `..` segment that never reaches the handler); §8's two rows moved from 🟡 to ✅
+with D1's and D2's decisions; §9's rows for F3.1–3.4, F4.1–4.3, F5.1 and F8.1.
+`docs/PRODUCT_SPEC.md` §6 items 2, 4 and 5 marked settled — item 4 as well as the plan's two,
+because the file-op wire format is the second half of that line and leaving it a leaning would
+have been the one open item with a shipped answer.
+
+## Suite at the end of the build
+
+| Suite | Result |
+|---|---|
+| `typecheck` | pass |
+| `lint` | pass (0 warnings) |
+| `test:unit` | 1,388 passed — 742 functions · 631 frontend · 15 scripts |
+| `test:rules` | 36 passed |
+| `test:integration` | 292 passed |
+| `test:e2e` | 14 passed |
+
+Against the baseline: +435 unit, +8 rules, +60 integration, +2 e2e. **1,730 cases, all green.**
+
+Every acceptance criterion in `02-prd.md` has a named passing test; the plan's coverage table
+holds, with the three amendments recorded above (T3's `frames`, T11's `event.truncated`, T18's
+re-read condition) and the smaller deviations noted against their tasks.
