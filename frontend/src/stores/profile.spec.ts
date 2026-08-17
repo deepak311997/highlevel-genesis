@@ -24,7 +24,7 @@ const { useProfileStore } = await import('./profile')
  * The profile, as far as the browser can see it.
  *
  * Deliberately **not** mocked at the client boundary: `fetch` is what is stubbed,
- * so AC-22 — "the outgoing request is `PUT /api/users/me` carrying an
+ * so AC-22 — "the outgoing request is `PUT /api/profile` carrying an
  * Authorization and an App Check header" — is asserted against the request that
  * would actually go on the wire, rather than against a call to a function that
  * is assumed to build one.
@@ -67,12 +67,12 @@ afterEach(() => {
 
 describe('ensure', () => {
   /** AC-22. */
-  it('issues PUT /api/users/me carrying both headers', async () => {
+  it('issues PUT /api/profile carrying both headers', async () => {
     await useProfileStore().ensure()
     const [url, init] = lastCall()
     const headers = init.headers as Record<string, string>
 
-    expect(url).toContain('/api/users/me')
+    expect(url).toContain('/api/profile')
     expect(init.method).toBe('PUT')
     expect(headers['Authorization']).toBe('Bearer id-token-1')
     expect(headers['X-Firebase-AppCheck']).toBe('app-check-token')
@@ -135,7 +135,7 @@ describe('load', () => {
   it('GETs the profile', async () => {
     await useProfileStore().load()
 
-    expect(lastCall()[0]).toContain('/api/users/me')
+    expect(lastCall()[0]).toContain('/api/profile')
     expect(lastCall()[1].method).toBeUndefined()
   })
 

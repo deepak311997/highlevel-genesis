@@ -1,0 +1,1010 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Path Is The Proof — Slice 03 design companion</title>
+
+<style>
+  /* ---------------------------------------------------------------
+     Identity: a card index. The slice is about where a record lives,
+     and its one real idea is that the *address* of a document is the
+     access control. So the page is built from ruled index cards and
+     monospace paths, with the path segment that comes from the token
+     always marked. Warm graphite ground; olive for what is reachable,
+     rust for what is refused, violet for the browser, amber for what
+     is stored. Every colour is a token so both themes come from one
+     set of values.
+     ------------------------------------------------------------ */
+  :root {
+    --paper:      #f6f5f1;
+    --surface:    #fffefb;
+    --surface-2:  #ecebe4;
+    --ink:        #191a15;
+    --ink-soft:   #52544a;
+    --ink-faint:  #83857a;
+    --rule:       #d6d5cb;
+    --rule-soft:  #e6e5dd;
+
+    /* reachable — a route that exists */
+    --allow:      #3f6b1f;
+    --allow-wash: #e6efdc;
+    /* refused — the rules wall, and every 4xx */
+    --deny:       #a33520;
+    --deny-wash:  #f8e6e1;
+    /* the browser side */
+    --client:     #5b3f9e;
+    --client-wash:#ece6f8;
+    /* the server side */
+    --server:     #1f5f6b;
+    --server-wash:#dceef1;
+    /* stored data */
+    --store:      #8a5c05;
+    --store-wash: #f7ecd6;
+
+    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+    --measure: 70ch;
+    --gutter: clamp(1.1rem, 4vw, 3.25rem);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #14150f;
+      --surface:    #1c1e17;
+      --surface-2:  #262920;
+      --ink:        #eceade;
+      --ink-soft:   #b0b2a2;
+      --ink-faint:  #7f8274;
+      --rule:       #343830;
+      --rule-soft:  #2a2e26;
+
+      --allow:      #96c46a;
+      --allow-wash: #1c2814;
+      --deny:       #ef8b71;
+      --deny-wash:  #2e1b15;
+      --client:     #b39bea;
+      --client-wash:#221c33;
+      --server:     #6ec1cf;
+      --server-wash:#12262a;
+      --store:      #e0ac4e;
+      --store-wash: #2c2211;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #14150f;
+    --surface:    #1c1e17;
+    --surface-2:  #262920;
+    --ink:        #eceade;
+    --ink-soft:   #b0b2a2;
+    --ink-faint:  #7f8274;
+    --rule:       #343830;
+    --rule-soft:  #2a2e26;
+
+    --allow:      #96c46a;
+    --allow-wash: #1c2814;
+    --deny:       #ef8b71;
+    --deny-wash:  #2e1b15;
+    --client:     #b39bea;
+    --client-wash:#221c33;
+    --server:     #6ec1cf;
+    --server-wash:#12262a;
+    --store:      #e0ac4e;
+    --store-wash: #2c2211;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 74rem;
+    margin: 0 auto;
+    padding: 0 var(--gutter) 5rem;
+  }
+
+  /* --- masthead ---------------------------------------------- */
+
+  header.masthead {
+    padding: 3.25rem 0 2rem;
+    border-bottom: 2px solid var(--ink);
+    margin-bottom: 2.75rem;
+  }
+
+  .slice-tag {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 0.9rem;
+  }
+
+  h1 {
+    font-size: clamp(2rem, 6vw, 3.15rem);
+    line-height: 1.06;
+    letter-spacing: -0.025em;
+    margin: 0 0 0.85rem;
+    font-weight: 700;
+  }
+
+  .standfirst {
+    max-width: var(--measure);
+    font-size: 1.06rem;
+    color: var(--ink-soft);
+    margin: 0 0 1.6rem;
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem 1.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    color: var(--ink-faint);
+  }
+  .meta b { color: var(--ink-soft); font-weight: 600; }
+
+  .theme-toggle {
+    float: right;
+    margin-top: -0.35rem;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    background: var(--surface);
+    color: var(--ink-soft);
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    padding: 0.34rem 0.85rem;
+    cursor: pointer;
+  }
+  .theme-toggle:hover { border-color: var(--ink-soft); color: var(--ink); }
+
+  /* --- sections ---------------------------------------------- */
+
+  section { margin: 0 0 3.5rem; }
+
+  h2 {
+    font-size: 1.42rem;
+    letter-spacing: -0.015em;
+    margin: 0 0 0.3rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.7rem;
+  }
+  h2 .num {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--allow);
+    letter-spacing: 0.1em;
+  }
+
+  h3 {
+    font-size: 0.94rem;
+    letter-spacing: 0.02em;
+    margin: 2rem 0 0.6rem;
+  }
+
+  .lede {
+    max-width: var(--measure);
+    color: var(--ink-soft);
+    margin: 0 0 1.5rem;
+  }
+
+  p { max-width: var(--measure); }
+
+  code, .mono { font-family: var(--font-mono); font-size: 0.88em; }
+
+  p code, li code, td code, th code {
+    background: var(--surface-2);
+    border-radius: 3px;
+    padding: 0.08em 0.34em;
+  }
+
+  /* --- figures ------------------------------------------------ */
+
+  figure {
+    margin: 0 0 1.6rem;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    padding: 1.35rem 1.35rem 1.05rem;
+  }
+
+  .scroller { overflow-x: auto; }
+
+  figure svg { display: block; width: 100%; height: auto; min-width: 0; }
+  .scroller svg { min-width: 640px; }
+
+  figcaption {
+    margin-top: 1rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid var(--rule-soft);
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+    max-width: var(--measure);
+  }
+  figcaption b { color: var(--ink); font-weight: 600; }
+
+  /* svg text tokens */
+  .t     { font-family: var(--font-body); font-size: 12.5px; fill: var(--ink); }
+  .t-sm  { font-family: var(--font-body); font-size: 11px;   fill: var(--ink-soft); }
+  .t-xs  { font-family: var(--font-body); font-size: 10px;   fill: var(--ink-faint); }
+  .m     { font-family: var(--font-mono); font-size: 11.5px; fill: var(--ink); }
+  .m-sm  { font-family: var(--font-mono); font-size: 10.2px; fill: var(--ink-soft); }
+  .lbl   { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; fill: var(--ink-faint); }
+  .bold  { font-weight: 650; }
+
+  .fill-surface  { fill: var(--surface); }
+  .fill-surface2 { fill: var(--surface-2); }
+  .fill-allow    { fill: var(--allow-wash); }
+  .fill-deny     { fill: var(--deny-wash); }
+  .fill-client   { fill: var(--client-wash); }
+  .fill-server   { fill: var(--server-wash); }
+  .fill-store    { fill: var(--store-wash); }
+
+  .st        { fill: none; stroke: var(--rule); stroke-width: 1.2; }
+  .st-ink    { fill: none; stroke: var(--ink-soft); stroke-width: 1.3; }
+  .st-allow  { fill: none; stroke: var(--allow);  stroke-width: 1.6; }
+  .st-deny   { fill: none; stroke: var(--deny);   stroke-width: 1.6; }
+  .st-client { fill: none; stroke: var(--client); stroke-width: 1.5; }
+  .st-server { fill: none; stroke: var(--server); stroke-width: 1.5; }
+  .st-store  { fill: none; stroke: var(--store);  stroke-width: 1.5; }
+  .dash      { stroke-dasharray: 5 4; }
+
+  .tx-allow  { fill: var(--allow); }
+  .tx-deny   { fill: var(--deny); }
+  .tx-client { fill: var(--client); }
+  .tx-server { fill: var(--server); }
+  .tx-store  { fill: var(--store); }
+  .tx-soft   { fill: var(--ink-soft); }
+
+  /* one marker per colour — context-stroke silently renders black where
+     it is unsupported, which is invisible on light and wrong on dark */
+  .ah-allow  { fill: var(--allow); }
+  .ah-deny   { fill: var(--deny); }
+  .ah-client { fill: var(--client); }
+  .ah-server { fill: var(--server); }
+  .ah-store  { fill: var(--store); }
+  .ah-ink    { fill: var(--ink-soft); }
+
+  /* --- cards -------------------------------------------------- */
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(17.5rem, 1fr));
+    gap: 0.9rem;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--allow);
+    border-radius: 8px;
+    padding: 0.95rem 1.05rem 1.05rem;
+  }
+  .card.read { border-left-color: var(--server); }
+
+  .card .verb {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.1em;
+    font-weight: 700;
+    color: var(--allow);
+  }
+  .card.read .verb { color: var(--server); }
+
+  .card .path {
+    font-family: var(--font-mono);
+    font-size: 0.86rem;
+    margin: 0.12rem 0 0.55rem;
+    word-break: break-all;
+  }
+
+  .card dl { margin: 0; font-size: 0.79rem; }
+  .card dt {
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-top: 0.55rem;
+  }
+  .card dd { margin: 0.1rem 0 0; color: var(--ink-soft); }
+  .card dd code { font-size: 0.94em; }
+
+  .pill {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+    border: 1px solid currentColor;
+    margin-left: 0.35rem;
+    vertical-align: 0.1em;
+  }
+  .pill.att { color: var(--store); }
+  .pill.open { color: var(--ink-faint); }
+
+  /* --- tables ------------------------------------------------- */
+
+  .table-wrap { overflow-x: auto; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    min-width: 34rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 0.6rem 0.85rem 0.6rem 0;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: top;
+  }
+  th {
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    border-bottom: 1px solid var(--rule);
+    font-weight: 600;
+  }
+  td.risk-id { font-family: var(--font-mono); color: var(--deny); font-weight: 600; white-space: nowrap; }
+
+  /* --- callout ------------------------------------------------ */
+
+  .callout {
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--store);
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 1rem 1.15rem;
+    margin: 1.4rem 0;
+    max-width: var(--measure);
+  }
+  .callout p { margin: 0; font-size: 0.9rem; color: var(--ink-soft); }
+  .callout p + p { margin-top: 0.6rem; }
+  .callout .k {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--store);
+    margin-bottom: 0.35rem;
+  }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding-top: 1.35rem;
+    font-size: 0.8rem;
+    color: var(--ink-faint);
+    max-width: var(--measure);
+  }
+  footer code { font-size: 0.92em; }
+
+  @media (max-width: 34rem) {
+    figure { padding: 1rem 0.85rem 0.85rem; }
+    .theme-toggle { float: none; display: block; margin: 0 0 1.25rem; }
+  }
+</style>
+</head>
+
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <button class="theme-toggle" id="themeToggle" type="button">Theme</button>
+  <p class="slice-tag">Slice 03 · Projects · design companion</p>
+  <h1>The path is the proof</h1>
+  <p class="standfirst">
+    Slice 2b closed the “trust a uid from the body” trap by making another user’s id
+    impossible to write down: the profile route is the literal <code>/users/me</code>.
+    Projects cannot do that — a project route needs an id. This is the slice that decides
+    what replaces the trick, and the answer is that the document’s <em>address</em> carries
+    the owner.
+  </p>
+  <p class="meta">
+    <span><b>Spec</b> F2.1 · F2.2 · F2.3</span>
+    <span><b>Branch</b> slice/03-projects</span>
+    <span><b>Depends on</b> 2b</span>
+    <span><b>Mode</b> fast</span>
+    <span><b>Date</b> 2026-08-17</span>
+  </p>
+</header>
+
+<!-- ============================================================ -->
+<section>
+  <h2><span class="num">01</span> The boundary</h2>
+  <p class="lede">
+    Five routes and one wall. The browser holds no Firestore SDK at all, and
+    <code>firestore.rules</code> denies the collection to every client — so the routes are
+    not the convenient path to the data, they are the only path.
+  </p>
+
+  <figure>
+    <div class="scroller">
+      <svg viewBox="0 0 900 400" role="img"
+           aria-label="The browser reaches Firestore only through five Cloud Function routes on the api function; the security rules deny the projects subcollection to every client directly, and the uid used to build every document path comes from the verified ID token.">
+        <defs>
+          <marker id="ah-c" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+            <path class="ah-client" d="M0 0 L10 4 L0 8 Z"/>
+          </marker>
+          <marker id="ah-d" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+            <path class="ah-deny" d="M0 0 L10 4 L0 8 Z"/>
+          </marker>
+          <marker id="ah-st" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+            <path class="ah-store" d="M0 0 L10 4 L0 8 Z"/>
+          </marker>
+        </defs>
+
+        <!-- browser column -->
+        <rect x="14" y="40" width="196" height="286" rx="9" class="fill-client st"/>
+        <text x="30" y="66" class="lbl">Browser</text>
+        <text x="30" y="92" class="t bold">ProjectsCard.vue</text>
+        <text x="30" y="112" class="t-sm">loading · empty · error · rows</text>
+        <text x="30" y="140" class="t bold">stores/projects.ts</text>
+        <text x="30" y="160" class="t-sm">refetch after every mutation</text>
+        <text x="30" y="188" class="t bold">lib/projectsApi.ts</text>
+        <text x="30" y="208" class="t-sm">over lib/apiClient.ts</text>
+        <text x="30" y="236" class="m-sm">Authorization: Bearer …</text>
+        <text x="30" y="254" class="m-sm">X-Firebase-AppCheck (writes)</text>
+
+        <rect x="30" y="274" width="164" height="36" rx="6" class="fill-deny st-deny dash"/>
+        <text x="42" y="290" class="m-sm tx-deny">firebase/firestore</text>
+        <text x="42" y="304" class="t-xs tx-deny">no import · lint + L1 + CI bundle scan</text>
+
+        <!-- api column -->
+        <rect x="266" y="40" width="270" height="286" rx="9" class="fill-server st"/>
+        <text x="282" y="66" class="lbl">Cloud Function · api · asia-south1</text>
+
+        <rect x="282" y="80" width="238" height="46" rx="6" class="fill-surface st"/>
+        <text x="294" y="99" class="t bold">withVerifiedUser</text>
+        <text x="294" y="115" class="t-xs">ID token + email_verified → uid</text>
+
+        <rect x="282" y="134" width="238" height="34" rx="6" class="fill-surface st"/>
+        <text x="294" y="155" class="t-sm">requireAppCheck · writes only</text>
+
+        <rect x="282" y="176" width="238" height="34" rx="6" class="fill-surface st"/>
+        <text x="294" y="197" class="t-sm">parseBody(schema) · .strict()</text>
+
+        <rect x="282" y="218" width="238" height="94" rx="6" class="fill-allow st-allow"/>
+        <text x="294" y="238" class="m-sm tx-allow">GET    /api/projects</text>
+        <text x="294" y="255" class="m-sm tx-allow">POST   /api/projects</text>
+        <text x="294" y="272" class="m-sm tx-allow">GET    /api/projects/:id</text>
+        <text x="294" y="289" class="m-sm tx-allow">PATCH  /api/projects/:id</text>
+        <text x="294" y="306" class="m-sm tx-allow">DELETE /api/projects/:id</text>
+
+        <!-- firestore column -->
+        <rect x="592" y="40" width="294" height="286" rx="9" class="fill-store st"/>
+        <text x="608" y="66" class="lbl">Firestore · hl-genesis</text>
+
+        <rect x="608" y="82" width="262" height="88" rx="6" class="fill-surface st"/>
+        <text x="620" y="103" class="m-sm">users/<tspan class="tx-server bold">{uid}</tspan>/projects/{projectId}</text>
+        <text x="620" y="122" class="t-xs">name · description · locationId</text>
+        <text x="620" y="138" class="t-xs">createdAt · updatedAt · deletedAt</text>
+        <text x="620" y="158" class="t-xs tx-server">{uid} is the token’s uid — always</text>
+
+        <rect x="608" y="182" width="262" height="34" rx="6" class="fill-surface st"/>
+        <text x="620" y="203" class="m-sm">hlConnections/{uid} → locationId</text>
+
+        <rect x="608" y="228" width="262" height="84" rx="6" class="fill-deny st-deny"/>
+        <text x="620" y="249" class="lbl tx-deny">firestore.rules</text>
+        <text x="620" y="269" class="m-sm tx-deny">allow read, write: if false</text>
+        <text x="620" y="288" class="t-xs tx-deny">on every match block in the file —</text>
+        <text x="620" y="303" class="t-xs tx-deny">the backstop, not the enforcement</text>
+
+        <!-- flows -->
+        <path d="M210 200 L262 200" class="st-client" marker-end="url(#ah-c)"/>
+        <text x="214" y="192" class="t-xs tx-client">https</text>
+
+        <path d="M540 200 L588 200" class="st-store" marker-end="url(#ah-st)"/>
+        <text x="542" y="192" class="t-xs tx-store">Admin SDK</text>
+
+        <!-- denied direct path -->
+        <path d="M112 340 C 112 372, 700 372, 700 336" class="st-deny dash" marker-end="url(#ah-d)"/>
+        <text x="330" y="388" class="t-sm tx-deny">direct client read or write — denied, and there is no SDK left to attempt it with</text>
+
+        <path d="M700 216 L700 226" class="st-deny"/>
+      </svg>
+    </div>
+    <figcaption>
+      <b>Two independent things have to fail before another tenant’s project is reachable.</b>
+      The route would have to build a path from something other than the token’s uid,
+      <em>and</em> the rules file would have to grant a client something. Today the second is
+      impossible by inspection: every block in <code>firestore.rules</code> is
+      <code>if&nbsp;false</code>, and the frontend carries no Firestore SDK to call it with.
+    </figcaption>
+  </figure>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <h2><span class="num">02</span> The hazard this slice exists to get right</h2>
+  <p class="lede">
+    Every route here takes a document id from the caller. There are two ways to make sure
+    that id belongs to them, and they are not equally safe — one is a line of code that has
+    to be present, the other is a property of where the document lives.
+  </p>
+
+  <figure>
+    <div class="scroller">
+      <svg viewBox="0 0 900 372" role="img"
+           aria-label="Comparison. With a top-level projects collection the handler must compare an ownerUid field to the token uid, and omitting that comparison returns another user's project. With a subcollection under the owner, the uid is a segment of the document path, so another user's project is not addressable and no comparison exists to omit.">
+        <defs>
+          <marker id="ah2-i" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+            <path class="ah-ink" d="M0 0 L10 4 L0 8 Z"/>
+          </marker>
+        </defs>
+
+        <!-- shared request -->
+        <rect x="256" y="14" width="388" height="46" rx="7" class="fill-client st"/>
+        <text x="272" y="34" class="t bold tx-client">alice’s token · GET /api/projects/p_9f2 — bob’s project id</text>
+        <text x="272" y="51" class="t-xs">the same request goes into both designs</text>
+
+        <path d="M330 62 L226 92" class="st-ink" marker-end="url(#ah2-i)"/>
+        <path d="M570 62 L674 92" class="st-ink" marker-end="url(#ah2-i)"/>
+
+        <!-- LEFT: rejected -->
+        <rect x="14" y="96" width="416" height="258" rx="9" class="fill-deny st-deny"/>
+        <text x="32" y="122" class="lbl tx-deny">Rejected · field comparison</text>
+        <text x="32" y="146" class="t bold">projects/{projectId} + ownerUid</text>
+
+        <rect x="32" y="160" width="380" height="60" rx="6" class="fill-surface st"/>
+        <text x="46" y="181" class="m-sm">const d = await db.doc(`projects/${id}`).get()</text>
+        <text x="46" y="203" class="m-sm tx-deny">if (d.get('ownerUid') !== uid) throw notFound()</text>
+
+        <text x="32" y="243" class="t-sm">The second line is the entire boundary. It is also:</text>
+        <text x="46" y="264" class="t-sm">· one line, in five handlers, written five times</text>
+        <text x="46" y="282" class="t-sm">· the line a sixth handler is copied without</text>
+        <text x="46" y="300" class="t-sm">· invisible to the type checker if omitted</text>
+
+        <rect x="32" y="312" width="380" height="30" rx="6" class="fill-surface st-deny"/>
+        <text x="46" y="332" class="m-sm tx-deny">omitted → 200 with bob’s project</text>
+
+        <!-- RIGHT: taken -->
+        <rect x="470" y="96" width="416" height="258" rx="9" class="fill-allow st-allow"/>
+        <text x="488" y="122" class="lbl tx-allow">Taken · path composition</text>
+        <text x="488" y="146" class="t bold">users/{uid}/projects/{projectId}</text>
+
+        <rect x="488" y="160" width="380" height="60" rx="6" class="fill-surface st"/>
+        <text x="502" y="181" class="m-sm">const d = await db.doc(</text>
+        <text x="502" y="203" class="m-sm">  `users/<tspan class="tx-allow bold">${uid}</tspan>/projects/${id}`).get()</text>
+
+        <text x="488" y="243" class="t-sm">There is no second line. The uid segment is the one</text>
+        <text x="488" y="261" class="t-sm">withVerifiedUser read off the token, so bob’s project</text>
+        <text x="488" y="279" class="t-sm">is not <tspan class="bold">refused</tspan> — it is not addressable at all.</text>
+        <text x="488" y="300" class="t-sm">The list query is scoped before a where is written.</text>
+
+        <rect x="488" y="312" width="380" height="30" rx="6" class="fill-surface st-allow"/>
+        <text x="502" y="332" class="m-sm tx-allow">no such document → 404, by construction</text>
+      </svg>
+    </div>
+    <figcaption>
+      <b>This is 2b’s <code>/users/me</code> argument, applied where a path parameter is
+      unavoidable.</b> The rejected design is not wrong — it is correct exactly as often as
+      it is remembered, and slices 4, 6 and 11 each add more handlers to remember it in.
+      The consequence worth naming: under the taken design there is no “403 versus 404 leaks
+      existence” question to answer, because the handler genuinely cannot tell another
+      user’s project from one that never existed.
+    </figcaption>
+  </figure>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <h2><span class="num">03</span> Create, and what makes the list current again</h2>
+  <p class="lede">
+    Two round trips per mutation, on purpose. <code>CLAUDE.md</code> rules out
+    <code>onSnapshot</code>, so liveness is a refetch — and a refetch is also the only thing
+    that reproduces the server’s <code>updatedAt</code> ordering without re-deriving it in the
+    browser.
+  </p>
+
+  <figure>
+    <div class="scroller">
+      <svg viewBox="0 0 900 400" role="img"
+           aria-label="Sequence for creating a project in nine numbered steps: the dialog submits, the client attaches an ID token and App Check header, the route verifies the token, parses the body strictly, checks the project cap, reads the HighLevel location id, writes the document with deletedAt null, answers 201, and the store then refetches the list which returns the new project first.">
+        <defs>
+          <marker id="ah3-c" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+            <path class="ah-client" d="M0 0 L10 4 L0 8 Z"/>
+          </marker>
+          <marker id="ah3-s" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+            <path class="ah-server" d="M0 0 L10 4 L0 8 Z"/>
+          </marker>
+          <marker id="ah3-st" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+            <path class="ah-store" d="M0 0 L10 4 L0 8 Z"/>
+          </marker>
+        </defs>
+
+        <!-- lanes -->
+        <text x="86" y="26" class="lbl">Dialog + store</text>
+        <text x="360" y="26" class="lbl">POST /api/projects</text>
+        <text x="700" y="26" class="lbl">Firestore</text>
+
+        <line x1="120" y1="38" x2="120" y2="376" class="st dash"/>
+        <line x1="440" y1="38" x2="440" y2="376" class="st dash"/>
+        <line x1="760" y1="38" x2="760" y2="376" class="st dash"/>
+
+        <!-- 1 -->
+        <path d="M40 62 L118 62" class="st-client" marker-end="url(#ah3-c)"/>
+        <text x="40" y="54" class="t-sm"><tspan class="bold tx-client">1</tspan> submit · name required</text>
+
+        <!-- 2 -->
+        <path d="M122 92 L436 92" class="st-client" marker-end="url(#ah3-c)"/>
+        <text x="132" y="84" class="m-sm tx-client">POST { name, description? } + Bearer + AppCheck</text>
+
+        <!-- 3..6 server side -->
+        <rect x="452" y="106" width="286" height="24" rx="5" class="fill-server st"/>
+        <text x="464" y="123" class="t-sm"><tspan class="bold tx-server">3</tspan> withVerifiedUser → uid, email_verified</text>
+
+        <rect x="452" y="136" width="286" height="24" rx="5" class="fill-server st"/>
+        <text x="464" y="153" class="t-sm"><tspan class="bold tx-server">4</tspan> requireAppCheck · parseBody(.strict())</text>
+
+        <path d="M444 178 L756 178" class="st-store" marker-end="url(#ah3-st)"/>
+        <text x="454" y="170" class="m-sm tx-store">5 count live projects · 6 read hlConnections/{uid}</text>
+
+        <path d="M756 206 L444 206" class="st-store" marker-end="url(#ah3-st)"/>
+        <text x="470" y="198" class="m-sm tx-store">count &lt; 100 · locationId | null</text>
+
+        <path d="M444 236 L756 236" class="st-store" marker-end="url(#ah3-st)"/>
+        <text x="454" y="228" class="m-sm tx-store">7 set users/{uid}/projects/{autoId}</text>
+        <rect x="512" y="244" width="240" height="22" rx="5" class="fill-store st-store"/>
+        <text x="524" y="259" class="m-sm tx-store">deletedAt: null — written, not omitted</text>
+
+        <!-- 8 -->
+        <path d="M436 292 L122 292" class="st-client" marker-end="url(#ah3-c)"/>
+        <text x="150" y="284" class="m-sm tx-client">8 201 { project } · dialog closes</text>
+
+        <!-- 9 -->
+        <path d="M122 328 L436 328" class="st-server" marker-end="url(#ah3-s)"/>
+        <text x="132" y="320" class="m-sm tx-server">9 GET /api/projects — the refetch</text>
+
+        <path d="M436 358 L122 358" class="st-server" marker-end="url(#ah3-s)"/>
+        <text x="150" y="350" class="m-sm tx-server">200 { projects } · new project first</text>
+      </svg>
+    </div>
+    <figcaption>
+      <b>Step 7 is the one that bites if it is skipped.</b> Firestore’s
+      <code>where('deletedAt','==',null)</code> matches documents whose field <em>is</em> null
+      and ignores documents where it is <em>absent</em> — so a create that left the field off
+      would produce a project that is invisible to its own list, and the bug would look like a
+      broken read. Rename and delete follow the same shape: mutate, then refetch. Step 5’s
+      count is read before the write and is not transactional; two simultaneous creates at 99
+      can both land, which is a guard-rail off by one, not a boundary crossed.
+    </figcaption>
+  </figure>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <h2><span class="num">04</span> One request, every exit</h2>
+  <p class="lede">
+    Where a call to <code>PATCH /api/projects/:projectId</code> can end, and what the person
+    at the keyboard is looking at when it does.
+  </p>
+
+  <figure>
+    <div class="scroller">
+      <svg viewBox="0 0 900 396" role="img"
+           aria-label="Failure fan for PATCH on a project: seven exits — 401 unauthenticated, 403 email unverified, 401 App Check failure, 400 invalid id, 400 invalid body, 404 not found, and 200 success — each labelled with what the user sees.">
+        <defs>
+          <marker id="ah4-d" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+            <path class="ah-deny" d="M0 0 L10 4 L0 8 Z"/>
+          </marker>
+          <marker id="ah4-a" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+            <path class="ah-allow" d="M0 0 L10 4 L0 8 Z"/>
+          </marker>
+        </defs>
+
+        <rect x="14" y="170" width="176" height="56" rx="8" class="fill-client st"/>
+        <text x="30" y="194" class="t bold tx-client">PATCH /api/projects/:id</text>
+        <text x="30" y="212" class="t-xs">rename, from the dialog</text>
+
+        <line x1="190" y1="198" x2="238" y2="198" class="st-ink"/>
+        <line x1="238" y1="34" x2="238" y2="362" class="st-ink"/>
+
+        <!-- exits -->
+        <g>
+          <path d="M238 34 L296 34" class="st-deny" marker-end="url(#ah4-d)"/>
+          <rect x="300" y="18" width="586" height="34" rx="6" class="fill-deny st"/>
+          <text x="314" y="34" class="m-sm tx-deny">401 unauthenticated</text>
+          <text x="486" y="34" class="t-sm">no or expired token</text>
+          <text x="686" y="34" class="t-sm">card error; the guard handles a dead session</text>
+        </g>
+        <g>
+          <path d="M238 88 L296 88" class="st-deny" marker-end="url(#ah4-d)"/>
+          <rect x="300" y="72" width="586" height="34" rx="6" class="fill-deny st"/>
+          <text x="314" y="88" class="m-sm tx-deny">403 email_unverified</text>
+          <text x="486" y="88" class="t-sm">stale token claim</text>
+          <text x="686" y="88" class="t-sm">“Verify your email address first.”</text>
+        </g>
+        <g>
+          <path d="M238 142 L296 142" class="st-deny" marker-end="url(#ah4-d)"/>
+          <rect x="300" y="126" width="586" height="34" rx="6" class="fill-deny st"/>
+          <text x="314" y="142" class="m-sm tx-deny">401 app_check</text>
+          <text x="486" y="142" class="t-sm">attestation missing — writes only</text>
+          <text x="686" y="142" class="t-sm">dialog stays open with the message</text>
+        </g>
+        <g>
+          <path d="M238 196 L296 196" class="st-deny" marker-end="url(#ah4-d)"/>
+          <rect x="300" y="180" width="586" height="34" rx="6" class="fill-deny st"/>
+          <text x="314" y="196" class="m-sm tx-deny">400 invalid_id</text>
+          <text x="486" y="196" class="t-sm">`..`, &gt; 64 chars, illegal characters</text>
+          <text x="686" y="196" class="t-sm">unreachable from the UI — Firestore untouched</text>
+        </g>
+        <g>
+          <path d="M238 250 L296 250" class="st-deny" marker-end="url(#ah4-d)"/>
+          <rect x="300" y="234" width="586" height="34" rx="6" class="fill-deny st"/>
+          <text x="314" y="250" class="m-sm tx-deny">400 invalid_body</text>
+          <text x="486" y="250" class="t-sm">unknown key · empty patch · over-length</text>
+          <text x="686" y="250" class="t-sm">Zod’s message, naming the field, in the dialog</text>
+        </g>
+        <g>
+          <path d="M238 304 L296 304" class="st-deny" marker-end="url(#ah4-d)"/>
+          <rect x="300" y="288" width="586" height="34" rx="6" class="fill-deny st"/>
+          <text x="314" y="304" class="m-sm tx-deny">404 not_found</text>
+          <text x="486" y="304" class="t-sm">absent · deleted · unparseable · another user’s</text>
+          <text x="686" y="304" class="t-sm">“That project no longer exists.” then a refetch</text>
+        </g>
+        <g>
+          <path d="M238 358 L296 358" class="st-allow" marker-end="url(#ah4-a)"/>
+          <rect x="300" y="342" width="586" height="34" rx="6" class="fill-allow st"/>
+          <text x="314" y="358" class="m-sm tx-allow">200 { project }</text>
+          <text x="486" y="358" class="t-sm">updatedAt advances, createdAt does not</text>
+          <text x="686" y="358" class="t-sm">dialog closes, row moves to the top</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>
+      <b>Four of the six failures collapse into one 404 on purpose.</b> Absent, soft-deleted,
+      corrupt and belonging-to-someone-else are one answer because the handler cannot
+      distinguish them — the first three by choice, the fourth by construction. A network
+      failure is the seventh exit and never reaches the server: <code>apiClient</code> maps it
+      to status 0 and “check your connection and try again.”
+    </figcaption>
+  </figure>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <h2><span class="num">05</span> The five contracts</h2>
+  <p class="lede">
+    All mounted on the existing <code>api</code> function at both <code>/</code> and
+    <code>/api</code>, all behind <code>withVerifiedUser</code>. Mutations are attested; plain
+    authenticated reads are not — one rule for the whole API, unchanged since Slice&nbsp;2.
+  </p>
+
+  <div class="cards">
+    <div class="card read">
+      <span class="verb">GET</span><span class="pill open">open read</span>
+      <p class="path">/api/projects</p>
+      <dl>
+        <dt>Answers</dt>
+        <dd><code>200 { projects: [] }</code> — live only, <code>updatedAt</code> desc, ≤ 100</dd>
+        <dt>Never</dt>
+        <dd>404 for an empty list, or a <code>deletedAt</code> on the wire</dd>
+      </dl>
+    </div>
+
+    <div class="card">
+      <span class="verb">POST</span><span class="pill att">attested</span>
+      <p class="path">/api/projects</p>
+      <dl>
+        <dt>Body · strict</dt>
+        <dd><code>{ name, description? }</code></dd>
+        <dt>Answers</dt>
+        <dd><code>201 { project }</code></dd>
+        <dt>Refuses</dt>
+        <dd><code>400 invalid_body</code> · <code>409 project_limit</code> at 100 live</dd>
+        <dt>Server-owned</dt>
+        <dd><code>id</code>, <code>locationId</code>, all three timestamps</dd>
+      </dl>
+    </div>
+
+    <div class="card read">
+      <span class="verb">GET</span><span class="pill open">open read</span>
+      <p class="path">/api/projects/:projectId</p>
+      <dl>
+        <dt>Answers</dt>
+        <dd><code>200 { project }</code></dd>
+        <dt>Refuses</dt>
+        <dd><code>400 invalid_id</code> · <code>404 not_found</code></dd>
+      </dl>
+    </div>
+
+    <div class="card">
+      <span class="verb">PATCH</span><span class="pill att">attested</span>
+      <p class="path">/api/projects/:projectId</p>
+      <dl>
+        <dt>Body · strict, ≥ 1 key</dt>
+        <dd><code>{ name?, description? }</code> — absent leaves, <code>null</code> clears</dd>
+        <dt>Answers</dt>
+        <dd><code>200 { project }</code></dd>
+        <dt>Refuses</dt>
+        <dd><code>400</code> on an empty body · <code>404</code> on a deleted project</dd>
+      </dl>
+    </div>
+
+    <div class="card">
+      <span class="verb">DELETE</span><span class="pill att">attested</span>
+      <p class="path">/api/projects/:projectId</p>
+      <dl>
+        <dt>Answers</dt>
+        <dd><code>200 { ok: true }</code> — always, and idempotently</dd>
+        <dt>Effect</dt>
+        <dd>sets <code>deletedAt</code>; a second delete does not rewrite it</dd>
+        <dt>Never</dt>
+        <dd>404 — the caller already has what they asked for</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="callout">
+    <span class="k">Where the spec and the architecture disagree</span>
+    <p>
+      <code>PRODUCT_SPEC.md</code> F2.2 asks for “strict per-user scoping via Firestore
+      security rules.” It predates the API-only decision of 2026-08-17, and where the two
+      disagree the architecture decision wins — so the rules block for this collection is
+      <code>allow read, write: if false</code> and the scoping lives in the routes.
+    </p>
+    <p>
+      What F2.2 actually wants is delivered more strongly, not less: the browser cannot reach
+      the collection at all, so there is no rule expression to get subtly wrong. Recorded as
+      D2 in the PRD so a reviewer reading the spec alone does not read the denial as a
+      regression.
+    </p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <h2><span class="num">06</span> Where the risk is tested</h2>
+  <p class="lede">
+    Thirty-four acceptance criteria. Which level each is proven at is a statement about where
+    this slice thinks it can go wrong — and it is heavily weighted to L4, because the thing
+    that would hurt is a route, not a component.
+  </p>
+
+  <figure>
+    <div class="scroller">
+      <svg viewBox="0 0 900 250" role="img"
+           aria-label="Acceptance criteria by test level: twenty at L4 integration, nine at L1 unit, nine at L2 component, three at L3 rules, and one at L5 end to end. Some criteria are covered at two levels.">
+        <!-- L4 -->
+        <text x="14" y="42" class="m-sm">L4 · integration</text>
+        <rect x="150" y="26" width="620" height="24" rx="4" class="fill-server st-server"/>
+        <text x="782" y="43" class="t bold tx-server">20</text>
+        <text x="162" y="43" class="t-xs">every route, both tenants, every refusal — tests/integration/projects.spec.ts</text>
+
+        <!-- L1 -->
+        <text x="14" y="86" class="m-sm">L1 · unit</text>
+        <rect x="150" y="70" width="279" height="24" rx="4" class="fill-allow st-allow"/>
+        <text x="441" y="87" class="t bold tx-allow">9</text>
+        <text x="162" y="87" class="t-xs">schemas, id validation, store refetch, typed client</text>
+
+        <!-- L2 -->
+        <text x="14" y="130" class="m-sm">L2 · component</text>
+        <rect x="150" y="114" width="279" height="24" rx="4" class="fill-client st-client"/>
+        <text x="441" y="131" class="t bold tx-client">9</text>
+        <text x="162" y="131" class="t-xs">loading · empty · error+retry · both dialogs</text>
+
+        <!-- L3 -->
+        <text x="14" y="174" class="m-sm">L3 · rules</text>
+        <rect x="150" y="158" width="93" height="24" rx="4" class="fill-deny st-deny"/>
+        <text x="255" y="175" class="t bold tx-deny">3</text>
+        <text x="162" y="175" class="t-xs">every client denied</text>
+
+        <!-- L5 -->
+        <text x="14" y="218" class="m-sm">L5 · e2e</text>
+        <rect x="150" y="202" width="31" height="24" rx="4" class="fill-store st-store"/>
+        <text x="193" y="219" class="t bold tx-store">1</text>
+        <text x="215" y="219" class="t-xs">the demo path only — create, rename, delete, empty state</text>
+      </svg>
+    </div>
+    <figcaption>
+      <b>Nothing this slice does is proven only by a component test.</b> The cap, the
+      cross-tenant denial, the id validation and the soft-delete semantics are all asserted
+      over the wire at L4; L2 covers what the wire cannot see, which is whether the four
+      states of a card actually render. One acceptance criterion has no test that can catch
+      it — <b>the composite index</b>. The emulator serves any query, so its absence is
+      invisible at every level and it is checked by reading
+      <code>firestore.indexes.json</code> against the handler’s query at review.
+    </figcaption>
+  </figure>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <h2><span class="num">07</span> Risks carried into the build</h2>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>#</th><th>Risk</th><th>Mitigation</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="risk-id">R1</td>
+          <td>A route that authenticates the caller and then trusts an id it was handed. The named trap of the API-only architecture, and this is the first slice whose routes take an id at all.</td>
+          <td>Structural, per §02: the path is <code>users/{token&nbsp;uid}/projects/{id}</code>, so there is no comparison anywhere to review. AC-12 and AC-13 assert it from the wire.</td>
+        </tr>
+        <tr>
+          <td class="risk-id">R2</td>
+          <td>The composite index is missing in production and <em>no test at any level can see it</em> — the emulator serves any query, so L3, L4 and L5 all pass without one. It fails on the dashboard’s first load after deploy.</td>
+          <td>Declared in <code>firestore.indexes.json</code> in the same commit as the query, in the definition of done, and re-read against the handler at review.</td>
+        </tr>
+        <tr>
+          <td class="risk-id">R3</td>
+          <td>A create that omits <code>deletedAt</code> makes a project invisible to its own list, because <code>== null</code> does not match an absent field.</td>
+          <td>AC-1 asserts the <em>stored</em> value, not only the response body. Drawn at step 7 of §03.</td>
+        </tr>
+        <tr>
+          <td class="risk-id">R4</td>
+          <td>The slice is the largest so far and quietly grows a workspace screen, a restore surface, or pagination.</td>
+          <td>Each is a numbered out-of-scope row with its owning slice. Rows are deliberately not navigable — the moment one becomes a link, Slice 4 has started.</td>
+        </tr>
+        <tr>
+          <td class="risk-id">R5</td>
+          <td>F2.2 asks for enforcement in security rules, which this slice deliberately does not do; a reviewer reading the spec alone reads the denial as a regression.</td>
+          <td>Recorded as D2 and restated in the rules comment. See the callout in §05.</td>
+        </tr>
+        <tr>
+          <td class="risk-id">R6</td>
+          <td>Five routes and three components in one PR means the review is long enough that something gets skimmed.</td>
+          <td>Build order puts the boundary first — schemas, routes, rules — so the security-relevant half is reviewable before any component exists.</td>
+        </tr>
+        <tr>
+          <td class="risk-id">R7</td>
+          <td>Refetching after every mutation is two round trips and reads as wasteful.</td>
+          <td>It is <code>CLAUDE.md</code>’s stated liveness rule; the alternative is re-deriving the server’s <code>updatedAt</code> ordering in the browser. Named so it is judged as a decision rather than found as an oversight.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <p>
+    Companion to <code>docs/slices/03-projects/02-prd.md</code>, which is the contract: the
+    twenty-seven numbered decisions, the thirty-four acceptance criteria and the test matrix
+    live there. This page draws only what prose makes a reader assemble in their head.
+  </p>
+</footer>
+
+</div>
+
+<script>
+  (function () {
+    var btn = document.getElementById('themeToggle');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      var root = document.documentElement;
+      var current = root.getAttribute('data-theme');
+      if (!current) {
+        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        current = prefersDark ? 'dark' : 'light';
+      }
+      root.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+    });
+  })();
+</script>
+
+</body>
+</html>

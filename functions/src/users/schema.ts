@@ -4,7 +4,7 @@ import { z } from 'zod'
 /**
  * `users/{uid}` — the profile, and the two boundaries around it.
  *
- * The document is written only by the Admin SDK inside `PUT /api/users/me`;
+ * The document is written only by the Admin SDK inside `PUT /api/profile`;
  * `firestore.rules` denies it to every client, owner included. That is the
  * project's one data-access pattern, and this file is where the shape of it is
  * stated: what a caller may send, what the stored document must look like to be

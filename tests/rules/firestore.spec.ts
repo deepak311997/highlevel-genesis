@@ -109,7 +109,7 @@ async function seedProfile(uid = 'alice'): Promise<void> {
 }
 
 describe('users/{uid} — denied to its own owner', () => {
-  /** AC-12. The owner reads their profile through `GET /api/users/me`. */
+  /** AC-12. The owner reads their profile through `GET /api/profile`. */
   it('denies a verified owner reading their own profile', async () => {
     await seedProfile()
 

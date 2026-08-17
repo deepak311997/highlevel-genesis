@@ -28,10 +28,10 @@ beforeEach(() => {
 })
 
 describe('getProfile', () => {
-  it('GETs /api/users/me', async () => {
+  it('GETs /api/profile', async () => {
     await getProfile()
 
-    expect(request).toHaveBeenCalledWith('/api/users/me')
+    expect(request).toHaveBeenCalledWith('/api/profile')
   })
 
   it('unwraps the envelope', async () => {
@@ -52,11 +52,11 @@ describe('getProfile', () => {
 })
 
 describe('ensureProfile', () => {
-  it('PUTs /api/users/me with a JSON body', async () => {
+  it('PUTs /api/profile with a JSON body', async () => {
     await ensureProfile()
 
     const [path, init] = request.mock.calls[0] as [string, RequestInit]
-    expect(path).toBe('/api/users/me')
+    expect(path).toBe('/api/profile')
     expect(init.method).toBe('PUT')
     // An explicit `{}` with a JSON content type, so the request reaches the route
     // as a parsed body and genuinely exercises the `.strict()` boundary rather

@@ -22,7 +22,7 @@ export interface Profile {
  * first ensure, and it is the account card's empty state.
  */
 export async function getProfile(): Promise<Profile | null> {
-  const { profile } = await request<{ profile: Profile | null }>('/api/users/me')
+  const { profile } = await request<{ profile: Profile | null }>('/api/profile')
   return profile
 }
 
@@ -36,7 +36,7 @@ export async function getProfile(): Promise<Profile | null> {
  * instead of only in tests. The `PUT` never answers `null` on success.
  */
 export async function ensureProfile(): Promise<Profile> {
-  const { profile } = await request<{ profile: Profile }>('/api/users/me', {
+  const { profile } = await request<{ profile: Profile }>('/api/profile', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: '{}',

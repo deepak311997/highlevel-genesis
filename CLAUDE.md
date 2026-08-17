@@ -75,5 +75,11 @@ project-specific traps (stream accumulation, the Monaco instance) — live in
   every collection's L3 tests prove the denial.
 - Liveness comes from refetching after a mutation, or from an SSE stream where one already
   exists. Not from `onSnapshot` — see above.
+- **No user identifier ever appears in a route.** Not `:uid`, not `me`. The caller's uid
+  comes from the verified ID token and nowhere else, so a path segment naming the user is
+  at best redundant and at worst a second, forgeable source of identity. Routes name the
+  resource only — `/api/profile`, `/api/projects`, `/api/projects/:projectId/files` — and
+  every collection query is scoped by the token's uid on the server. Resource ids in paths
+  are fine; they are checked for ownership, never trusted for identity.
 - Streaming is mandatory for LLM calls — never request/response.
 - Every new screen ships with loading, empty, and error states.
