@@ -91,6 +91,20 @@ function codeOf(body: unknown): string | undefined {
   return (body as { code?: string }).code
 }
 
+/**
+ * The 404 the routes produce, asserted by its message as well as its code.
+ *
+ * The app's terminal catch-all also answers `404 not_found`, so a case checking
+ * only the status and the code would pass against a route that does not exist —
+ * which is precisely the state these tests start in. The user-facing copy is
+ * what separates "this route answered" from "nothing matched".
+ */
+function expectNotFound(res: { status: number; body: unknown }): void {
+  expect(res.status).toBe(404)
+  expect(codeOf(res.body)).toBe('not_found')
+  expect((res.body as { error?: string }).error).toBe('That project no longer exists.')
+}
+
 beforeAll(async () => {
   await resetEmulators()
   aliceUid = await seedUser(ALICE, PASSWORD, true)
@@ -367,6 +381,95 @@ describe('POST /api/projects', () => {
   /** AC-11. */
   it('refuses an unverified caller with 403, writing nothing', async () => {
     const res = await postJson('/api/projects', { name: 'A' }, auth(unverifiedToken))
+
+    expect(res.status).toBe(403)
+    expect(codeOf(res.body)).toBe('email_unverified')
+  })
+})
+
+describe('GET /api/projects/:projectId', () => {
+  /** AC-5. */
+  it('returns a project by its id', async () => {
+    const created = projectOf(
+      (await postJson('/api/projects', { name: 'Contact dashboard' }, auth(aliceToken))).body,
+    )
+
+    const res = await getJson(`/api/projects/${String(created['id'])}`, auth(aliceToken))
+
+    expect(res.status).toBe(200)
+    expect(projectOf(res.body)).toEqual(created)
+  })
+
+  /*
+   * AC-12, D15. Not a policy choice between 403 and 404: the document path is
+   * `users/{token uid}/projects/{id}`, so bob's project is not at any address
+   * alice's request can name. The handler genuinely cannot tell "yours, missing"
+   * from "somebody else's".
+   */
+  it("answers 404 for bob's project id presented with alice's token", async () => {
+    await seedProject(bobUid, 'bob-1', { name: "Bob's" })
+
+    const res = await getJson('/api/projects/bob-1', auth(aliceToken))
+
+    expectNotFound(res)
+  })
+
+  /** AC-8's read half. */
+  it('answers 404 for a soft-deleted project', async () => {
+    await seedProject(aliceUid, 'gone', { deletedAt: Timestamp.fromMillis(1_700_000_900_000) })
+
+    const res = await getJson('/api/projects/gone', auth(aliceToken))
+
+    expectNotFound(res)
+  })
+
+  /** AC-20. */
+  it('answers 404 for a document that cannot be parsed', async () => {
+    await adminDb().doc(`users/${aliceUid}/projects/corrupt`).set({ description: 'no name here' })
+
+    const res = await getJson('/api/projects/corrupt', auth(aliceToken))
+
+    expectNotFound(res)
+  })
+
+  it('answers 404 for an id that never existed', async () => {
+    const res = await getJson('/api/projects/neverExisted', auth(aliceToken))
+
+    expectNotFound(res)
+  })
+
+  /*
+   * AC-17. `a%2Fb` is the one that earns its place: it arrives at the router as
+   * a single segment and Express decodes it to `a/b`, so it is a path separator
+   * that routing let through — exactly what the id schema exists to catch, since
+   * `getDb().doc()` composes by concatenation and a slash changes the *depth* of
+   * the path.
+   *
+   * `..` is deliberately absent from this list: the WHATWG URL parser removes
+   * double-dot segments before the request is sent, so it cannot be tested over
+   * the wire. It is covered at L1 in `functions/src/projects/schema.spec.ts`.
+   */
+  it.each(['a'.repeat(65), 'bad!id', 'a%2Fb', 'has%20space'])(
+    'refuses the malformed id %s with 400',
+    async (id) => {
+      const res = await getJson(`/api/projects/${id}`, auth(aliceToken))
+
+      expect(res.status).toBe(400)
+      expect(codeOf(res.body)).toBe('invalid_id')
+    },
+  )
+
+  /** AC-10. */
+  it('refuses an unauthenticated caller with 401', async () => {
+    const res = await getJson('/api/projects/anything')
+
+    expect(res.status).toBe(401)
+    expect(codeOf(res.body)).toBe('unauthenticated')
+  })
+
+  /** AC-11. */
+  it('refuses an unverified caller with 403', async () => {
+    const res = await getJson('/api/projects/anything', auth(unverifiedToken))
 
     expect(res.status).toBe(403)
     expect(codeOf(res.body)).toBe('email_unverified')
