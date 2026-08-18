@@ -5,7 +5,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useHlStore, type ProbeResult, type SurfaceProbe } from '@/stores/hl'
+import { useHlStore, type ProbeResult, type ProbeState, type SurfaceProbe } from '@/stores/hl'
 
 /**
  * The HighLevel connection, on the dashboard.
@@ -89,6 +89,23 @@ const probeAlert = computed<string | null>(() => {
   return null
 })
 
+/**
+ * What the check button says, keyed off the probe state rather than off
+ * `probeResult`.
+ *
+ * `probeResult` is null both before the first check *and* for the duration of
+ * every check after it — the store clears it when a probe starts — so a label
+ * keyed off the result reverts to "Check data access" mid-probe (AC-19).
+ */
+const CHECK_LABELS: Record<ProbeState, string> = {
+  idle: 'Check data access',
+  loading: 'Checking…',
+  ready: 'Check again',
+  error: 'Check again',
+}
+
+const checkLabel = computed(() => CHECK_LABELS[hl.probe])
+
 onMounted(() => {
   void hl.refresh()
 })
@@ -164,40 +181,48 @@ onMounted(() => {
         -->
         <div data-testid="data-access" class="flex flex-col gap-3 border-t pt-4">
           <div class="flex flex-col gap-1">
-            <p class="text-sm font-medium">Data access</p>
+            <h4 class="text-sm font-medium">Data access</h4>
             <p class="text-sm text-muted-foreground">
               Check that this connection can read your contacts, conversations and calendars. Runs
               three requests against HighLevel.
             </p>
           </div>
 
-          <!-- Loading: the probe is three live requests, so this is not instant. -->
-          <div
-            v-if="hl.probe === 'loading'"
-            data-testid="data-access-loading"
-            class="flex flex-col gap-2"
-          >
-            <Skeleton v-for="n in 3" :key="n" class="h-5 w-full rounded" />
-          </div>
-
-          <!-- Result: one row per surface, each with its own outcome. -->
-          <dl v-else-if="rows.length > 0" class="flex flex-col gap-1">
+          <!--
+            The live region, and it is here in *every* probe state including
+            idle on purpose: a region that only appears once there is a result
+            was never being observed when the counts landed, so nothing is
+            announced (AC-18).
+          -->
+          <div data-testid="data-access-results" aria-live="polite" class="flex flex-col gap-3">
+            <!-- Loading: the probe is three live requests, so this is not instant. -->
             <div
-              v-for="row in rows"
-              :key="row.key"
-              :data-testid="`data-access-row-${row.key}`"
-              class="flex items-baseline justify-between gap-4 text-sm"
+              v-if="hl.probe === 'loading'"
+              data-testid="data-access-loading"
+              class="flex flex-col gap-2"
             >
-              <dt class="text-muted-foreground">{{ row.label }}</dt>
-              <dd :class="row.probe.error === null ? 'font-medium' : 'text-destructive'">
-                {{ describe(row.probe) }}
-              </dd>
+              <Skeleton v-for="n in 3" :key="n" class="h-5 w-full rounded" />
             </div>
-          </dl>
 
-          <Alert v-if="probeAlert" variant="destructive" data-testid="data-access-error">
-            <AlertDescription>{{ probeAlert }}</AlertDescription>
-          </Alert>
+            <!-- Result: one row per surface, each with its own outcome. -->
+            <dl v-else-if="rows.length > 0" class="flex flex-col gap-1">
+              <div
+                v-for="row in rows"
+                :key="row.key"
+                :data-testid="`data-access-row-${row.key}`"
+                class="flex items-baseline justify-between gap-4 text-sm"
+              >
+                <dt class="text-muted-foreground">{{ row.label }}</dt>
+                <dd :class="row.probe.error === null ? 'font-medium' : 'text-destructive'">
+                  {{ describe(row.probe) }}
+                </dd>
+              </div>
+            </dl>
+
+            <Alert v-if="probeAlert" variant="destructive" data-testid="data-access-error">
+              <AlertDescription>{{ probeAlert }}</AlertDescription>
+            </Alert>
+          </div>
 
           <Button
             v-if="probeNeedsReconnect"
@@ -214,7 +239,7 @@ onMounted(() => {
             data-testid="data-access-check"
             @click="hl.checkDataAccess()"
           >
-            {{ hl.probeResult === null ? 'Check data access' : 'Check again' }}
+            {{ checkLabel }}
           </Button>
         </div>
       </div>
