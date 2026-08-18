@@ -234,3 +234,112 @@ a state where that task's tests passed. No subagent ran git.
 - **Refactor:** `npx prettier --write README.md`; the file was prettier-clean on `main` and
   still is.
 
+### T11 — Sections and bullet caps → AC-5, AC-6 · `ca8f0f6`
+
+- **Red:** the whole new spec, headed by *the real README carries all seven brief-named
+  sections*, failing at the import — `Cannot find module './check-readme.mjs'`.
+- **Green:** `ROOT`, `README`, `REQUIRED_SECTIONS`, `BULLET_CAPS`, `sectionsOf`, `sectionBody`,
+  `orderedItemCount`, `sectionProblems`.
+- **Refactor:** `sectionBody` is the single place a heading is sliced (`## X` up to the next
+  `^## `, keeping `###` children); T14's two section checks read through it.
+- **Tests:** 8.
+
+### T12 — Every `npm run` resolves → AC-3 · `656424b`
+
+- **Red:** six tests, headed by *reports `npm run dev:emulator` at the root — the brief's own
+  failing example*, all `TypeError: unresolvedNpmScripts is not a function`.
+- **Green:** `npmScriptsNamed`, `scriptsOf`, `unresolvedNpmScripts`.
+- **Refactor:** the prefix rule carries a comment naming AC-3's example as its reason.
+- **Plan note C1, confirmed against the tree:** `dev:emulator` exists in
+  `frontend/package.json` and not at the root, so *only* the prefix-aware rule makes AC-3's own
+  failing example fail. A resolver pooling every package's scripts would let the exact line
+  that broke a fresh clone pass. All three sides are pinned: the real README is clean, a bare
+  `npm run dev:emulator` is reported, and `npm --prefix frontend run dev:emulator` is not.
+- **Tests:** 6 more.
+
+### T13 — Every path exists → AC-4 · `96bb3eb`
+
+- **Red:** seven tests, all `TypeError: pathsNamed is not a function`.
+- **Green:** `PATH_ROOTS`, `pathsNamed` (markdown link targets less `http(s):`, `mailto:`,
+  `#…` and absolute `/…`, fragment stripped; plus `(scripts|docs|functions|frontend|tests|
+  brand)/…` tokens over a path-safe character class, trailing punctuation and backticks
+  trimmed, deduped) and `missingPaths`.
+- **Refactor:** the docblock records the known limitation — a bare root filename with no slash
+  is only seen when it is a markdown link target (`CLAUDE.md` is checked; `firestore.rules` in
+  the layout block is not) — and why widening it would make the check noisy enough to be
+  switched off.
+- **Measured today:** 29 distinct paths in the README, all present.
+- **Tests:** 7 more.
+
+### T14 — Live URLs are derived, and setup names the emulator → AC-7, AC-8 · `81deb6c`
+
+- **Red:** eight tests, `TypeError: liveUrls is not a function` — including the throw-test,
+  which failed on the wrong error, so it was rewritten to assert the region message.
+- **Green:** `liveUrls` (project from `.projects.default`; region as the single distinct
+  `hosting.rewrites[].function.region`, tolerating the `destination`-only rewrite, throwing and
+  naming both when two appear), `liveUrlProblems`, `scriptCommand`, `localSetupProblems`.
+- **Refactor:** a docblock on why the URLs are derived rather than matched literally — the
+  project id is committed in exactly one place, so a literal comparison would agree with itself
+  forever while every link died.
+- **Tests:** 8 more.
+
+### T15 — No claim of client-side Firestore → AC-10 · `e66956c`
+
+- **Red:** five tests, `TypeError: firestoreClaims is not a function`.
+- **Green:** `FIRESTORE_CLAIMS`, `firestoreClaims`, and the guarded CLI `main` running all six
+  README checks, printing every offender and exiting `1`, or printing four lines of what it
+  verified and exiting `0`.
+- **Refactor:** the docblock cites `CLAUDE.md` and `scripts/check-no-firestore.mjs` — the same
+  ban one layer out, over the artefact that *describes* the architecture, which is how "the SPA
+  subscribes to Firestore directly" survived on `main` while the code said the opposite.
+- **Tests:** 5 more. 34 in the file at this point; 47 including the supporting unit describes.
+- **CLI, verified:** exits `0` printing the four lines quoted under *Manual verification* below.
+  The failure path was exercised over an in-memory mutated copy of the README — without
+  touching the file — and reported `missing section: ## Deployment`,
+  `npm run devv — no such script in the root package.json`, both `Live URLs: does not carry
+  …other-project…` lines, `scripts/set-verified.mjs — named in the README, not on disk`, and
+  the `onSnapshot` claim.
+
+### T16 — The README allowlist equals `HL_ROUTES` → AC-9 · `8309016`
+
+- **Red:** the full spec against a stubbed `compareAllowlist` returning `[]` after the parse
+  guard — red 6 / green 2. Every mutation case failed with
+  `expected [] to deep equally contain StringContaining "…"`; the two that passed were the
+  real-README case (trivially, against a stub that reports nothing) and the no-heading case
+  (the parse guard was real from the start). Implementing the comparison turned all ten green.
+- **Green:** an exported pure `compareAllowlist(readmeText, table)` over a private
+  `parseAllowlistTable` returning a `{ kind: 'parsed' } | { kind: 'failed' }` union, so a README
+  it cannot read reports a reason rather than silently agreeing with an empty table. Rows keyed
+  on `METHOD path`; equal row counts; `Version` and scope per row; and the set of rows whose
+  Notes say *disabled* equal to the set carrying a `flag`.
+- **Refactor:** the docblock names the third consumer — `routes.ts` claims three, two are code
+  and cannot drift, and this spec is what makes the hand-rendered third one real.
+- **Tests:** 10 — the real files agree, plus nine mutations: a route added to the table, a
+  drifted `Version`, a drifted scope, a flag dropped in each direction, a row rendered twice,
+  one forgotten, one invented, and a README with no allowlist section at all.
+- Two branches no mutation covered were re-verified by temporarily neutering them **inside the
+  spec's own function** — exactly those two tests failed, and only those two. `HL_ROUTES` and
+  `README.md` were never touched.
+- `strictTypeChecked` holds: no `any`, no `as`, no non-null assertions, every indexed cell read
+  guarded, and a row-width check that fails the parse rather than padding.
+- **Discrepancies between the README table and `HL_ROUTES`: none.** All thirteen rows agree on
+  method, path, `Version` and scope, and the single Notes cell containing *disabled* is exactly
+  the row carrying `flag: 'HL_ALLOW_MESSAGE_SEND'`.
+
+### T17 — Cleanup: a dead script and three documents · `bd6746e`
+
+- **Red: none possible**, and stated rather than skipped — a deletion and three documentation
+  corrections. The plan says so; this records that it was honoured rather than worked around.
+- **Green:** `scripts/bootstrap-github.sh` deleted (D17). `IMPLEMENTATION_PLAN.md` §7 now
+  records the deletion instead of deferring the decision; §4 and `HIGHLEVEL_PLATFORM.md` §2
+  Step 3 corrected to `scripts/seed-sandbox.mjs`; §9's ledger updated — F9.1, F9.2, F9.4 and
+  the emulator NFR to ✅, F7.3 to 🟡 with the live run named as a checklist item, F9.3 and F9.5
+  left ⏭ pointing at `release-checklist.md`. No other ledger row was touched.
+- **One correction beyond the plan's list:** §0's slice-12 row said *PR open from
+  `slice/12-error-handling`*; `8c29fc9` merged it. Corrected to *merged to `main`*, because §0
+  is the first thing the next session reads and a stale row there is a wrong starting point.
+- **Left alone, deliberately:** `docs/slices/02-highlevel-connection/02-prd.md` and
+  `docs/slices/08-highlevel-proxy/02-prd.md` both name `scripts/seed-sandbox.ts` when deferring
+  the work to this slice. They are sealed records of what was decided then; retconning a
+  shipped slice's PRD would make the archive lie about its own history.
+
