@@ -57,6 +57,22 @@ export interface FileBuffer {
   replaced: boolean
 }
 
+/**
+ * What a restore did — the four answers `restoreSnapshot` can give (AC-5).
+ *
+ * Slice 11 returned `void`, and that is what made a no-op restore silent: the
+ * request went out, the server answered `changed: false`, nothing on screen
+ * moved, and the caller had no way to tell that apart from a restore that
+ * rewrote every file. Nothing is left on screen to read either way, so the
+ * outcome has to travel back as a value.
+ *
+ * Four rather than a boolean, because the caller's decision is not "did it
+ * work" — it is which of these is worth telling the user about. `'restored'`
+ * and `'unchanged'` are; `'failed'` already renders in `restoreError` and
+ * `'blocked'` is a button the sheet had already disabled.
+ */
+export type RestoreOutcome = 'restored' | 'unchanged' | 'blocked' | 'failed'
+
 export interface WorkspaceStore {
   projectId: Ref<string | null>
   project: Ref<Project | null>
@@ -196,8 +212,11 @@ export interface WorkspaceStore {
   loadFiles: () => Promise<void>
   /** The history, on its own — what the sheet calls on open and on **Try again**. */
   loadSnapshots: () => Promise<void>
-  /** Restore one version, and reconcile the tabs to what came back (AC-24, AC-25). */
-  restoreSnapshot: (snapshotId: string) => Promise<void>
+  /**
+   * Restore one version, reconcile the tabs to what came back (AC-24, AC-25),
+   * and report what it did (AC-5).
+   */
+  restoreSnapshot: (snapshotId: string) => Promise<RestoreOutcome>
   /** Open a tab for a path if there is none, then make it active (D10). */
   selectFile: (path: string) => Promise<void>
   /** Close a tab, keeping its buffer (D12). */
@@ -954,7 +973,7 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
    * the tab reconciliation — because a workspace that half-shows a restored
    * version is not a workspace with its Restore buttons live again.
    */
-  async function restoreSnapshot(snapshotId: string): Promise<void> {
+  async function restoreSnapshot(snapshotId: string): Promise<RestoreOutcome> {
     const id = projectId.value
     /*
      * AC-26. The sheet disables both of these, and the store re-checks them
@@ -966,14 +985,19 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
      * later reply may be the earlier request, and it would reconcile the tabs to
      * a version that is no longer the project's.
      */
-    if (id === null || generating.value || restoringId.value !== null) return
+    if (id === null || generating.value || restoringId.value !== null) return 'blocked'
 
     const gen = generation
     restoringId.value = snapshotId
     restoreError.value = null
     try {
       const result = await postRestore(id, snapshotId)
-      if (!current(gen)) return
+      /*
+       * Every stale-generation return reports `'blocked'`, for the reason the
+       * guard above does: the project or the session this restore belonged to
+       * is gone, so there is no longer anyone it would be truthful to tell.
+       */
+      if (!current(gen)) return 'blocked'
       /*
        * All three, not just the list. `loadFiles` is the tree's other writer and
        * it sets every one of them, which is what `FileTree.vue` renders on — so
@@ -984,7 +1008,7 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
       filesLoaded.value = true
       filesError.value = null
       await loadSnapshots()
-      if (!current(gen)) return
+      if (!current(gen)) return 'blocked'
       /*
        * D10 — `changed: false` is the project already *being* this version.
        * Nothing was written, so nothing on screen is stale, and re-reading the
@@ -992,7 +1016,7 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
        */
       if (result.changed) {
         await applyRestoredFiles(result.files, gen)
-        if (!current(gen)) return
+        if (!current(gen)) return 'blocked'
         /*
          * The stored file set has changed — by more than any save ever does — so
          * the preview is stale and says so. Only the hint moves (Slice 10, D12):
@@ -1003,13 +1027,15 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
          */
         filesRevision.value += 1
       }
+      return result.changed ? 'restored' : 'unchanged'
     } catch (err) {
-      if (!current(gen)) return
+      if (!current(gen)) return 'blocked'
       // The batch is all-or-nothing, so a failure wrote nothing: the files, the
       // tabs and every buffer are left exactly as they were. Discarding an edit
       // *because* the restore failed would lose work for a change that never
       // happened.
       restoreError.value = err instanceof Error ? err.message : 'Could not restore that version.'
+      return 'failed'
     } finally {
       if (current(gen)) restoringId.value = null
     }
