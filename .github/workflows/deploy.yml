@@ -162,8 +162,12 @@ jobs:
           # Never the values — a count and the names, so a truncated or empty
           # secret is visible here rather than three steps later as a blank
           # Firebase config in the browser.
-          echo "wrote frontend/.env with $(grep -c '^[A-Z]' frontend/.env) settings:"
-          grep -oE '^[A-Z_]+' frontend/.env | sed 's/^/  /'
+          # `[A-Z0-9_]+`, with the digits: `[A-Z_]+` stops at the 3 in
+          # VITE_GOOGLE_RECAPTCHA_V3_KEY and prints a truncated name — which in a
+          # deploy log reads as a misspelled key and sends you looking for a typo
+          # that is not there.
+          echo "wrote frontend/.env with $(grep -cE '^[A-Z0-9_]+=' frontend/.env) settings:"
+          grep -oE '^[A-Z0-9_]+' frontend/.env | sed 's/^/  /'
 
           if ! grep -q '^VITE_FIREBASE_PROJECT_ID=.' frontend/.env; then
             echo "::error::FRONTEND_ENV has no VITE_FIREBASE_PROJECT_ID." >&2
