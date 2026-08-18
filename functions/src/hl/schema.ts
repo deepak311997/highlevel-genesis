@@ -3,11 +3,9 @@ import { z } from 'zod'
 /**
  * Boundary schemas for everything HighLevel sends us.
  *
- * Parse, don't validate: each of these turns an `unknown` response body into a
- * typed value or throws, so nothing downstream branches on a field it has not
- * proved exists. All three were written against **recorded** responses from the
- * sandbox rather than from the documentation, which matters more than it
- * sounds — two of the shapes below are not what the docs imply.
+ * Parse, don't validate: each turns an `unknown` body into a typed value or
+ * throws. All three were written against **recorded** sandbox responses rather
+ * than the documentation — two of the shapes below are not what the docs imply.
  */
 
 /** Fields both token shapes carry. */
@@ -22,12 +20,9 @@ const tokenBase = {
 }
 
 /**
- * The shape we want: scoped to one sub-account, and carrying the id of it.
- *
- * `locationId` is required here rather than optional, which is what makes the
- * discriminated union below useful — a "Location" token without a location is
- * not a thing we can act on, and failing at the boundary beats discovering it
- * three calls later.
+ * The shape we want: scoped to one sub-account, and carrying its id. `locationId`
+ * is required rather than optional, which is what makes the union useful — a
+ * "Location" token without a location is not something we can act on.
  */
 export const locationTokenSchema = z.object({
   ...tokenBase,
@@ -36,12 +31,10 @@ export const locationTokenSchema = z.object({
 })
 
 /**
- * An agency-level token, which is what the marketplace's own install button
- * produces — `isBulkInstallation: true`, and **no `locationId` at all**.
- *
- * Not an error in itself: it can be exchanged for a location token through
- * `/oauth/locationToken`. But it cannot read a contact, because contacts do not
- * exist at the agency level.
+ * An agency-level token, which the marketplace's own install button produces —
+ * **no `locationId` at all**. Not an error in itself: it can be exchanged for a
+ * location token. But it cannot read a contact, because contacts do not exist at
+ * the agency level.
  */
 export const companyTokenSchema = z.object({
   ...tokenBase,
@@ -56,13 +49,9 @@ export const tokenResponseSchema = z.discriminatedUnion('userType', [
 ])
 
 /**
- * `GET /locations/{locationId}`.
- *
- * **The response is wrapped.** It is `{ location: { … }, traceId }`, not a bare
- * location object — so reading `.name` off the body yields `undefined`, and the
- * connection panel quietly renders a raw id where a name should be. Nothing
- * errors; the only symptom is a worse-looking screen. Requiring the wrapper here
- * turns that into a parse failure instead.
+ * `GET /locations/{locationId}` — and **the response is wrapped**: `{ location,
+ * traceId }`, not a bare location. Reading `.name` off the body yields `undefined`
+ * and the panel renders a raw id where a name should be, with nothing erroring.
  */
 export const locationDetailSchema = z.object({
   location: z.object({

@@ -176,8 +176,9 @@ function fakeResponse() {
  * streams the reply. `retry: true` is the other shape — re-run what is already
  * in the transcript, writing no new prompt.
  */
-const fakeRequest = (body: Record<string, unknown> = { content: 'Build a contacts view' }): Request =>
-  ({ body: { projectId: 'proj-1', ...body } }) as unknown as Request
+const fakeRequest = (
+  body: Record<string, unknown> = { content: 'Build a contacts view' },
+): Request => ({ body: { projectId: 'proj-1', ...body } }) as unknown as Request
 
 /** A stored file document, shaped so `storedFileSchema` accepts it. */
 function storedFile(path: string, content: string): { id: string; data: () => unknown } {

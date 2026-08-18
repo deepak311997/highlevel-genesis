@@ -1,12 +1,7 @@
 import { Timestamp } from 'firebase-admin/firestore'
 import { describe, expect, it } from 'vitest'
 
-import {
-  CONTENT_MAX,
-  messagesPath,
-  storedMessageSchema,
-  toMessage,
-} from './schema'
+import { CONTENT_MAX, messagesPath, storedMessageSchema, toMessage } from './schema'
 
 /**
  * The three schemas around `users/{uid}/projects/{projectId}/messages/{id}`.

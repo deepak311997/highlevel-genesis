@@ -14,20 +14,15 @@ import {
 } from './throttle'
 
 /**
- * Rate limiting for the auth endpoints, over the arithmetic in ./throttle.
+ * Rate limiting for the auth endpoints, over the arithmetic in `./throttle`.
  *
- * Two keys, both counted, either can refuse:
- *
- * - **email** — authoritative. It is the only key an attacker cannot rotate,
- *   and it is what bounds mail sent to any one victim.
- * - **IP** — best-effort. Read from `X-Forwarded-For`, which the client
- *   controls, so it is trivially evaded; it is here to slow a naive flood, not
- *   to stop a deliberate one. Its ceiling is loose because the header is also
- *   shared by everyone behind a NAT.
+ * Two keys, both counted, either can refuse. **Email** is authoritative — the only
+ * key an attacker cannot rotate, and what bounds mail sent to any one victim.
+ * **IP** is best-effort: read from `X-Forwarded-For`, which the client controls, so
+ * it slows a naive flood rather than stopping a deliberate one.
  *
  * The counter advances for addresses that do not exist exactly as for ones that
- * do. Counting only real accounts would make the 429 boundary itself answer the
- * question the whole endpoint design refuses to answer.
+ * do, or the 429 boundary would answer the question the endpoint refuses to.
  */
 
 export const THROTTLE_COLLECTION = 'authThrottle'
@@ -41,10 +36,8 @@ function clientIp(req: Request): string {
 }
 
 /**
- * The address this request is about, for counting only.
- *
- * Not validated here — an unparseable body still deserves to be counted, and
- * validation belongs to the handler. Normalised the same way the schema
+ * The address this request is about, for counting only — not validated here, since
+ * an unparseable body still deserves to be counted. Normalised as the schema
  * normalises, so one address cannot hold two budgets by changing case.
  */
 function subjectEmail(req: Request): string | null {
@@ -62,9 +55,8 @@ function toCounter(data: unknown): ThrottleCounter | null {
 }
 
 /**
- * Express middleware. Attach per route, never with `router.use` — this router
- * is mounted at both `/` and `/api`, and router-level middleware would run
- * twice for one request, double-counting every attempt.
+ * Express middleware. Attach per route, never with `router.use`: this router is
+ * mounted at both `/` and `/api`, so it would run twice and double-count.
  */
 export async function throttleAuthRequest(
   req: Request,
