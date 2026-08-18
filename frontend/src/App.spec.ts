@@ -89,6 +89,26 @@ describe('App shell', () => {
   })
 
   /* The header is outside the switch and keeps its own container on both. */
+  /*
+   * The two scroll models. A contained route is a document and the window
+   * scrolls it; a full route is an application window, exactly the viewport,
+   * with the scrolling inside the panels.
+   *
+   * `min-h-screen` on a full route is the bug this pins: a long transcript
+   * would push the shell taller than the window, so the page would scroll and
+   * the editor's own scrollbar would end up below the fold.
+   */
+  it('scrolls the window on a contained route and not on a full one', async () => {
+    const contained = (await mountAt('/contained')).find('div').classes()
+    expect(contained).toContain('min-h-screen')
+    expect(contained).not.toContain('overflow-hidden')
+
+    const full = (await mountAt('/full')).find('div').classes()
+    expect(full).toContain('h-screen')
+    expect(full).toContain('overflow-hidden')
+    expect(full).not.toContain('min-h-screen')
+  })
+
   it('renders the header on both layouts', async () => {
     for (const path of ['/contained', '/full']) {
       const wrapper = await mountAt(path)

@@ -128,7 +128,7 @@ onMounted(() => {
             </p>
             <p
               v-if="updatedLabel(project.updatedAt)"
-              class="text-xs text-muted-foreground"
+              class="tabular text-xs text-muted-foreground"
               data-testid="project-updated"
             >
               {{ updatedLabel(project.updatedAt) }}

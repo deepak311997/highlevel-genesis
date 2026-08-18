@@ -128,7 +128,7 @@ function retry(): void {
       `messagesLoaded` false, so a loading branch ahead of this would render a
       skeleton forever and never show the failure.
     -->
-    <div v-if="workspace.messagesError" data-testid="chat-error" class="flex flex-col gap-3 p-4">
+    <div v-if="workspace.messagesError" data-testid="chat-error" class="flex flex-col gap-2.5 p-3">
       <Alert variant="destructive">
         <AlertDescription>{{ workspace.messagesError }}</AlertDescription>
       </Alert>
@@ -145,7 +145,7 @@ function retry(): void {
     <div
       v-else-if="workspace.messagesLoading || !workspace.messagesLoaded"
       data-testid="chat-loading"
-      class="flex flex-col gap-3 p-4"
+      class="flex flex-col gap-2.5 p-3"
     >
       <Skeleton class="h-10 w-2/3 rounded-md" />
       <Skeleton class="h-10 w-1/2 self-end rounded-md" />
@@ -156,7 +156,7 @@ function retry(): void {
         <ScrollArea class="h-full">
           <ul
             v-if="bubbles.length > 0 || workspace.generating"
-            class="flex flex-col gap-3 p-4"
+            class="flex flex-col gap-2.5 p-3"
             data-testid="chat-transcript"
           >
             <li
@@ -164,7 +164,7 @@ function retry(): void {
               :key="message.id"
               data-testid="message-bubble"
               :data-role="message.role"
-              class="flex max-w-[85%] flex-col gap-1 rounded-lg border border-border p-3"
+              class="flex max-w-[85%] flex-col gap-1 rounded-md border border-border px-3 py-2"
               :class="message.role === 'user' ? 'self-end bg-secondary' : 'self-start bg-card'"
             >
               <!-- Prose and chips, never code (D6, D29). The same component the
@@ -175,7 +175,7 @@ function retry(): void {
                 <span
                   v-if="message.time !== null"
                   data-testid="message-time"
-                  class="text-xs text-muted-foreground"
+                  class="tabular font-mono text-[11px] text-muted-foreground"
                 >
                   {{ message.time }}
                 </span>

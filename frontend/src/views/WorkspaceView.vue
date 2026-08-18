@@ -133,15 +133,15 @@ watch(
         class="min-h-0 flex-1"
         data-testid="workspace-panels"
       >
-        <ResizablePanel :default-size="40" :min-size="25">
+        <ResizablePanel :default-size="20" :min-size="15">
           <ChatPanel />
         </ResizablePanel>
         <ResizableHandle with-handle />
-        <ResizablePanel :default-size="35" :min-size="20">
+        <ResizablePanel :default-size="30" :min-size="20">
           <EditorPanel />
         </ResizablePanel>
         <ResizableHandle with-handle />
-        <ResizablePanel :default-size="25" :min-size="20">
+        <ResizablePanel :default-size="50" :min-size="20">
           <PreviewPanel />
         </ResizablePanel>
       </ResizablePanelGroup>

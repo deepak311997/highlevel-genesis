@@ -135,7 +135,7 @@ onMounted(run)
 </script>
 
 <template>
-  <div class="mx-auto flex max-w-md flex-col gap-6">
+  <div class="mx-auto flex max-w-md flex-col gap-5">
     <Card>
       <CardHeader>
         <CardTitle>

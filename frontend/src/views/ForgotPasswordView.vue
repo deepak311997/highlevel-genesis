@@ -64,7 +64,7 @@ async function submit(): Promise<void> {
 </script>
 
 <template>
-  <div class="mx-auto flex max-w-md flex-col gap-6">
+  <div class="mx-auto flex max-w-md flex-col gap-5">
     <Card>
       <CardHeader>
         <CardTitle>Reset your password</CardTitle>
@@ -77,7 +77,7 @@ async function submit(): Promise<void> {
           </Alert>
         </div>
 
-        <form v-else class="flex flex-col gap-4" novalidate @submit.prevent="submit">
+        <form v-else class="flex flex-col gap-3.5" novalidate @submit.prevent="submit">
           <Alert v-if="state.kind === 'failed'" variant="destructive" data-testid="forgot-error">
             {{ state.message }}
           </Alert>
