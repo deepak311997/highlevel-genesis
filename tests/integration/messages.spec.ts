@@ -1,7 +1,7 @@
 import { Timestamp } from 'firebase-admin/firestore'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
-import { adminDb, getJson, idTokenFor, postJson, resetEmulators, seedUser } from './helpers'
+import { adminDb, getJson, idTokenFor, resetEmulators, seedUser } from './helpers'
 
 /**
  * `/api/projects/:projectId/messages` — the whole of the browser's access to a
@@ -106,11 +106,6 @@ async function clearProjects(uid: string): Promise<void> {
   await Promise.all(refs.map((ref) => adminDb().recursiveDelete(ref)))
 }
 
-async function countMessages(uid: string, projectId: string): Promise<number> {
-  return (await adminDb().collection(`users/${uid}/projects/${projectId}/messages`).listDocuments())
-    .length
-}
-
 async function storedMessages(uid: string, projectId: string): Promise<Record<string, unknown>[]> {
   const snapshot = await adminDb()
     .collection(`users/${uid}/projects/${projectId}/messages`)
@@ -213,6 +208,7 @@ describe('GET /api/projects/:projectId/messages', () => {
       expect(Object.keys(message).sort()).toEqual([
         'content',
         'createdAt',
+        'error',
         'id',
         'role',
         'truncated',
@@ -387,263 +383,21 @@ describe('GET /api/projects/:projectId/messages', () => {
   })
 })
 
-describe('POST /api/projects/:projectId/messages', () => {
-  /*
-   * AC-4, D3, D4. **One document, not two.** The assistant turn is no longer
-   * written here at all — it is written by `/generate` at the stream's terminal
-   * event — so a `POST` that produced a reply would be producing one nothing
-   * asked for and nothing generated. The stored `seq` is asserted as well as the
-   * response, because it is the ordering mechanism and a response-shape
-   * assertion cannot see it.
-   */
-  it('writes one document, returns 201 with the user message alone, and stores seq 0', async () => {
-    const res = await postJson(
-      path('proj-1'),
-      { content: 'build a contact dashboard' },
-      auth(aliceToken),
-    )
-    const messages = messagesOf(res.body)
-
-    expect(res.status).toBe(201)
-    expect(messages).toHaveLength(1)
-    expect(messages[0]?.['role']).toBe('user')
-    expect(messages[0]?.['content']).toBe('build a contact dashboard')
-    for (const message of messages) {
-      expect(Object.keys(message).sort()).toEqual([
-        'content',
-        'createdAt',
-        'id',
-        'role',
-        'truncated',
-      ])
-      expect(message['truncated']).toBe(false)
-      expect(new Date(message['createdAt'] as string).toISOString()).toBe(message['createdAt'])
-    }
-
-    expect(await countMessages(aliceUid, 'proj-1')).toBe(1)
-    const stored = await storedMessages(aliceUid, 'proj-1')
-    expect(stored.map((doc) => doc['seq'])).toEqual([0])
-    expect(stored.map((doc) => doc['role'])).toEqual(['user'])
-    expect(stored.map((doc) => doc['truncated'])).toEqual([false])
-  })
-
-  /*
-   * AC-4's second clause: no assistant turn, from any of three angles at once —
-   * the response, the collection, and the absence of the echo's own text.
-   */
-  it('writes no assistant message, and no "You said:" text reaches Firestore', async () => {
-    for (const content of ['first', 'second', 'third']) {
-      expect((await postJson(path('proj-1'), { content }, auth(aliceToken))).status).toBe(201)
-    }
-
-    const messages = messagesOf((await getJson(path('proj-1'), auth(aliceToken))).body)
-
-    expect(messages.map((message) => message['content'])).toEqual(['first', 'second', 'third'])
-    expect(messages.every((message) => message['role'] === 'user')).toBe(true)
-    expect(JSON.stringify(await storedMessages(aliceUid, 'proj-1'))).not.toContain('You said')
-  })
-
-  /*
-   * AC-3's separate-requests half, now genuinely separate (D35). Three `POST`s
-   * are three commits, so the timestamps differ rather than tying — which is
-   * what Slice 4's D8 predicted would happen the moment the assistant write
-   * moved out of the batch.
-   */
-  it('gives each turn its own commit timestamp, in order', async () => {
-    for (const content of ['first', 'second', 'third']) {
-      await postJson(path('proj-1'), { content }, auth(aliceToken))
-    }
-
-    const stored = await storedMessages(aliceUid, 'proj-1')
-    const at = (index: number) => (stored[index]?.['createdAt'] as Timestamp).toMillis()
-
-    expect(at(0)).toBeLessThanOrEqual(at(1))
-    expect(at(1)).toBeLessThanOrEqual(at(2))
-    expect(at(0)).not.toBe(at(2))
-  })
-
-  /** The id is the server's, minted locally as an auto-id. */
-  it('gives the message a server-minted id', async () => {
-    const messages = messagesOf(
-      (await postJson(path('proj-1'), { content: 'hi' }, auth(aliceToken))).body,
-    )
-
-    expect(typeof messages[0]?.['id']).toBe('string')
-    expect(messages[0]?.['id']).not.toBe('')
-  })
-
-  /** AC-5 of Slice 4. Trimmed on the wire and in the store. */
-  it('trims content on the way in', async () => {
-    const messages = messagesOf(
-      (
-        await postJson(
-          path('proj-1'),
-          { content: '  build a contact dashboard  ' },
-          auth(aliceToken),
-        )
-      ).body,
-    )
-
-    expect(messages[0]?.['content']).toBe('build a contact dashboard')
-
-    const stored = await storedMessages(aliceUid, 'proj-1')
-    expect(stored.map((doc) => doc['content'])).toEqual(['build a contact dashboard'])
-  })
-
-  /*
-   * AC-11, D5, R3. The second assertion is the one that matters: nothing was
-   * written, because the body is parsed before anything touches Firestore.
-   */
-  it.each(['role', 'id', 'seq', 'createdAt'])(
-    'refuses a body carrying %s, writing nothing',
-    async (key) => {
-      const res = await postJson(path('proj-1'), { content: 'hi', [key]: 'x' }, auth(aliceToken))
-
-      expect(res.status).toBe(400)
-      expect(codeOf(res.body)).toBe('invalid_body')
-      expect(await countMessages(aliceUid, 'proj-1')).toBe(0)
-    },
-  )
-
-  /* AC-11's named body, spelled out: a client cannot author an assistant turn. */
-  it('refuses { role: "assistant", content }, writing nothing', async () => {
-    const res = await postJson(
-      path('proj-1'),
-      { role: 'assistant', content: 'I am the model' },
-      auth(aliceToken),
-    )
-
-    expect(res.status).toBe(400)
-    expect(codeOf(res.body)).toBe('invalid_body')
-    expect(await countMessages(aliceUid, 'proj-1')).toBe(0)
-  })
-
-  /** AC-12. */
-  it.each([
-    ['missing content', {}],
-    ['blank content', { content: '' }],
-    ['whitespace-only content', { content: '   ' }],
-    ['non-string content', { content: 42 }],
-    ['over-length content', { content: 'a'.repeat(4001) }],
-  ])('refuses %s, writing nothing', async (_label, body) => {
-    const res = await postJson(path('proj-1'), body, auth(aliceToken))
-
-    expect(res.status).toBe(400)
-    expect(codeOf(res.body)).toBe('invalid_body')
-    expect(await countMessages(aliceUid, 'proj-1')).toBe(0)
-  })
-
-  it('accepts content at exactly the limit', async () => {
-    const res = await postJson(path('proj-1'), { content: 'a'.repeat(4000) }, auth(aliceToken))
-
-    expect(res.status).toBe(201)
-    expect(await countMessages(aliceUid, 'proj-1')).toBe(1)
-  })
-
-  /*
-   * AC-13 of Slice 4, D10, and **still about the pair even though only one
-   * document is written now** (D4). The reply this `POST` is about to make the
-   * user trigger needs room: refusing at 199 is what stops a transcript ending
-   * on a prompt with nowhere to put its answer.
-   */
-  it('refuses a post that would take the project past the cap, writing nothing', async () => {
-    await seedMany(aliceUid, 'proj-1', 200)
-
-    const res = await postJson(path('proj-1'), { content: 'one too many' }, auth(aliceToken))
-
-    expect(res.status).toBe(409)
-    expect(codeOf(res.body)).toBe('message_limit')
-    expect((res.body as { error?: string }).error).toBe(
-      'This project has reached its limit of 200 messages.',
-    )
-    expect(await countMessages(aliceUid, 'proj-1')).toBe(200)
-  })
-
-  it('refuses at 199, where only one of the pair would fit', async () => {
-    await seedMany(aliceUid, 'proj-1', 199)
-
-    const res = await postJson(path('proj-1'), { content: 'half a turn' }, auth(aliceToken))
-
-    expect(res.status).toBe(409)
-    expect(codeOf(res.body)).toBe('message_limit')
-    expect(await countMessages(aliceUid, 'proj-1')).toBe(199)
-  })
-
-  it('accepts at 198, leaving exactly one slot for the reply', async () => {
-    await seedMany(aliceUid, 'proj-1', 198)
-
-    const res = await postJson(path('proj-1'), { content: 'the last turn' }, auth(aliceToken))
-
-    expect(res.status).toBe(201)
-    expect(await countMessages(aliceUid, 'proj-1')).toBe(199)
-  })
-
-  /*
-   * AC-14, D15. `updatedAt` means "the project's own fields changed", which is
-   * what the dashboard's ordering and its "Updated" line both claim. A message
-   * write touching it would silently redefine both.
-   */
-  it('leaves the project document byte-identical', async () => {
-    const before = (await adminDb().doc(`users/${aliceUid}/projects/proj-1`).get()).data()
-
-    expect((await postJson(path('proj-1'), { content: 'hi' }, auth(aliceToken))).status).toBe(201)
-
-    expect((await adminDb().doc(`users/${aliceUid}/projects/proj-1`).get()).data()).toEqual(before)
-  })
-
-  /** AC-6. */
-  it('refuses an unauthenticated caller with 401, writing nothing', async () => {
-    const res = await postJson(path('proj-1'), { content: 'hi' })
-
-    expect(res.status).toBe(401)
-    expect(codeOf(res.body)).toBe('unauthenticated')
-    expect(await countMessages(aliceUid, 'proj-1')).toBe(0)
-  })
-
-  /** AC-7. */
-  it('refuses an unverified caller with 403, writing nothing', async () => {
-    const res = await postJson(path('proj-1'), { content: 'hi' }, auth(unverifiedToken))
-
-    expect(res.status).toBe(403)
-    expect(codeOf(res.body)).toBe('email_unverified')
-    expect(await countMessages(aliceUid, 'proj-1')).toBe(0)
-  })
-
-  /** AC-8's write half. */
-  it("answers 404 for bob's project and writes nothing anywhere", async () => {
-    await seedProject(bobUid, 'bob-1')
-    await seedMessage(bobUid, 'bob-1', 'msg-a', { content: "Bob's prompt" })
-    const before = await storedMessages(bobUid, 'bob-1')
-
-    expectNotFound(await postJson(path('bob-1'), { content: 'mine now' }, auth(aliceToken)))
-
-    expect(await storedMessages(bobUid, 'bob-1')).toEqual(before)
-    expect(await countMessages(aliceUid, 'bob-1')).toBe(0)
-  })
-
-  /** AC-9. */
-  it('answers 404 for a soft-deleted project, writing nothing', async () => {
-    await seedProject(aliceUid, 'gone', { deletedAt: Timestamp.fromMillis(1_700_000_900_000) })
-
-    expectNotFound(await postJson(path('gone'), { content: 'hi' }, auth(aliceToken)))
-
-    expect(await countMessages(aliceUid, 'gone')).toBe(0)
-  })
-
-  it('answers 404 for an id that never existed, writing nothing', async () => {
-    expectNotFound(await postJson(path('neverExisted'), { content: 'hi' }, auth(aliceToken)))
-
-    expect(await countMessages(aliceUid, 'neverExisted')).toBe(0)
-  })
-
-  /** AC-10. */
-  it.each(['a'.repeat(65), 'bad!id', 'a%2Fb'])(
-    'refuses the malformed id %s with 400',
-    async (id) => {
-      const res = await postJson(path(id), { content: 'hi' }, auth(aliceToken))
-
-      expect(res.status).toBe(400)
-      expect(codeOf(res.body)).toBe('invalid_id')
-    },
-  )
-})
+/**
+ * **`POST /api/projects/:projectId/messages` is gone, and its tests with it.**
+ *
+ * A turn used to take two requests: this route wrote the prompt, then
+ * `POST /generate` streamed the reply. The split made the prompt durable before
+ * the expensive half started, but it put the sequencing in the browser — and a
+ * client that died between the two left a transcript ending on a prompt no reply
+ * was ever coming for. A turn is one request now, and `/generate` writes both
+ * halves in the order that keeps the guarantee.
+ *
+ * Everything this block asserted still holds; it is asserted against the
+ * endpoint that now does the writing, in
+ * `generate.spec.ts` — "the prompt travels with the turn": one document at
+ * `seq` 0, content trimmed on the way in, the 4,000-character cap, the
+ * transcript cap refusing a new turn at 199 where only one of the pair would
+ * fit, the project document left untouched, and every refusal — 401, 403, 404 —
+ * still refusing before a byte is written.
+ */

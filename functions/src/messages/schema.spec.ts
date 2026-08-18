@@ -125,8 +125,28 @@ describe('storedMessageSchema — what Firestore hands back', () => {
     },
   )
 
-  it('rejects a document whose content is blank', () => {
+  it('rejects a document whose content is blank and reports no failure', () => {
     expect(storedMessageSchema.safeParse({ ...complete, content: '' }).success).toBe(false)
+  })
+
+  /**
+   * **A failed turn has no prose, and it is still a message.**
+   *
+   * `/generate` writes an assistant document with empty content and an `error`
+   * when a generation fails before its first token — that is the whole of
+   * "failures survive a refresh". A blanket `min(1)` made the server's own write
+   * unreadable on the way back out: the handler committed it, `readBackOrFail`
+   * refused to parse it, and the turn ended in an `internal` frame instead of
+   * the `upstream` one it had already decided on.
+   *
+   * So the rule is not "content is non-empty" but "a message says something":
+   * prose, or the reason there is none. Nothing else relaxes — a blank document
+   * with no error is still unreadable, by exactly the argument above it.
+   */
+  it('accepts a blank document that carries the reason it is blank', () => {
+    expect(
+      storedMessageSchema.safeParse({ ...complete, content: '', error: 'upstream' }).success,
+    ).toBe(true)
   })
 
   /*

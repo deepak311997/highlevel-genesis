@@ -44,19 +44,6 @@ async function seedProject(uid: string, id: string): Promise<void> {
     })
 }
 
-/** Write a prompt past the routes, so a generation has a transcript to read. */
-async function seedPrompt(uid: string, projectId: string, content: string): Promise<void> {
-  await adminDb()
-    .doc(`users/${uid}/projects/${projectId}/messages/msg-a`)
-    .set({
-      role: 'user',
-      content,
-      seq: 0,
-      createdAt: Timestamp.fromMillis(1_700_000_000_000),
-      truncated: false,
-    })
-}
-
 interface StoredFileDoc {
   id: string
   path: string
@@ -115,11 +102,17 @@ const chunkText = (res: GenerateResponse, path: string): string =>
     .map((payload) => payload.text)
     .join('')
 
-/** Run one turn for `prompt`, in its own project. */
+/**
+ * Run one turn for `prompt`, in its own project.
+ *
+ * The prompt travels in the body: a turn is one request now, and the handler
+ * writes the user message itself before it opens the stream. Seeding the
+ * transcript first and then asking for a generation would exercise the retry
+ * path instead, which is not what any case in this file is about.
+ */
 async function generate(projectId: string, prompt: string): Promise<GenerateResponse> {
   await seedProject(aliceUid, projectId)
-  await seedPrompt(aliceUid, projectId, prompt)
-  return postGenerate({ projectId }, auth(aliceToken))
+  return postGenerate({ projectId, content: prompt }, auth(aliceToken))
 }
 
 beforeAll(async () => {
@@ -232,16 +225,7 @@ describe('a second generation over the same paths (AC-19)', () => {
     const before = await storedFiles(aliceUid, 'twice')
 
     // A second prompt, so the transcript does not end on an assistant turn.
-    await adminDb()
-      .doc(`users/${aliceUid}/projects/twice/messages/msg-b`)
-      .set({
-        role: 'user',
-        content: 'and add a search box',
-        seq: 0,
-        createdAt: Timestamp.fromMillis(1_700_000_500_000),
-        truncated: false,
-      })
-    await postGenerate({ projectId: 'twice' }, auth(aliceToken))
+    await postGenerate({ projectId: 'twice', content: 'and add a search box' }, auth(aliceToken))
 
     const after = await storedFiles(aliceUid, 'twice')
     expect(after.map((file) => file.id)).toEqual(before.map((file) => file.id))

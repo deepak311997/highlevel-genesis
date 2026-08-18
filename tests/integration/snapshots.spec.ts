@@ -56,25 +56,16 @@ async function seedProject(
     })
 }
 
-/** A prompt written past the routes, so a generation has a transcript to read. */
-let promptSeq = 0
-async function seedPrompt(uid: string, projectId: string, content: string): Promise<void> {
-  promptSeq += 1
-  await adminDb()
-    .doc(`users/${uid}/projects/${projectId}/messages/msg-${String(promptSeq)}`)
-    .set({
-      role: 'user',
-      content,
-      seq: 0,
-      createdAt: Timestamp.fromMillis(1_700_000_000_000 + promptSeq * 1000),
-      truncated: false,
-    })
-}
-
-/** One turn against an already-seeded project. */
-async function turn(projectId: string, prompt: string, uid = aliceUid, token = aliceToken) {
-  await seedPrompt(uid, projectId, prompt)
-  return postGenerate({ projectId }, auth(token))
+/**
+ * One turn against an already-seeded project.
+ *
+ * The prompt goes in the body. A turn is one request now — the handler writes
+ * the user message itself, and it mints the `seq` — so seeding a transcript
+ * first is both unnecessary and, across several turns in one project, wrong: the
+ * documents this file used to write all claimed `seq: 0`.
+ */
+async function turn(projectId: string, prompt: string, token = aliceToken) {
+  return postGenerate({ projectId, content: prompt }, auth(token))
 }
 
 interface StoredSnapshotDoc {
@@ -859,8 +850,10 @@ describe('a version that cannot be read whole (AC-16)', () => {
 describe('a version that is not this caller’s to restore (AC-17)', () => {
   it('answers 404 for another user’s version and leaves their project alone', async () => {
     await seedProject(bobUid, 'bobs-project')
-    await seedPrompt(bobUid, 'bobs-project', 'build a contact dashboard')
-    await postGenerate({ projectId: 'bobs-project' }, auth(bobToken))
+    await postGenerate(
+      { projectId: 'bobs-project', content: 'build a contact dashboard' },
+      auth(bobToken),
+    )
     const bobs = await storedSnapshots(bobUid, 'bobs-project')
     const before = await storedFiles(bobUid, 'bobs-project')
 

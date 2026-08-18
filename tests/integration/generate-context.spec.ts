@@ -50,7 +50,15 @@ async function seedProject(uid: string, id: string): Promise<void> {
     })
 }
 
-/** Write a prompt past the routes, so a generation has a transcript to read. */
+/**
+ * Write a prompt past the routes, so a generation has a transcript to read.
+ *
+ * Written directly rather than sent as `content`, because these cases are about
+ * what the model is *shown*: the transcript has to be exactly what this file
+ * seeded, and a turn that carried its own prompt would append a second document
+ * to it. The request is a `retry` for the same reason — it re-runs what is
+ * stored and writes nothing.
+ */
 async function seedPrompt(uid: string, projectId: string, content: string): Promise<void> {
   await adminDb()
     .doc(`users/${uid}/projects/${projectId}/messages/msg-a`)
@@ -98,7 +106,7 @@ interface ContextReport {
 async function contextOf(projectId: string): Promise<ContextReport> {
   await seedPrompt(aliceUid, projectId, '__context build a contact dashboard')
 
-  const res = await postGenerate({ projectId }, auth(aliceToken))
+  const res = await postGenerate({ projectId, retry: true }, auth(aliceToken))
   expect(res.status).toBe(200)
   expect(res.contentType).toContain('text/event-stream')
 

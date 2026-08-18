@@ -79,45 +79,62 @@ export type CreateMessageBody = z.infer<typeof createMessageBodySchema>
  * maximum here would make the server's own write unreadable on the way back out.
  * A stored document is not a request body.
  */
-export const storedMessageSchema = z.object({
-  role: z.enum(['user', 'assistant']),
-  content: z.string().min(1),
-  seq: z.number().int().min(0),
-  createdAt: firestoreTimestamp,
-  /**
-   * Whether the reply stopped short of what the model had to say (D24).
-   *
-   * `true` for a client disconnect, a mid-stream failure, `stop_reason:
-   * 'max_tokens'`, and the 800,000-byte accumulation cap. One flat boolean
-   * rather than a discriminated union on `role`: the union is the right instinct
-   * in general, and for a single flag it doubles the schema a reviewer reads and
-   * buys nothing.
-   *
-   * **Defaulted, not `.catch`ed**, and the difference is D27's rule holding.
-   * Slice 4's documents do not carry this field at all, so a required one would
-   * make every message written before this slice unreadable — silently emptying
-   * every existing transcript (R7). A default on an *absent* field is a
-   * migration. A `.catch` on a *corrupt* one would be silently accepting a
-   * document that is wrong about itself, which is the thing D27 forbids: a
-   * `truncated: 'yes'` is a bug somewhere, not an old document.
-   */
-  truncated: z.boolean().default(false),
+export const storedMessageSchema = z
+  .object({
+    role: z.enum(['user', 'assistant']),
+    content: z.string(),
+    seq: z.number().int().min(0),
+    createdAt: firestoreTimestamp,
+    /**
+     * Whether the reply stopped short of what the model had to say (D24).
+     *
+     * `true` for a client disconnect, a mid-stream failure, `stop_reason:
+     * 'max_tokens'`, and the 800,000-byte accumulation cap. One flat boolean
+     * rather than a discriminated union on `role`: the union is the right instinct
+     * in general, and for a single flag it doubles the schema a reviewer reads and
+     * buys nothing.
+     *
+     * **Defaulted, not `.catch`ed**, and the difference is D27's rule holding.
+     * Slice 4's documents do not carry this field at all, so a required one would
+     * make every message written before this slice unreadable — silently emptying
+     * every existing transcript (R7). A default on an *absent* field is a
+     * migration. A `.catch` on a *corrupt* one would be silently accepting a
+     * document that is wrong about itself, which is the thing D27 forbids: a
+     * `truncated: 'yes'` is a bug somewhere, not an old document.
+     */
+    truncated: z.boolean().default(false),
 
+    /**
+     * Why the turn failed, or `null` for one that did not.
+     *
+     * A failed generation used to persist nothing at all — the reply was written
+     * only when it had prose, so an upstream error before the first token left a
+     * transcript ending on a prompt, and the only trace was an in-memory flag
+     * that a refresh cleared. The chat could not show what happened because
+     * nothing had been written down.
+     *
+     * Defaulted rather than required, for `truncated`'s reason: every message
+     * written before this field existed lacks it, and a required field would make
+     * those documents unreadable and silently empty the transcript.
+     */
+    error: z.string().nullable().default(null),
+  })
   /**
-   * Why the turn failed, or `null` for one that did not.
+   * **A message says something: prose, or the reason there is none.**
    *
-   * A failed generation used to persist nothing at all — the reply was written
-   * only when it had prose, so an upstream error before the first token left a
-   * transcript ending on a prompt, and the only trace was an in-memory flag
-   * that a refresh cleared. The chat could not show what happened because
-   * nothing had been written down.
+   * This is `min(1)` on `content`, narrowed rather than dropped. A generation
+   * that fails before its first token now persists an assistant document with
+   * no prose and an `error`, which is what lets a failure survive a refresh — and
+   * a blanket minimum made the server's own write unreadable on the way back
+   * out: the handler committed it, the read-back refused to parse it, and the
+   * turn ended in an `internal` frame instead of the `upstream` one it had
+   * already decided on.
    *
-   * Defaulted rather than required, for `truncated`'s reason: every message
-   * written before this field existed lacks it, and a required field would make
-   * those documents unreadable and silently empty the transcript.
+   * What the rule was protecting is still protected. A blank document with
+   * nothing to explain it cannot be rendered as anything but an empty bubble, so
+   * it is still *known* to be unusable and still omitted (D27).
    */
-  error: z.string().nullable().default(null),
-})
+  .refine((message) => message.content.length > 0 || message.error !== null)
 
 export type StoredMessage = z.infer<typeof storedMessageSchema>
 
