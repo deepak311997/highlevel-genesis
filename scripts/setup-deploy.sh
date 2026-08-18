@@ -222,11 +222,11 @@ put_secret() { # name, value
   fi
 }
 
-# The three that the `api` function declares with defineSecret. The credentials it
+# The four that the `api` function declares with defineSecret. The credentials it
 # also declares — HL_CLIENT_SECRET, OAUTH_STATE_SECRET, ANTHROPIC_API_KEY — are
 # checked below rather than written, because this script never handles a value a
 # human has not already put somewhere deliberate.
-for key in HL_CLIENT_ID HL_REDIRECT_URI ALLOWED_ORIGINS; do
+for key in HL_CLIENT_ID HL_VERSION_ID HL_REDIRECT_URI ALLOWED_ORIGINS; do
   put_secret "$key" "$(value_of functions/.env "$key")"
 done
 
@@ -255,7 +255,7 @@ say "6. GitHub — only the key should remain"
 for key in FIREBASE_PROJECT_ID FIRESTORE_DATABASE_ID VITE_FIREBASE_API_KEY \
            VITE_FIREBASE_AUTH_DOMAIN VITE_FIREBASE_PROJECT_ID VITE_FIREBASE_STORAGE_BUCKET \
            VITE_FIREBASE_MESSAGING_SENDER_ID VITE_FIREBASE_APP_ID \
-           VITE_GOOGLE_RECAPTCHA_V3_KEY HL_CLIENT_ID \
+           VITE_GOOGLE_RECAPTCHA_V3_KEY HL_CLIENT_ID HL_VERSION_ID \
            HL_REDIRECT_URI ALLOWED_ORIGINS; do
   if gh variable list --repo "$REPO" --json name -q '.[].name' | grep -qx "$key"; then
     echo "  deleting variable $key"
