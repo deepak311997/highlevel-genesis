@@ -31,34 +31,29 @@ import {
 /**
  * A project's version history — the reads, the staging, and the two routes.
  *
- * The uid is the one `withVerifiedUser` read off the ID token and every path is
- * built from it, so another user's history is not addressable by a request
- * rather than merely refused. `readProject` is called first on every route here,
- * so "this project is gone" means exactly what it means in `/api/projects*`:
- * absent, soft-deleted and unreadable all collapse into one 404 (D14).
+ * Every path is built from the token's uid, so another user's history is not
+ * addressable rather than merely refused, and `readProject` runs first on every
+ * route: absent, soft-deleted and unreadable collapse into one 404.
  */
 
 /** One snapshot to remove, and the file documents that would otherwise outlive it. */
 export interface PrunedSnapshot {
   ref: DocumentReference
   /**
-   * Deleted **explicitly**, because deleting a document in Firestore does not
-   * delete its subcollections (R4). A prune that removed only the parent would
-   * leave up to twenty orphaned file documents per pruned version, unreachable
-   * from any query this codebase makes and paid for forever.
+   * Deleted **explicitly**: deleting a document in Firestore does not delete its
+   * subcollections, so a prune that removed only the parent would leave up to
+   * twenty orphaned documents per version, unreachable and paid for forever.
    */
   fileRefs: DocumentReference[]
 }
 
 /**
- * Everything a snapshot needs in order to be *staged* — decided by reads, before
- * any write is opened.
+ * Everything a snapshot needs in order to be staged, decided by reads first.
  *
- * The split is D4's: every read happens in `planSnapshot`, and `stageSnapshot`
- * then puts the result onto a batch somebody else owns and commits. That is what
- * lets the snapshot ride on the turn's own batch rather than on a second commit
- * after it, and it is why `stageSnapshot` needs no `getDb()` at all — the plan
- * carries the references.
+ * Every read happens in `planSnapshot`; `stageSnapshot` puts the result on a
+ * batch somebody else owns and commits. That is what lets a snapshot ride on the
+ * turn's own batch, and why staging needs no `getDb()` — the plan carries the
+ * references.
  */
 export interface SnapshotPlan {
   /** Minted locally by `planSnapshot`; nothing is read to get it. */
@@ -72,16 +67,10 @@ export interface SnapshotPlan {
 /**
  * Parse one copied file, or `null` when it cannot describe one.
  *
- * Two ways to fail, and the second is the collection's own (AC-5): the schema
- * says what a copied file is made of; the **`id === path` check** says the
- * document is about the file it is filed under. A copy where the two disagree
- * cannot be written back to the right filename, so it is *known* to be unusable
- * — and a restore that meets one refuses the **whole version** rather than
- * restoring a file under the wrong name.
- *
- * Fail closed and say so in the log: the precedent runs through `parseStored`,
- * `parseStoredMessage` and `parseStoredFile`. **No field of the document goes in
- * it** — a copied file is the user's own application, one version back.
+ * Two ways to fail: the schema, and the `id === path` check. A copy where the
+ * two disagree cannot be written back to the right filename, and a restore that
+ * meets one refuses the **whole version** rather than restoring under the wrong
+ * name. Nothing from the document reaches the log — it is the user's own app.
  */
 export function parseSnapshotFile(snapshot: DocumentSnapshot): StoredSnapshotFile | null {
   // An absent document is not corruption, so it is not logged as such.
@@ -102,29 +91,16 @@ export function parseSnapshotFile(snapshot: DocumentSnapshot): StoredSnapshotFil
 }
 
 /**
- * Every existing version's id and number — **uncapped, and projected to one
- * field** (P3).
+ * Every version's id and number — **uncapped, unordered, projected to one field**.
  *
- * No `limit()`, deliberately. `planSnapshotPrune` has to be able to see an
- * already-broken invariant — 22 heads must prune three, not one — and a capped
- * read would hide exactly the rows that say so. The collection is bounded to
- * roughly `SNAPSHOT_LIMIT` by the prune itself, and `select('seq')` asks for
- * references and one number rather than for twenty documents, so this is
- * `liveProjectCount` and `messageCount`'s shape with a field attached.
+ * No `limit()`: the prune has to see an already-broken invariant (22 heads must
+ * prune three, not one), and a capped read would hide the rows that say so.
  *
- * A document whose `seq` is missing or not a number is read as `0`, which sorts
- * it to the front of the prune: a head nothing can name is a version nothing can
- * restore, so removing it first is the right outcome rather than a lost one.
- *
- * **And no `orderBy('seq')` either, which is the same rule stated the other way.**
- * Firestore omits a document that does not carry the ordered field at all, so an
- * `orderBy('seq')` here would hide exactly the head the paragraph above says to
- * prune first — it would be invisible to this read *and* to `readSnapshotList`,
- * never listed, never counted toward the excess, never pruned, and its up to
- * twenty file documents paid for forever. That is R4's orphan, reached from the
- * one direction `PrunedSnapshot` does not cover. Neither consumer needs the
- * order: `planSnapshotSeq` takes a maximum and `planSnapshotPrune` sorts what it
- * is given.
+ * No `orderBy('seq')` either, which is the same rule the other way round:
+ * Firestore omits a document that lacks the ordered field, so a head with no
+ * `seq` would be invisible here *and* to the list — never counted, never pruned,
+ * its file documents paid for forever. A missing `seq` reads as `0` instead,
+ * which sorts it to the front of the prune. Neither consumer needs the order.
  */
 async function readSnapshotHeads(
   uid: string,
@@ -139,15 +115,11 @@ async function readSnapshotHeads(
 }
 
 /**
- * Every read a snapshot needs, and nothing else. **Nothing is written and
- * nothing is staged** (D4).
+ * Every read a snapshot needs, and nothing else — nothing is written or staged.
  *
- * One read for the heads, plus one `listDocuments()` per pruned version — which
- * is zero on all but one turn in twenty, and returns references without reading
- * a byte of the documents behind them.
- *
- * The new snapshot's reference is minted locally from an auto-id, so nothing is
- * read to get it; that is what lets `stageSnapshot` be pure staging.
+ * One read for the heads, plus one `listDocuments()` per pruned version, which
+ * is zero on all but one turn in twenty and returns references rather than
+ * documents.
  */
 export async function planSnapshot(
   uid: string,
@@ -175,28 +147,13 @@ export async function planSnapshot(
 }
 
 /**
- * Put the whole snapshot onto a batch. **Nothing is committed here** (D4).
+ * Put the whole snapshot onto a batch. **Nothing is committed here.**
  *
- * The commit belongs to whoever owns the batch — `appendAssistantMessage` for a
- * generation, `handleRestoreSnapshot` for a restore — which is R5: writing the
- * snapshot in a commit of its own after the turn's is one line shorter and
- * leaves a crash window in which the project's files moved and its history did
- * not.
- *
- * **It takes no `getDb()`** (P4). The plan carries the new snapshot's reference
- * and every pruned reference, and `DocumentReference.collection()` reaches the
- * copies — so this function is pure staging, and AC-9's test is a batch fake
- * rather than a whole Firestore fake.
- *
- * The worst case is 63 writes on the turn's batch: one message, twenty files,
- * one snapshot, twenty copies, one pruned snapshot and its twenty copies. That
- * is comfortably inside Firestore's limit of 500.
- *
- * **The pruned version's file documents are deleted explicitly** (R4). Deleting
- * a document in Firestore does not delete its subcollections, so a prune that
- * removed only the parent would leave up to twenty orphaned documents per
- * pruned version — unreachable from any query this codebase makes, and paid for
- * forever.
+ * The commit belongs to whoever owns the batch, so the snapshot rides on the
+ * turn's: a commit of its own leaves a crash window where the project's files
+ * moved and its history did not. Worst case is 63 writes — a message, twenty
+ * files, a snapshot, twenty copies, and one pruned version's 21 — inside
+ * Firestore's limit of 500.
  */
 export function stageSnapshot(batch: WriteBatch, plan: SnapshotPlan): void {
   batch.set(plan.ref, {
@@ -204,15 +161,13 @@ export function stageSnapshot(batch: WriteBatch, plan: SnapshotPlan): void {
     createdAt: FieldValue.serverTimestamp(),
     origin: plan.origin,
     fileCount: plan.files.length,
-    // Summed from the files' own `size`, which is the number the validator
-    // measured against the byte cap rather than one recomputed here.
+    // The validator's own numbers, not ones recomputed here.
     totalBytes: plan.files.reduce((total, file) => total + file.size, 0),
   })
 
   const copies = plan.ref.collection(SNAPSHOT_FILES)
   for (const file of plan.files) {
-    // The id *is* the path, so a copy cannot hold two documents claiming one
-    // filename — the live collection's rule (D13), one level down.
+    // The id *is* the path, so no two documents can claim one filename.
     batch.set(copies.doc(file.path), { path: file.path, content: file.content, size: file.size })
   }
 
@@ -223,22 +178,12 @@ export function stageSnapshot(batch: WriteBatch, plan: SnapshotPlan): void {
 }
 
 /**
- * The version list — newest first, capped, **metadata only**.
+ * The version list — newest first, capped, metadata only.
  *
- * Newest first because a version list is read from the top: the version a user
- * wants back is nearly always the one they just left. The cap matches
- * `SNAPSHOT_LIMIT`, which is also the prune's cap, so "you are seeing every
- * version" is a guarantee rather than a hope — `LIST_LIMIT` / `MESSAGE_LIMIT` /
- * `FILE_LIMIT`'s rule.
- *
- * `orderBy('seq','desc')` on a single field is served by Firestore's automatic
- * index (D16, D30), so this adds nothing to `firestore.indexes.json` — stated
- * because Slices 3 and 4 both paid for a missing composite index and the
- * emulator does not enforce them.
- *
- * A document that will not parse is omitted and logged, exactly as a corrupt
- * file is: from outside, a version nobody can read is indistinguishable from one
- * that was never taken, and the log line is the only warning anybody gets.
+ * The cap is the prune's cap, so "you are seeing every version" is a guarantee
+ * rather than a hope. A single-field `orderBy` is served by Firestore's automatic
+ * index, so this needs no entry in `firestore.indexes.json`. A document that will
+ * not parse is omitted and logged — the log line is the only warning anybody gets.
  */
 export async function readSnapshotList(uid: string, projectId: string): Promise<SnapshotMeta[]> {
   const snapshot = await getDb()
@@ -259,15 +204,7 @@ export async function readSnapshotList(uid: string, projectId: string): Promise<
     .filter((meta): meta is SnapshotMeta => meta !== null)
 }
 
-/**
- * A project's version history — or the 404 the project earns.
- *
- * The id, then the project, and the project's answer is the whole of "gone"
- * (D14): absent, soft-deleted, unreadable and somebody else's collapse into one
- * response. A history is not addressable without a project, so there is nothing
- * to read past this — and the path is composed from the token's uid, so another
- * user's versions are not addressable by a request rather than merely refused.
- */
+/** A project's version history — or the 404 the project earns. */
 export async function handleListSnapshots(req: Request, res: Response, uid: string): Promise<void> {
   const projectId = requireProjectId(req)
 
@@ -277,16 +214,10 @@ export async function handleListSnapshots(req: Request, res: Response, uid: stri
 }
 
 /**
- * The version id from the URL, or a refusal.
+ * The version id from the URL, or a refusal — before any Firestore call.
  *
- * Called as the **second statement** of the restore handler, right after
- * `requireProjectId`, so a malformed id costs no Firestore call at all —
- * `requireProjectId`'s rule, one segment deeper.
- *
- * It carries `snapshotIdSchema`'s own message rather than the project's (P1). A
- * malformed version id and a malformed project id are two different failures one
- * segment apart; they share a status and a code and deliberately not a sentence,
- * so a caller who mistyped the version is not told they mistyped the project.
+ * Its own sentence rather than the project's: two failures one segment apart
+ * share a status and a code and deliberately not a message.
  */
 export function requireSnapshotId(req: Request): string {
   const parsed = snapshotIdSchema.safeParse(req.params['snapshotId'])
@@ -302,21 +233,12 @@ export function snapshotNotFound(): HttpError {
 }
 
 /**
- * A version's copied files — **all of them, or none** (D8).
+ * A version's copied files — **all of them, or none**.
  *
- * `null` is "this version cannot be read whole", and it has two causes that the
- * caller deliberately does not tell apart: a document that will not parse, and
- * a subcollection holding fewer documents than the snapshot says it should. Both
+ * `null` means "cannot be read whole", from either a document that will not
+ * parse or a subcollection shorter than the snapshot's own `fileCount`. Both
  * would restore an app with a hole in it, which is worse than refusing because
  * it looks like it worked.
- *
- * The count check is against the snapshot's own `fileCount`, so a subcollection
- * that lost a document to a partial delete is caught even though every document
- * still present parses perfectly.
- *
- * Read unordered: the restore compares sets and writes by name, so there is
- * nothing an ordering would buy — and an unordered collection read needs no
- * index (D16).
  */
 export async function readSnapshotFiles(
   uid: string,
@@ -336,12 +258,8 @@ export async function readSnapshotFiles(
 }
 
 /**
- * A version's own document, parsed — or `null`, which is the whole of "gone".
- *
- * Narrowed to `fileCount` because that is the only field the restore uses it
- * for: D8's integrity check, the count the subcollection must match. The
- * version's `seq` names it in the *list*; nothing about rolling a project back
- * needs the name.
+ * A version's own document, parsed — narrowed to `fileCount`, which is the only
+ * field a restore needs: the count its subcollection must match.
  */
 async function readSnapshot(
   uid: string,
@@ -363,46 +281,23 @@ async function readSnapshot(
 }
 
 /**
- * A body with **no keys at all** — the version to restore is named by the URL.
- *
- * `.strict()` is the whole schema. There is nothing for a caller to say here, and
- * a route that ignored a body would be a route where a later field could be
- * smuggled past review. `parseBody` substitutes `{}` for a bodyless request, so
- * the ordinary call and this schema agree.
+ * No keys at all — the version is named by the URL. `.strict()` is the whole
+ * schema: a route that ignored its body is one a later field can be smuggled into.
  */
 const restoreBodySchema = z.object({}).strict()
 
 /**
  * Roll a project back to one of its versions.
  *
- * The order is the point of the function, and each step is where it is because
- * of what the step before it made impossible:
+ * The order is the point: ids, then the body, then the project, then the version
+ * — each refusal costing nothing the one before it did not already rule out. The
+ * version's files are read whole or not at all *before* a batch is opened, which
+ * is what lets a refusal promise nothing was changed.
  *
- * 1. **the project id**, then 2. **the version id** — a malformed either costs no
- *    Firestore call at all;
- * 3. **the body**, refused before anything reads, so a request carrying a field
- *    writes nothing;
- * 4. **the project** — absent, soft-deleted, unreadable and somebody else's all
- *    collapse into one 404 (D14), and the path is composed from the token's uid,
- *    so another user's project is not addressable rather than merely refused;
- * 5. **the version document** — a version id is scoped to its project, so one
- *    from a different project of the caller's own is a 404 here rather than a
- *    cross-project restore;
- * 6. **the version's files, whole or not at all** — 409 before a batch is opened,
- *    which is what lets the refusal promise that nothing was changed (D8);
- * 7. **the project's current files**, which answers two questions at once: is
- *    this a no-op, and what does the safety snapshot copy;
- * 8. **the no-op**, answered with **no batch at all** (D10) — writing would
- *    advance every file's `updatedAt` and mint a version recording that nothing
- *    happened, and the prune would push a real one out to make room for it;
- * 9. **one batch**: the safety snapshot, the writes and the deletes together;
- * 10. **the re-read**, because `serverTimestamp()` is a sentinel until it
- *     commits.
- *
- * `FILE_LIMIT` is never exceeded at any point (AC-18) because the writes and the
- * deletes are in that one batch: the union of the old set and the new one never
- * exists. A restore that deleted in a second commit would pass through 40 files
- * on a full project, and a crash between the two would leave it there.
+ * **The writes and the deletes are one batch**, so the union of the old set and
+ * the new never exists: a restore that deleted in a second commit would pass
+ * through 40 files on a full project, and a crash between the two would leave it
+ * there.
  */
 export async function handleRestoreSnapshot(
   req: Request,
@@ -423,11 +318,8 @@ export async function handleRestoreSnapshot(
 
   const current = await readStoredFiles(uid, projectId)
 
-  /*
-   * D10. `readStoredFiles` orders by path and `filesEqual` is order-independent
-   * anyway, so this needs no second read — and answering the files we have just
-   * read costs nothing a `GET` would not have cost the caller anyway.
-   */
+  // A no-op is answered with no batch at all: writing would advance every
+  // file's `updatedAt` and mint a version recording that nothing happened.
   if (filesEqual(current, version)) {
     res.json({ files: current.map(toFileMeta), changed: false })
     return
@@ -436,18 +328,17 @@ export async function handleRestoreSnapshot(
   const currentPaths = new Set(current.map((file) => file.path))
 
   /*
-   * D9. Planned **before** the batch is opened, because planning reads and a
-   * batch is not a transaction — and skipped entirely for a project with no
-   * files, because a safety snapshot of nothing is a version nothing can restore
-   * to (and `fileCount` has a floor of 1, so it could not even be written).
+   * Planned before the batch is opened, because planning reads and a batch is not
+   * a transaction — and skipped for a project with no files, since a safety
+   * snapshot of nothing is a version nothing can restore to.
    */
   const safety = current.length > 0 ? await planSnapshot(uid, projectId, current, 'restore') : null
 
   const batch = getDb().batch()
   if (safety !== null) stageSnapshot(batch, safety)
 
-  // `exists` from the current path set, so a file both sides hold **merges** and
-  // keeps the date it was first generated, exactly as a rewriting generation does.
+  // `exists` from the current path set, so a file both sides hold merges and
+  // keeps the date it was first generated.
   stageFileWrites(
     batch,
     uid,
@@ -455,21 +346,17 @@ export async function handleRestoreSnapshot(
     version.map((file) => ({ ...file, exists: currentPaths.has(file.path) })),
   )
 
-  // D7, R3. The deletes are what make the restore an *equality* rather than an
-  // overlay: without them, version 1's files sit beside version 2's extra one and
-  // the app breaks in a way the tree does not show.
+  // The deletes are what make a restore an equality rather than an overlay:
+  // without them, version 1's files sit beside version 2's extra one.
   const restored = new Set(version.map((file) => file.path))
   for (const path of currentPaths) {
     if (!restored.has(path)) batch.delete(getDb().doc(`${filesPath(uid, projectId)}/${path}`))
   }
 
   /*
-   * The PRD's copy for this state, rather than the `Internal error` an uncaught
-   * rejection would produce. The batch is all-or-nothing, so the one thing worth
-   * telling the caller is that **nothing was written** and pressing Restore again
-   * is safe — which is what the sentence says and what a generic 500 does not.
-   * The cause still reaches the log, redacted the way `errorHandler` redacts it,
-   * because a Firebase error carries the failing request on the object.
+   * The batch is all-or-nothing, so the one thing worth telling the caller is
+   * that nothing was written and pressing Restore again is safe — which a generic
+   * 500 does not say. The cause reaches the log, redacted.
    */
   try {
     await batch.commit()

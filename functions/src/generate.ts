@@ -35,59 +35,35 @@ import { planSnapshot } from './snapshots/handlers'
 /**
  * `POST /generate` — the streaming generation endpoint.
  *
- * ## The path names an action, not a user (D1)
+ * Its own function, because it needs `timeoutSeconds: 540` and 512 MiB and the
+ * CRUD endpoints must not pay for either. Its own Express app, because
+ * `onRequest` types its response from a different `@types/express` major than
+ * this package depends on, and an `Express` application is the shape it already
+ * accepts — one app rather than one cast at every helper.
  *
- * Kept from Slice 0, along with its Hosting rewrite and its Vite dev-proxy
- * entry. The project id travels in a `.strict()` body and is ownership-checked
- * against the uid on the token; no path segment names a user. The rejected
- * alternative — `/api/projects/:projectId/generate` — reads better and costs two
- * hand-maintained environment-specific mappings that must agree with each other,
- * which is precisely the class of defect this project has already paid for twice.
- *
- * ## Its own function, and its own Express app
- *
- * The function is separate because it needs `timeoutSeconds: 540` and 512 MiB,
- * and the CRUD endpoints must not pay for either. The *app* is separate for a
- * smaller reason that is worth stating: `onRequest` hands its callback
- * `firebase-functions`' own request and response types, which come from a
- * different `@types/express` major than this package depends on — so a
- * hand-rolled wrapper cannot pass that response to `withVerifiedUser`,
- * `requireAppCheck` or `errorHandler` without a cast. An `Express` application is
- * the shape `onRequest` already accepts (it is how `api` is mounted), and inside
- * it every helper composes exactly as it does everywhere else. One app rather
- * than one cast.
- *
- * ## Two failure channels, and the boundary is `flushHeaders()` (D9, R6)
- *
- * Once the headers are flushed the status line is spent: a stream cannot go back
- * and become a 401. So **everything that can be decided cheaply is decided
- * first** — auth, App Check, the body parse, the project lookup, the empty
- * context, and opening the upstream stream — and each of those is an ordinary
- * JSON error with a real status. Only genuinely mid-flight failures become an
- * `error` event on a 200. `handleGenerate`'s order is that rule, executed, and
- * `terminalErrorHandler` below is the same rule seen from the catch side.
+ * **Two failure channels, and the boundary is `flushHeaders()`.** Once the
+ * headers are gone the status line is spent, so everything decidable cheaply is
+ * decided first and answered as ordinary JSON; only mid-flight failures become an
+ * `error` frame on a 200. `handleGenerate`'s order is that rule executed, and
+ * `terminalErrorHandler` is the same rule from the catch side.
  */
 
 /** Milliseconds between keep-alive comments while nothing else is written. */
 const KEEP_ALIVE_MS = 15_000
 
 /**
- * A value the *test scripts* can force, which no `.env` file can overrule.
+ * The interval, with a test override that no `.env` file can overrule.
  *
- * Honoured **only** under `FUNCTIONS_EMULATOR`, and the name appears in no
- * `.env` file, so a shell value survives. The suites set it to 250 ms, which
- * turns AC-19 into a two-second test rather than a twenty-second one.
+ * Honoured only under `FUNCTIONS_EMULATOR`; the suites set 250 ms so the
+ * keep-alive is a two-second test rather than a twenty-second one.
  */
 export function keepAliveMs(): number {
   return emulatorNumber('GENERATE_TEST_KEEPALIVE_MS', KEEP_ALIVE_MS)
 }
 
 /**
- * One collector frame as one SSE frame.
- *
- * Exhaustive over `CollectorFrame` rather than a lookup, so adding a frame kind
- * without deciding how it goes on the wire is a type error rather than a silently
- * dropped frame.
+ * One collector frame as one SSE frame — a `switch` rather than a lookup, so a
+ * new frame kind is a type error rather than a silently dropped frame.
  */
 function encodeFrame(frame: CollectorFrame): string {
   switch (frame.kind) {
@@ -110,27 +86,14 @@ function writeTerminalFrame(res: Response, frame: string): void {
 }
 
 /**
- * The one line per turn — F3.4's generation metadata, in a log (D25).
+ * One line per turn, on every path — completion, refusal, failure, disconnect.
  *
- * Exported so it has an L1 test that needs no emulator, and because the negative
- * is the assertion that matters: `GenerationLogContext` has no field for message
- * content, so nothing the user wrote and nothing the model wrote can reach Cloud
- * Logging through here.
- *
- * Called once on **every** path — completion, refusal, mid-stream failure and
- * client disconnect alike — and before the frame is written, so a turn is
- * accounted for even if the socket dies while it is being told about.
+ * **Projected field by field rather than spread**, which is why the function
+ * exists: the call site builds its argument from an `LlmEvent` carrying the
+ * reply's text, and one `...event` there would put every conversation on the
+ * platform into Cloud Logging.
  */
 export function logGeneration(context: GenerationLogContext): void {
-  /*
-   * Projected field by field rather than passed through, and that is the point
-   * of the function existing at all. The call site builds this from an
-   * `LlmEvent`, which carries the reply's `text` — one `...event` spread there
-   * and every conversation on the platform would be in Cloud Logging. Naming the
-   * ten fields means the leak is impossible rather than merely against the
-   * rules; the type would catch it at the call site, and this catches it if the
-   * type is ever widened.
-   */
   logGenerationEvent('generation.complete', {
     model: context.model,
     stopReason: context.stopReason,
@@ -146,12 +109,9 @@ export function logGeneration(context: GenerationLogContext): void {
 }
 
 /**
- * The terminal handler, and D9 from the catch side.
- *
- * Before the flush this is the ordinary JSON envelope every other route answers
- * with. After it the status line is spent, so the only thing left is an `error`
- * frame on the 200 that has already gone out — the client is mid-stream and has
- * to be told something it can parse.
+ * The error handler, on both sides of the flush: the ordinary JSON envelope
+ * before it, and an `error` frame on the 200 that has already gone out after —
+ * the client is mid-stream and has to be told something it can parse.
  */
 export function terminalErrorHandler(
   err: unknown,
@@ -182,13 +142,8 @@ export function createGenerateApp(): Express {
   app.use(express.json({ limit: '16kb' }))
 
   /*
-   * Mounted at both paths on purpose. The functions emulator strips the function
-   * name, so the app sees `/`; a Hosting rewrite of `/generate` forwards the
-   * original path, so the app sees `/generate`. Every router in this codebase
-   * carries the same note.
-   *
-   * Attestation matters more here than on any route so far: this is the first
-   * endpoint where an unattested call spends money.
+   * Both paths: the emulator strips the function name so the app sees `/`, and a
+   * Hosting rewrite forwards the original path so it sees `/generate`.
    */
   const attested = asyncHandler(requireAppCheck)
   const handler = asyncHandler(withVerifiedUser(handleGenerate))
@@ -206,93 +161,41 @@ export function createGenerateApp(): Express {
 
 export const generate = onRequest(
   {
-    /*
-     * Slice 0 pinned 60 seconds deliberately, saying the long timeout would
-     * arrive "in Slice 5, together with the ID-token check that makes it safe to
-     * grant" (D29). The check is `withVerifiedUser` above, so the grant lands
-     * here: an unauthenticated function with a nine-minute timeout is a
-     * slow-loris target; an authenticated, attested, email-verified one is not.
-     */
+    // Safe to grant because the handler is authenticated, attested and
+    // email-verified: a nine-minute *unauthenticated* function is a slow-loris
+    // target.
     timeoutSeconds: 540,
-    // The SDK plus an accumulating string is more than 256 MiB deserves to be
-    // tight against.
     memory: '512MiB',
     /*
-     * The model key, declared beside the code that reads it.
-     *
-     * `ALLOWED_ORIGINS` joins it because `originAllowlist` above is imported from
-     * `./api` — this endpoint's CORS layer reads the same configured value the
-     * CRUD one does. Without the binding it would resolve to `''` here, fall back
-     * to the localhost defaults, and reject the real site in production while
-     * `api` accepted it: a difference between two functions that share one
-     * allowlist, which is the kind of thing no test outside `index.spec.ts` can
-     * see.
+     * `ALLOWED_ORIGINS` as well as the model key: `originAllowlist` is imported
+     * from `./api`, and without the binding it resolves to `''` here and falls
+     * back to the localhost defaults — accepting the real site on `api` and
+     * rejecting it on this one.
      */
     secrets: [ANTHROPIC_API_KEY, ALLOWED_ORIGINS],
-    // Not `cors: true` — see the allowlist above.
     cors: false,
   },
   createGenerateApp(),
 )
 
 /**
- * One turn.
- *
- * Everything cheap is decided **before** the flush, in this order and for D9's
- * reason:
- *
- * 1. the body — a refusal costs no Firestore call at all;
- * 2. the project — absent, soft-deleted, unreadable and somebody else's collapse
- *    into one 404 (D14), and the path is composed from the token's uid, so
- *    another user's project is not addressable rather than merely refused;
- * 3. the 200-message cap, which this route writes into and so has to honour;
- * 4. the context, with trailing assistant turns dropped (D6);
- * 5. an empty context, which is a 400 before any LLM call (D7);
- * 6. the project's files, which become the system block after the breakpoint
- *    (Slice 9 D11) — capped at `FILE_LIMIT`, and a failure here is still an
- *    ordinary 500 rather than a mid-stream frame (Slice 9 AC-28);
- * 7. the upstream stream — a missing API key throws here, and it is still an
- *    ordinary 500 with the reason logged rather than surfaced.
- *
- * Only then do headers go out.
+ * One turn, and the order is the whole of the two-channel rule: body, project,
+ * message cap, context, the project's files, then the upstream stream. Each can
+ * still answer with a real status line. Only then do headers go out.
  */
 export async function handleGenerate(req: Request, res: Response, uid: string): Promise<void> {
   const { projectId, content } = parseBody(generateBodySchema, req)
 
   if ((await readProject(uid, projectId)) === null) throw notFound()
 
-  /*
-   * **The prompt is written before anything expensive starts**, and that
-   * ordering is the whole reason one request is safe here.
-   *
-   * A turn used to take two: `POST …/messages` then `POST /generate`. That made
-   * the prompt durable before the stream opened, but it put the sequencing in
-   * the browser — and a client that died between them left a transcript ending
-   * on a prompt no reply was ever coming for, with nothing on screen to say so.
-   *
-   * Doing both here keeps the durability and removes the window: there is one
-   * request, so there is no "between". `appendUserMessage` carries the 409 with
-   * it, so a project at the cap is refused before a token is bought, and any
-   * failure from here on has a stored prompt to be attached to.
-   *
-   * `content` absent means `retry: true` — the turn is already in the
-   * transcript, so nothing is written and the model reads what is there.
-   */
   const stored = await readTranscript(uid, projectId)
 
   /*
-   * The cap, checked against the transcript this handler already holds.
-   *
-   * **A new turn needs room for two documents, a retry for one.** The prompt and
-   * the reply are written by this same request now, so refusing a new turn at
-   * 199 is what stops a transcript ending on a prompt with nowhere to put its
-   * answer — the rule the message route used to carry, moved to the handler
-   * that now does both writes. A retry adds no prompt, so it only needs room
-   * for the reply, and refusing it at 200 is what stops `transcriptQuery`'s own
-   * `limit(MESSAGE_LIMIT)` hiding the reply that just arrived on screen.
-   *
-   * D34 leans on this cap to bound a project's spend absolutely, so the check
-   * happens before a token is bought and before the prompt is stored.
+   * **A new turn needs room for two documents, a retry for one.** This request
+   * writes both halves, so refusing a new turn at 199 is what stops a transcript
+   * ending on a prompt with nowhere to put its answer — and refusing a retry at
+   * 200 is what stops `transcriptQuery`'s own limit hiding the reply that just
+   * arrived. Checked before a token is bought and before the prompt is stored.
    */
   const needed = content === undefined ? 1 : 2
   if (stored.length + needed > MESSAGE_LIMIT) {
@@ -304,8 +207,9 @@ export async function handleGenerate(req: Request, res: Response, uid: string): 
   }
 
   /*
-   * Only now is anything written, and the prompt goes down before the stream
-   * opens — the property the old two-request shape bought with a round trip.
+   * The prompt goes down **before** the stream opens, so any failure from here
+   * on has a stored turn to be attached to. `content` absent means `retry: true`
+   * — the prompt is already in the transcript and nothing is written.
    */
   const userMessage =
     content === undefined ? null : await appendUserMessage(uid, projectId, content)
@@ -321,14 +225,9 @@ export async function handleGenerate(req: Request, res: Response, uid: string): 
   }
 
   /*
-   * The project's own files, which become the system block appended after the
-   * `cache_control` breakpoint (Slice 9 D11, D26).
-   *
-   * **Before the flush, deliberately.** It is the third Firestore read on this
-   * path and so the third way it can fail; sitting here, a failure is an
-   * ordinary JSON 500 with a real status line rather than an `error` frame on a
-   * 200 that has already gone out (D9, R8, AC-28). It is capped at `FILE_LIMIT`
-   * documents, so the cost is bounded by the same number that bounds a project.
+   * The project's files, which become the system block after the `cache_control`
+   * breakpoint. Read before the flush, deliberately: it is a third way this path
+   * can fail, and here a failure is still a real status line.
    */
   const files = await readProjectFiles(uid, projectId)
 
@@ -336,22 +235,13 @@ export async function handleGenerate(req: Request, res: Response, uid: string): 
   const stream = await openStream(buildParams(context, files))
 
   /*
-   * D21, AC-17, AC-18. Aborting rather than letting the generation run to
-   * completion is half the decision — an orphaned generation still bills — and
-   * persisting what it produced is the other: a user who closed the tab
-   * mid-reply comes back to what had been written, not to a prompt with no
-   * answer.
+   * The client leaving aborts the generation — an orphaned one still bills — and
+   * what it produced is still persisted.
    *
-   * **The listener is on `res`, not on `req`.** `express.json()` has already
-   * drained the request body by the time this runs, so `req` has finished and
-   * emitted its own `close` — attaching there registers a handler for an event
-   * that has already fired, and the disconnect is never observed. `res` emits
-   * `close` when the response finishes *or* when the connection is terminated
-   * early, which is exactly the pair of cases that need telling apart.
-   *
-   * `writableEnded` is what tells them apart: a completed turn has already
-   * called `res.end()`, so a successful stream is never recorded as an
-   * abandonment.
+   * **The listener is on `res`, not `req`.** `express.json()` has already drained
+   * the request body, so `req` has emitted its `close` before this runs and the
+   * disconnect would never be observed. `writableEnded` tells a finished response
+   * apart from a terminated connection.
    */
   let clientGone = false
   res.on('close', () => {
@@ -366,16 +256,9 @@ export async function handleGenerate(req: Request, res: Response, uid: string): 
   // Belt and braces against an intermediary that buffers on its own.
   res.set('X-Accel-Buffering', 'no')
   /*
-   * **`Connection` is deliberately not set here**, and Slice 0 did set it.
-   *
-   * It is a hop-by-hop header: the HTTP layer owns it, and an application that
-   * writes it by hand is describing a connection it does not manage. Slice 0's
-   * `Connection: keep-alive` was harmless only because nothing ever sent a
-   * *second* request over that connection. It is not harmless now — with it set,
-   * the first generation of a session succeeds and the **next `POST /generate`
-   * on the reused socket comes back as an empty 400**, which in the running app
-   * means the second prompt of every conversation fails. Left to Node, the
-   * streamed response closes its socket and each generation gets a clean one.
+   * **`Connection` is deliberately not set.** It is hop-by-hop, and with
+   * `keep-alive` on it the next `POST /generate` over the reused socket comes
+   * back as an empty 400 — the second prompt of every conversation fails.
    */
   res.flushHeaders()
 
@@ -388,11 +271,9 @@ export async function handleGenerate(req: Request, res: Response, uid: string): 
   if (userMessage !== null) res.write(encodeSse('user', { message: userMessage }))
 
   /*
-   * D28. Adaptive thinking (D14) means the first token can be seconds away, and
-   * an intermediary that closes an idle connection would kill the request during
-   * the model's most productive moment. `wroteSinceTick` is what keeps the
-   * comment out of a stream that is already flowing: a keep-alive between every
-   * token would double the frame count for nothing.
+   * The first token can be seconds away, and an intermediary that closes an idle
+   * connection would kill the request during the model's most productive moment.
+   * `wroteSinceTick` keeps the comment out of a stream that is already flowing.
    */
   let wroteSinceTick = true
   const keepAlive = setInterval(() => {
@@ -404,31 +285,19 @@ export async function handleGenerate(req: Request, res: Response, uid: string): 
     res.write(encodeSseComment())
   }, keepAliveMs())
 
-  /*
-   * The splitter sits **between** the mapper and the framing (D3). Everything
-   * below it deals in chat text and file boundaries; nothing above it knows the
-   * tag grammar exists.
-   */
+  // The splitter sits between the mapper and the framing: nothing above it knows
+  // the file-tag grammar exists.
   const collector = createFileCollector()
 
   try {
     for await (const event of mapStream(stream)) {
       if (event.kind === 'token') {
-        /*
-         * Pushed **before** the socket check, and unconditionally. The files are
-         * written on a completed turn whether or not anyone is still listening
-         * (D10), so a disconnected client must not stop the reply being parsed —
-         * only from being written to.
-         */
+        // Pushed before the socket check: the files are written whether or not
+        // anyone is listening, so a disconnect stops the writing, not the parsing.
         const frames = collector.push(event.text)
 
-        /*
-         * `res.destroyed` is the socket's own state, so there is no flag to keep
-         * in sync — Slice 0's check. It guards the *write* rather than breaking
-         * the loop, because the terminal event still has to be handled: a client
-         * that left mid-stream is exactly the case whose partial must be
-         * persisted (D21).
-         */
+        // Guards the write rather than breaking the loop: the terminal event
+        // still has to run, since that is what persists the partial.
         if (!res.destroyed && frames.length > 0) {
           wroteSinceTick = true
           for (const frame of frames) res.write(encodeFrame(frame))
@@ -454,35 +323,15 @@ const ERROR_COPY: Record<GenerateErrorCode, string> = {
 }
 
 /**
- * The one terminal, and the one place both kinds of them are handled.
+ * The terminal event — every way a turn can end, in one place.
  *
- * | Mapper event | Persisted | Frame |
- * |---|---|---|
- * | `end`, text non-empty | `truncated` from the event | `done` with the message |
- * | `end`, text empty | nothing | `error` `upstream`, `message: null` |
- * | `error` `refused` | nothing — content is empty by construction | `error` `refused`, `null` |
- * | `error` `upstream`, text non-empty | `truncated: true` | `error` `upstream`, the partial |
- * | `error` `upstream`, text empty | nothing | `error` `upstream`, `null` |
- * | any of the above with `clientGone` | as above, `truncated: true` | **nothing** |
+ * **Success and interruption are one code path**: whichever frame goes out, it
+ * carries the document that was stored, so the client replaces its placeholder
+ * with the server's record rather than with its own accumulated text.
  *
- * **Success and interruption are one code path** because the client renders them
- * the same way (D9): whatever frame arrives, the placeholder bubble is replaced
- * by what the server actually stored. An `error` carrying only a string would
- * leave the client holding its own accumulated text as an id-less bubble that
- * then disagrees with the server's copy on the next load.
- *
- * **An `end` with no text cannot really happen** — a model that said nothing with
- * `end_turn` — but it is not persisted as an empty message either, because
- * `storedMessageSchema` requires non-empty content and the document would be
- * unreadable the moment it was written. It is reported as an interruption, which
- * is what it looks like from the user's side.
- *
- * **`clientGone` forces `truncated`** rather than trusting the mapper's flag. The
- * real SDK's `abort()` makes the in-flight iterator throw, which the mapper turns
- * into an `upstream` error; a stream that stops cleanly instead would otherwise
- * be persisted as complete. The client left mid-stream, so the reply is
- * incomplete whichever way the upstream chose to say so — and the `writableEnded`
- * guard above is what guarantees `clientGone` means exactly that.
+ * **`clientGone` forces `truncated`** rather than trusting the mapper. `abort()`
+ * makes the iterator throw, which maps to an `upstream` error — but a stream
+ * that happened to stop cleanly would otherwise be persisted as complete.
  */
 async function finishTurn(
   res: Response,
@@ -493,41 +342,28 @@ async function finishTurn(
   durationMs: number,
   collector: FileCollector,
 ): Promise<void> {
-  /*
-   * `clientGone` forces the flag; otherwise an `end` carries the mapper's own
-   * verdict — `false` on `end_turn`, `true` on `max_tokens` (D23) and on the
-   * byte cap (D22) — and every `error` is by definition incomplete.
-   */
+  // An `end` carries the mapper's verdict — false on `end_turn`, true on
+  // `max_tokens` and on the byte cap — and every `error` is incomplete.
   const truncated = clientGone || (event.kind === 'end' ? event.truncated : true)
 
   /*
-   * The end-of-input flush, moved **above** the log line by Slice 9 so the
-   * counters have something to count. It emits no frames of its own — the frame
-   * loop below is unchanged and still runs before the terminal frame — so the
-   * only thing this reordering changes is that `collected` exists in time.
-   *
-   * A delimiter line may end at end of input as well as at a newline, so a reply
-   * whose last bytes are `</genesis:file>` resolves its close here — and that
-   * file's tail chunk and its `file_end` are owed to the client.
+   * The end-of-input flush, above the log line so the counters have something to
+   * count. A delimiter may end at end of input as well as at a newline, so a
+   * reply whose last bytes are `</genesis:file>` resolves its close here.
    */
   const collected = collector.finish()
 
   /*
-   * D19, AC-24. **The source is the file blocks, not the chat text**, because
-   * the metric is about generated *code*: a call the model merely described in
-   * prose is not something the app will ever run, and counting it would make the
-   * number mean "mentions" rather than "calls".
-   *
-   * `process.env` rather than a captured value, so a flagged row counts as known
-   * exactly when the proxy would actually forward it.
+   * **The file blocks, not the chat text**: a call described in prose is not one
+   * the app will ever run, and counting it would make the number mean "mentions".
    */
   const hlCalls = countHlCalls(
     extractHlCalls(collected.ops.map((op) => op.content).join('\n')),
     process.env,
   )
 
-  // Once per turn, on every path, and before the frame — so a turn is accounted
-  // for even if the socket dies while it is being told about.
+  // Before the frame, so a turn is accounted for even if the socket dies while
+  // it is being told about.
   logGeneration({
     model: event.model,
     stopReason: event.stopReason,
@@ -543,47 +379,27 @@ async function finishTurn(
   }
 
   /*
-   * **Read from the mapper's own flag, not from `truncated` above** (D10). The
-   * two differ in exactly one case: a client that disconnects after a clean
-   * `end`. The message is marked truncated because the client left mid-stream,
-   * and the files are still written — they belong to the project, not to the
-   * connection.
+   * **The mapper's flag, not `truncated` above.** They differ for a client that
+   * disconnects after a clean `end`: the message is marked truncated, and the
+   * files are still written — they belong to the project, not the connection.
    */
   const completed = event.kind === 'end' && !event.truncated
   const plan = await planFileWrites(uid, projectId, collected, completed)
 
   /*
-   * The collector is the single producer of the chat text (D7), so the persisted
-   * content is `messageText` rather than the mapper's raw accumulation — which
-   * still carries the tags and the code.
-   */
-  /*
-   * **Inside the branch that also writes the message** (D2, D4), and that
-   * placement is load-bearing twice over. A turn with no prose writes nothing at
-   * all, so it must not pay for a snapshot read either; and a turn that stored no
-   * files has no resulting set to copy, so `plan.writes.length` is the whole
-   * condition — a refusal, an unterminated block and a prose-only reply all
-   * arrive here with it at zero.
-   *
-   * The snapshot is *planned* here and *staged* by `appendAssistantMessage`, on
-   * the batch it already owns. It is never committed separately (R5).
-   */
-  /*
-   * Why the turn failed, persisted with it.
-   *
-   * This is what lets the chat show a failure at all. Before it, a generation
-   * that produced no prose wrote nothing, so an upstream error before the first
-   * token left a transcript ending on a prompt and a footer alert that a
-   * refresh cleared — the user reloaded into a conversation that had simply
-   * swallowed their turn.
+   * Why the turn failed, persisted with it — which is what lets a failure
+   * survive a refresh. Without it, an upstream error before the first token left
+   * a transcript ending on a prompt and a footer alert a reload cleared.
    */
   const failure = event.kind === 'error' ? event.code : null
 
   /*
-   * A turn with nothing to say **and** nothing to report still writes nothing:
-   * that is the empty-prose rule, narrowed rather than dropped. The snapshot
-   * read it was protecting is still skipped either way, because a failed turn
-   * stores no files and `plan.writes.length` is then zero.
+   * A turn with nothing to say and nothing to report writes nothing, and pays
+   * for no snapshot read either. The content is the collector's `messageText`,
+   * not the mapper's raw accumulation, which still carries the tags and the code.
+   *
+   * The snapshot is planned here and staged on the batch `appendAssistantMessage`
+   * already owns; it is never committed separately.
    */
   const message =
     collected.messageText === '' && failure === null
@@ -599,8 +415,8 @@ async function finishTurn(
               : null,
         })
 
-  // Nobody is listening. The partial and its files are already committed, which
-  // is the whole of what a returning user needs (F8.2, D10).
+  // Nobody is listening, and the partial and its files are already committed —
+  // which is the whole of what a returning user needs.
   if (clientGone) return
 
   if (event.kind === 'end' && message !== null) {
@@ -608,7 +424,7 @@ async function finishTurn(
       res,
       encodeSse('done', {
         message,
-        // Sorted (P8), which matches the list route's `orderBy('path')`.
+        // Sorted, which matches the list route's `orderBy('path')`.
         files: plan.writes.map((write) => write.path).sort(),
         fileError: plan.error === null ? null : fileErrorCopy(plan.error),
       }),

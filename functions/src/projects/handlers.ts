@@ -24,10 +24,9 @@ import {
 /**
  * The caller's own projects.
  *
- * The uid is the one `withVerifiedUser` read off the ID token, and the document
- * path is built from it — `users/{uid}/projects/{id}` — so the collection is
- * scoped before a `where` clause is written and another user's project is not
- * addressable by a request. There is no `ownerUid` comparison in this file
+ * The document path is built from the token's uid — `users/{uid}/projects/{id}` —
+ * so the collection is scoped before a `where` clause is written and another
+ * user's project is not addressable. There is no `ownerUid` comparison here
  * because there is nothing for one to compare.
  */
 
@@ -35,14 +34,9 @@ import {
  * Parse a snapshot, or `null` when it cannot describe a project.
  *
  * One function, so the list and the by-id read cannot disagree about what
- * "unusable" means: the list omits what this rejects and `GET` by id answers 404
- * for it, which is the same decision reached from two directions.
- *
- * Exported for its own unit test rather than only through the routes: a corrupt
- * project is *silent* by design — omitted from the list, 404 by id, which from
- * outside is indistinguishable from a deleted one — so the log line is the only
- * warning anybody gets, and it deserves an assertion that does not need an
- * emulator to make.
+ * "unusable" means: the list omits what this rejects and `GET` answers 404 for
+ * it. A corrupt project is silent by design, so the log line is the only warning
+ * anybody gets.
  */
 export function parseStored(snapshot: DocumentSnapshot): StoredProject | null {
   // An absent document is not corruption, so it is not logged as such.
@@ -51,10 +45,9 @@ export function parseStored(snapshot: DocumentSnapshot): StoredProject | null {
   const parsed = storedProjectSchema.safeParse(snapshot.data())
   if (!parsed.success) {
     /*
-     * Fail closed, and say so in the log — the precedent runs through
-     * `readProfile` and `handleGetConnection`. A half-populated project rendered
-     * in a list is a row the user can click actions on and cannot fix. No field
-     * of the document goes in the log line.
+     * Fail closed, and say so in the log. A half-populated project rendered in a
+     * list is a row the user can click actions on and cannot fix. No field of the
+     * document goes in the log line.
      */
     logAuthEvent('project.unreadable', { outcome: 'invalid' })
     return null
@@ -69,19 +62,15 @@ function readProjectFrom(snapshot: DocumentSnapshot): Project | null {
 }
 
 /**
- * The id from the path, or a refusal.
+ * The id from the path, or a refusal — before any Firestore call.
  *
- * Called as the **first statement** of every handler that takes one, so a
- * malformed id costs no Firestore call at all. `getDb().doc()` composes a path
- * by string concatenation: an id containing `/` changes the depth of the path
- * rather than the document it names, and `.` / `..` are ids Firestore refuses
- * outright.
- *
- * A malformed id and a stranger's id read identically to the caller. That is not
- * politeness — under this path shape they genuinely are the same answer.
+ * `getDb().doc()` composes a path by string concatenation, so an id containing
+ * `/` changes the depth of the path rather than the document it names. A
+ * malformed id and a stranger's id read identically to the caller, because under
+ * this path shape they genuinely are the same answer.
  *
  * Exported for `messages/`, which owes a byte-identical `invalid_id` on a route
- * that carries the same `:projectId`. A second copy is how the two drift.
+ * carrying the same `:projectId`.
  */
 export function requireProjectId(req: Request): string {
   const parsed = projectIdSchema.safeParse(req.params['projectId'])
@@ -91,11 +80,7 @@ export function requireProjectId(req: Request): string {
   return parsed.data
 }
 
-/**
- * The one 404, so no two handlers can describe the same state differently — now
- * including the message routes, which answer for the *project* being gone and
- * must say it in the same words.
- */
+/** The one 404, so no two handlers can describe the same state differently. */
 export function notFound(): HttpError {
   return new HttpError(404, 'That project no longer exists.', 'not_found')
 }
@@ -104,15 +89,10 @@ export function notFound(): HttpError {
  * One project of the caller's, or `null` — absent, unreadable and soft-deleted
  * all collapse into the same answer.
  *
- * That collapse is what makes 404 mean the same thing in three handlers, and it
- * is also why a project belonging to somebody else is not a special case: the
- * path is composed from the token's uid, so another user's project is simply not
- * at any address this request can name.
- *
- * Exported and now shared with `messages/` (Slice 4, D14). "This project is
- * gone" has to mean the same thing one path segment deeper, so the message
- * routes reuse this definition rather than carrying a second one — absent,
- * soft-deleted and unreadable collapse identically there too.
+ * That collapse is what makes 404 mean one thing across every handler that reads
+ * a project, `messages/` and `files/` included. Somebody else's project is not a
+ * special case: the path is composed from the token's uid, so it is not at any
+ * address this request can name.
  */
 export async function readProject(uid: string, id: string): Promise<Project | null> {
   const snapshot = await getDb()
@@ -121,8 +101,8 @@ export async function readProject(uid: string, id: string): Promise<Project | nu
 
   const stored = parseStored(snapshot)
   if (stored === null) return null
-  // Soft-deleted reads as gone. D17: a rename of a deleted project is a 404
-  // rather than a silent resurrection.
+  // Soft-deleted reads as gone, so a rename of a deleted project is a 404 rather
+  // than a silent resurrection.
   if (stored.deletedAt !== null) return null
 
   return toProject(snapshot.id, stored)
@@ -131,13 +111,10 @@ export async function readProject(uid: string, id: string): Promise<Project | nu
 /**
  * Live projects, newest-updated first, capped.
  *
- * The cap matches `POST`'s limit on live projects, so "you are seeing all of
- * your projects" is a guarantee rather than a hope — an unpaginated list is only
- * honest if it cannot truncate.
- *
- * `where('deletedAt','==',null)` matches documents whose field *is* null and
- * skips documents where it is absent, which is why the create path writes an
- * explicit `null` rather than omitting it.
+ * The cap matches `POST`'s limit, so "you are seeing all of your projects" is a
+ * guarantee rather than a hope. `where('deletedAt','==',null)` matches documents
+ * whose field *is* null and skips documents where it is absent, which is why the
+ * create path writes an explicit `null`.
  */
 export async function handleListProjects(_req: Request, res: Response, uid: string): Promise<void> {
   const snapshot = await getDb()
@@ -157,17 +134,13 @@ export async function handleListProjects(_req: Request, res: Response, uid: stri
 /**
  * The caller's live projects, by id and name and nothing else.
  *
- * `select('name')` asks for one small field per document, so this is ~100 names
- * rather than ~100 documents, and `limit(PROJECT_LIMIT)` means a user with
- * thousands of soft-deleted projects still reads at most a hundred. Deliberately
- * not `count()`: the aggregation cannot carry the names, and the cap is what
- * makes reading them affordable — a hundred is the most there can ever be.
- *
  * One read answers both questions the write path has: how many are there, and is
- * one of them already called this. Read immediately before the write and not
- * transactional (D8): two simultaneous creates at 99 can both land, and two
- * simultaneous creates of the same name can both land — a guard-rail missing by
- * one rather than a boundary being crossed.
+ * one already called this. `select('name')` keeps it to ~100 names rather than
+ * ~100 documents; `count()` could not carry the names.
+ *
+ * Read immediately before the write and not transactional: two simultaneous
+ * creates, of the same name or at the cap, can both land — a guard-rail missing
+ * by one rather than a boundary being crossed.
  */
 async function liveProjects(uid: string): Promise<{ id: string; name: string }[]> {
   const snapshot = await getDb()
@@ -179,7 +152,7 @@ async function liveProjects(uid: string): Promise<{ id: string; name: string }[]
 
   return snapshot.docs.map((doc) => {
     const stored: unknown = doc.get('name')
-    // A corrupt document has no name to collide with; it is already invisible to
+    // A corrupt document has no name to collide with: it is already invisible to
     // the list and 404 by id, so it cannot be what the user is looking at.
     return { id: doc.id, name: typeof stored === 'string' ? stored : '' }
   })
@@ -189,20 +162,17 @@ async function liveProjects(uid: string): Promise<{ id: string; name: string }[]
  * The refusal a second project of the same name earns.
  *
  * 409 rather than 400: the body is well-formed and the name is one the user may
- * legitimately want — it is the *collection's* current state that refuses it,
- * which is the same shape of answer the project cap gives. The name is echoed
- * back because the dialog that issued the request shows this sentence whole, and
- * "that name" is ambiguous when the rename dialog is open over a list.
+ * legitimately want — it is the collection's current state that refuses it. The
+ * name is echoed back because "that name" is ambiguous with a rename dialog open
+ * over a list.
  */
 function duplicateName(name: string): HttpError {
   return new HttpError(409, `You already have a project called “${name}”.`, 'duplicate_name')
 }
 
 /**
- * Is one of the caller's other live projects already called this?
- *
- * `exclude` is the project being renamed: without it every rename that leaves
- * the name alone — or changes only its capitals — would collide with itself.
+ * Is one of the caller's *other* live projects already called this? Without
+ * `exclude`, every rename that changed only capitals would collide with itself.
  */
 function nameTaken(
   existing: { id: string; name: string }[],
@@ -218,14 +188,11 @@ function nameTaken(
 /**
  * The location this project targets, snapshotted at create.
  *
- * Read from `hlConnections/{uid}` server-side and **never from the body** — the
- * same rule the profile's `email` follows: a field the server owns is not
+ * Read server-side and **never from the body**: a field the server owns is not
  * accepted from a caller. Snapshotting is what "this project targets that
- * location" means, so reconnecting to a different location later does not
- * silently repoint existing projects.
- *
- * Absent, unconnected or unparseable all mean `null`. A project is creatable
- * without a connection at all (D10), so there is no failure to report here.
+ * location" means, so reconnecting elsewhere later does not silently repoint
+ * existing projects. Absent, unconnected and unparseable all mean `null` — a
+ * project is creatable without a connection at all.
  */
 async function resolveLocationId(uid: string): Promise<string | null> {
   const snapshot = await getDb().doc(`${CONNECTIONS}/${uid}`).get()
@@ -236,11 +203,9 @@ async function resolveLocationId(uid: string): Promise<string | null> {
 /** Create a project owned, by construction, by the caller. */
 export async function handleCreateProject(req: Request, res: Response, uid: string): Promise<void> {
   /*
-   * Parsed **first**, before anything touches Firestore, so a refused body
-   * writes nothing and costs no read. A body carrying `id`, `locationId`,
-   * `createdAt` or `deletedAt` is rejected outright rather than silently
-   * stripped, which is what makes "the server owns these fields" a property
-   * rather than a promise.
+   * Parsed first, so a refused body writes nothing and costs no read. A body
+   * carrying `id`, `locationId`, `createdAt` or `deletedAt` is rejected outright
+   * rather than silently stripped.
    */
   const body = parseBody(createProjectBodySchema, req)
 
@@ -261,8 +226,7 @@ export async function handleCreateProject(req: Request, res: Response, uid: stri
   const locationId = await resolveLocationId(uid)
 
   // An auto-id, because a client-chosen one lets a caller probe for collisions
-  // and pick ids that mean something. The ref is minted locally; nothing is
-  // read to get it.
+  // and pick ids that mean something.
   const ref = getDb().collection(projectsPath(uid)).doc()
 
   await ref.set({
@@ -271,22 +235,16 @@ export async function handleCreateProject(req: Request, res: Response, uid: stri
     locationId,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
-    // Explicit, not omitted: `where('deletedAt','==',null)` skips documents
-    // where the field is absent, so omitting it would create a project that is
-    // invisible to its own list.
+    // Explicit, not omitted: `where('deletedAt','==',null)` skips documents where
+    // the field is absent, so a project without it is invisible to its own list.
     deletedAt: null,
   })
 
-  /*
-   * Re-read rather than answer from what we wrote: `serverTimestamp()` is a
-   * sentinel until it commits, so the committed document is the only place the
-   * real timestamps exist.
-   */
+  // Re-read, because `serverTimestamp()` is a sentinel until it commits.
   const project = await readProject(uid, ref.id)
   if (project === null) {
     // Unreachable: we have just written a complete document. It fails closed
-    // rather than answering a half-shaped project to a caller whose create
-    // actually succeeded.
+    // rather than answering a half-shaped project to a successful create.
     logAuthEvent('project.unreadable', { outcome: 'invalid', detail: 'after create' })
     throw new HttpError(500, 'Internal error', 'internal')
   }
@@ -307,33 +265,22 @@ export async function handleGetProject(req: Request, res: Response, uid: string)
 /**
  * Rename a project, change its description, or both.
  *
- * `PATCH` rather than `PUT` because the update is genuinely partial: a rename
- * need not resend the description, and clearing the description need not resend
- * the name.
- *
- * Deliberately not transactional (P2). The document has one writer — its owner,
- * through this route — so the read-then-update buys nothing a transaction would,
- * and `handlePutProfile`'s transaction exists for a different reason: two tabs
- * racing to *create* the same document.
+ * `PATCH` because the update is genuinely partial: a rename need not resend the
+ * description. Deliberately not transactional — the document has one writer, its
+ * owner, through this route.
  */
 export async function handlePatchProject(req: Request, res: Response, uid: string): Promise<void> {
   const id = requireProjectId(req)
 
-  /*
-   * Body before read, so a refused body costs no Firestore call and writes
-   * nothing — including an `updatedAt` that would reorder the list for a request
-   * that changed nothing.
-   */
+  // Body before read, so a refused body writes nothing — including an
+  // `updatedAt` that would reorder the list for a request that changed nothing.
   const body = parseBody(patchProjectBodySchema, req)
 
   const current = await readProject(uid, id)
   if (current === null) throw notFound()
 
-  /*
-   * Only when the name is actually changing shape. Renaming `sample` to
-   * `Sample` is a rename of *this* project, so it is compared against the
-   * others and not against itself — which `exclude` is what guarantees.
-   */
+  // Only when the name is actually changing shape: renaming `sample` to `Sample`
+  // is a rename of *this* project, which `exclude` is what allows.
   if (
     'name' in body &&
     body.name !== undefined &&
@@ -344,9 +291,9 @@ export async function handlePatchProject(req: Request, res: Response, uid: strin
 
   const patch: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() }
   /*
-   * Present-versus-absent, not truthy-versus-falsy. An explicit `null` clears
-   * the description; an absent key leaves whatever is stored alone. Collapsing
-   * the two would make every rename wipe the description.
+   * Present-versus-absent, not truthy-versus-falsy: an explicit `null` clears the
+   * description, an absent key leaves it alone. Collapsing the two would make
+   * every rename wipe the description.
    */
   if ('name' in body) patch['name'] = body.name
   if ('description' in body) patch['description'] = body.description ?? null
@@ -368,19 +315,14 @@ export async function handlePatchProject(req: Request, res: Response, uid: strin
 /**
  * Soft-delete, idempotently.
  *
- * **This handler never parses the stored document** (P3). Every other read goes
- * through `readProject`, but a project that fails to parse must still be
- * deletable — parsing here would make D16's "always 200" a lie for exactly the
- * projects a user most wants gone, and leave a corrupt document with no way out
- * of the collection.
+ * **This handler never parses the stored document.** A project that fails to
+ * parse must still be deletable, or a corrupt document has no way out of the
+ * collection.
  *
- * Idempotent because the UI cannot be certain of its own staleness: a second
- * tab, a double click, a retry after a timeout. Answering 404 to any of those
- * puts an error on screen for a user who already has what they asked for — the
- * same reasoning as `handleDeleteConnection`.
- *
- * A second delete writes nothing at all, so the first `deletedAt` stands and
- * "when was this deleted" stays true.
+ * Idempotent because the UI cannot be certain of its own staleness — a second
+ * tab, a double click, a retry after a timeout — and answering 404 to any of
+ * those puts an error on screen for a user who has what they asked for. A second
+ * delete writes nothing, so the first `deletedAt` stands.
  */
 export async function handleDeleteProject(req: Request, res: Response, uid: string): Promise<void> {
   const id = requireProjectId(req)
@@ -393,8 +335,7 @@ export async function handleDeleteProject(req: Request, res: Response, uid: stri
   if (snapshot.exists && !alreadyDeleted) {
     await ref.update({
       deletedAt: FieldValue.serverTimestamp(),
-      // The data model says `updatedAt` advances on every accepted mutation,
-      // and a delete is one (P4).
+      // `updatedAt` advances on every accepted mutation, and a delete is one.
       updatedAt: FieldValue.serverTimestamp(),
     })
   }
