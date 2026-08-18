@@ -5,6 +5,7 @@ import { onRequest } from 'firebase-functions/v2/https'
 import { originAllowlist } from './api'
 import { requireAppCheck } from './auth/appCheck'
 import { withVerifiedUser } from './auth/requireUser'
+import { emulatorNumber } from './lib/env'
 import { asyncHandler, errorHandler, HttpError } from './lib/errors'
 import { logGenerationEvent, type GenerationLogContext } from './lib/log'
 import { parseBody } from './lib/parse'
@@ -73,16 +74,12 @@ const KEEP_ALIVE_MS = 15_000
 /**
  * A value the *test scripts* can force, which no `.env` file can overrule.
  *
- * `hl/config.ts`'s `emulatorOverride` pattern exactly: honoured **only** under
- * `FUNCTIONS_EMULATOR`, and the name appears in no `.env` file, so a shell value
- * survives. The suites set it to 250 ms, which turns AC-19 into a two-second test
- * rather than a twenty-second one.
+ * Honoured **only** under `FUNCTIONS_EMULATOR`, and the name appears in no
+ * `.env` file, so a shell value survives. The suites set it to 250 ms, which
+ * turns AC-19 into a two-second test rather than a twenty-second one.
  */
 export function keepAliveMs(): number {
-  if (process.env['FUNCTIONS_EMULATOR'] !== 'true') return KEEP_ALIVE_MS
-
-  const raw = Number(process.env['GENERATE_TEST_KEEPALIVE_MS'] ?? '')
-  return Number.isFinite(raw) && raw > 0 ? raw : KEEP_ALIVE_MS
+  return emulatorNumber('GENERATE_TEST_KEEPALIVE_MS', KEEP_ALIVE_MS)
 }
 
 /**

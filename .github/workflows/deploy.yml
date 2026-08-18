@@ -1,0 +1,268 @@
+# Deploy Genesis to production.
+#
+# Two triggers, one job.
+#
+#   * `workflow_run` — every merge to `main`, but only once CI has gone green on
+#     that exact commit. A `push` trigger would race CI and could put a red main
+#     in front of users; `workflow_run` waits for the verdict and reads
+#     `head_sha`, so the deploy is of the commit that was tested rather than of
+#     whatever `main` points at by the time the runner starts.
+#   * `workflow_dispatch` — the button. Redeploys, config changes that need no
+#     commit, and a way back after a bad deploy. It does NOT wait for CI, because
+#     the case it exists for is the one where you already know what you want.
+#
+# The merge itself is unattended (scripts/autopilot.sh squash-merges on a green
+# local suite), so this is the gate that decides what production runs.
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: What to deploy
+        type: choice
+        default: everything
+        options:
+          - everything
+          - functions
+          - hosting
+          - firestore rules and indexes
+      ref:
+        description: Branch, tag or SHA (blank = main)
+        type: string
+        default: ''
+
+# Serialised, and deliberately not cancelled mid-flight: `firebase deploy` is
+# not atomic — it uploads a Hosting release and replaces Cloud Run revisions one
+# by one — so a cancelled run can leave the two halves on different commits.
+# Queueing the next deploy behind this one costs a few minutes; interrupting one
+# costs a debugging session.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # A `workflow_run` fires on *completion*, whatever the conclusion — so
+    # without this, a failed CI run would deploy. Dispatch is unconditional.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    permissions:
+      contents: read
+
+    env:
+      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+
+    steps:
+      - name: Resolve the commit to deploy
+        id: target
+        env:
+          # The SHA CI actually verified, not the branch head. Empty on dispatch.
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_REF: ${{ inputs.ref }}
+        run: |
+          ref="${RUN_SHA:-${INPUT_REF:-main}}"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Deploying $ref"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+            functions/package-lock.json
+
+      - name: Install
+        run: |
+          npm ci
+          npm --prefix frontend ci
+          npm --prefix functions ci
+
+      # Everything here is compiled into the bundle and is public by design — it
+      # identifies the Firebase project, it does not authorise anything. Held as
+      # repository *variables* rather than secrets for exactly that reason: a
+      # secret that is printed on every page view is a secret that teaches people
+      # to ignore the label.
+      - name: Write frontend/.env
+        env:
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          VITE_GOOGLE_RECAPTCHA_V3_KEY: ${{ vars.VITE_GOOGLE_RECAPTCHA_V3_KEY }}
+        run: |
+          # Values reach the shell through `env:` above, never through an
+          # expression inside this script — an interpolated value containing a
+          # quote or a newline would otherwise be substituted into the source of
+          # the script before bash ever saw it.
+          {
+            echo "VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY"
+            echo "VITE_FIREBASE_AUTH_DOMAIN=$VITE_FIREBASE_AUTH_DOMAIN"
+            echo "VITE_FIREBASE_PROJECT_ID=$VITE_FIREBASE_PROJECT_ID"
+            echo "VITE_FIREBASE_STORAGE_BUCKET=$VITE_FIREBASE_STORAGE_BUCKET"
+            echo "VITE_FIREBASE_MESSAGING_SENDER_ID=$VITE_FIREBASE_MESSAGING_SENDER_ID"
+            echo "VITE_FIREBASE_APP_ID=$VITE_FIREBASE_APP_ID"
+            echo "VITE_GOOGLE_RECAPTCHA_V3_KEY=$VITE_GOOGLE_RECAPTCHA_V3_KEY"
+            # Blank: production is same-origin through the Hosting rewrite.
+            echo "VITE_FUNCTIONS_BASE_URL="
+          } > frontend/.env
+
+          if [ -z "$VITE_FIREBASE_PROJECT_ID" ]; then
+            echo "::error::VITE_FIREBASE_PROJECT_ID is not set. See scripts/setup-deploy.sh." >&2
+            exit 1
+          fi
+
+      # Nothing secret. Both of the values that were once here —
+      # HL_CLIENT_SECRET and OAUTH_STATE_SECRET — are `defineSecret`s bound to
+      # the `api` function, so they come from Secret Manager at runtime and this
+      # workflow never handles them. That is why the only repository secret below
+      # is the service account key: the deploy needs permission to bind secrets,
+      # not the secrets themselves.
+      - name: Write functions/.env
+        env:
+          FIRESTORE_DATABASE_ID: ${{ vars.FIRESTORE_DATABASE_ID }}
+          HL_CLIENT_ID: ${{ vars.HL_CLIENT_ID }}
+          HL_VERSION_ID: ${{ vars.HL_VERSION_ID }}
+          HL_REDIRECT_URI: ${{ vars.HL_REDIRECT_URI }}
+          ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS }}
+        run: |
+          {
+            echo "FIRESTORE_DATABASE_ID=$FIRESTORE_DATABASE_ID"
+            echo "HL_CLIENT_ID=$HL_CLIENT_ID"
+            echo "HL_VERSION_ID=$HL_VERSION_ID"
+            echo "HL_REDIRECT_URI=$HL_REDIRECT_URI"
+            echo "ALLOWED_ORIGINS=$ALLOWED_ORIGINS"
+            # Blank uses the real marketplace and API hosts. Set only to point
+            # a deployment at a fake, which production never does.
+            echo "HL_AUTHORIZE_BASE="
+            echo "HL_API_BASE="
+            # The route that sends a real SMS or email stays off. Only the exact
+            # string `true` would enable it; see functions/.env.example.
+            echo "HL_ALLOW_MESSAGE_SEND="
+          } > functions/.env
+
+          if [ -z "$FIRESTORE_DATABASE_ID" ]; then
+            echo "::error::FIRESTORE_DATABASE_ID is not set. See scripts/setup-deploy.sh." >&2
+            exit 1
+          fi
+
+      - name: Build the SPA
+        run: npm --prefix frontend run build
+
+      # The same check CI runs, repeated here because this is the artefact that
+      # actually ships. It is the only layer that can see a *transitive* pull of
+      # the Firestore client SDK — the ESLint rule and the source scan both read
+      # our own code, so neither would notice a dependency importing it for us.
+      - name: No Firestore SDK in the bundle
+        run: node scripts/check-no-firestore.mjs frontend/dist
+
+      # Writes the key to a file and exports GOOGLE_APPLICATION_CREDENTIALS,
+      # which firebase-tools reads. The file lives on the runner and dies with
+      # it.
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Resolve deploy targets
+        id: only
+        env:
+          CHOICE: ${{ inputs.targets }}
+        run: |
+          case "$CHOICE" in
+            functions) only="functions" ;;
+            hosting) only="hosting" ;;
+            "firestore rules and indexes") only="firestore:rules,firestore:indexes" ;;
+            # Both the `everything` choice and the automatic post-CI run.
+            *) only="functions,hosting,firestore:rules,firestore:indexes" ;;
+          esac
+          echo "only=$only" >> "$GITHUB_OUTPUT"
+          echo "Deploying: $only"
+
+      # `--force` so a function removed from source is removed from the project
+      # rather than prompting; source is the only thing that decides what exists.
+      # The functions predeploy hook in firebase.json compiles functions/src.
+      - name: Deploy
+        run: |
+          npx firebase deploy \
+            --only "${{ steps.only.outputs.only }}" \
+            --project "$FIREBASE_PROJECT_ID" \
+            --non-interactive \
+            --force \
+            --message "${{ steps.target.outputs.ref }}"
+
+      # A deploy that reports success has proven the upload, and nothing else.
+      # /api/health writes a Firestore document, reads it back and deletes it —
+      # so a 200 here proves the Hosting rewrite reaches the function, the
+      # function booted, FIRESTORE_DATABASE_ID arrived, and the Admin SDK can
+      # reach the named database. Every one of those has broken a deploy before.
+      - name: Smoke test the deployed API
+        if: ${{ steps.only.outputs.only != 'firestore:rules,firestore:indexes' }}
+        env:
+          SITE: https://${{ vars.FIREBASE_PROJECT_ID }}.web.app
+        run: |
+          echo "GET $SITE/api/health"
+
+          # Retried: a fresh Cloud Run revision can take a few seconds to accept
+          # its first request, and a cold start is not a failed deploy. The `if`
+          # is doing real work — under `bash -e`, `body=$(curl) && break` leans on
+          # the AND-list exemption to keep looping, which is a subtlety no one
+          # should have to recall while reading a deploy gate.
+          body=""
+          for attempt in 1 2 3 4 5; do
+            if body=$(curl -fsS --max-time 30 "$SITE/api/health"); then
+              break
+            fi
+            body=""
+            echo "attempt $attempt failed; retrying in 10s"
+            sleep 10
+          done
+
+          if [ -z "$body" ]; then
+            echo "::error::/api/health never answered. The deploy uploaded; the service did not come up." >&2
+            exit 1
+          fi
+
+          echo "$body"
+
+          # `jq -e` sets the exit status from the result, so a body that parses
+          # but says ok:false fails here rather than being printed and ignored.
+          if ! echo "$body" | jq -e '.ok == true' > /dev/null; then
+            echo "::error::/api/health answered, but not with ok:true" >&2
+            exit 1
+          fi
+
+          echo "$body" | jq -r '"round trip \(.roundTripMs)ms (write \(.writeMs)ms, read \(.readMs)ms)"'
+
+      - name: Summary
+        if: always()
+        env:
+          SITE: https://${{ vars.FIREBASE_PROJECT_ID }}.web.app
+        run: |
+          {
+            echo "### Deploy"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Commit | \`${{ steps.target.outputs.ref }}\` |"
+            echo "| Targets | \`${{ steps.only.outputs.only }}\` |"
+            echo "| Project | \`$FIREBASE_PROJECT_ID\` |"
+            echo "| Site | $SITE |"
+            echo "| Trigger | \`${{ github.event_name }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -3,6 +3,7 @@ import express, { type Express } from 'express'
 
 import { authRouter } from '../auth'
 import { filesRouter } from '../files'
+import { list } from '../lib/env'
 import { errorHandler } from '../lib/errors'
 import { hlRouter } from '../hl'
 import { messagesRouter } from '../messages'
@@ -39,13 +40,7 @@ export function originAllowlist(
     return
   }
 
-  const configured = (process.env['ALLOWED_ORIGINS'] ?? '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter((value) => value !== '')
-
-  const allowed = configured.length > 0 ? configured : DEFAULT_ORIGINS
-  callback(null, allowed.includes(origin))
+  callback(null, list('ALLOWED_ORIGINS', DEFAULT_ORIGINS).includes(origin))
 }
 
 export function createApiApp(): Express {

@@ -227,27 +227,65 @@ suite says nothing about either one:
 
 ---
 
-## Deployment notes
+## Deployment
+
+Production deploys run from GitHub Actions — [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
+
+**On every merge to `main`**, once CI has gone green on that exact commit. The deploy is
+triggered by CI's completion rather than by the push, so it can read the SHA that was
+verified: a `push` trigger would race CI and could put an untested commit in front of users.
+A red CI means no deploy.
+
+**On demand**, from the Actions tab or the CLI — for a redeploy, a configuration change that
+needs no commit, or a way back after a bad one:
 
 ```bash
-firebase use --add                      # point .firebaserc at a real project
-
-firebase functions:secrets:set ANTHROPIC_API_KEY
-firebase functions:secrets:set HL_CLIENT_ID
-firebase functions:secrets:set HL_CLIENT_SECRET
-
-npm run build
-firebase deploy                         # hosting + functions + firestore rules
+gh workflow run deploy.yml                                   # everything, from main
+gh workflow run deploy.yml -f targets=hosting                # just the SPA
+gh workflow run deploy.yml -f targets=functions -f ref=<sha> # roll back the API
 ```
 
-- Secrets go through **Secret Manager**, never `.env`, and never the repo.
+Each run builds the SPA, re-runs the bundle's no-Firestore-SDK check, deploys functions,
+Hosting and Firestore rules and indexes, and then **smoke-tests the result**: it calls the
+deployed `/api/health`, which writes a Firestore document, reads it back and deletes it. A
+200 there proves the Hosting rewrite reaches the function, the function booted, its
+configuration arrived, and the Admin SDK can reach the named database — four things a
+successful upload proves nothing about.
+
+### One-time setup
+
+```bash
+gcloud auth login          # as an owner of the Firebase project
+scripts/setup-deploy.sh    # --dry-run first, if you like
+```
+
+That creates the `github-deployer` service account, grants it the ten roles a
+`firebase deploy` actually needs (enumerated in the script, each with the failure it
+prevents — never `roles/owner`), puts a key in the `FIREBASE_SERVICE_ACCOUNT` repository
+secret, and copies the non-secret configuration out of your local `.env` files into
+repository variables. It is idempotent; re-run it whenever a variable changes.
+
+The three credentials — `ANTHROPIC_API_KEY`, `HL_CLIENT_SECRET`, `OAUTH_STATE_SECRET` — are
+`defineSecret`s bound to the functions that read them, so they live in **Secret Manager** and
+the workflow never handles their values. It needs permission to _bind_ them, not to read
+them, which is why the only repository secret is the service account key:
+
+```bash
+npx firebase functions:secrets:set ANTHROPIC_API_KEY   # bound to `generate`
+npx firebase functions:secrets:set HL_CLIENT_SECRET    # bound to `api`
+npx firebase functions:secrets:set OAUTH_STATE_SECRET  # bound to `api`
+```
+
+### Notes
+
+- Deploying by hand still works — `npm run build && npx firebase deploy` — and is the right
+  move when you are debugging the deploy itself rather than shipping.
 - After the first deploy, register the deployed callback URL
   (`https://<project>.web.app/api/oauth/callback`) on the HighLevel marketplace app. It must
   match the OAuth request exactly.
 - Hosting rewrites `/api/**` → `api` and `/generate` → `generate`, so the SPA and the API are
   same-origin in production and CORS never enters the picture.
-- CI runs typecheck, lint, unit tests, and rules tests on every pull request. Deploys are
-  manual — there is no auto-deploy on merge.
+- CI runs typecheck, lint and all five test levels on every pull request and on `main`.
 
 ---
 
