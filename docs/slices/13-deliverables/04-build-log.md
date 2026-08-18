@@ -343,3 +343,110 @@ a state where that task's tests passed. No subagent ran git.
   the work to this slice. They are sealed records of what was decided then; retconning a
   shipped slice's PRD would make the archive lie about its own history.
 
+## Manual verification
+
+### 1. The fresh-clone walk — definition of done
+
+```bash
+git clone /Users/deepak/Documents/Projects/highlevel-genesis /tmp/genesis-fresh
+cd /tmp/genesis-fresh && git checkout slice/13-deliverables
+npm run install:all
+npm run dev
+```
+
+Clone from the local repository rather than a remote, because the branch is not pushed until
+the ship stage. Nothing else about the walk differs: it is a clean tree with **no `.env`, no
+`.firebaserc` edit, no Firebase credentials** — `ls -a` in the clone shows `.env.example` and
+nothing else matching `.env*`.
+
+`npm run install:all` exited `0`. `npm run dev` built the functions, started auth, firestore
+and functions under `demo-genesis`, and brought up Vite. Port 5173 was already held by a
+leftover dev server on this machine, so Vite took 5174 and said so — environmental, not a
+README error.
+
+Then, following only the README:
+
+| Step | Result |
+|---|---|
+| `GET http://localhost:5174/` | `200` — the SPA is served |
+| `GET http://localhost:5001/demo-genesis/asia-south1/api/health` | `{"ok":true,…,"roundTripMs":323}` |
+| `GET http://localhost:5174/api/health` (through the Vite proxy) | `{"ok":true,…,"roundTripMs":9}` |
+| `POST /api/auth/register` with a weak password | `400 invalid_request`, naming the policy |
+| `POST /api/auth/register` with a valid one | `200 {"ok":true}` |
+| Sign in, request verification, read `oobCodes` | the `oobLink` is returned |
+
+Browser → Cloud Function → Firestore → back, and an account created, on a clone that was
+configured with nothing. The **interactive** remainder of the golden path — clicking through
+sign-up, connecting HighLevel, generating an app — needs a browser and a real sandbox, and is
+the Loom, which `release-checklist.md` owns as a human item.
+
+**The walk falsified two README claims, and both were fixed (`dd55da0`):**
+
+- The README told the reader to read the verification link out of the **Emulator UI's**
+  Authentication tab. `npm run dev` wraps `firebase emulators:exec`, and **exec does not start
+  the UI** — port 4000 is dark for the whole documented dev path. Confirmed both ways in the
+  clone: `npm run emulators` (`emulators:start`) prints *View Emulator UI at
+  http://127.0.0.1:4000/* and answers `200` there; `npm run dev` starts auth, firestore and
+  functions and nothing on 4000.
+- So the surface table now marks the UI row `npm run emulators` only, adds the Auth emulator's
+  own port, and the verification link is fetched from
+  `http://localhost:9099/emulator/v1/projects/demo-genesis/oobCodes` — the same endpoint the
+  e2e suite reads. This is the one place the fresh-clone walk earned its place in the
+  definition of done: no test could have caught either sentence.
+
+### 2. The suite from the same clone
+
+`npm run test:scripts` → **7 files, 143 tests passed**.
+
+### 3. The checks as a human runs them, from the fresh clone
+
+```
+node scripts/check-secrets.mjs        exit 0
+node scripts/check-readme.mjs         exit 0
+node scripts/check-deliverables.mjs   exit 0
+```
+
+Failure path exercised as the plan asks — `npm run install:all` renamed to
+`npm run installl:all` in the clone's README:
+
+```
+README.md:
+  npm run installl:all — no such script in the root package.json
+
+See docs/slices/13-deliverables/02-prd.md, AC-3 … AC-10.
+exit=1
+```
+
+Restored; exit `0` again.
+
+### 4. The seed script, without spending anything
+
+`HL_SEED_TOKEN=x HL_SEED_LOCATION_ID=y node scripts/seed-sandbox.mjs --dry-run` prints the
+plan — 20 named contacts and 8 appointments — and ends with `0 requests issued.` The **live**
+run is a `release-checklist.md` item, human-owned, and was not run from this branch.
+
+### 5. The live URLs
+
+Not re-checked from this session and not deployed by it (D1). Both answered `200` at `b834b61`
+and the deploy workflow smoke-tests `/api/health` after every deploy; opening them by hand
+before the Loom is a checklist item.
+
+### 6. D14's measurement
+
+```
+$ git diff --stat main -- frontend/src firestore.rules firestore.indexes.json tests/rules
+$
+```
+
+Empty. No screen, no rule, no index, no rules test changed — measured, not asserted.
+
+## Observed, not changed
+
+- **A locked git worktree lives at `.claude/worktrees/fix+oauth-callback-unversioned/`** — a
+  full second checkout of the repository, untracked and not covered by `.gitignore`, so
+  `git status` reports it and a careless `git add -A` would try to commit it. It is unrelated
+  to this slice; every commit here staged explicit paths. Worth pruning, or ignoring, outside
+  this branch.
+- `docs/slices/02-highlevel-connection/02-prd.md` and `docs/slices/08-highlevel-proxy/02-prd.md`
+  still name `scripts/seed-sandbox.ts`. Left alone deliberately — see T17.
+
