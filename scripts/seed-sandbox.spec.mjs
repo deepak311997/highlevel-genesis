@@ -15,6 +15,7 @@ import {
   isoWithOffset,
   parseArgs,
   plannedContacts,
+  printSummary,
   readConfig,
   resolveCalendar,
   seed,
@@ -709,5 +710,116 @@ describe('seed — resolution comes first, and is counted (T6)', () => {
 
     expect(calls).toHaveLength(1)
     expect(contactCalls(calls)).toHaveLength(0)
+  })
+})
+
+/**
+ * AC-16 — the surfaces this script must never touch.
+ *
+ * The list lives here rather than in the script, because the scan reads the
+ * script's whole text including its comments (plan note C4): a docblock
+ * promising "never calls `POST /conversations/messages`" would itself be a
+ * match, and a check that its own subject can trip is not a check.
+ *
+ * Why each one:
+ *  - `firebase` / `firestore` — the seeder is an operator chore that writes to
+ *    HighLevel only. It holds no user's data and must not reach the app's store,
+ *    directly or through a package. `CLAUDE.md` puts every read and write behind
+ *    an authenticated route; this script is not one, so it gets neither.
+ *  - `/api/hl/proxy` — the proxy authenticates a Genesis *user* and deliberately
+ *    does not allowlist appointment creation (Slice 8 D4). Seeding through it is
+ *    impossible by design, and pretending otherwise would invite someone to
+ *    widen the allowlist for a chore.
+ *  - `/conversations/messages` — sends a real SMS or email, and costs money.
+ */
+const FORBIDDEN = [
+  [/firebase/i, 'a Firebase package'],
+  [/firestore/i, 'Firestore'],
+  [/api\/hl\/proxy/, 'the Genesis proxy'],
+  [/conversations\/messages/, 'the message-send endpoint'],
+]
+
+/** Every forbidden surface the text names, with the line it named it on. */
+function forbiddenMentions(text) {
+  return text
+    .split('\n')
+    .flatMap((line, index) =>
+      FORBIDDEN.filter(([pattern]) => pattern.test(line)).map(
+        ([, what]) => `line ${index + 1} names ${what}: ${line.trim()}`,
+      ),
+    )
+}
+
+describe('the script’s own boundaries — AC-16', () => {
+  const source = readFileSync(join(ROOT, 'scripts/seed-sandbox.mjs'), 'utf8')
+
+  it('reports a mention wherever it is — an import, a URL, or a comment', () => {
+    expect(forbiddenMentions("import { getFirestore } from 'firebase-admin/firestore'")).toEqual([
+      expect.stringContaining('a Firebase package'),
+      expect.stringContaining('Firestore'),
+    ])
+    expect(forbiddenMentions('// never posts to /api/hl/proxy')).toEqual([
+      expect.stringContaining('the Genesis proxy'),
+    ])
+    expect(forbiddenMentions('  await post(`${base}/conversations/messages`, body)')).toEqual([
+      expect.stringContaining('the message-send endpoint'),
+    ])
+  })
+
+  it('finds none of them in scripts/seed-sandbox.mjs', () => {
+    expect(forbiddenMentions(source)).toEqual([])
+  })
+
+  it('imports nothing but Node built-ins', () => {
+    const imports = [...source.matchAll(/^import\s.*from\s+'([^']+)'/gm)].map((m) => m[1])
+
+    expect(imports.length).toBeGreaterThan(0)
+    for (const specifier of imports) expect(specifier).toMatch(/^node:/)
+  })
+
+  it('guards its CLI, so importing this module seeds nothing', () => {
+    expect(source).toMatch(
+      /import\.meta\.url === pathToFileURL\(process\.argv\[1\] \?\? ''\)\.href/,
+    )
+  })
+})
+
+describe('printSummary', () => {
+  it('reports the counts, and says a dry run issued nothing', () => {
+    const { out, lines, errors } = collector()
+
+    printSummary(
+      {
+        dryRun: true,
+        contacts: { created: 0, existing: 0, failed: 0 },
+        appointments: { created: 0, failed: 0 },
+        failures: [],
+        requests: 0,
+      },
+      out,
+    )
+
+    expect(lines.join('\n')).toMatch(/dry run/i)
+    expect(lines.join('\n')).toMatch(/0 requests/)
+    expect(errors).toEqual([])
+  })
+
+  it('lists every failure on the error channel, with its item and status', () => {
+    const { out, lines, errors } = collector()
+
+    printSummary(
+      {
+        dryRun: false,
+        contacts: { created: 19, existing: 0, failed: 1 },
+        appointments: { created: 8, failed: 0 },
+        failures: [{ item: 'contact 3 — Dana Ruiz', status: 500, message: 'HTTP 500' }],
+        requests: 28,
+      },
+      out,
+    )
+
+    expect(lines.join('\n')).toMatch(/19 created/)
+    expect(errors.join('\n')).toMatch(/contact 3 — Dana Ruiz/)
+    expect(errors.join('\n')).toMatch(/500/)
   })
 })

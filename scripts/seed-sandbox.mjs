@@ -23,6 +23,7 @@
  * that carries the existing contact's id, and that refusal is read as success
  * with the id carried forward (D10), so seeding twice is safe and cheap.
  */
+import { pathToFileURL } from 'node:url'
 
 export const CONTACT_COUNT = 20
 export const APPOINTMENT_COUNT = 8
@@ -551,6 +552,45 @@ export async function seed({
   return summary
 }
 
+/**
+ * The run, in six lines. Shared by `--dry-run` and by a real run, so an
+ * operator reads the same shape whichever they did.
+ */
+export function printSummary(summary, out) {
+  const { contacts, appointments } = summary
+
+  out.log('')
+  out.log(summary.dryRun ? 'Dry run — nothing was created.' : 'Seed complete.')
+  out.log(
+    `  contacts:     ${contacts.created} created, ${contacts.existing} existing, ` +
+      `${contacts.failed} failed`,
+  )
+  out.log(`  appointments: ${appointments.created} created, ${appointments.failed} failed`)
+  out.log(`  ${summary.requests} requests issued.`)
+
+  if (summary.failures.length === 0) return
+
+  out.error(`${summary.failures.length} item(s) failed:`)
+  for (const failure of summary.failures) {
+    out.error(`  ${failure.item} — ${failure.status ?? 'no response'}: ${failure.message}`)
+  }
+}
+
 export function exitCodeFor(summary) {
   return summary.failures.length > 0 ? 1 : 0
+}
+
+// Guarded so importing this module from the spec seeds nothing.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  seed()
+    .then((summary) => {
+      printSummary(summary, console)
+      process.exit(exitCodeFor(summary))
+    })
+    .catch((err) => {
+      // A SeedConfigError is the operator's to fix and says how; anything else
+      // is a bug, and its message is the most useful thing we have.
+      console.error(err instanceof Error ? err.message : String(err))
+      process.exit(1)
+    })
 }
