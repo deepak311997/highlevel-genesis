@@ -33,7 +33,7 @@ async function signOut(): Promise<void> {
   <div class="flex min-h-screen flex-col">
     <header class="shrink-0 border-b bg-gradient-to-b from-raised to-card">
       <nav class="mx-auto flex max-w-5xl items-center gap-6 px-6 py-3">
-        <RouterLink to="/" class="flex items-center gap-2 text-base font-bold tracking-tight">
+        <RouterLink to="/" class="flex items-center gap-2 text-base font-semibold tracking-tight">
           <svg viewBox="0 0 96 96" class="h-5 w-5" aria-hidden="true">
             <g fill="none" stroke="var(--primary)" stroke-width="9" stroke-linecap="round">
               <path d="M67.80 28.20 A 28 28 0 1 0 57.58 74.31" />

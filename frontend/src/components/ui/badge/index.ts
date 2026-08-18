@@ -13,6 +13,10 @@ export const badgeVariants = cva(
           'border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80',
         destructive:
           'border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80',
+        /* A state the product reports, not a control. Tinted rather than
+           filled so it reads as information beside the primary action's solid
+           blue instead of competing with it. */
+        good: 'border-good/25 bg-good/10 text-good',
         outline: 'text-foreground',
       },
     },

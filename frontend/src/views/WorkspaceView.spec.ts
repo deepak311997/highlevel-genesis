@@ -416,6 +416,23 @@ describe('WorkspaceView', () => {
 
     expect(wrapper.find('[data-testid="workspace-name"]').text()).toBe('Contact dashboard')
     expect(wrapper.find('[data-testid="workspace-connection"]').exists()).toBe(true)
+  })
+
+  /*
+   * Instrument keeps one blue, and it means link, focus, or the primary action.
+   * "Connected" is none of those — it is a state the product reports, so it
+   * takes the semantic `good` colour. Asserted because the default Badge
+   * variant is the primary fill, which is the easy thing to leave in place.
+   */
+  it('marks a connected location with the semantic colour, not the action colour', async () => {
+    store.project = { ...PROJECT, locationId: 'loc_123' }
+
+    const wrapper = mount(WorkspaceView, MOUNT)
+    await flushPromises()
+
+    const classes = wrapper.find('[data-testid="workspace-connection"]').classes().join(' ')
+    expect(classes).toContain('text-good')
+    expect(classes).not.toContain('bg-primary')
     expect(wrapper.find(EDITOR).exists()).toBe(true)
     expect(wrapper.find(PREVIEW).exists()).toBe(true)
     expect(wrapper.find('[data-testid="workspace-error"]').exists()).toBe(false)

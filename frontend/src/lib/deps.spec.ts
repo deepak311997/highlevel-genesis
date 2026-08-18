@@ -36,8 +36,8 @@ const manifest = JSON.parse(
 
 /** Every runtime dependency the frontend is allowed to have, in package.json's order. */
 const EXPECTED = [
-  '@fontsource-variable/space-grotesk',
-  '@fontsource/ibm-plex-mono',
+  '@fontsource-variable/geist',
+  '@fontsource-variable/geist-mono',
   '@guolao/vue-monaco-editor',
   '@vueuse/core',
   'class-variance-authority',

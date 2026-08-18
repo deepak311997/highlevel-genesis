@@ -154,7 +154,7 @@ onScopeDispose(stop)
             aria-hidden="true"
             >✉️</span
           >
-          <h1 class="text-xl font-bold tracking-tight">Check your email</h1>
+          <h1 class="text-xl font-semibold tracking-tight">Check your email</h1>
 
           <p class="text-sm text-muted-foreground" data-testid="verify-headline">
             <template v-if="delivery === 'sending'">Sending a verification link to </template>
