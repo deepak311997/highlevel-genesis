@@ -104,6 +104,30 @@ function dropping(chunks: readonly string[], reason: Error): Response {
   } as unknown as Response
 }
 
+/**
+ * A `Response` whose reader never ends, and whose `cancel` is observable.
+ *
+ * The shape of a generation still in flight: the server is producing tokens and
+ * will go on producing them until it is told to stop or reaches `max_tokens`.
+ * What a consumer that walks away does with that is the question the tests
+ * below ask.
+ */
+function endless(cancel: () => Promise<void>): Response {
+  const encoder = new TextEncoder()
+
+  return {
+    ok: true,
+    status: 200,
+    body: {
+      getReader: () => ({
+        read: () =>
+          Promise.resolve({ done: false, value: encoder.encode(frame('token', { text: 'x' })) }),
+        cancel,
+      }),
+    },
+  } as unknown as Response
+}
+
 let fetchMock: ReturnType<typeof vi.fn>
 
 function lastCall(): [string, RequestInit] {
@@ -523,5 +547,80 @@ describe('streamGeneration — a connection that drops mid-stream', () => {
     controller.abort()
 
     await expect(collect(controller.signal)).rejects.toBe(cancelled)
+  })
+})
+
+/**
+ * A consumer that stops reading has to stop the *request*, not just its own
+ * loop.
+ *
+ * Breaking out of a `for await`, or throwing inside one, finalises this
+ * generator — but finalising a generator does not close a `fetch` body. The
+ * socket stays open, `generate`'s `res.on('close')` never fires, and the model
+ * goes on producing to `max_tokens: 64000` for a reply nobody will ever read.
+ * That is a full completion billed for nothing, and the store has a real path
+ * into it: any throw from the loop body in `runGeneration` — `openTab`, the
+ * `messages` spread, `applyGenerationFiles` — is swallowed by the `catch` below
+ * it, and its `finally` nulls the controller without aborting it.
+ *
+ * So the generator releases the body itself, on every exit. That is the one
+ * place that cannot be forgotten by a caller.
+ */
+describe('streamGeneration — a consumer that stops reading', () => {
+  it('cancels the body when the consumer breaks out of the loop', async () => {
+    const cancel = vi.fn(() => Promise.resolve())
+    fetchMock.mockResolvedValue(endless(cancel))
+
+    for await (const event of streamGeneration('proj-1', new AbortController().signal)) {
+      expect(event).toEqual({ type: 'token', text: 'x' })
+      break
+    }
+
+    expect(cancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('cancels the body when the consumer throws', async () => {
+    const cancel = vi.fn(() => Promise.resolve())
+    fetchMock.mockResolvedValue(endless(cancel))
+    const boom = new Error('openTab blew up')
+
+    const walk = (async () => {
+      for await (const event of streamGeneration('proj-1', new AbortController().signal)) {
+        expect(event).toEqual({ type: 'token', text: 'x' })
+        throw boom
+      }
+    })()
+
+    await expect(walk).rejects.toBe(boom)
+    expect(cancel).toHaveBeenCalledTimes(1)
+  })
+
+  /*
+   * `cancel()` rejects on a stream that already errored — which is precisely the
+   * case a dropped connection brings us to — so the release must not turn a
+   * mapped `ApiError` into an unhandled rejection, or into the wrong error.
+   */
+  it('still reports the connection failure when releasing the body rejects', async () => {
+    const encoder = new TextEncoder()
+    let index = 0
+    const chunks = [frame('token', { text: 'Here' })]
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: {
+        getReader: () => ({
+          read: () =>
+            index < chunks.length
+              ? Promise.resolve({ done: false, value: encoder.encode(chunks[index++]) })
+              : Promise.reject(new TypeError('Failed to fetch')),
+          cancel: () => Promise.reject(new TypeError('Failed to fetch')),
+        }),
+      },
+    })
+
+    await expect(collect()).rejects.toMatchObject({
+      status: 0,
+      message: 'Something went wrong. Check your connection and try again.',
+    })
   })
 })
