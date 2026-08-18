@@ -68,7 +68,7 @@ Firestore — NAMED database `hl-genesis` (not `(default)`)
 3. **Functions are reached same-origin through Hosting rewrites**, not via
    `cloudfunctions.net`. CORS is defence in depth (an origin allowlist), not the mechanism.
 
-**Why a HighLevel proxy function matters:** generated apps run in a sandboxed iframe and can't hold OAuth tokens or call HL APIs directly (CORS + secret exposure). The generated code calls our proxy endpoint; the proxy attaches the user's token, handles refresh, and forwards to HighLevel. This is also what makes "real data in the preview" achievable safely.
+**Why a HighLevel proxy function matters:** generated apps run in a sandboxed iframe and can't hold OAuth tokens or call HL APIs directly (CORS + secret exposure). The generated code calls one `hl()` function, which posts to the page hosting it; the SPA calls the proxy, and the proxy attaches the user's token, handles refresh, and forwards to HighLevel. The frame itself never fetches — a sandbox without `allow-same-origin` has an opaque origin, so it can carry neither the ID token nor an App Check one. This is what makes "real data in the preview" achievable safely.
 
 ## 4. Feature List
 

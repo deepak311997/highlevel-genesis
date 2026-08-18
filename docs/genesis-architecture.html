@@ -240,16 +240,18 @@
     <div class="head">
       <h3>01 — The map</h3>
       <h2>What talks to what</h2>
-      <p class="prose">Two Cloud Functions, one database, two outbound integrations. The browser reads
-      Firestore directly — security rules, not a REST layer, are what make that safe — and calls a
-      function only where a rule cannot express the logic: exchanging an OAuth code, streaming an
-      LLM, or attaching a token to an outbound request.</p>
+      <p class="prose">Two Cloud Functions, one database, two outbound integrations. <b>The browser never
+      touches Firestore.</b> Every read and write goes through a Cloud Function route that verifies the ID
+      token, parses the payload with Zod and scopes the query by the uid it read off that token; the
+      security rules deny every collection to every client, so a mistake in a route is a bug rather than a
+      breach. This reverses the original design — the cost is <span class="m">onSnapshot</span>, and
+      liveness comes from refetching after a mutation or from the SSE stream that is already open.</p>
     </div>
 
     <figure>
       <div class="scroller">
         <svg class="dgm" viewBox="0 0 900 620" role="img"
-             aria-label="System map. The Vue SPA and a sandboxed preview iframe sit in the browser. The SPA reads Firestore directly via onSnapshot and posts prompts to the generate function, which streams SSE frames back and calls the Claude API. The generated app inside the sandbox calls the api function, which attaches a HighLevel token and calls the HighLevel API. Firestore is read and written by both functions.">
+             aria-label="System map. The Vue SPA and a sandboxed preview iframe sit in the browser. The SPA reads and writes through the api function's routes and posts a prompt to the generate function, which streams SSE frames back and calls the Claude API. The generated app inside the sandbox cannot fetch at all; it posts a message to the SPA, which calls the api function, which attaches a HighLevel token and calls the HighLevel API. Only the two functions touch Firestore.">
 
           <!-- Firestore -->
           <rect x="40" y="60" width="150" height="440" rx="4" fill="var(--sunken)" stroke="var(--cobalt)" stroke-width="1.5"/>
@@ -260,7 +262,7 @@
           <text x="115" y="194" text-anchor="middle">messages</text>
           <text class="t-live" x="115" y="222" text-anchor="middle">hlConnections</text>
           <text class="t-tiny" x="115" y="240" text-anchor="middle">tokens — server only</text>
-          <text class="t-tiny" x="115" y="470" text-anchor="middle">owner-scoped rules</text>
+          <text class="t-tiny" x="115" y="470" text-anchor="middle">rules deny every client</text>
 
           <!-- Browser zone -->
           <rect x="270" y="40" width="590" height="182" rx="4" fill="none" stroke="var(--rule)" stroke-width="1"/>
@@ -268,9 +270,9 @@
 
           <rect x="295" y="78" width="255" height="124" rx="3" fill="var(--panel)" stroke="var(--cobalt)" stroke-width="1.5"/>
           <text class="t-title" x="422" y="108" text-anchor="middle">Vue 3 SPA</text>
-          <text class="t-sub" x="422" y="132" text-anchor="middle">chat · Monaco · file tree</text>
-          <text class="t-sub" x="422" y="152" text-anchor="middle">SSE client</text>
-          <text class="t-sub" x="422" y="172" text-anchor="middle">Pinia · VueFire</text>
+          <text class="t-sub" x="422" y="132" text-anchor="middle">chat · Monaco · explorer</text>
+          <text class="t-sub" x="422" y="152" text-anchor="middle">SSE client · preview host</text>
+          <text class="t-sub" x="422" y="172" text-anchor="middle">Pinia · no Firestore SDK</text>
 
           <rect x="580" y="78" width="255" height="124" rx="3" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="5 4"/>
           <text class="t-title" x="707" y="104" text-anchor="middle">Preview iframe</text>
@@ -285,12 +287,12 @@
 
           <rect x="295" y="314" width="255" height="90" rx="3" fill="var(--panel)" stroke="var(--cobalt)" stroke-width="1.5"/>
           <text class="t-title" x="422" y="342" text-anchor="middle">generate</text>
-          <text class="t-sub" x="422" y="364" text-anchor="middle">onRequest · SSE</text>
-          <text class="t-sub" x="422" y="384" text-anchor="middle">long timeout · minInstances 1</text>
+          <text class="t-sub" x="422" y="364" text-anchor="middle">express · SSE</text>
+          <text class="t-sub" x="422" y="384" text-anchor="middle">540s timeout · 512 MiB</text>
 
           <rect x="580" y="314" width="255" height="90" rx="3" fill="var(--panel)" stroke="var(--cobalt)" stroke-width="1.5"/>
           <text class="t-title" x="707" y="342" text-anchor="middle">api</text>
-          <text class="t-sub" x="707" y="364" text-anchor="middle">oauth callback · HL proxy</text>
+          <text class="t-sub" x="707" y="364" text-anchor="middle">every CRUD route · oauth · proxy</text>
           <text class="t-sub" x="707" y="384" text-anchor="middle">express · short timeout</text>
 
           <!-- External -->
@@ -303,27 +305,28 @@
           <text class="t-sub" x="707" y="532" text-anchor="middle">services.leadconnectorhq.com</text>
 
           <!-- edges -->
-          <line x1="190" y1="140" x2="288" y2="140" stroke="var(--cobalt)" stroke-width="1.5" marker-start="url(#ar)" marker-end="url(#ar)"/>
-          <text class="t-tiny" x="239" y="130" text-anchor="middle">onSnapshot</text>
+          <line x1="190" y1="140" x2="288" y2="140" stroke="var(--blocked)" stroke-width="1.5" stroke-dasharray="6 5"/>
+          <path d="M225 126 L253 154 M253 126 L225 154" stroke="var(--blocked)" stroke-width="2.5" stroke-linecap="round"/>
+          <text class="t-tiny" x="239" y="118" text-anchor="middle">no client SDK</text>
 
           <line x1="190" y1="352" x2="288" y2="352" stroke="var(--cobalt)" stroke-width="1.5" marker-start="url(#ar)" marker-end="url(#ar)"/>
           <text class="t-tiny" x="239" y="342" text-anchor="middle">read · write</text>
 
           <line x1="330" y1="202" x2="330" y2="308" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
-          <text x="340" y="232">POST /generate</text>
-          <text class="t-sub" x="340" y="248">+ Firebase ID token</text>
+          <text x="340" y="232">POST /generate · the prompt</text>
+          <text class="t-sub" x="340" y="248">+ ID token + App Check</text>
 
           <line x1="515" y1="308" x2="515" y2="202" stroke="var(--ember)" stroke-width="1.5" marker-end="url(#ar-live)"/>
-          <text class="t-live" x="507" y="272" text-anchor="end">SSE: token · file_start</text>
-          <text class="t-sub" x="507" y="288" text-anchor="end">file_end · done · error</text>
+          <text class="t-live" x="507" y="272" text-anchor="end">SSE: user · token · file_start</text>
+          <text class="t-sub" x="507" y="288" text-anchor="end">file_chunk · file_end · done · error</text>
 
           <line x1="422" y1="406" x2="422" y2="476" stroke="var(--ember)" stroke-width="1.5" marker-end="url(#ar-live)"/>
           <text class="t-live" x="432" y="434">messages.stream()</text>
           <text class="t-sub" x="432" y="450">system prompt cached</text>
 
           <line x1="707" y1="202" x2="707" y2="308" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
-          <text x="699" y="234" text-anchor="end">fetch /api/hl/*</text>
-          <text class="t-sub" x="699" y="250" text-anchor="end">no token attached</text>
+          <text x="699" y="234" text-anchor="end">postMessage → the SPA</text>
+          <text class="t-sub" x="699" y="250" text-anchor="end">which calls /api/hl/*</text>
 
           <line x1="707" y1="406" x2="707" y2="476" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
           <text x="717" y="434">+ Bearer location</text>
@@ -357,7 +360,7 @@
     <figure>
       <div class="scroller">
         <svg class="dgm" viewBox="0 0 900 320" role="img"
-             aria-label="Comparison. On the left, the generated app calling HighLevel directly is blocked because the OAuth token would be readable in client JavaScript and CORS rejects the request. On the right, the generated app calls the api proxy, which reads the token from Firestore and calls HighLevel server-side.">
+             aria-label="Comparison. On the left, the generated app calling HighLevel directly is blocked because the OAuth token would be readable in client JavaScript and CORS rejects the request. On the right, the generated app posts a message to the SPA that hosts it, and the SPA calls the api proxy, which reads the token from Firestore and calls HighLevel server-side.">
 
           <text class="t-zone" x="40" y="24">WHAT CANNOT WORK</text>
           <text class="t-zone" x="500" y="24">WHAT WE BUILD</text>
@@ -386,7 +389,7 @@
           <text class="t-tiny" x="660" y="84" text-anchor="middle">sandboxed iframe</text>
 
           <line x1="660" y1="100" x2="660" y2="134" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
-          <text class="t-tiny" x="672" y="122">fetch /api/hl/contacts</text>
+          <text class="t-tiny" x="672" y="122">hl() → postMessage → the SPA fetches</text>
 
           <rect x="500" y="140" width="320" height="56" rx="3" fill="var(--panel)" stroke="var(--cobalt)" stroke-width="1.5"/>
           <text x="660" y="166" text-anchor="middle">api — HighLevel proxy</text>
@@ -402,7 +405,10 @@
       </div>
       <figcaption>The proxy is not a convenience wrapper. It is the only component that ever holds a
       HighLevel token, which makes it <b>the one place a mistake leaks another tenant's CRM</b> — so it gets
-      route allowlisting, per-user scoping, and adversarial tests before it ships.</figcaption>
+      route allowlisting, per-user scoping, and adversarial tests before it ships. The frame does not reach
+      it directly: a sandbox without <span class="m">allow-same-origin</span> has an opaque origin, so it can
+      neither carry the ID token nor mint an App Check one. It calls <span class="m">hl()</span>, which posts
+      to the page hosting it, and <b>no credential ever crosses into the iframe</b>.</figcaption>
     </figure>
   </section>
 
@@ -421,7 +427,7 @@
     <figure>
       <div class="scroller">
         <svg class="dgm" viewBox="0 0 900 560" role="img"
-             aria-label="Sequence diagram of one generation. The browser posts a prompt with an ID token to the generate function. Generate reads project files and chat history from Firestore, calls the Claude streaming API, and relays each text delta to the browser as an SSE token event. This repeats per delta. When the stream ends, generate parses file operations, writes files and a snapshot to Firestore, and emits a done event.">
+             aria-label="Sequence diagram of one generation. The browser posts the prompt with an ID token to the generate function. Generate stores the user turn, reads project files and chat history from Firestore, calls the Claude streaming API, and relays each text delta to the browser as an SSE token event. This repeats per delta. When the stream ends, generate validates the file operations and writes the reply, the files and a snapshot in one batch, then emits a done event.">
 
           <!-- lifelines -->
           <rect x="30" y="20" width="170" height="42" rx="3" fill="var(--panel)" stroke="var(--cobalt)" stroke-width="1.5"/>
@@ -468,22 +474,23 @@
 
           <!-- 5 -->
           <line x1="340" y1="378" x2="121" y2="378" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
-          <text x="331" y="370" text-anchor="end">event: file_start / file_end</text>
+          <text x="331" y="370" text-anchor="end">event: file_start / file_chunk / file_end</text>
 
           <!-- 6 -->
           <line x1="340" y1="424" x2="559" y2="424" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
-          <text x="349" y="416">parse + Zod-validate file ops → write files, snapshot</text>
+          <text x="349" y="416">validate the whole op set → one batch: reply · files · snapshot</text>
 
           <!-- 7 -->
           <line x1="340" y1="468" x2="121" y2="468" stroke="var(--cobalt)" stroke-width="1.5" marker-end="url(#ar)"/>
           <text x="331" y="460" text-anchor="end">event: done → refresh preview</text>
 
-          <text class="t-tiny" x="115" y="508" text-anchor="middle">disconnect at any point → partial files kept, retry offered</text>
+          <text class="t-tiny" x="115" y="508" text-anchor="middle">disconnect or failure → the partial reply is kept and marked, no file is written</text>
         </svg>
       </div>
-      <figcaption>The parse step is deliberately <b>after</b> the stream, not during it: tokens render live for
-      feel, but nothing is written to Firestore until the whole response validates — so a malformed
-      generation cannot leave a project half-written.</figcaption>
+      <figcaption>The split runs <b>as the reply streams</b>, which is what lets a file open a tab and fill it
+      live — but the <b>write</b> is deferred to the terminal event, and the op set is validated and refused
+      whole. A turn that did not complete writes no file at all, so a malformed generation cannot leave a
+      project half-written. The message, the files and the snapshot go down in one batch.</figcaption>
     </figure>
   </section>
 
@@ -557,24 +564,30 @@
       <h2>Everything is a document</h2>
       <p class="prose">Files live in Firestore rather than Cloud Storage. They're small text blobs, and keeping
       them as documents makes snapshot-and-restore a copy operation instead of a bucket-manifest problem —
-      which is most of feature F5 for free.</p>
+      which is most of feature F5 for free. <b>Everything a user owns is nested under their uid</b>, so the
+      path <em>is</em> the ownership: there is no <span class="m">ownerUid</span> field anywhere, and no
+      equality check to forget.</p>
     </div>
 
     <div class="tree">
-<span class="path">users/{uid}</span>                          <span class="note">— profile; owner read/write</span>
-<span class="path">hlConnections/{uid}</span>                  <span class="lock">— tokens. NO client read rule at all</span>
-  <span class="note">accessToken · refreshToken · expiresAt · locationId · locationName</span>
+<span class="path">users/{uid}</span>                          <span class="note">— profile; email, displayName, timestamps</span>
+  <span class="path">projects/{projectId}</span>               <span class="note">— name, description, locationId, deletedAt</span>
+    <span class="path">files/{path}</span>                     <span class="note">— the id IS the filename; content, size, timestamps</span>
+    <span class="path">messages/{messageId}</span>             <span class="note">— role, content, seq, truncated, error</span>
+    <span class="path">snapshots/{snapshotId}</span>           <span class="note">— seq, origin, fileCount, totalBytes</span>
+      <span class="path">files/{path}</span>                   <span class="note">— the copy: path, content, size</span>
 
-<span class="path">projects/{projectId}</span>                 <span class="note">— ownerUid, name, description, deletedAt</span>
-  <span class="path">files/{fileId}</span>                     <span class="note">— path, content, updatedAt</span>
-  <span class="path">messages/{messageId}</span>               <span class="note">— role, content, generationId, createdAt</span>
-  <span class="path">snapshots/{snapshotId}</span>             <span class="note">— createdAt, files[] (point-in-time copy)</span>
+<span class="path">hlConnections/{uid}</span>                  <span class="lock">— tokens. Admin SDK only, never a client</span>
+  <span class="note">accessToken · refreshToken · expiresAt · locationId · locationName · needsReconnect</span>
+<span class="path">authThrottle/{hash}</span>                  <span class="note">— fixed-window counters, keyed by hash and never by address</span>
     </div>
 
-    <p class="prose dim">Every rule is <span class="m">request.auth.uid == resource.data.ownerUid</span>, and every collection
-    gets a test proving a non-owner is <em>denied</em> — the assertion people skip. <span class="m">hlConnections</span> is
-    the exception that proves the pattern: it has no read rule for anyone, because only the Admin SDK
-    inside a function should ever touch it.</p>
+    <p class="prose dim">Every rule is a <b>denial</b>, and every collection gets a test proving it — including
+    for the owner, who reads and writes through the API like everybody else. That is what makes the rules a
+    backstop rather than the enforcement: the route authenticates, parses with Zod and scopes by the uid on
+    the token, and the rules are what turn a mistake in one of those routes into a bug rather than a breach.
+    A snapshot's copies are a <em>subcollection</em>, because twenty files of up to 100 KB do not fit in one
+    document — and rules do not cascade, so that subcollection is denied on a block of its own.</p>
   </section>
 
   <hr class="divider">
@@ -584,8 +597,8 @@
     <div class="head">
       <h3>06 — Runtime shape</h3>
       <h2>Two functions, two very different profiles</h2>
-      <p class="prose">This split is the real backend decision. Streaming needs a long timeout, a warm
-      instance, and headroom; CRUD needs none of that and shouldn't pay for it on every call.</p>
+      <p class="prose">This split is the real backend decision. Streaming needs a long timeout and headroom;
+      CRUD needs neither and shouldn't pay for it on every call.</p>
     </div>
 
     <div class="tbl">
@@ -594,11 +607,12 @@
           <tr><th>Concern</th><th>generate</th><th>api</th></tr>
         </thead>
         <tbody>
-          <tr><td class="k">shape</td><td class="d">bare <span class="m">onRequest</span>, no framework</td><td class="d">Express app, routed</td></tr>
-          <tr><td class="k">timeout</td><td class="d">long — a generation can run minutes</td><td class="d">short — fail fast</td></tr>
-          <tr><td class="k">minInstances</td><td class="d">1, so the demo never opens cold</td><td class="d">0</td></tr>
-          <tr><td class="k">middleware</td><td class="d">none — <span class="m">compression()</span> would buffer the stream dead</td><td class="d">auth, CORS, error mapping</td></tr>
-          <tr><td class="k">secrets</td><td class="d"><span class="m">ANTHROPIC_API_KEY</span> via <span class="m">defineSecret</span></td><td class="d"><span class="m">HL_CLIENT_SECRET</span> via <span class="m">defineSecret</span></td></tr>
+          <tr><td class="k">shape</td><td class="d">its own Express app — so it mounts the same error handler</td><td class="d">Express app, routed</td></tr>
+          <tr><td class="k">timeout</td><td class="d">540s — a generation can run minutes</td><td class="d">60s — fail fast</td></tr>
+          <tr><td class="k">memory</td><td class="d">512 MiB — the SDK plus an accumulating reply</td><td class="d">256 MiB</td></tr>
+          <tr><td class="k">minInstances</td><td class="d" colspan="2">none, on either. A generation pays a cold start; a warm instance is a cost decision nobody has taken</td></tr>
+          <tr><td class="k">middleware</td><td class="d">no <span class="m">compression()</span> — it would buffer the stream dead — and no <span class="m">Connection</span> header, which breaks the next request on the reused socket</td><td class="d">auth, CORS, error mapping</td></tr>
+          <tr><td class="k">secrets</td><td class="d"><span class="m">ANTHROPIC_API_KEY</span> and <span class="m">ALLOWED_ORIGINS</span></td><td class="d">six bindings — both HighLevel credentials, the state key, and the CORS allowlist</td></tr>
           <tr><td class="k">transport</td><td class="d">SSE over <span class="m">fetch()</span> — <span class="m">EventSource</span> can't send an auth header</td><td class="d">plain JSON</td></tr>
         </tbody>
       </table>
@@ -622,8 +636,8 @@
           <tr><th>What fails</th><th>What the user sees</th></tr>
         </thead>
         <tbody>
-          <tr><td class="k">malformed LLM output</td><td class="d">Generation marked failed, project untouched, retry offered. Nothing half-written reaches Firestore.</td></tr>
-          <tr><td class="k">stream interrupted</td><td class="d">Files completed before the break are kept; the editor shows what arrived; retry resumes from the prompt.</td></tr>
+          <tr><td class="k">malformed LLM output</td><td class="d">The whole file set is refused and named — a bad path, a duplicate, an oversized file, an unterminated block. The reply is still stored, so the turn reads as a turn; the stored tree is byte-identical.</td></tr>
+          <tr><td class="k">stream interrupted</td><td class="d">The partial reply is persisted and marked <em>Interrupted</em>, and <b>no file is written</b> — a turn that did not complete describes an app whose remaining parts never arrived. Retry re-runs the stored turn, writing no second prompt.</td></tr>
           <tr><td class="k">HighLevel token expired</td><td class="d">Proxy refreshes silently. If refresh fails, the preview surfaces "reconnect HighLevel" rather than an empty list.</td></tr>
           <tr><td class="k">HighLevel API error</td><td class="d">Mapped to a readable message inside the preview — never a silent empty state that looks like real data.</td></tr>
         </tbody>
