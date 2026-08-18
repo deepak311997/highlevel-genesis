@@ -4,6 +4,7 @@ import { computed, onMounted } from 'vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useHlStore, type ProbeResult, type SurfaceProbe } from '@/stores/hl'
 
 /**
@@ -107,8 +108,8 @@ onMounted(() => {
 
       <!-- Loading: first load only, so a refresh does not blank the panel. -->
       <div v-if="hl.loading" data-testid="connection-loading" class="flex flex-col gap-2">
-        <div class="h-4 w-40 animate-pulse rounded bg-secondary" />
-        <div class="h-9 w-32 animate-pulse rounded bg-secondary" />
+        <Skeleton class="h-4 w-40 rounded" />
+        <Skeleton class="h-9 w-32 rounded" />
       </div>
 
       <!-- Error: the status request itself failed. Retry re-issues it. -->
@@ -176,7 +177,7 @@ onMounted(() => {
             data-testid="data-access-loading"
             class="flex flex-col gap-2"
           >
-            <div v-for="n in 3" :key="n" class="h-5 w-full animate-pulse rounded bg-secondary" />
+            <Skeleton v-for="n in 3" :key="n" class="h-5 w-full rounded" />
           </div>
 
           <!-- Result: one row per surface, each with its own outcome. -->

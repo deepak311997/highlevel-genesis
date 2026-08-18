@@ -7,6 +7,7 @@ import ProjectFormDialog from '@/components/ProjectFormDialog.vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import { formatDay } from '@/lib/date'
 import { useProjectsStore } from '@/stores/projects'
 import type { Project } from '@/lib/projectsApi'
@@ -99,8 +100,8 @@ onMounted(() => {
         data-testid="projects-loading"
         class="flex flex-col gap-3"
       >
-        <div class="h-5 w-48 animate-pulse rounded bg-secondary" />
-        <div class="h-5 w-40 animate-pulse rounded bg-secondary" />
+        <Skeleton class="h-5 w-48 rounded" />
+        <Skeleton class="h-5 w-40 rounded" />
       </div>
 
       <ul v-else-if="projects.projects.length > 0" class="flex flex-col gap-3">
