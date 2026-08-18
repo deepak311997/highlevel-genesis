@@ -368,19 +368,25 @@ describe('CodeEditor', () => {
     })
   })
 
-  /** AC-27, D17. A theme change is a prop change, not a remount. */
-  it('passes vs-dark for the dark theme and vs for light, without remounting', async () => {
+  /**
+   * AC-27, D17. A theme change is a prop change, not a remount.
+   *
+   * The names are Instrument's own rather than monaco's stock `vs` / `vs-dark`:
+   * stock `vs` is pure white, which sits a shade brighter than this app's
+   * ground and shows a seam where the editor meets the panel beside it.
+   */
+  it('passes the Instrument themes for dark and light, without remounting', async () => {
     store.selectedPath = 'index.html'
     store.contents = { 'index.html': '<h1>Contacts</h1>' }
     const { stub, instance } = await mounted()
 
-    expect(stub.props('theme')).toBe('vs')
+    expect(stub.props('theme')).toBe('instrument-light')
     const before = stub.vm
     const model = activeModel(instance)
 
     document.documentElement.classList.add('dark')
     await vi.waitFor(() => {
-      expect(stub.props('theme')).toBe('vs-dark')
+      expect(stub.props('theme')).toBe('instrument-dark')
     })
 
     // Same component instance, same model, same text: the ground changed and
@@ -391,7 +397,7 @@ describe('CodeEditor', () => {
 
     document.documentElement.classList.remove('dark')
     await vi.waitFor(() => {
-      expect(stub.props('theme')).toBe('vs')
+      expect(stub.props('theme')).toBe('instrument-light')
     })
   })
 

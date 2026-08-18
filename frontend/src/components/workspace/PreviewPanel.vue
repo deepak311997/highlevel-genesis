@@ -83,7 +83,7 @@ function rebuild(): void {
 <template>
   <section class="flex h-full min-h-0 flex-col" data-testid="preview-panel">
     <header class="flex shrink-0 items-center gap-3 px-4 py-3">
-      <h2 class="text-sm font-semibold">Preview</h2>
+      <h2 class="label-micro">Preview</h2>
 
       <!-- Withheld during a generation (AC-30): the files are being rewritten as
            we speak, so a rebuild from them would preview a half-written app — and

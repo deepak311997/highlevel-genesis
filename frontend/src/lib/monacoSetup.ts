@@ -18,6 +18,8 @@ import 'monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution'
 import 'monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution'
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 
+import { registerEditorThemes } from './editorTheme'
+
 /**
  * Monaco, bundled locally and handed to the loader (D2, D3, D5, D20).
  *
@@ -51,6 +53,15 @@ self.MonacoEnvironment = { getWorker: () => new EditorWorker() }
  * entry. `no-cdn.spec.ts` is the standing guard that nobody puts it back.
  */
 loader.config({ monaco })
+
+/**
+ * Instrument's two editor themes, defined on this instance before any editor
+ * asks for one by name. `CodeEditor.vue` reaches monaco through this module, so
+ * by the time it can render a `<VueMonacoEditor theme="instrument-light">` the
+ * definition is already here — an unknown theme name silently falls back to
+ * `vs`, which would look like a palette that did not quite take.
+ */
+registerEditorThemes(monaco)
 
 /**
  * Published on `window` for parity with the loader's own CDN path, which sets it

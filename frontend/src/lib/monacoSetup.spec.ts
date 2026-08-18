@@ -16,7 +16,12 @@ import { describe, expect, it, vi } from 'vitest'
  * source fact the diff carries, not a runtime one.
  */
 
-vi.mock('monaco-editor/esm/vs/editor/edcore.main', () => ({ editor: { getEditors: () => [] } }))
+/* `defineTheme` is part of the stub because this module now registers
+   Instrument's two editor themes on the instance it hands the loader. */
+const defineTheme = vi.fn<(name: string, data: unknown) => void>()
+vi.mock('monaco-editor/esm/vs/editor/edcore.main', () => ({
+  editor: { getEditors: () => [], defineTheme: (name: string, data: unknown) => { defineTheme(name, data) } },
+}))
 vi.mock('monaco-editor/esm/vs/basic-languages/html/html.contribution', () => ({}))
 vi.mock('monaco-editor/esm/vs/basic-languages/css/css.contribution', () => ({}))
 vi.mock('monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution', () => ({}))
@@ -59,6 +64,22 @@ describe('monacoSetup', () => {
    * module that imported `editor.api` or `editor.main` instead would load the
    * real thing and export far more than this one key.
    */
+  /*
+   * Registration has to happen on *this* instance and before any editor names a
+   * theme. Monaco does not complain about an unknown theme name — it quietly
+   * renders `vs` instead, so the failure looks like a palette that did not take
+   * rather than a missing call.
+   */
+  it('defines both Instrument editor themes on the instance it hands over', async () => {
+    await import('./monacoSetup')
+    const { INSTRUMENT_DARK, INSTRUMENT_LIGHT, THEME_DARK, THEME_LIGHT } = await import(
+      './editorTheme'
+    )
+
+    expect(defineTheme).toHaveBeenCalledWith(THEME_LIGHT, INSTRUMENT_LIGHT)
+    expect(defineTheme).toHaveBeenCalledWith(THEME_DARK, INSTRUMENT_DARK)
+  })
+
   it('imports edcore.main rather than another entry point', () => {
     expect(Object.keys(monaco)).toEqual(['editor'])
   })

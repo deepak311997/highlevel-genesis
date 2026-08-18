@@ -67,10 +67,6 @@
   --input: hsl(240 10% 89%);
   --ring: hsl(230 88% 56%);
 
-  /* The editor ground stays dark in both themes, as it has since Slice 7. */
-  --code-bg: hsl(228 12% 10%);
-  --code-fg: hsl(240 5% 87%);
-
   /* Shadows barely exist. Three steps are kept so the component API does not
      change, but each is a fraction of what it was: depth is not the device. */
   --sh-1: 0 1px 1px hsl(228 8% 10% / 0.03);
@@ -118,9 +114,6 @@
   --input: hsl(240 6% 18%);
   --ring: hsl(230 100% 70%);
 
-  --code-bg: hsl(240 5% 5%);
-  --code-fg: hsl(240 5% 87%);
-
   --sh-1: 0 1px 1px hsl(0 0% 0% / 0.4);
   --sh-2: 0 1px 2px hsl(0 0% 0% / 0.5);
   --sh-3: 0 4px 16px hsl(0 0% 0% / 0.55);
@@ -158,9 +151,6 @@
   --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
-
-  --color-code-bg: var(--code-bg);
-  --color-code-fg: var(--code-fg);
 
   --shadow-e1: var(--sh-1);
   --shadow-e2: var(--sh-2);
@@ -224,6 +214,22 @@
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
+  }
+
+  /*
+   * Instrument's micro-label: the small mono caps that name a region — a panel,
+   * a section, a column. Defined once here rather than as a class string at
+   * each site, because it is a decision of the language and not of the
+   * component that happens to use it.
+   */
+  .label-micro {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    line-height: 1.25;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
   }
 
   /* Digits line up in tables, timings, and counters. */
