@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import ProjectDeleteDialog from '@/components/ProjectDeleteDialog.vue'
@@ -26,6 +26,42 @@ import type { Project } from '@/lib/projectsApi'
  * rectangle.
  */
 const projects = useProjectsStore()
+
+/**
+ * How many rows a page holds.
+ *
+ * The server already caps a list at 100, so this is a reading problem rather
+ * than a fetching one: a hundred rows in a card is a scroll, not a list you can
+ * find anything in. Eight is what fits the card beside the status rail without
+ * the dashboard growing a scrollbar of its own.
+ */
+const PAGE_SIZE = 8
+
+const page = ref(0)
+
+const pageCount = computed(() => Math.ceil(projects.projects.length / PAGE_SIZE))
+const visible = computed(() =>
+  projects.projects.slice(page.value * PAGE_SIZE, page.value * PAGE_SIZE + PAGE_SIZE),
+)
+
+/** `1–8 of 23`, in the card's own words rather than "page 1 of 3": the rows are
+ *  what you are looking at, so the count should be of rows. */
+const range = computed(() => {
+  const first = page.value * PAGE_SIZE + 1
+  const last = Math.min(first + PAGE_SIZE - 1, projects.projects.length)
+  return `${first}–${last} of ${projects.projects.length}`
+})
+
+/*
+ * Delete the last project on the last page and the page you are standing on
+ * stops existing. Without this the card renders an empty list with rows behind
+ * it, which reads as "your projects are gone" rather than "you were on the last
+ * page". Clamping rather than resetting to zero keeps your place when the list
+ * shrinks by one somewhere above you.
+ */
+watch(pageCount, (count) => {
+  if (page.value > Math.max(count - 1, 0)) page.value = Math.max(count - 1, 0)
+})
 
 // A stored timestamp that does not parse yields no line at all; the name and
 // description still say what the project is.
@@ -104,12 +140,12 @@ onMounted(() => {
         <Skeleton class="h-5 w-40 rounded" />
       </div>
 
-      <ul v-else-if="projects.projects.length > 0" class="flex flex-col gap-3">
+      <ul v-else-if="projects.projects.length > 0" class="flex flex-col divide-y divide-border">
         <li
-          v-for="project in projects.projects"
+          v-for="project in visible"
           :key="project.id"
           data-testid="project-row"
-          class="flex items-start justify-between gap-4 rounded-md border border-border p-3"
+          class="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0"
         >
           <div class="flex min-w-0 flex-col gap-1">
             <RouterLink
@@ -162,6 +198,40 @@ onMounted(() => {
           No projects yet. Create one to start building against your CRM data.
         </p>
         <Button data-testid="projects-new" @click="startCreate()">New project</Button>
+      </div>
+
+      <!--
+        Only when there is more than one page. A pager that says "1–5 of 5" is
+        chrome describing the absence of a problem.
+      -->
+      <div
+        v-if="pageCount > 1"
+        data-testid="projects-pager"
+        class="flex items-center justify-between gap-3 pt-3"
+      >
+        <span class="tabular font-mono text-xs text-muted-foreground" data-testid="projects-range">
+          {{ range }}
+        </span>
+        <div class="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            :disabled="page === 0"
+            data-testid="projects-prev"
+            @click="page -= 1"
+          >
+            Previous
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            :disabled="page >= pageCount - 1"
+            data-testid="projects-next"
+            @click="page += 1"
+          >
+            Next
+          </Button>
+        </div>
       </div>
     </CardContent>
 

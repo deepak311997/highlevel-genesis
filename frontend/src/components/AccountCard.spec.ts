@@ -66,17 +66,29 @@ describe('AccountCard', () => {
     expect(loading.findAll('[data-slot="skeleton"]')).toHaveLength(2)
   })
 
-  /** AC-18. */
-  it('shows the display name when there is one', () => {
-    const wrapper = mountWith({ profile: { ...PROFILE, displayName: 'Alice' }, loaded: true })
-
-    expect(wrapper.find('[data-testid="account-name"]').text()).toBe('Alice')
-  })
-
-  it('falls back to the address when there is no display name', () => {
+  /*
+   * AC-18, narrowed on purpose. The card used to lead with a display name and
+   * fall back to the address — which meant an account that never set one, and
+   * nothing in this product ever does, rendered the same address twice: once
+   * as the heading and once beneath it. Harmless while the card was full-width
+   * and obvious the moment it moved into the dashboard's rail.
+   *
+   * The address is the identity here, so it is shown once and there is no
+   * second line to disagree with it. The API still carries `displayName`; the
+   * card simply does not read it.
+   */
+  it('shows the address as the identity, once', () => {
     const wrapper = mountWith({ profile: PROFILE, loaded: true })
 
-    expect(wrapper.find('[data-testid="account-name"]').text()).toBe('alice@example.test')
+    expect(wrapper.find('[data-testid="dashboard-email"]').text()).toBe('alice@example.test')
+    expect(wrapper.find('[data-testid="account-name"]').exists()).toBe(false)
+  })
+
+  it('ignores a display name even when the API sends one', () => {
+    const wrapper = mountWith({ profile: { ...PROFILE, displayName: 'Alice' }, loaded: true })
+
+    expect(wrapper.text()).not.toContain('Alice')
+    expect(wrapper.find('[data-testid="dashboard-email"]').text()).toBe('alice@example.test')
   })
 
   /* The e2e suite reads this id, and it is the assertion that the address now
@@ -147,4 +159,5 @@ describe('AccountCard', () => {
     expect(wrapper.find('[data-testid="account-error"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="dashboard-email"]').exists()).toBe(false)
   })
+
 })

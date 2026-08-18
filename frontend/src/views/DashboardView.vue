@@ -24,13 +24,29 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
-    <h1 class="text-lg font-semibold tracking-tight">Dashboard</h1>
+  <div class="flex flex-col gap-5">
+    <div class="flex flex-col gap-0.5">
+      <p class="label-micro">Genesis</p>
+      <h1 class="text-lg font-semibold tracking-tight">Dashboard</h1>
+    </div>
 
-    <AccountCard />
+    <!--
+      Projects lead and take two thirds; the account and the connection are
+      status, not work, so they move to a rail beside them.
 
-    <ConnectionPanel />
+      The old layout stacked all three full-width, which said they were equally
+      important and left the thing you actually came for below the fold on a
+      short window. `items-start` keeps the rail from stretching to the
+      projects column's height — a connection card with three lines in it
+      should be three lines tall.
+    -->
+    <div class="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+      <ProjectsCard />
 
-    <ProjectsCard />
+      <div class="flex flex-col gap-4">
+        <ConnectionPanel />
+        <AccountCard />
+      </div>
+    </div>
   </div>
 </template>

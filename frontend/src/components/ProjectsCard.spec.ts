@@ -1,5 +1,6 @@
 import { RouterLinkStub, flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { reactive } from 'vue'
 
 import type { Project } from '@/lib/projectsApi'
 
@@ -19,7 +20,16 @@ const store = vi.hoisted(() => ({
   remove: vi.fn(),
 }))
 
-vi.mock('@/stores/projects', () => ({ useProjectsStore: () => store }))
+/*
+ * Handed to the component through `reactive`, so a write *after* mount
+ * re-renders. `reactive` caches by target, so every call returns the same
+ * proxy and the component's store identity is stable.
+ *
+ * Writing to `store` directly still works for the setup-then-mount tests below
+ * — a proxy reads through to its target — it simply does not trigger. Only a
+ * test that changes something while mounted needs `live`.
+ */
+vi.mock('@/stores/projects', () => ({ useProjectsStore: () => reactive(store) }))
 
 import ProjectsCard from './ProjectsCard.vue'
 
@@ -76,6 +86,30 @@ beforeEach(() => {
   store.error = null
   vi.clearAllMocks()
 })
+
+/*
+ * Pagination.
+ *
+ * The server already caps a list at LIST_LIMIT (100), so this is a reading
+ * problem rather than a fetching one: a hundred rows in a card is a scroll, not
+ * a list you can find anything in. The window is client-side over what is
+ * already loaded, which also means paging costs no request and cannot fail.
+ *
+ * The case that matters is the last one: delete the only project on the last
+ * page and the page you are standing on stops existing. Without a clamp the
+ * card renders an empty list with rows behind it, which reads as "your projects
+ * are gone".
+ */
+function projectsNamed(count: number): unknown[] {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `proj-${index + 1}`,
+    name: `Project ${index + 1}`,
+    description: null,
+    locationId: null,
+    createdAt: '2026-08-18T09:00:00.000Z',
+    updatedAt: '2026-08-18T09:00:00.000Z',
+  }))
+}
 
 describe('ProjectsCard', () => {
   it('asks for the list as soon as it mounts', async () => {
@@ -289,5 +323,75 @@ describe('ProjectsCard', () => {
     expect(
       wrapper.find('[data-testid="project-row"]').findAllComponents(RouterLinkStub),
     ).toHaveLength(1)
+  })
+
+  describe('pagination', () => {
+    beforeEach(() => {
+      store.loaded = true
+      store.error = null
+    })
+
+    it('shows one page of rows and says which slice you are on', async () => {
+      store.projects = projectsNamed(23)
+
+      const wrapper = mount(ProjectsCard, MOUNT)
+      await flushPromises()
+
+      expect(wrapper.findAll('[data-testid="project-row"]')).toHaveLength(8)
+      expect(wrapper.find('[data-testid="projects-range"]').text()).toBe('1–8 of 23')
+    })
+
+    it('walks forward and back without refetching', async () => {
+      store.projects = projectsNamed(23)
+
+      const wrapper = mount(ProjectsCard, MOUNT)
+      await flushPromises()
+      store.load.mockClear()
+
+      await wrapper.find('[data-testid="projects-next"]').trigger('click')
+      expect(wrapper.find('[data-testid="projects-range"]').text()).toBe('9–16 of 23')
+      expect(wrapper.findAll('[data-testid="project-name"]')[0]?.text()).toBe('Project 9')
+
+      await wrapper.find('[data-testid="projects-prev"]').trigger('click')
+      expect(wrapper.find('[data-testid="projects-range"]').text()).toBe('1–8 of 23')
+      expect(store.load).not.toHaveBeenCalled()
+    })
+
+    it('stops at both ends', async () => {
+      store.projects = projectsNamed(10)
+
+      const wrapper = mount(ProjectsCard, MOUNT)
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="projects-prev"]').attributes('disabled')).toBeDefined()
+      await wrapper.find('[data-testid="projects-next"]').trigger('click')
+      expect(wrapper.find('[data-testid="projects-range"]').text()).toBe('9–10 of 10')
+      expect(wrapper.find('[data-testid="projects-next"]').attributes('disabled')).toBeDefined()
+    })
+
+    it('hides the controls when everything fits on one page', async () => {
+      store.projects = projectsNamed(5)
+
+      const wrapper = mount(ProjectsCard, MOUNT)
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="projects-pager"]').exists()).toBe(false)
+    })
+
+    /* Delete the last project on the last page and that page stops existing. */
+    it('falls back a page when the list shrinks under it', async () => {
+      store.projects = projectsNamed(9)
+
+      const wrapper = mount(ProjectsCard, MOUNT)
+      await flushPromises()
+      await wrapper.find('[data-testid="projects-next"]').trigger('click')
+      expect(wrapper.find('[data-testid="projects-range"]').text()).toBe('9–9 of 9')
+
+      reactive(store).projects = projectsNamed(8)
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="projects-range"]').exists()).toBe(false)
+      expect(wrapper.findAll('[data-testid="project-row"]')).toHaveLength(8)
+    })
   })
 })

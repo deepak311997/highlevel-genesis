@@ -23,6 +23,16 @@ const route = useRoute()
  */
 const contained = computed(() => route.meta.layout !== 'full')
 
+/**
+ * Where the wordmark goes.
+ *
+ * There is no separate "Dashboard" link any more: two controls a step apart
+ * that lead to the same place is one more thing to read for no more reach. The
+ * logo is the way back, and where back *is* depends on whether there is a
+ * session — the dashboard once verified, the landing page otherwise.
+ */
+const home = computed(() => (auth.initialised && auth.isVerified ? '/dashboard' : '/'))
+
 async function signOut(): Promise<void> {
   await auth.signOutNow()
   await router.push('/signin')
@@ -45,7 +55,11 @@ async function signOut(): Promise<void> {
   <div :class="contained ? 'flex min-h-screen flex-col' : 'flex h-screen flex-col overflow-hidden'">
     <header class="shrink-0 border-b bg-gradient-to-b from-raised to-card">
       <nav class="mx-auto flex max-w-5xl items-center gap-6 px-6 py-3">
-        <RouterLink to="/" class="flex items-center gap-2 text-base font-semibold tracking-tight">
+        <RouterLink
+          :to="home"
+          data-testid="header-home"
+          class="flex items-center gap-2 text-base font-semibold tracking-tight"
+        >
           <svg viewBox="0 0 96 96" class="h-5 w-5" aria-hidden="true">
             <g fill="none" stroke="var(--primary)" stroke-width="9" stroke-linecap="round">
               <path d="M67.80 28.20 A 28 28 0 1 0 57.58 74.31" />
@@ -57,13 +71,6 @@ async function signOut(): Promise<void> {
           Genesis
         </RouterLink>
 
-        <RouterLink
-          v-if="auth.initialised && auth.isVerified"
-          to="/dashboard"
-          class="text-sm text-muted-foreground hover:text-foreground"
-        >
-          Dashboard
-        </RouterLink>
         <div class="ml-auto flex items-center gap-3">
           <!--
             Nothing auth-dependent renders until Firebase has answered. Without
