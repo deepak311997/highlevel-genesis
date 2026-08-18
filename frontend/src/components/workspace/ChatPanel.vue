@@ -14,25 +14,15 @@ import { formatTime } from '@/lib/date'
 import { useWorkspaceStore } from '@/stores/workspace'
 
 /**
- * The conversation, and the one panel of the three with real behaviour today.
+ * The conversation.
  *
- * Four states, all shipped: loading, bubbles, empty, and error-with-retry. The
- * order of the branches is `ProjectsCard`'s and for its reason — **error first**. A
- * failed first request leaves `messagesLoaded` false, so a loading branch ahead of
- * the error would render a skeleton forever and never show the failure, and a
- * transcript shown beside a failure notice leaves the user unable to tell which of
- * the two is current.
+ * Four states: loading, bubbles, empty, and error-with-retry. **Error first**,
+ * because a failed first request leaves `messagesLoaded` false — a loading branch
+ * ahead of it would render a skeleton forever and never show the failure.
  *
- * Slice 5 replaces Slice 4's stub badge with a `Generating…` one, shown only
- * while a stream is open (D30). That is F6.2's streaming status, and it
- * discharges D14's cost: adaptive thinking means the first token can be seconds
- * away, so the pause is a labelled state rather than a frozen screen.
- *
- * **The streaming placeholder sits inside the transcript list**, after the
- * bubbles, so the existing scroll machinery covers it and there is one mechanism
- * rather than two. It cannot collide with the empty state: the user's own
- * message is appended before the stream opens, so `bubbles.length` is never 0
- * while `generating` is true.
+ * **The streaming placeholder sits inside the transcript list**, after the bubbles,
+ * so the existing scroll machinery covers it. It cannot collide with the empty
+ * state: the user's own message is appended before the stream opens.
  */
 const workspace = useWorkspaceStore()
 
@@ -41,11 +31,8 @@ const workspace = useWorkspaceStore()
  *
  * `ScrollArea` renders Reka UI's viewport *inside* itself, so a `ref` on the
  * component would address the wrapper rather than the overflowing box. The viewport
- * carries `data-reka-scroll-area-viewport` — a documented attribute Reka UI emits
- * into its own injected stylesheet — so it is found by query. A query rather than a
- * ref because the element belongs to a vendored component's internals: reaching for
- * it by attribute is honest about that, where forwarding a ref through the wrapper
- * would mean editing upstream code to expose it.
+ * carries a documented attribute, so it is found by query — which is honest about
+ * reaching into a vendored component's internals.
  */
 const scrollRoot = ref<HTMLElement | null>(null)
 
@@ -56,17 +43,15 @@ function scrollToBottom(): void {
 }
 
 /*
- * `flush: 'post'` so the DOM has the new bubble in it before the height is read —
- * scrolling to a `scrollHeight` measured before the append lands one message short,
- * every time.
+ * `flush: 'post'` so the DOM has the new bubble in it before the height is read:
+ * a `scrollHeight` measured before the append lands one message short, every time.
  */
 watch(() => workspace.messages.length, scrollToBottom, { flush: 'post' })
 
 /*
- * And again on every token (AC-43). A separate watcher rather than a wider
- * source: the two grow at completely different rates — one message per turn
- * against hundreds of tokens — and measuring once on mount would leave the
- * viewport a screen behind by the third token.
+ * And again on every token. A separate watcher rather than a wider source: the two
+ * grow at completely different rates — one message per turn against hundreds of
+ * tokens.
  */
 watch(() => workspace.streamingText, scrollToBottom, { flush: 'post' })
 
@@ -74,25 +59,19 @@ watch(() => workspace.streamingText, scrollToBottom, { flush: 'post' })
 onMounted(scrollToBottom)
 
 /**
- * The transcript, each message carrying the time it renders with.
- *
- * Derived once here rather than calling `formatTime` twice per bubble in the
- * template — once to decide whether there is a line and once to fill it — which is
- * two `Intl` formats per message per render, and a condition and its content that
- * could in principle disagree. `null` is the whole of D29: a stored timestamp that
- * will not parse yields no line at all rather than "Invalid Date".
+ * The transcript, each message carrying the time it renders with — derived once
+ * rather than calling `formatTime` twice per bubble in the template. `null` is a
+ * stored timestamp that will not parse, which yields no line at all rather than
+ * "Invalid Date".
  */
 const bubbles = computed(() =>
   workspace.messages.map((message) => ({ ...message, time: formatTime(message.createdAt) })),
 )
 
 /**
- * The composer is available in every branch except loading.
- *
- * A failed transcript still gets one: the send route is a different request from the
- * list route, and a user whose history would not load can still say something. What
- * has no composer is the tick before we know whether the project even has a
- * transcript.
+ * The composer is available in every branch except loading. A failed transcript
+ * still gets one: the send route is a different request from the list route, and a
+ * user whose history would not load can still say something.
  */
 const showComposer = computed(
   () =>
@@ -100,19 +79,11 @@ const showComposer = computed(
 )
 
 /**
- * Retry re-opens the stream for the same transcript — no new user message (D26).
- *
- * That is free given D2: the endpoint's whole input is the project id, and the
- * transcript is the server's own record. It is also exactly the case D6's
- * trailing-assistant drop exists for, since an interrupted turn leaves the
- * transcript ending on an assistant message.
- */
-/**
  * What a stored failure says out loud.
  *
- * The wire carries a code rather than a sentence, because the sentence is a
- * product decision and the code is a fact — and because a transcript written
- * today should still read correctly after the copy is rewritten tomorrow.
+ * The wire carries a code rather than a sentence, because the sentence is a product
+ * decision and the code is a fact — and a transcript written today should still
+ * read correctly after the copy is rewritten tomorrow.
  */
 function failureCopy(code: string): string {
   if (code === 'refused') return 'The model declined to answer that.'
@@ -129,7 +100,7 @@ function retry(): void {
   <section class="flex h-full min-h-0 flex-col" data-testid="chat-panel">
     <header class="flex shrink-0 items-center justify-between gap-3 px-3 py-2.5">
       <h2 class="label-micro">Chat</h2>
-      <!-- Only while a stream is open (D30, AC-39). -->
+      <!-- Only while a stream is open. -->
       <Badge v-if="workspace.generating" variant="secondary" data-testid="chat-generating">
         Generating…
       </Badge>
@@ -186,22 +157,18 @@ function retry(): void {
                   : 'border-border-strong',
               ]"
             >
-              <!-- Prose and chips, never code (D6, D29). The same component the
-                   placeholder below uses, because they render the same string. -->
+              <!-- Prose and chips, never code. The same component the placeholder
+                   below uses, because they render the same string. -->
               <MessageBody v-if="message.content !== ''" :content="message.content" />
 
               <!--
-                **The failure, in the transcript rather than beside it.**
-
-                A turn that failed is now written down, carrying why, so it
-                survives a refresh and reads in order with everything else. It
-                used to exist only as a flag in memory: the reply vanished, a
-                banner appeared under the panel, and reloading swallowed the
-                whole turn as if the user had never spoken.
+                **The failure, in the transcript rather than beside it.** A turn
+                that failed is written down, carrying why, so it survives a refresh
+                and reads in order with everything else — where before, the reply
+                vanished, a banner appeared, and reloading swallowed the whole turn.
 
                 The Retry sits on the message it belongs to, so a transcript with
-                two failures in it offers two, each attached to what it would
-                re-run.
+                two failures offers two.
               -->
               <div
                 v-if="message.error !== null"
@@ -220,7 +187,7 @@ function retry(): void {
                 </Button>
               </div>
               <div class="flex items-center gap-2">
-                <!-- A timestamp that will not parse yields no line at all (D29). -->
+                <!-- A timestamp that will not parse yields no line at all. -->
                 <span
                   v-if="message.time !== null"
                   data-testid="message-time"
@@ -229,9 +196,8 @@ function retry(): void {
                   {{ message.time }}
                 </span>
                 <!--
-                  One marker for four causes (D23): a client disconnect, a
-                  mid-stream failure, `stop_reason: 'max_tokens'` and the byte
-                  cap. It says what it means rather than showing a bare icon.
+                  One marker for four causes: a client disconnect, a mid-stream
+                  failure, `max_tokens` and the byte cap.
                 -->
                 <span
                   v-if="message.truncated"
@@ -254,20 +220,17 @@ function retry(): void {
               data-role="assistant"
               class="flex max-w-[94%] flex-col gap-2 self-start rounded-md border border-border-strong bg-raised px-3 py-2"
             >
-              <!--
-                `streaming` draws the caret. The same component as the persisted
-                bubble, for D7's reason: one string, one rendering.
-              -->
+              <!-- `streaming` draws the caret. The same component as the persisted
+                   bubble: one string, one rendering. -->
               <MessageBody
                 v-if="workspace.streamingText !== ''"
                 :content="workspace.streamingText"
                 streaming
               />
               <!--
-                Below the prose and separated, because it describes the turn
-                rather than being part of the reply. It is the whole bubble while
-                the model is still thinking, which is the several seconds this
-                panel previously spent looking hung.
+                Below the prose and separated, because it describes the turn rather
+                than being part of the reply. It is the whole bubble while the model
+                is still thinking.
               -->
               <StreamingStatus />
             </li>
@@ -283,10 +246,9 @@ function retry(): void {
 
     <!--
       Below the transcript and above the composer, so it reads as being about the
-      reply rather than about what the user is typing (AC-41). The transcript
-      stays visible beside it: a failed generation does not invalidate the
-      conversation, and hiding it would hide the partial the server just
-      persisted — which is the thing F8.2 exists to preserve.
+      reply rather than what the user is typing. The transcript stays visible: a
+      failed generation does not invalidate the conversation, and hiding it would
+      hide the partial the server just persisted.
     -->
     <div
       v-if="workspace.generateError"
@@ -302,11 +264,9 @@ function retry(): void {
     </div>
 
     <!--
-      A turn whose files were refused (D8, D17). Its own notice rather than
-      `generateError`'s, and deliberately without a Retry: the reply itself
-      succeeded and is in the transcript above, so the action that belongs to a
-      failed generation is the wrong action for this problem. What went wrong is
-      the model's output, and the fix is the next prompt.
+      A turn whose files were refused. Its own notice, and deliberately without a
+      Retry: the reply itself succeeded and is in the transcript above, so what went
+      wrong is the model's output and the fix is the next prompt.
     -->
     <div
       v-if="workspace.generateFileError"

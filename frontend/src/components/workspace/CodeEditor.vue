@@ -22,56 +22,47 @@ import { useWorkspaceStore } from '@/stores/workspace'
 /**
  * Monaco — **the only place in the app that touches an editor instance**.
  *
- * Three things here cannot be inferred from the code, and each has cost someone
- * a day somewhere:
+ * Three things here cannot be inferred from the code:
  *
- * **1. The instance lives in a `shallowRef`, and everything else Monaco hands us
- * lives in plain closure variables** (D6). `ref()` over an editor makes Vue walk
- * a very large third-party object graph on every property access. AC-28 asserts
- * the stored value is `===` the emitted one, which a deep reactive proxy is not —
- * so this is a test rather than a comment.
+ * **1. The instance lives in a `shallowRef`**, and everything else Monaco hands us
+ * lives in plain closure variables. `ref()` over an editor makes Vue walk a very
+ * large third-party object graph on every property access, and a deep reactive
+ * proxy is not `===` the value that was emitted.
  *
- * **2. Streamed chunks are `applyEdits`, never `setValue`** (D8, P4, R1). The
- * whole decision is `lib/editorContent.ts`, with its own tests; what happens here
- * is turning its answer into a range. `setValue` would snap the viewport to line
- * 1 on every chunk, reset the undo stack, and re-tokenize the whole document each
- * time — and it would pass every test below L5.
+ * **2. Streamed chunks are `applyEdits`, never `setValue`.** The decision is
+ * `lib/editorContent.ts`'s; what happens here is turning its answer into a range.
+ * `setValue` would snap the viewport to line 1 on every chunk, reset the undo
+ * stack, and re-tokenize the whole document — and would pass every test below L5.
  *
  * **3. `applying` is load-bearing, not defensive.** The wrapper emits
- * `update:value` on *every* content change including ours: its handler compares
- * the new text against `props.value`, which is `undefined` here because the prop
- * is deliberately unbound, so the comparison is never equal. Without the guard,
+ * `update:value` on *every* content change including ours, and its own comparison
+ * is never equal because `props.value` is deliberately unbound. Without the guard
  * every streamed byte would be written back into the store and every generated
  * file would arrive dirty.
  *
- * A fourth, in `onBeforeUnmount`: the wrapper's own `onUnmounted` disposes
- * `editorRef.value.getModel()`, and the `lg` breakpoint unmounts this component
- * on a window resize — so the registry detaches the editor *before* the wrapper
- * gets there, or it would hand out a disposed model afterwards.
+ * A fourth, in `onBeforeUnmount`: the wrapper's `onUnmounted` disposes the model,
+ * and the `lg` breakpoint unmounts this component on a window resize — so the
+ * registry detaches the editor first, or it would hand out a disposed model.
  *
- * The wrapper's `path`, `value` and `language` props are all left unbound (D7).
- * Bound, its watcher owns the models — keyed in monaco's *global* registry, so
- * two projects share one `index.html` — and drives the document with `setValue`
- * per change, which is hazard 2 by construction. What it still owns is what we
- * actually want from it: the loader, editor construction, the container, the
- * sizing and the theme.
+ * The wrapper's `path`, `value` and `language` props are all left unbound. Bound,
+ * its watcher owns the models — keyed in monaco's *global* registry, so two
+ * projects share one `index.html` — and drives the document with `setValue` per
+ * change, which is hazard 2 by construction.
  */
 
 const workspace = useWorkspaceStore()
 
 /**
- * The dynamic import's three states (D20).
- *
- * Monaco is roughly a megabyte gzipped and the sign-in page has no use for it, so
- * `lib/monacoSetup` is behind `import()` and lands in its own chunk. That is also
- * what earns this screen an honest loading state and an honest error state.
+ * The dynamic import's three states. Monaco is roughly a megabyte gzipped and the
+ * sign-in page has no use for it, so `monacoSetup` is behind `import()` — which is
+ * also what earns this screen an honest loading and error state.
  */
 const status = ref<'loading' | 'failed' | 'ready'>('loading')
 
 /** `shallowRef`, for the same reason the editor is one: this is all of monaco. */
 const monaco = shallowRef<MonacoModelApi | null>(null)
 
-/** D6. Never `ref`, never `reactive` — AC-28 is the assertion. */
+/** Never `ref`, never `reactive` — see the header. */
 const editor = shallowRef<monacoEditor.IStandaloneCodeEditor | null>(null)
 
 /** Not reactive either: nothing renders it, and it holds text models. */
@@ -89,8 +80,8 @@ async function load(): Promise<void> {
     monaco.value = setup.monaco
     status.value = 'ready'
   } catch {
-    // The message is ours rather than the browser's: "Failed to fetch
-    // dynamically imported module" is not a sentence for a user.
+    // The message is ours rather than the browser's: "Failed to fetch dynamically
+    // imported module" is not a sentence for a user.
     status.value = 'failed'
   }
 }
@@ -108,25 +99,23 @@ const showSkeleton = computed(
 )
 
 /**
- * A fresh object every time, because the wrapper's `options` watcher is
- * `deep: true` and calls `updateOptions` with whatever it is given.
- *
- * `readOnlyMessage` is set **always**, not only while generating: a message on an
- * editable editor is inert, and `exactOptionalPropertyTypes` makes a conditional
- * `undefined` an error rather than a shrug.
+ * A fresh object every time, because the wrapper's `options` watcher is `deep` and
+ * calls `updateOptions` with whatever it is given. `readOnlyMessage` is set always:
+ * a message on an editable editor is inert, and a conditional `undefined` is an
+ * error under `exactOptionalPropertyTypes`.
  */
 const options = computed<monacoEditor.IStandaloneEditorConstructionOptions>(() => ({
-  // D18's load-bearing one: the editor sits inside a `ResizablePanelGroup`, and
-  // without this Monaco never re-measures when the splitter moves — the text
-  // stays clipped at the old width, with no error attached.
+  // Load-bearing: the editor sits inside a `ResizablePanelGroup`, and without this
+  // Monaco never re-measures when the splitter moves — the text stays clipped at
+  // the old width, with no error attached.
   automaticLayout: true,
   minimap: { enabled: false },
   scrollBeyondLastLine: false,
   tabSize: 2,
   wordWrap: 'on',
   fontFamily: 'var(--font-mono)',
-  // D9, restated in the widget: a generation's batch and this editor are two
-  // writers for one document, and the collision is silent.
+  // A generation's batch and this editor are two writers for one document, and the
+  // collision is silent.
   readOnly: workspace.generating,
   readOnlyMessage: { value: 'Read-only while a reply is generating.' },
 }))
@@ -151,10 +140,9 @@ function activate(): void {
 }
 
 /**
- * Bring the active model in line with what the store says the file is.
- *
- * The `null` edit is the common case and costs nothing: our own writes land back
- * here through the store, and the comparison terminates the round trip by itself.
+ * Bring the active model in line with what the store says the file is. The `null`
+ * edit is the common case and costs nothing: our own writes land back here through
+ * the store, and the comparison terminates the round trip by itself.
  */
 function syncModel(): void {
   const instance = editor.value
@@ -182,7 +170,7 @@ function syncModel(): void {
           text: edit.text,
         },
       ])
-      // The view follows the tail — the whole of "tokens appear live" (D8).
+      // The view follows the tail — the whole of "tokens appear live".
       instance.revealLine(model.getLineCount())
     } else {
       model.applyEdits([{ range: model.getFullModelRange(), text: edit.text }])
@@ -196,15 +184,15 @@ function onMount(instance: monacoEditor.IStandaloneCodeEditor): void {
   editor.value = instance
 
   // The anonymous model the wrapper creates because `path` is unbound. Captured
-  // before we swap ours in, and disposed after — left alive it leaks one model
-  // per mount, and the breakpoint remounts this component on a window resize.
+  // before we swap ours in, and disposed after — left alive it leaks one model per
+  // mount, and the breakpoint remounts this component on a window resize.
   const anonymous = instance.getModel()
 
   rebuildRegistry()
   anonymous?.dispose()
 }
 
-/** A registry belongs to one project; leaving disposes every model it made (D7). */
+/** A registry belongs to one project; leaving disposes every model it made. */
 function rebuildRegistry(): void {
   const instance = editor.value
   registry?.disposeAll(instance)
@@ -222,12 +210,9 @@ function rebuildRegistry(): void {
 watch(() => workspace.projectId, rebuildRegistry)
 
 /**
- * One watcher over both, rather than two.
- *
- * Separately, the content watcher could fire before the path watcher in a flush
- * and apply the *new* file's text to the *old* model — one file's bytes written
- * into another's document. Watching the pair makes that ordering a statement
- * rather than a coincidence.
+ * One watcher over both, rather than two: separately, the content watcher could
+ * fire before the path watcher in a flush and apply the *new* file's text to the
+ * *old* model.
  */
 watch(
   () => [workspace.selectedPath, workspace.editorContent] as const,
@@ -254,9 +239,8 @@ onBeforeUnmount(() => {
 <template>
   <!-- `flex-1` inside its parent's flex column, and a flex row itself, so no link
        in this chain is a percentage of a flex-sized box — which does not resolve,
-       and leaves Monaco measuring a container with no height (D19, R4). The
-       wrapper's own `height: 100%` below is then belt-and-braces: as a flex item
-       it stretches to this box either way. `relative` is for the two overlays. -->
+       and leaves Monaco measuring a container with no height. `relative` is for
+       the two overlays. -->
   <div data-testid="code-editor" class="relative flex min-h-0 w-full flex-1">
     <VueMonacoEditor
       v-if="status === 'ready'"
