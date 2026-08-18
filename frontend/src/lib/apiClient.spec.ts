@@ -19,6 +19,7 @@ vi.mock('@/lib/appCheck', () => ({
 
 const { authHeaders, registerSessionExpiredHook, request } = await import('./apiClient')
 const { ApiError } = await import('./api')
+const { createSessionExpiredHook } = await import('./sessionExpiry')
 
 /**
  * The one authenticated fetch, shared by every typed client above it.
@@ -247,6 +248,110 @@ describe('the session-expiry hook', () => {
     await expect(request('/api/anything')).rejects.toThrow()
 
     expect(hook).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * The latch across more than one death — the seam, with the real hook wired.
+ *
+ * The cases above assert `apiClient`'s half in isolation, with a `vi.fn()` for a
+ * hook. These three are the composition, because the invariant AC-15 and E6 are
+ * actually about is **one navigation**, and neither module can state that on its
+ * own: `apiClient` decides how often the hook runs and `sessionExpiry` decides
+ * what a run does.
+ */
+describe('the latch, across more than one death', () => {
+  const DEAD = { error: 'Sign in and try again.', code: 'unauthenticated' }
+
+  function wire(signOut: () => Promise<void>): {
+    replace: ReturnType<typeof vi.fn>
+    signedIn: { value: boolean }
+  } {
+    const signedIn = { value: true }
+    const replace = vi.fn(() => Promise.resolve())
+
+    registerSessionExpiredHook(
+      createSessionExpiredHook({
+        isSignedIn: () => signedIn.value,
+        currentPath: () => '/projects/abc',
+        signOut,
+        replace,
+      }),
+    )
+
+    return { replace, signedIn }
+  }
+
+  /*
+   * E6, and the half no single-module test could make: three calls in flight
+   * against a dead session produce one navigation, not three racing each other
+   * over what `?redirect=` should say.
+   */
+  it('navigates once for three concurrent 401s', async () => {
+    const { replace, signedIn } = wire(() => {
+      signedIn.value = false
+      return Promise.resolve()
+    })
+    fetchMock.mockResolvedValue(response(DEAD, 401))
+
+    await Promise.allSettled([request('/api/one'), request('/api/two'), request('/api/three')])
+    await vi.waitFor(() => {
+      expect(replace).toHaveBeenCalledTimes(1)
+    })
+
+    expect(replace).toHaveBeenCalledTimes(1)
+  })
+
+  /*
+   * The second death in a page session is a **new** death.
+   *
+   * The latch used to clear only on a call that *succeeded*, and a session that
+   * died and stayed dead cannot produce one — so a user who signed in again into
+   * an account the server no longer accepts sat on a workspace whose every panel
+   * read "Sign in and try again." with nothing to click. That is precisely the
+   * state this hook exists to get them out of, resurrected for every occurrence
+   * after the first.
+   */
+  it('signs the user out again when a second session dies', async () => {
+    const { replace, signedIn } = wire(() => {
+      signedIn.value = false
+      return Promise.resolve()
+    })
+    fetchMock.mockResolvedValue(response(DEAD, 401))
+
+    await expect(request('/api/one')).rejects.toThrow()
+    await vi.waitFor(() => {
+      expect(replace).toHaveBeenCalledTimes(1)
+    })
+
+    // They signed in again, and this session is dead too.
+    signedIn.value = true
+    await expect(request('/api/two')).rejects.toThrow()
+
+    await vi.waitFor(() => {
+      expect(replace).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  /*
+   * A sign-out that throws — `signOut(auth)` ends in a storage write, and
+   * private browsing and quota both refuse one — must not strand the session.
+   * Latching on a failed attempt would mean no later 401 ever gets its own.
+   */
+  it('lets the next 401 try again when signing out failed', async () => {
+    const signOut = vi.fn(() => Promise.reject(new Error('storage is full')))
+    wire(signOut)
+    fetchMock.mockResolvedValue(response(DEAD, 401))
+
+    await expect(request('/api/one')).rejects.toThrow()
+    await vi.waitFor(() => {
+      expect(signOut).toHaveBeenCalledTimes(1)
+    })
+
+    await expect(request('/api/two')).rejects.toThrow()
+    await vi.waitFor(() => {
+      expect(signOut).toHaveBeenCalledTimes(2)
+    })
   })
 })
 
