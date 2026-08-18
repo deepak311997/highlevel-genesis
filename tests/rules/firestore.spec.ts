@@ -449,11 +449,14 @@ function file() {
 
 async function seedFile(uid = 'alice', projectId = 'proj-1', id = 'index.html'): Promise<void> {
   await env.withSecurityRulesDisabled(async (ctx) => {
-    await setDoc(doc(asModular(ctx.firestore()), `users/${uid}/projects/${projectId}/files/${id}`), {
-      ...file(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    })
+    await setDoc(
+      doc(asModular(ctx.firestore()), `users/${uid}/projects/${projectId}/files/${id}`),
+      {
+        ...file(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    )
   })
 }
 

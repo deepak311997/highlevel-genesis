@@ -22,7 +22,14 @@ import {
 const AT = Timestamp.fromDate(new Date('2026-08-18T09:12:04.113Z'))
 
 function snapshot(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return { seq: 2, createdAt: AT, origin: 'generation', fileCount: 4, totalBytes: 14_022, ...overrides }
+  return {
+    seq: 2,
+    createdAt: AT,
+    origin: 'generation',
+    fileCount: 4,
+    totalBytes: 14_022,
+    ...overrides,
+  }
 }
 
 /** A complete snapshot with one field taken away — the shape a half-write leaves. */

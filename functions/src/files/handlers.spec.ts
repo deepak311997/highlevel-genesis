@@ -479,7 +479,11 @@ describe('planFileWrites', () => {
       true,
     )
 
-    expect(outcome).toEqual({ writes: [], resulting: [], error: { reason: 'path', path: '../secrets.js' } })
+    expect(outcome).toEqual({
+      writes: [],
+      resulting: [],
+      error: { reason: 'path', path: '../secrets.js' },
+    })
   })
 })
 

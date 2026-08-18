@@ -75,9 +75,7 @@ test.describe('Slice 11 — snapshots and restore', () => {
 
     await generate(page, '__alt_files add an about page')
     await expect(page.getByTestId('file-row')).toHaveCount(VERSION_TWO.length)
-    expect(await treePaths(page)).toEqual(
-      VERSION_TWO.map((path) => expect.stringContaining(path)),
-    )
+    expect(await treePaths(page)).toEqual(VERSION_TWO.map((path) => expect.stringContaining(path)))
 
     /*
      * The open tab was rewritten by the second turn, so the editor now holds
@@ -127,9 +125,7 @@ test.describe('Slice 11 — snapshots and restore', () => {
      * app would be a hybrid of two versions that looks fine in the tree.
      */
     await expect(page.getByTestId('file-row')).toHaveCount(VERSION_ONE.length)
-    expect(await treePaths(page)).toEqual(
-      VERSION_ONE.map((path) => expect.stringContaining(path)),
-    )
+    expect(await treePaths(page)).toEqual(VERSION_ONE.map((path) => expect.stringContaining(path)))
     await expect(page.getByTestId('file-row').filter({ hasText: 'about.html' })).toHaveCount(0)
 
     // And the open tab was re-read from the server, so it shows version 1 again.

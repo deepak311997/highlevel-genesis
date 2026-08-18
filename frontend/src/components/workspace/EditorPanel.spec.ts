@@ -109,7 +109,9 @@ describe('EditorPanel', () => {
     const wrapper = wide()
 
     const order = wrapper
-      .findAll('[data-testid="file-tree"], [data-testid="editor-tabs"], [data-testid="file-editor"]')
+      .findAll(
+        '[data-testid="file-tree"], [data-testid="editor-tabs"], [data-testid="file-editor"]',
+      )
       .map((element) => element.attributes('data-testid'))
 
     expect(order).toEqual(['file-tree', 'editor-tabs', 'file-editor'])

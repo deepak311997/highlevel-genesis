@@ -289,7 +289,11 @@ describe('appendAssistantMessage', () => {
   it('carries the truncated flag it was given into the document', async () => {
     const db = fakeDb(storedAssistant(true))
 
-    await appendAssistantMessage('alice', 'proj-1', turn('Here is a contact dash', { truncated: true }))
+    await appendAssistantMessage(
+      'alice',
+      'proj-1',
+      turn('Here is a contact dash', { truncated: true }),
+    )
 
     expect((db.written as Record<string, unknown>)['truncated']).toBe(true)
   })
