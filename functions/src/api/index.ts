@@ -1,9 +1,10 @@
 import cors from 'cors'
 import express, { type Express } from 'express'
+import { defineSecret } from 'firebase-functions/params'
 
 import { authRouter } from '../auth'
 import { filesRouter } from '../files'
-import { list } from '../lib/env'
+import { listFrom } from '../lib/env'
 import { errorHandler } from '../lib/errors'
 import { hlRouter } from '../hl'
 import { messagesRouter } from '../messages'
@@ -15,6 +16,22 @@ import { healthRouter } from './health'
 
 /** Origins permitted when no ALLOWED_ORIGINS is configured — local dev only. */
 const DEFAULT_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173']
+
+/**
+ * The allowlist, from Secret Manager.
+ *
+ * Not a credential, and not treated as one for secrecy's sake: it is here
+ * because the alternative is `functions/.env`, which the deploy has to
+ * synthesise — and on a public repository that synthesis printed every line into
+ * a world-readable log.
+ *
+ * **Bound to `generate` as well as `api`**, in `index.ts`. `generate.ts` imports
+ * `originAllowlist` from this module, so the streaming endpoint's CORS layer
+ * reads this same value; a binding on `api` alone would leave `generate`
+ * resolving it to `''`, falling back to the localhost defaults, and rejecting the
+ * real site in production.
+ */
+export const ALLOWED_ORIGINS = defineSecret('ALLOWED_ORIGINS')
 
 /**
  * Decide per request, rather than resolving a list once at module scope.
@@ -40,7 +57,7 @@ export function originAllowlist(
     return
   }
 
-  callback(null, list('ALLOWED_ORIGINS', DEFAULT_ORIGINS).includes(origin))
+  callback(null, listFrom(ALLOWED_ORIGINS.value(), DEFAULT_ORIGINS).includes(origin))
 }
 
 export function createApiApp(): Express {

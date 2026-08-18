@@ -2,9 +2,9 @@ import { setGlobalOptions } from 'firebase-functions/v2'
 import { onRequest } from 'firebase-functions/v2/https'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 
-import { createApiApp } from './api'
+import { ALLOWED_ORIGINS, createApiApp } from './api'
 import { deleteExpiredUnverifiedUsers } from './auth/cleanup'
-import { HL_CLIENT_SECRET } from './hl/config'
+import { HL_CLIENT_ID, HL_CLIENT_SECRET, HL_REDIRECT_URI, HL_VERSION_ID } from './hl/config'
 import { OAUTH_STATE_SECRET } from './hl/state'
 
 setGlobalOptions({ region: 'asia-south1', maxInstances: 10 })
@@ -23,18 +23,33 @@ export const api = onRequest(
     // allowlist in ./api is the only thing answering.
     cors: false,
     /*
-     * Both of the OAuth flow's secrets, and only they.
+     * Everything the OAuth flow and the CORS layer are configured with.
      *
-     * Declared here rather than beside their readers, which is the opposite of
-     * `ANTHROPIC_API_KEY`'s rule and deliberate: a `defineSecret` binds nothing
-     * by itself — it is this list that grants the function access — and `api` is
-     * one function assembled from a dozen routers, so the grant has to be stated
-     * where the function is, not once per module that happens to read one.
-     * `index.spec.ts` asserts both, and asserts `generate` has neither, because
-     * the emulator resolves a secret from `process.env` whether it was granted
-     * or not and so cannot tell a bound one from an unbound one.
+     * The grant is stated here rather than beside each reader, which is the
+     * opposite of `ANTHROPIC_API_KEY`'s rule and deliberate: a `defineSecret`
+     * binds nothing by itself — it is *this list* that grants the function
+     * access — and `api` is one function assembled from a dozen routers, so the
+     * grant belongs where the function is, not once per module that reads one.
+     *
+     * Only two of these are credentials. The other four are configuration that
+     * used to live in `functions/.env`, and moved for a reason that has nothing
+     * to do with how sensitive they are: that file is uploaded as plain Cloud Run
+     * environment, and the deploy has to *synthesise* it — which on a public
+     * repository meant printing every line into a world-readable log. There is no
+     * longer a step that writes it.
+     *
+     * `index.spec.ts` asserts all six, because the emulator resolves a secret
+     * from `process.env` whether it was granted or not and so cannot tell a bound
+     * one from an unbound one.
      */
-    secrets: [HL_CLIENT_SECRET, OAUTH_STATE_SECRET],
+    secrets: [
+      HL_CLIENT_SECRET,
+      OAUTH_STATE_SECRET,
+      HL_CLIENT_ID,
+      HL_VERSION_ID,
+      HL_REDIRECT_URI,
+      ALLOWED_ORIGINS,
+    ],
   },
   createApiApp(),
 )

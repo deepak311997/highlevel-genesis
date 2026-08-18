@@ -21,16 +21,22 @@ function required(name: string, value: string | undefined): string {
   return trimmed
 }
 
+/**
+ * What the SDKs this app loads actually read, and nothing else.
+ *
+ * `firebase apps:sdkconfig WEB` prints six values, and it is tempting to paste
+ * all six. But this app imports `firebase/app`, `firebase/auth` and App Check —
+ * none of which looks at `storageBucket` or `messagingSenderId`. Those two are
+ * for the Storage and Messaging SDKs, which are not here. Carrying them meant
+ * two more values in a `.env`, in a repository variable, and in a deploy log,
+ * for no behaviour at all.
+ *
+ * `appId` stays: App Check identifies the registered web app by it.
+ */
 const config: FirebaseOptions = {
   apiKey: required('VITE_FIREBASE_API_KEY', env.VITE_FIREBASE_API_KEY),
   authDomain: required('VITE_FIREBASE_AUTH_DOMAIN', env.VITE_FIREBASE_AUTH_DOMAIN),
   projectId: required('VITE_FIREBASE_PROJECT_ID', env.VITE_FIREBASE_PROJECT_ID),
-  ...(env.VITE_FIREBASE_STORAGE_BUCKET && {
-    storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET,
-  }),
-  ...(env.VITE_FIREBASE_MESSAGING_SENDER_ID && {
-    messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  }),
   ...(env.VITE_FIREBASE_APP_ID && { appId: env.VITE_FIREBASE_APP_ID }),
 }
 

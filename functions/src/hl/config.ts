@@ -1,6 +1,6 @@
 import { defineSecret } from 'firebase-functions/params'
 
-import { baseUrl, emulatorNumber, emulatorOverride, required, requiredSecret } from '../lib/env'
+import { baseUrl, emulatorNumber, emulatorOverride, requiredSecret } from '../lib/env'
 
 /**
  * HighLevel configuration, resolved per call rather than at module scope.
@@ -48,8 +48,20 @@ export const HL_SCOPES = [
   'calendars/events.write',
 ] as const
 
+/**
+ * The marketplace app's client id.
+ *
+ * A Secret Manager value rather than a `functions/.env` line, and not because it
+ * is a credential — it is half of a public pair, and it travels in every
+ * authorize URL. It is here because `functions/.env` is uploaded as plain Cloud
+ * Run environment *and* has to be synthesised by the deploy, which on a public
+ * repository meant printing it into a world-readable log. Secret Manager removes
+ * the file, and with it the step that leaked.
+ */
+export const HL_CLIENT_ID = defineSecret('HL_CLIENT_ID')
+
 export function hlClientId(): string {
-  return required('HL_CLIENT_ID')
+  return requiredSecret(HL_CLIENT_ID, 'HL_CLIENT_ID')
 }
 
 /**
@@ -64,8 +76,10 @@ export function hlClientId(): string {
  * but it is configured separately rather than derived, because "they happen to
  * be equal today" is not a contract HighLevel has offered.
  */
+export const HL_VERSION_ID = defineSecret('HL_VERSION_ID')
+
 export function hlVersionId(): string {
-  return required('HL_VERSION_ID')
+  return requiredSecret(HL_VERSION_ID, 'HL_VERSION_ID')
 }
 
 /**
@@ -97,8 +111,12 @@ export function hlClientSecret(): string {
  * marketplace app's Redirect URL field, the authorize URL, and the token
  * exchange. Read from here everywhere so those three cannot drift.
  */
+export const HL_REDIRECT_URI = defineSecret('HL_REDIRECT_URI')
+
 export function hlRedirectUri(): string {
-  return emulatorOverride('HL_TEST_REDIRECT_URI') ?? required('HL_REDIRECT_URI')
+  return (
+    emulatorOverride('HL_TEST_REDIRECT_URI') ?? requiredSecret(HL_REDIRECT_URI, 'HL_REDIRECT_URI')
+  )
 }
 
 export function hlAuthorizeBase(): string {

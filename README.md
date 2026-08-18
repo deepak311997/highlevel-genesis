@@ -259,11 +259,33 @@ gcloud auth login          # as an owner of the Firebase project
 scripts/setup-deploy.sh    # --dry-run first, if you like
 ```
 
-That creates the `github-deployer` service account, grants it the ten roles a
+That creates the `github-deployer` service account, grants it the roles a
 `firebase deploy` actually needs (enumerated in the script, each with the failure it
 prevents — never `roles/owner`), puts a key in the `FIREBASE_SERVICE_ACCOUNT` repository
-secret, and copies the non-secret configuration out of your local `.env` files into
-repository variables. It is idempotent; re-run it whenever a variable changes.
+secret, and pushes every configured value into Secret Manager. It is idempotent; re-run it
+whenever a value changes.
+
+**GitHub holds one secret and nothing else** — the service account key. Everything else is
+either in Secret Manager or already committed:
+
+|                                   | Where it lives                     | Why                                                                                                                                                                                          |
+| --------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FIREBASE_SERVICE_ACCOUNT`        | GitHub secret                      | The one credential the workflow itself needs.                                                                                                                                                |
+| Project id, Firestore database id | `.firebaserc`, `firebase.json`     | Already committed. A copy in GitHub would be a second source of truth for a value that has one — and `functions/.env.example` says outright that the database id must match `firebase.json`. |
+| `FRONTEND_ENV`                    | Secret Manager                     | The SPA's `.env`, fetched straight to disk at deploy time.                                                                                                                                   |
+| The six function values           | Secret Manager, as `defineSecret`s | Attached to the Cloud Run revision as `secretKeyRef`s and resolved when the instance starts.                                                                                                 |
+
+The reason is that GitHub prints a step's whole `env:` block into the run log and masks a
+secret but not a variable — and **this repository is public**, so a repository variable was a
+published value. Moving configuration to Secret Manager removes the step that published it
+rather than masking its output.
+
+To be clear about what that does and does not buy: the `VITE_*` values are **not secret**.
+Vite compiles all of them into the bundle, which is served to every visitor, so anyone can
+read them from the browser — that is how Firebase web config is designed to work, and access
+is controlled by Auth, the Firestore rules that deny every client outright, and App Check.
+What changes is that configuration has one home instead of two, and the deploy log is no
+longer one of the places it appears.
 
 The three credentials — `ANTHROPIC_API_KEY`, `HL_CLIENT_SECRET`, `OAUTH_STATE_SECRET` — are
 `defineSecret`s bound to the functions that read them, so they live in **Secret Manager** and

@@ -116,7 +116,19 @@ export function baseUrl(name: string, fallback: string): string {
  * allowlist is an entry that matches an empty `Origin` header.
  */
 export function list(name: string, fallback: readonly string[]): readonly string[] {
-  const configured = (process.env[name] ?? '')
+  return listFrom(process.env[name], fallback)
+}
+
+/**
+ * The same parse, for a value that did not come from `process.env` by name.
+ *
+ * A `SecretParam` hands back a string, so a comma-separated *secret* — the origin
+ * allowlist is one — cannot go through {@link list}. Splitting it here rather than
+ * at the call site keeps one definition of what "a configured list" means, which
+ * is the point of this module.
+ */
+export function listFrom(raw: string | undefined, fallback: readonly string[]): readonly string[] {
+  const configured = (raw ?? '')
     .split(',')
     .map((value) => value.trim())
     .filter((value) => value !== '')

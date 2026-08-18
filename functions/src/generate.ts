@@ -2,7 +2,7 @@ import cors from 'cors'
 import express, { type Express, type NextFunction, type Request, type Response } from 'express'
 import { onRequest } from 'firebase-functions/v2/https'
 
-import { originAllowlist } from './api'
+import { ALLOWED_ORIGINS, originAllowlist } from './api'
 import { requireAppCheck } from './auth/appCheck'
 import { withVerifiedUser } from './auth/requireUser'
 import { emulatorNumber } from './lib/env'
@@ -217,8 +217,18 @@ export const generate = onRequest(
     // The SDK plus an accumulating string is more than 256 MiB deserves to be
     // tight against.
     memory: '512MiB',
-    // Declared here rather than in index.ts, beside the code that reads it.
-    secrets: [ANTHROPIC_API_KEY],
+    /*
+     * The model key, declared beside the code that reads it.
+     *
+     * `ALLOWED_ORIGINS` joins it because `originAllowlist` above is imported from
+     * `./api` — this endpoint's CORS layer reads the same configured value the
+     * CRUD one does. Without the binding it would resolve to `''` here, fall back
+     * to the localhost defaults, and reject the real site in production while
+     * `api` accepted it: a difference between two functions that share one
+     * allowlist, which is the kind of thing no test outside `index.spec.ts` can
+     * see.
+     */
+    secrets: [ANTHROPIC_API_KEY, ALLOWED_ORIGINS],
     // Not `cors: true` — see the allowlist above.
     cors: false,
   },

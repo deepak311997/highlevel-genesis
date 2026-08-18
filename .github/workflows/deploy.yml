@@ -59,9 +59,6 @@ jobs:
     permissions:
       contents: read
 
-    env:
-      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
-
     steps:
       - name: Resolve the commit to deploy
         id: target
@@ -93,75 +90,79 @@ jobs:
           npm --prefix frontend ci
           npm --prefix functions ci
 
-      # Everything here is compiled into the bundle and is public by design — it
-      # identifies the Firebase project, it does not authorise anything. Held as
-      # repository *variables* rather than secrets for exactly that reason: a
-      # secret that is printed on every page view is a secret that teaches people
-      # to ignore the label.
-      - name: Write frontend/.env
-        env:
-          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
-          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
-          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
-          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
-          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
-          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
-          VITE_GOOGLE_RECAPTCHA_V3_KEY: ${{ vars.VITE_GOOGLE_RECAPTCHA_V3_KEY }}
-        run: |
-          # Values reach the shell through `env:` above, never through an
-          # expression inside this script — an interpolated value containing a
-          # quote or a newline would otherwise be substituted into the source of
-          # the script before bash ever saw it.
-          {
-            echo "VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY"
-            echo "VITE_FIREBASE_AUTH_DOMAIN=$VITE_FIREBASE_AUTH_DOMAIN"
-            echo "VITE_FIREBASE_PROJECT_ID=$VITE_FIREBASE_PROJECT_ID"
-            echo "VITE_FIREBASE_STORAGE_BUCKET=$VITE_FIREBASE_STORAGE_BUCKET"
-            echo "VITE_FIREBASE_MESSAGING_SENDER_ID=$VITE_FIREBASE_MESSAGING_SENDER_ID"
-            echo "VITE_FIREBASE_APP_ID=$VITE_FIREBASE_APP_ID"
-            echo "VITE_GOOGLE_RECAPTCHA_V3_KEY=$VITE_GOOGLE_RECAPTCHA_V3_KEY"
-            # Blank: production is same-origin through the Hosting rewrite.
-            echo "VITE_FUNCTIONS_BASE_URL="
-          } > frontend/.env
+      # Ahead of the build, because the build's configuration comes from Secret
+      # Manager now and this is what grants access to it. Writes the key to a
+      # file and exports GOOGLE_APPLICATION_CREDENTIALS, which both gcloud and
+      # firebase-tools read. The file lives on the runner and dies with it.
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
-          if [ -z "$VITE_FIREBASE_PROJECT_ID" ]; then
-            echo "::error::VITE_FIREBASE_PROJECT_ID is not set. See scripts/setup-deploy.sh." >&2
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # Read out of the repository rather than held in GitHub, because both are
+      # already committed — `.firebaserc` names the project and `firebase.json`
+      # names the Firestore database. A copy in a repository variable would be a
+      # second source of truth for a value that already has one, and
+      # functions/.env.example says outright that the database id "must match
+      # `database` in firebase.json". Deriving it is how that stops being
+      # something a human has to remember.
+      - name: Resolve the project from the repository
+        id: project
+        run: |
+          project=$(node -p "require('./.firebaserc').projects.default")
+          database=$(node -p "require('./firebase.json').firestore.database")
+          echo "project=$project" >> "$GITHUB_OUTPUT"
+          echo "database=$database" >> "$GITHUB_OUTPUT"
+          echo "project=$project database=$database"
+
+      # The SPA's configuration, as the literal file, straight from Secret
+      # Manager to disk.
+      #
+      # It never passes through a shell variable or an `env:` block, which is the
+      # point: GitHub prints a step's `env:` block into the run log, and this
+      # repository is public. The previous version of this step published every
+      # value it wrote.
+      #
+      # To be clear about what this does and does not buy — **none of these
+      # values is secret**. Vite compiles all of them into the bundle, which is
+      # served to every visitor, so anyone can read them from the browser. What
+      # changes is that configuration now has exactly one home instead of two,
+      # and the deploy log is no longer one of the places it is published.
+      #
+      #   Contents: see frontend/.env.example
+      #   Set it:   gcloud secrets versions add FRONTEND_ENV --data-file=frontend/.env
+      - name: Fetch the SPA configuration
+        env:
+          PROJECT: ${{ steps.project.outputs.project }}
+        run: |
+          if ! gcloud secrets versions access latest \
+                 --secret=FRONTEND_ENV --project="$PROJECT" > frontend/.env; then
+            echo "::error::Could not read the FRONTEND_ENV secret. See scripts/setup-deploy.sh." >&2
             exit 1
           fi
 
-      # Nothing secret. Both of the values that were once here —
-      # HL_CLIENT_SECRET and OAUTH_STATE_SECRET — are `defineSecret`s bound to
-      # the `api` function, so they come from Secret Manager at runtime and this
-      # workflow never handles them. That is why the only repository secret below
-      # is the service account key: the deploy needs permission to bind secrets,
-      # not the secrets themselves.
+          # Never the values — a count and the names, so a truncated or empty
+          # secret is visible here rather than three steps later as a blank
+          # Firebase config in the browser.
+          echo "wrote frontend/.env with $(grep -c '^[A-Z]' frontend/.env) settings:"
+          grep -oE '^[A-Z_]+' frontend/.env | sed 's/^/  /'
+
+          if ! grep -q '^VITE_FIREBASE_PROJECT_ID=.' frontend/.env; then
+            echo "::error::FRONTEND_ENV has no VITE_FIREBASE_PROJECT_ID." >&2
+            exit 1
+          fi
+
+      # One line, derived above. Everything else the functions need is a
+      # `defineSecret` — the two credentials and the four configuration values
+      # that used to live here — so there is nothing left for this file to carry
+      # and nothing in it worth hiding.
       - name: Write functions/.env
         env:
-          FIRESTORE_DATABASE_ID: ${{ vars.FIRESTORE_DATABASE_ID }}
-          HL_CLIENT_ID: ${{ vars.HL_CLIENT_ID }}
-          HL_VERSION_ID: ${{ vars.HL_VERSION_ID }}
-          HL_REDIRECT_URI: ${{ vars.HL_REDIRECT_URI }}
-          ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS }}
+          DATABASE: ${{ steps.project.outputs.database }}
         run: |
-          {
-            echo "FIRESTORE_DATABASE_ID=$FIRESTORE_DATABASE_ID"
-            echo "HL_CLIENT_ID=$HL_CLIENT_ID"
-            echo "HL_VERSION_ID=$HL_VERSION_ID"
-            echo "HL_REDIRECT_URI=$HL_REDIRECT_URI"
-            echo "ALLOWED_ORIGINS=$ALLOWED_ORIGINS"
-            # Blank uses the real marketplace and API hosts. Set only to point
-            # a deployment at a fake, which production never does.
-            echo "HL_AUTHORIZE_BASE="
-            echo "HL_API_BASE="
-            # The route that sends a real SMS or email stays off. Only the exact
-            # string `true` would enable it; see functions/.env.example.
-            echo "HL_ALLOW_MESSAGE_SEND="
-          } > functions/.env
-
-          if [ -z "$FIRESTORE_DATABASE_ID" ]; then
-            echo "::error::FIRESTORE_DATABASE_ID is not set. See scripts/setup-deploy.sh." >&2
-            exit 1
-          fi
+          echo "FIRESTORE_DATABASE_ID=$DATABASE" > functions/.env
+          cat functions/.env
 
       - name: Build the SPA
         run: npm --prefix frontend run build
@@ -172,13 +173,6 @@ jobs:
       # our own code, so neither would notice a dependency importing it for us.
       - name: No Firestore SDK in the bundle
         run: node scripts/check-no-firestore.mjs frontend/dist
-
-      # Writes the key to a file and exports GOOGLE_APPLICATION_CREDENTIALS,
-      # which firebase-tools reads. The file lives on the runner and dies with
-      # it.
-      - uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
       - name: Resolve deploy targets
         id: only
@@ -202,7 +196,7 @@ jobs:
         run: |
           npx firebase deploy \
             --only "${{ steps.only.outputs.only }}" \
-            --project "$FIREBASE_PROJECT_ID" \
+            --project "${{ steps.project.outputs.project }}" \
             --non-interactive \
             --force \
             --message "${{ steps.target.outputs.ref }}"
@@ -215,7 +209,7 @@ jobs:
       - name: Smoke test the deployed API
         if: ${{ steps.only.outputs.only != 'firestore:rules,firestore:indexes' }}
         env:
-          SITE: https://${{ vars.FIREBASE_PROJECT_ID }}.web.app
+          SITE: https://${{ steps.project.outputs.project }}.web.app
         run: |
           echo "GET $SITE/api/health"
 
@@ -253,7 +247,7 @@ jobs:
       - name: Summary
         if: always()
         env:
-          SITE: https://${{ vars.FIREBASE_PROJECT_ID }}.web.app
+          SITE: https://${{ steps.project.outputs.project }}.web.app
         run: |
           {
             echo "### Deploy"
@@ -262,7 +256,7 @@ jobs:
             echo "|---|---|"
             echo "| Commit | \`${{ steps.target.outputs.ref }}\` |"
             echo "| Targets | \`${{ steps.only.outputs.only }}\` |"
-            echo "| Project | \`$FIREBASE_PROJECT_ID\` |"
+            echo "| Project | \`${{ steps.project.outputs.project }}\` |"
             echo "| Site | $SITE |"
             echo "| Trigger | \`${{ github.event_name }}\` |"
           } >> "$GITHUB_STEP_SUMMARY"

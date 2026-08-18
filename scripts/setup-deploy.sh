@@ -62,6 +62,7 @@ ROLES=(
   roles/cloudscheduler.admin              # the onSchedule sweep needs a Scheduler job
   roles/serviceusage.serviceUsageConsumer # quota project for every API call above
   roles/eventarc.admin                    # v2 triggers are wired through Eventarc
+  roles/billing.viewer                    # read the plan; firebase-tools checks it before deploying
 )
 
 # ─── preflight ────────────────────────────────────────────────────────────────
@@ -79,8 +80,50 @@ REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
 say "repository:     $REPO"
 echo
 
+# ─── APIs ─────────────────────────────────────────────────────────────────────
+#
+# Enabled here rather than left to the deploy, because the deploy's version of
+# this failure is bad: `firebase deploy` reports a permission error naming the
+# caller, not a disabled API, so it reads as "the service account is wrong" and
+# sends you to re-grant roles that were never the problem.
+#
+# `secretmanager` is the one that was actually off on this project — which meant
+# no secret existed, and so the deployed `generate` held no model key. Nothing
+# surfaced that: a function with an unresolvable secret deploys perfectly well
+# and answers 500 on the first real request.
+say "1. APIs"
+APIS=(
+  # Checked by firebase-tools before it will deploy a v2 function, because those
+  # require the Blaze plan. The check itself needs this API, so with it disabled
+  # the deploy dies on `Cloud Billing API has not been used in project …` after
+  # it has already uploaded rules and indexes — a half-applied deploy, and a
+  # message about billing when nothing is wrong with the billing account.
+  cloudbilling.googleapis.com     # the plan check that gates every function deploy
+  secretmanager.googleapis.com    # the three defineSecrets
+  cloudfunctions.googleapis.com   # the functions
+  run.googleapis.com              # ...which are Cloud Run services
+  cloudbuild.googleapis.com       # ...built by Cloud Build
+  artifactregistry.googleapis.com # ...into an image
+  eventarc.googleapis.com         # v2 triggers
+  cloudscheduler.googleapis.com   # the onSchedule sweep
+  firebasehosting.googleapis.com  # the SPA
+  firebaserules.googleapis.com    # Firestore rules
+  firestore.googleapis.com        # the database itself
+  iamcredentials.googleapis.com   # the service account signing its own tokens
+)
+
+ENABLED="$(gcloud services list --enabled --project "$PROJECT_ID" --format='value(config.name)')"
+for api in "${APIS[@]}"; do
+  if grep -qx "$api" <<<"$ENABLED"; then
+    echo "  $api"
+  else
+    echo "  $api — enabling"
+    run gcloud services enable "$api" --project "$PROJECT_ID" --quiet
+  fi
+done
+
 # ─── the service account ──────────────────────────────────────────────────────
-say "1. service account"
+say "2. service account"
 if gcloud iam service-accounts describe "$SA_EMAIL" --project "$PROJECT_ID" >/dev/null 2>&1; then
   echo "  $SA_EMAIL exists"
 else
@@ -91,7 +134,7 @@ else
   echo "  created $SA_EMAIL"
 fi
 
-say "2. roles"
+say "3. roles"
 for role in "${ROLES[@]}"; do
   echo "  $role"
   # `--condition=None` because without it gcloud prompts, and this runs in CI-ish
@@ -106,7 +149,7 @@ done
 
 # ─── the key ──────────────────────────────────────────────────────────────────
 if $WITH_KEY; then
-  say "3. key → FIREBASE_SERVICE_ACCOUNT"
+  say "4. key → FIREBASE_SERVICE_ACCOUNT"
   if $DRY_RUN; then
     echo "  would mint a key and pipe it to gh secret set"
   else
@@ -127,43 +170,103 @@ if $WITH_KEY; then
     echo "  set (the key file was deleted)"
   fi
 else
-  say "3. key — skipped (--no-key)"
+  say "4. key — skipped (--no-key)"
 fi
 
-# ─── variables ────────────────────────────────────────────────────────────────
+# ─── configuration ────────────────────────────────────────────────────────────
 #
-# Read out of the local .env files rather than asked for, so the deployed
-# configuration is the one that was verified by hand locally. Nothing secret is
-# read: the two values that were once in functions/.env are `defineSecret`s now
-# and live in Secret Manager, which the deploy binds but never reads.
-say "4. repository variables"
+# Everything the deploy needs beyond the key itself lives in Secret Manager, and
+# nothing is held in GitHub. Three reasons, in order of how much they matter:
+#
+#  1. GitHub prints a step's whole `env:` block into the run log and masks a
+#     secret but not a variable. This repository is public, so a variable there
+#     was a published value.
+#  2. One home instead of two. The functions already read their credentials from
+#     Secret Manager; splitting the rest across repository variables meant the
+#     answer to "what is this deployment configured with" was in two places.
+#  3. The project id and the Firestore database id are in neither: they are read
+#     from `.firebaserc` and `firebase.json`, which are committed. A copy in
+#     GitHub would be a second source of truth for a value that has one.
+#
+# **The SPA's values are not secret and this does not pretend otherwise.** Vite
+# compiles every one of them into the bundle, which is served to every visitor.
+# What Secret Manager buys for them is a single home and a deploy log that does
+# not republish them — not confidentiality, which is impossible for a value the
+# browser must have.
+say "5. configuration → Secret Manager"
 
 value_of() { # file, key
   [[ -f "$1" ]] || return 0
   sed -n "s/^$2=//p" "$1" | head -1 | sed 's/[[:space:]]*$//'
 }
 
-set_var() { # name, value
+# Piped, never passed as an argument: an argument is visible in `ps` for as long
+# as the call takes.
+put_secret() { # name, value
   local name="$1" value="${2:-}"
   if [[ -z "$value" ]]; then
     echo "  $name — blank locally, skipped"
     return 0
   fi
-  echo "  $name"
-  run gh variable set "$name" --repo "$REPO" --body "$value"
+  if $DRY_RUN; then
+    printf '  would set %s (%d chars, from stdin)\n' "$name" "${#value}"
+    return 0
+  fi
+  if gcloud secrets describe "$name" --project "$PROJECT_ID" >/dev/null 2>&1; then
+    printf '%s' "$value" | gcloud secrets versions add "$name" --data-file=- --project "$PROJECT_ID" >/dev/null
+    echo "  $name — new version"
+  else
+    printf '%s' "$value" | gcloud secrets create "$name" \
+      --replication-policy=automatic --data-file=- --project "$PROJECT_ID" >/dev/null
+    echo "  $name — created"
+  fi
 }
 
-set_var FIREBASE_PROJECT_ID "$PROJECT_ID"
-
-for key in VITE_FIREBASE_API_KEY VITE_FIREBASE_AUTH_DOMAIN VITE_FIREBASE_PROJECT_ID \
-           VITE_FIREBASE_STORAGE_BUCKET VITE_FIREBASE_MESSAGING_SENDER_ID \
-           VITE_FIREBASE_APP_ID VITE_GOOGLE_RECAPTCHA_V3_KEY; do
-  set_var "$key" "$(value_of frontend/.env "$key")"
+# The four that the `api` function declares with defineSecret. The credentials it
+# also declares — HL_CLIENT_SECRET, OAUTH_STATE_SECRET, ANTHROPIC_API_KEY — are
+# checked below rather than written, because this script never handles a value a
+# human has not already put somewhere deliberate.
+for key in HL_CLIENT_ID HL_VERSION_ID HL_REDIRECT_URI ALLOWED_ORIGINS; do
+  put_secret "$key" "$(value_of functions/.env "$key")"
 done
 
-for key in FIRESTORE_DATABASE_ID HL_CLIENT_ID HL_VERSION_ID HL_REDIRECT_URI ALLOWED_ORIGINS; do
-  set_var "$key" "$(value_of functions/.env "$key")"
+# The SPA build's whole .env, as one secret, because the deploy writes it back
+# out as one file. Per-key secrets would be seven entries and seven chances for
+# the workflow and this script to disagree about the list.
+if [[ -f frontend/.env ]]; then
+  # Only the keys the app reads. `firebase apps:sdkconfig WEB` prints two more —
+  # storageBucket and messagingSenderId — and src/lib/firebase.ts stopped
+  # carrying them, since nothing this app loads looks at either.
+  FRONTEND_ENV="$(grep -E '^(VITE_FIREBASE_API_KEY|VITE_FIREBASE_AUTH_DOMAIN|VITE_FIREBASE_PROJECT_ID|VITE_FIREBASE_APP_ID|VITE_GOOGLE_RECAPTCHA_V3_KEY)=' frontend/.env || true)"
+  FRONTEND_ENV+=$'\n# Blank: production is same-origin through the Hosting rewrite.\nVITE_FUNCTIONS_BASE_URL=\n'
+  put_secret FRONTEND_ENV "$FRONTEND_ENV"
+else
+  echo "  FRONTEND_ENV — no frontend/.env here, skipped"
+fi
+
+# ─── GitHub cleanup ───────────────────────────────────────────────────────────
+#
+# Earlier versions of this script put all of the above in GitHub, as variables
+# and then as secrets. Both are removed rather than left: a stale variable still
+# resolves in a workflow expression, so one left behind is a value that keeps
+# being published long after the workflow stopped reading it.
+say "6. GitHub — only the key should remain"
+
+for key in FIREBASE_PROJECT_ID FIRESTORE_DATABASE_ID VITE_FIREBASE_API_KEY \
+           VITE_FIREBASE_AUTH_DOMAIN VITE_FIREBASE_PROJECT_ID VITE_FIREBASE_STORAGE_BUCKET \
+           VITE_FIREBASE_MESSAGING_SENDER_ID VITE_FIREBASE_APP_ID \
+           VITE_GOOGLE_RECAPTCHA_V3_KEY HL_CLIENT_ID HL_VERSION_ID \
+           HL_REDIRECT_URI ALLOWED_ORIGINS; do
+  if gh variable list --repo "$REPO" --json name -q '.[].name' | grep -qx "$key"; then
+    echo "  deleting variable $key"
+    run gh variable delete "$key" --repo "$REPO"
+  fi
+  if gh secret list --repo "$REPO" --json name -q '.[].name' | grep -qx "$key"; then
+    echo "  deleting secret $key"
+    run gh secret delete "$key" --repo "$REPO"
+  fi
 done
+echo "  keeping FIREBASE_SERVICE_ACCOUNT"
 
 # ─── Secret Manager ───────────────────────────────────────────────────────────
 #
@@ -172,7 +275,7 @@ done
 # about the binding — and that is a five-second check here against a ten-minute
 # failure in CI. Creating one would mean this script handling secret values,
 # which it deliberately never does.
-say "5. Secret Manager"
+say "7. Secret Manager — the credentials"
 MISSING=()
 for secret in ANTHROPIC_API_KEY HL_CLIENT_SECRET OAUTH_STATE_SECRET; do
   if gcloud secrets describe "$secret" --project "$PROJECT_ID" >/dev/null 2>&1; then
