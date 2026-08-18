@@ -25,15 +25,20 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 | 7 — Monaco editor | ✅ merged to `main` |
 | 8 — HighLevel API proxy | ✅ merged to `main` |
 | 9 — HighLevel knowledge injection | ✅ merged to `main` |
-| 10 | not started |
-| 11 — Snapshots & restore | ✅ built, reviewed, PR open from `slice/11-snapshots-restore` |
+| 10 — Live preview | ✅ built, reviewed, PR open from `slice/10-live-preview` |
+| 11 — Snapshots & restore | ✅ merged to `main` |
 | 12–13 | not started |
 
 **Slice 8 ran ahead of 7**, which §4's dependency line permits: it depends on 2 alone,
 and 2 merged on day 1. Nothing in 7 is owed to it. **Slice 11 ran ahead of 10** for the
-same reason: §4 makes it depend on 6 alone. It adds no frame to the SSE protocol, nothing
-to the system prompt and nothing to the preview, so the slice it passes is owed nothing by
-it either. It was cut against `main` before Slice 9 merged and rebased onto it at ship
+same reason: §4 makes it depend on 6 alone. It adds no frame to the SSE protocol and nothing
+to the system prompt — but "nothing to the preview" turned out to be wrong, and Slice 10's
+ship-time rebase is where that was found. A restore rewrites the whole stored file set,
+which is exactly what Slice 10's `filesRevision` counts, so 11's `restoreSnapshot` had to
+move it and could not: the counter did not exist on `main` when 11 was written. Slice 10's
+PRD had named the obligation in its out-of-scope table and it was discharged on 10's branch
+instead. **Running ahead is cheap only when the slice that gets passed owes nothing back;
+here it owed one line, and only the rebase asked for it.** It was cut against `main` before Slice 9 merged and rebased onto it at ship
 time; the two overlap in `functions/src/files/handlers.ts`, `generate.ts` and the fake
 LLM, and that rebase is written up below.
 
@@ -49,9 +54,31 @@ been red since Slice 1: `vite.config.ts` threw at config load on any checkout wi
 8080 — the *development* emulator — so off CI it "passed" by finding a dev session, loading
 its rules over that session's and calling `clearFirestore()` on it.
 
-**Suite, re-run in full on `slice/11-snapshots-restore` at ship time, rebased on `main`
-(2026-08-18):** typecheck 0 · lint 0 · **2,005 unit** (1,136 functions · 848 frontend ·
-21 scripts) · **52 rules** · **378 integration** · **17 e2e**. All six green — 2,452 cases.
+**Suite, re-run in full on `slice/10-live-preview` at ship time, rebased on `main`
+(2026-08-18):** typecheck 0 · lint 0 · **2,119 unit** (1,136 functions · 962 frontend ·
+21 scripts) · **52 rules** · **378 integration** · **18 e2e**. All six green — 2,567 cases.
+
+Slice 10 added 114 frontend unit cases and 1 e2e walk, and **nothing anywhere else**: no
+route, no collection, no rules block, no prompt text, no dependency, no server file at all
+(D19). The rules and integration counts not moving is the correct outcome rather than an
+omission, and the PRD's definition of done required it to be *measured* — `git diff
+main...HEAD --stat` lists nothing under `functions/`, `firestore.rules`, `tests/rules/` or
+`tests/integration/`, so both are unchanged by construction.
+
+**The Slice 10 rebase produced one conflict and one defect, and they were not the same
+thing.** Slice 11 merged while 10 was in review; both slices added fields to the workspace
+store's exported interface, which git flagged and which took thirty seconds to resolve. What
+git could not flag is that `restoreSnapshot` — written on a `main` where the preview did not
+exist — rewrote the whole file set and moved neither preview counter, so a twenty-file
+rollback left the preview rendering the version the user had just replaced while a one-file
+save moved the hint. Typecheck, lint and all 2,566 other cases were green either side of it.
+Fixed on this branch, test-first, in the commit that names it. **This is the second slice
+running whose ship-time rebase found something no check could**, after Slice 9's, and both
+were found because the full suite is re-run *after* the rebase rather than before it.
+
+**Prior run, `slice/11-snapshots-restore` at ship time (2026-08-18):** typecheck 0 · lint 0 ·
+**2,005 unit** (1,136 functions · 848 frontend · 21 scripts) · **52 rules** ·
+**378 integration** · **17 e2e** — 2,452 cases.
 
 Slice 11 added 85 functions unit cases, 62 frontend unit cases, 14 rules cases, 49
 integration cases and 1 e2e walk. The rules count moving is the point: two new collections

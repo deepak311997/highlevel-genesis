@@ -1,0 +1,903 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Sealed Room — Slice 10 design companion</title>
+
+<style>
+  /* ---------------------------------------------------------------
+     Identity: a sealed room, seen through glass.
+
+     Each companion takes its shape from the slice's own idea. Slice 3
+     was a card index; Slice 4 a transcript with a gutter; Slice 5 a
+     tape; Slice 8 a permit desk. This slice's idea is a ROOM WITH NO
+     AIR OF ITS OWN: a document that has no origin, no session, no
+     storage and no way to open a connection, in which we nonetheless
+     run code an LLM wrote, over a real business's CRM data.
+
+     So the page is built as glass and chamber. The sandbox is always
+     the cold, unlit surface; our own page is always the warm, lit one;
+     and the only thing that ever passes between them is a tray through
+     a hatch — a structured message, never a credential.
+
+     Colour is doing one job: WHICH SIDE OF THE GLASS AM I ON.
+       void   — the sandbox: opaque origin, nothing of ours inside
+       host   — our page: the session, the ID token, the App Check
+       crm    — HighLevel: upstream, third party, never ours
+       deny   — every refusal and every blocked path
+       stale  — reserved for the one hazard on the page, and nothing
+                else: a document that is already dead still talking
+     Every stroke and fill is a token, so both themes come from one
+     set of values.
+     ------------------------------------------------------------ */
+  :root {
+    --paper:       #eef1f4;
+    --surface:     #fafcfd;
+    --surface-2:   #e0e6ea;
+    --ink:         #0d1417;
+    --ink-soft:    #47555c;
+    --ink-faint:   #7a878e;
+    --rule:        #c6d0d6;
+    --rule-soft:   #dbe2e7;
+
+    /* the sandbox: no origin, no credential, no storage */
+    --void:        #3d4a63;
+    --void-wash:   #dfe3ec;
+    /* our page: the session lives here and never leaves */
+    --host:        #0a6a63;
+    --host-wash:   #d5eeeb;
+    /* HighLevel */
+    --crm:         #8a5a12;
+    --crm-wash:    #f8ead3;
+    /* refused, blocked, dropped */
+    --deny:        #a81f34;
+    --deny-wash:   #fadfe4;
+    /* the stale-document race, and nothing else */
+    --stale:       #9c2f7a;
+    --stale-wash:  #f9dff1;
+
+    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --pad: clamp(1rem, 4vw, 3rem);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:       #0c1114;
+      --surface:     #141b1f;
+      --surface-2:   #1d262b;
+      --ink:         #e7eef1;
+      --ink-soft:    #a2b0b7;
+      --ink-faint:   #74838a;
+      --rule:        #2a353b;
+      --rule-soft:   #1f292e;
+
+      --void:        #93a2c4;
+      --void-wash:   #1a2130;
+      --host:        #47c3b7;
+      --host-wash:   #06302d;
+      --crm:         #e0b163;
+      --crm-wash:    #33240a;
+      --deny:        #f0808f;
+      --deny-wash:   #3a1119;
+      --stale:       #e58cc8;
+      --stale-wash:  #351029;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  html { color-scheme: light dark; }
+
+  body {
+    margin: 0;
+    padding: var(--pad) var(--pad) 5rem;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  main { max-width: 62rem; margin: 0 auto; }
+
+  /* --- masthead: a pane of glass with a hatch in it ---------------- */
+  header.masthead {
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    background:
+      linear-gradient(115deg, var(--surface) 0%, var(--surface) 46%, var(--surface-2) 46.4%, var(--surface-2) 100%);
+    padding: clamp(1.25rem, 3vw, 2.25rem);
+    margin-bottom: 2.5rem;
+  }
+  .kicker {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 0.6rem;
+  }
+  h1 {
+    font-size: clamp(1.6rem, 4.2vw, 2.5rem);
+    line-height: 1.15;
+    margin: 0 0 0.75rem;
+    letter-spacing: -0.02em;
+  }
+  .standfirst {
+    margin: 0;
+    max-width: 46rem;
+    color: var(--ink-soft);
+    font-size: 1.03rem;
+  }
+  .meta {
+    margin: 1.4rem 0 0;
+    padding-top: 1rem;
+    border-top: 1px solid var(--rule-soft);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.6rem;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--ink-faint);
+  }
+  .meta b { color: var(--ink-soft); font-weight: 600; }
+
+  /* --- sections --------------------------------------------------- */
+  section { margin: 0 0 3.25rem; }
+  h2 {
+    font-size: 1.32rem;
+    letter-spacing: -0.01em;
+    margin: 0 0 0.35rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.65rem;
+  }
+  h2 .num {
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.12em;
+    color: var(--host);
+    border: 1px solid var(--host);
+    border-radius: 2px;
+    padding: 0.1rem 0.4rem;
+    flex: none;
+  }
+  .lede { margin: 0 0 1.4rem; color: var(--ink-soft); max-width: 46rem; }
+
+  figure {
+    margin: 0 0 1rem;
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--void);
+    border-radius: 3px;
+    background: var(--surface);
+    padding: 1.1rem 1.1rem 0.85rem;
+  }
+  .scroll { overflow-x: auto; }
+  figure svg { display: block; min-width: 640px; width: 100%; height: auto; }
+  figcaption {
+    margin-top: 0.85rem;
+    padding-top: 0.7rem;
+    border-top: 1px solid var(--rule-soft);
+    font-size: 0.83rem;
+    color: var(--ink-soft);
+  }
+  figcaption b { color: var(--ink); }
+
+  /* --- svg type + strokes ----------------------------------------- */
+  .t      { font-family: var(--font-body); font-size: 12px; fill: var(--ink); }
+  .t-sm   { font-family: var(--font-body); font-size: 10.5px; fill: var(--ink-soft); }
+  .t-mono { font-family: var(--font-mono); font-size: 10.5px; fill: var(--ink); }
+  .t-mono-sm { font-family: var(--font-mono); font-size: 9.5px; fill: var(--ink-soft); }
+  .t-hd   { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.11em; text-transform: uppercase; }
+  .t-b    { font-weight: 700; }
+  .mid    { text-anchor: middle; }
+  .end    { text-anchor: end; }
+
+  .fill-void  { fill: var(--void-wash); }
+  .fill-host  { fill: var(--host-wash); }
+  .fill-crm   { fill: var(--crm-wash); }
+  .fill-deny  { fill: var(--deny-wash); }
+  .fill-stale { fill: var(--stale-wash); }
+  .fill-surf  { fill: var(--surface); }
+  .fill-surf2 { fill: var(--surface-2); }
+
+  .s-void  { stroke: var(--void); }
+  .s-host  { stroke: var(--host); }
+  .s-crm   { stroke: var(--crm); }
+  .s-deny  { stroke: var(--deny); }
+  .s-stale { stroke: var(--stale); }
+  .s-rule  { stroke: var(--rule); }
+  .box     { stroke-width: 1.4; }
+  .arrow   { stroke-width: 1.6; fill: none; }
+  .dash    { stroke-dasharray: 5 4; }
+
+  .c-void  { fill: var(--void); }
+  .c-host  { fill: var(--host); }
+  .c-crm   { fill: var(--crm); }
+  .c-deny  { fill: var(--deny); }
+  .c-stale { fill: var(--stale); }
+  .c-soft  { fill: var(--ink-soft); }
+
+  /* one marker per colour: `context-stroke` renders black where it is
+     unsupported, which is invisible on light ground and wrong on dark */
+  .head-void  { fill: var(--void); }
+  .head-host  { fill: var(--host); }
+  .head-crm   { fill: var(--crm); }
+  .head-deny  { fill: var(--deny); }
+  .head-stale { fill: var(--stale); }
+
+  /* --- cards ------------------------------------------------------ */
+  .cards { display: grid; gap: 0.9rem; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); }
+  .card {
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--host);
+    border-radius: 3px;
+    background: var(--surface);
+    padding: 0.9rem 1rem;
+  }
+  .card.void  { border-left-color: var(--void); }
+  .card.crm   { border-left-color: var(--crm); }
+  .card.deny  { border-left-color: var(--deny); }
+  .card h3 {
+    margin: 0 0 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.02em;
+  }
+  .card pre {
+    margin: 0 0 0.55rem;
+    font-family: var(--font-mono);
+    font-size: 0.71rem;
+    line-height: 1.55;
+    color: var(--ink-soft);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .card p { margin: 0; font-size: 0.82rem; color: var(--ink-soft); }
+
+  .chip {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.06em;
+    border-radius: 2px;
+    padding: 0.08rem 0.36rem;
+    border: 1px solid currentColor;
+  }
+  .chip.get  { color: var(--host); }
+  .chip.post { color: var(--crm); }
+  .chip.no   { color: var(--deny); }
+
+  /* --- tables ----------------------------------------------------- */
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th, td { text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+  th {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    border-bottom: 1px solid var(--rule);
+  }
+  td code, p code, li code {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    background: var(--surface-2);
+    border-radius: 2px;
+    padding: 0.05rem 0.28rem;
+  }
+  .tw { border: 1px solid var(--rule); border-radius: 3px; background: var(--surface); overflow-x: auto; }
+  .tw table { min-width: 34rem; }
+  .rid { font-family: var(--font-mono); color: var(--stale); font-weight: 700; }
+
+  ul.plain { margin: 0; padding-left: 1.1rem; }
+  ul.plain li { margin-bottom: 0.35rem; color: var(--ink-soft); font-size: 0.9rem; }
+  ul.plain li b { color: var(--ink); }
+
+  footer {
+    margin-top: 3.5rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid var(--rule);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--ink-faint);
+  }
+</style>
+</head>
+
+<body>
+<main>
+
+<header class="masthead">
+  <p class="kicker">Genesis · Slice 10 · design companion</p>
+  <h1>The sealed room</h1>
+  <p class="standfirst">
+    The preview runs code an LLM wrote, over a real business's CRM, inside a document that has
+    no origin, no session, no storage and no way to open a connection. This page draws the four
+    things the PRD can only describe: what the glass keeps out, how one call actually travels,
+    the one race that a frame identity check cannot catch, and where every failure lands.
+    The acceptance criteria and the test matrix stay in <code>02-prd.md</code>, which is the contract.
+  </p>
+  <p class="meta">
+    <span><b>Spec</b> F6.4 · F8.3</span>
+    <span><b>Depends on</b> 9 · 8 · 7 · 6</span>
+    <span><b>Branch</b> slice/10-live-preview</span>
+    <span><b>Server changes</b> none</span>
+    <span><b>New collections</b> none</span>
+    <span><b>New dependencies</b> none</span>
+  </p>
+</header>
+
+<!-- =================================================================
+     1. THE BOUNDARY
+     ============================================================== -->
+<section>
+  <h2><span class="num">01</span> What the glass keeps out</h2>
+  <p class="lede">
+    Everything in this slice follows from one fact: a <code>srcdoc</code> iframe has an
+    <b>opaque origin</b>. It cannot read our session, its <code>fetch</code> arrives at the API as
+    <code>Origin: null</code>, and it cannot produce an App Check attestation. So the decision
+    (D2) is not <em>which credential to hand it</em> — it is to hand it none, and let our own page
+    make every call on its behalf.
+  </p>
+
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 980 430" role="img"
+           aria-label="Four zones. The sandboxed preview document holds no origin, no session, no storage and no outbound connection; the only thing crossing the glass is a postMessage tray in each direction. Our page holds the ID token and App Check and is the only caller of the proxy; the proxy alone holds the HighLevel token. A direct call from the sandbox to the proxy is drawn refused.">
+        <defs>
+          <marker id="a-void" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="head-void"/>
+          </marker>
+          <marker id="a-host" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="head-host"/>
+          </marker>
+          <marker id="a-crm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="head-crm"/>
+          </marker>
+          <marker id="a-deny" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="head-deny"/>
+          </marker>
+        </defs>
+
+        <!-- zone 1: the sandbox -->
+        <rect x="14" y="46" width="212" height="330" rx="4" class="fill-void s-void box"/>
+        <text x="26" y="70" class="t-hd c-void">Sandbox document</text>
+        <text x="26" y="88" class="t-mono-sm">srcdoc · opaque origin</text>
+        <text x="26" y="104" class="t-mono-sm">sandbox="allow-scripts</text>
+        <text x="26" y="118" class="t-mono-sm">&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;allow-forms"</text>
+
+        <rect x="26" y="132" width="188" height="128" rx="3" class="fill-surf s-void box dash"/>
+        <text x="36" y="150" class="t-hd c-deny">Not present, by design</text>
+        <text x="36" y="170" class="t-sm">✕&#160; no <tspan class="t-mono-sm">allow-same-origin</tspan></text>
+        <text x="36" y="188" class="t-sm">✕&#160; no Firebase session</text>
+        <text x="36" y="206" class="t-sm">✕&#160; no ID token, no App Check</text>
+        <text x="36" y="224" class="t-sm">✕&#160; no cookies, no storage</text>
+        <text x="36" y="242" class="t-sm">✕&#160; <tspan class="t-mono-sm">connect-src 'none'</tspan></text>
+
+        <rect x="26" y="272" width="188" height="88" rx="3" class="fill-surf s-void box"/>
+        <text x="36" y="290" class="t-hd c-void">What is present</text>
+        <text x="36" y="310" class="t-mono-sm">index.html + inlined files</text>
+        <text x="36" y="328" class="t-mono-sm">the shim: hl(), errors</text>
+        <text x="36" y="346" class="t-mono-sm">the build nonce</text>
+
+        <!-- the glass -->
+        <rect x="238" y="46" width="22" height="330" rx="2" class="fill-surf2 s-rule box"/>
+        <text x="249" y="222" class="t-hd c-soft mid" transform="rotate(-90 249 222)">the glass</text>
+
+        <!-- zone 2: our page -->
+        <rect x="272" y="46" width="228" height="330" rx="4" class="fill-host s-host box"/>
+        <text x="284" y="70" class="t-hd c-host">Genesis page</text>
+        <text x="284" y="88" class="t-mono-sm">our origin · the SPA</text>
+
+        <rect x="284" y="102" width="204" height="104" rx="3" class="fill-surf s-host box"/>
+        <text x="294" y="120" class="t-hd c-host">Holds the session</text>
+        <text x="294" y="140" class="t-sm">Firebase ID token</text>
+        <text x="294" y="158" class="t-sm">App Check attestation</text>
+        <text x="294" y="176" class="t-sm">the current build nonce</text>
+        <text x="294" y="194" class="t-sm">the iframe's <tspan class="t-mono-sm">contentWindow</tspan></text>
+
+        <rect x="284" y="220" width="204" height="140" rx="3" class="fill-surf s-host box"/>
+        <text x="294" y="238" class="t-hd c-host">The broker</text>
+        <text x="294" y="258" class="t-sm">1&#160; is <tspan class="t-mono-sm">event.source</tspan> our frame?</text>
+        <text x="294" y="276" class="t-sm">2&#160; is the nonce the current one?</text>
+        <text x="294" y="294" class="t-sm">3&#160; is the shape well formed?</text>
+        <text x="294" y="312" class="t-sm">4&#160; <tspan class="t-mono-sm">hlProxy(method, path, …)</tspan></text>
+        <text x="294" y="330" class="t-sm">5&#160; post the body back</text>
+        <text x="294" y="350" class="t-sm t-b">no → drop, no reply</text>
+
+        <!-- zone 3: the proxy -->
+        <rect x="546" y="46" width="196" height="330" rx="4" class="fill-host s-host box"/>
+        <text x="558" y="70" class="t-hd c-host">Cloud Function</text>
+        <text x="558" y="88" class="t-mono-sm">api/hl/proxy/** · Slice 8</text>
+        <rect x="558" y="104" width="172" height="150" rx="3" class="fill-surf s-host box"/>
+        <text x="568" y="122" class="t-sm">verifies the ID token</text>
+        <text x="568" y="140" class="t-sm">requires App Check</text>
+        <text x="568" y="158" class="t-sm">matches the allowlist</text>
+        <text x="568" y="176" class="t-sm">refreshes the CRM token</text>
+        <text x="568" y="194" class="t-sm">injects <tspan class="t-mono-sm">locationId</tspan></text>
+        <text x="568" y="212" class="t-sm">strips every caller header</text>
+        <text x="568" y="234" class="t-sm t-b">uid from the token only</text>
+
+        <!-- zone 4: HighLevel -->
+        <rect x="788" y="46" width="176" height="330" rx="4" class="fill-crm s-crm box"/>
+        <text x="800" y="70" class="t-hd c-crm">HighLevel</text>
+        <text x="800" y="88" class="t-mono-sm">services.lead&#8203;connectorhq.com</text>
+        <rect x="800" y="104" width="152" height="86" rx="3" class="fill-surf s-crm box"/>
+        <text x="810" y="124" class="t-sm">the account's contacts,</text>
+        <text x="810" y="142" class="t-sm">conversations, calendars</text>
+        <text x="810" y="166" class="t-mono-sm">100 req / 10 s</text>
+
+        <!-- crossings -->
+        <path d="M226,140 L272,140" class="arrow s-void" marker-end="url(#a-void)"/>
+        <text x="249" y="132" class="t-mono-sm mid c-void">post</text>
+        <path d="M272,168 L226,168" class="arrow s-host" marker-end="url(#a-host)"/>
+        <text x="249" y="186" class="t-mono-sm mid c-host">reply</text>
+
+        <path d="M500,290 L546,290" class="arrow s-host" marker-end="url(#a-host)"/>
+        <path d="M742,290 L788,290" class="arrow s-crm" marker-end="url(#a-crm)"/>
+        <text x="644" y="282" class="t-mono-sm mid c-host">same-origin fetch</text>
+        <text x="644" y="308" class="t-mono-sm mid c-host">token + App Check</text>
+        <text x="865" y="282" class="t-mono-sm mid c-crm">Bearer</text>
+        <text x="865" y="308" class="t-mono-sm mid c-crm">+ Version</text>
+
+        <!-- the refused direct path -->
+        <path d="M120,376 C120,410 300,414 560,404" class="arrow s-deny dash" marker-end="url(#a-deny)"/>
+        <text x="120" y="404" class="t-mono-sm c-deny">✕</text>
+        <text x="330" y="424" class="t-sm c-deny">a direct <tspan class="t-mono-sm">fetch</tspan> from the sandbox: <tspan class="t-mono-sm">Origin: null</tspan> is refused by the allowlist, and it can produce no App Check token</text>
+      </svg>
+    </div>
+    <figcaption>
+      <b>The credential never crosses the glass.</b> Two trays pass through it — a request going
+      right, a JSON body coming back — and neither carries a token, a uid or a location id.
+      That is what makes the reply safe to post with <code>targetOrigin: '*'</code>, which an
+      opaque origin leaves us no alternative to (D3).
+    </figcaption>
+  </figure>
+</section>
+
+<!-- =================================================================
+     2. THE SEQUENCE
+     ============================================================== -->
+<section>
+  <h2><span class="num">02</span> One generation, one call, end to end</h2>
+  <p class="lede">
+    The demo is a single pass through this. Note where the document is <b>created</b> and where
+    the previous one <b>dies</b> — the preview's whole lifecycle is one line of it, and it is what
+    section 03 turns on.
+  </p>
+
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 980 560" role="img"
+           aria-label="A sequence across four lanes: the workspace store, the preview host, the sandbox document, and HighLevel. Twelve numbered steps run from a completed generation through building a new document with a fresh nonce, the shim's hl call, the host's checks and proxied fetch, to contacts rendering on screen.">
+        <defs>
+          <marker id="b-void" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="head-void"/>
+          </marker>
+          <marker id="b-host" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="head-host"/>
+          </marker>
+          <marker id="b-crm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="head-crm"/>
+          </marker>
+        </defs>
+
+        <!-- lanes -->
+        <rect x="14"  y="30" width="192" height="510" rx="3" class="fill-surf2 s-rule box"/>
+        <rect x="250" y="30" width="230" height="510" rx="3" class="fill-host s-host box"/>
+        <rect x="524" y="30" width="230" height="510" rx="3" class="fill-void s-void box"/>
+        <rect x="798" y="30" width="168" height="510" rx="3" class="fill-crm s-crm box"/>
+        <text x="110" y="50" class="t-hd c-soft mid">Workspace store</text>
+        <text x="365" y="50" class="t-hd c-host mid">Preview host</text>
+        <text x="639" y="50" class="t-hd c-void mid">Sandbox document</text>
+        <text x="882" y="50" class="t-hd c-crm mid">HighLevel</text>
+
+        <!-- step rows -->
+        <g class="t">
+          <!-- 1 -->
+          <circle cx="34" cy="86" r="9" class="c-soft"/><text x="34" y="90" class="t-mono mid" fill="#fff">1</text>
+          <text x="50" y="90" class="t-sm">stream reaches <tspan class="t-mono-sm">done</tspan>, files stored</text>
+          <!-- 2 -->
+          <circle cx="34" cy="118" r="9" class="c-soft"/><text x="34" y="122" class="t-mono mid" fill="#fff">2</text>
+          <text x="50" y="122" class="t-sm">refetch the file list</text>
+          <!-- 3 -->
+          <circle cx="34" cy="150" r="9" class="c-soft"/><text x="34" y="154" class="t-mono mid" fill="#fff">3</text>
+          <text x="50" y="154" class="t-sm"><tspan class="t-mono-sm">generationsApplied</tspan>++</text>
+          <path d="M206,154 L250,154" class="arrow s-host" marker-end="url(#b-host)"/>
+
+          <!-- 4 -->
+          <circle cx="272" cy="186" r="9" class="c-host"/><text x="272" y="190" class="t-mono mid" fill="#fff">4</text>
+          <text x="288" y="190" class="t-sm">read each stored file (≤20, parallel)</text>
+          <!-- 5 -->
+          <circle cx="272" cy="222" r="9" class="c-host"/><text x="272" y="226" class="t-mono mid" fill="#fff">5</text>
+          <text x="288" y="220" class="t-sm">mint a fresh <tspan class="t-mono-sm">nonce</tspan>; assemble</text>
+          <text x="288" y="236" class="t-sm">one document; inline css + js</text>
+          <!-- 6 -->
+          <circle cx="272" cy="266" r="9" class="c-host"/><text x="272" y="270" class="t-mono mid" fill="#fff">6</text>
+          <text x="288" y="270" class="t-sm">set <tspan class="t-mono-sm">srcdoc</tspan> — <tspan class="t-b">previous document dies here</tspan></text>
+          <path d="M480,270 L524,270" class="arrow s-void" marker-end="url(#b-void)"/>
+
+          <!-- 7 -->
+          <circle cx="546" cy="302" r="9" class="c-void"/><text x="546" y="306" class="t-mono mid" fill="#fff">7</text>
+          <text x="562" y="306" class="t-sm">shim defines <tspan class="t-mono-sm">hl()</tspan>, hooks errors</text>
+          <!-- 8 -->
+          <circle cx="546" cy="338" r="9" class="c-void"/><text x="546" y="342" class="t-mono mid" fill="#fff">8</text>
+          <text x="562" y="332" class="t-sm">generated <tspan class="t-mono-sm">app.js</tspan> runs and calls</text>
+          <text x="562" y="348" class="t-mono-sm">hl('POST', '/contacts/search', …)</text>
+          <path d="M524,376 L480,376" class="arrow s-void" marker-end="url(#b-void)"/>
+          <text x="502" y="368" class="t-mono-sm mid c-void">post</text>
+
+          <!-- 9 -->
+          <circle cx="272" cy="404" r="9" class="c-host"/><text x="272" y="408" class="t-mono mid" fill="#fff">9</text>
+          <text x="288" y="398" class="t-sm">source is our frame? nonce current?</text>
+          <text x="288" y="414" class="t-sm">shape valid? path in the grammar?</text>
+          <!-- 10 -->
+          <circle cx="272" cy="446" r="9" class="c-host"/><text x="272" y="450" class="t-mono mid" fill="#fff">10</text>
+          <text x="288" y="450" class="t-sm"><tspan class="t-mono-sm">hlProxy(…)</tspan> — token, App Check</text>
+          <path d="M480,450 C620,450 700,450 798,450" class="arrow s-crm" marker-end="url(#b-crm)"/>
+          <path d="M798,476 C700,476 620,476 480,476" class="arrow s-crm" marker-end="url(#b-crm)"/>
+          <text x="640" y="470" class="t-mono-sm mid c-crm">the account's contacts</text>
+
+          <!-- 11 -->
+          <circle cx="272" cy="504" r="9" class="c-host"/><text x="272" y="508" class="t-mono mid" fill="#fff">11</text>
+          <text x="288" y="508" class="t-sm">post the body back, unwrapped</text>
+          <path d="M480,508 L524,508" class="arrow s-void" marker-end="url(#b-void)"/>
+          <!-- 12 -->
+          <circle cx="546" cy="530" r="9" class="c-void"/><text x="546" y="534" class="t-mono mid" fill="#fff">12</text>
+          <text x="562" y="534" class="t-sm t-b">the promise resolves; the dashboard renders</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>
+      <b>Steps 4–6 are the whole lifecycle.</b> A preview document is created by writing
+      <code>srcdoc</code> and destroyed by writing it again; it holds no state we keep and nothing
+      of it survives. Step 9 is four checks, and the second of them exists only because of what
+      step 6 does to a document that is still mid-call.
+    </figcaption>
+  </figure>
+</section>
+
+<!-- =================================================================
+     3. THE HAZARD
+     ============================================================== -->
+<section>
+  <h2><span class="num">03</span> The hazard: a dead document that is still talking</h2>
+  <p class="lede">
+    The obvious way to authenticate a message from the frame is <code>event.source ===
+    iframe.contentWindow</code>. It is necessary and it is not sufficient — a
+    <code>WindowProxy</code> <b>survives navigation</b>, and writing <code>srcdoc</code> again is a
+    navigation. So the old document and the new one present the same identity. Left there, a
+    request posted by build <span class="rid">N−1</span> a millisecond before it died is
+    indistinguishable from one posted by build <span class="rid">N</span>.
+  </p>
+
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 980 400" role="img"
+           aria-label="Two panels compared. Without a nonce, a late request from the previous preview document passes the frame identity check, spends a HighLevel call and is answered into a document nobody is watching. With a per-build nonce, the same message fails the nonce check and is dropped before any call is made.">
+        <defs>
+          <marker id="c-stale" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="head-stale"/>
+          </marker>
+          <marker id="c-host" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="head-host"/>
+          </marker>
+          <marker id="c-crm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="head-crm"/>
+          </marker>
+          <marker id="c-deny" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="head-deny"/>
+          </marker>
+        </defs>
+
+        <!-- LEFT: without -->
+        <rect x="14" y="26" width="466" height="356" rx="4" class="fill-stale s-stale box"/>
+        <text x="30" y="50" class="t-hd c-stale">Identity check alone</text>
+
+        <rect x="30" y="66" width="200" height="52" rx="3" class="fill-surf s-stale box"/>
+        <text x="42" y="86" class="t-sm t-b">build <tspan class="rid">N−1</tspan> — dying</text>
+        <text x="42" y="104" class="t-mono-sm">hl('POST', '/contacts/search')</text>
+
+        <rect x="30" y="140" width="200" height="42" rx="3" class="fill-surf2 s-rule box"/>
+        <text x="42" y="166" class="t-sm">srcdoc rewritten → it is gone</text>
+
+        <path d="M230,92 C280,92 280,214 300,214" class="arrow s-stale" marker-end="url(#c-stale)"/>
+        <text x="248" y="140" class="t-mono-sm c-stale">in flight</text>
+
+        <rect x="300" y="192" width="164" height="44" rx="3" class="fill-surf s-host box"/>
+        <text x="312" y="210" class="t-sm"><tspan class="t-mono-sm">event.source</tspan> matches</text>
+        <text x="312" y="228" class="t-sm c-stale t-b">✓ accepted</text>
+
+        <path d="M382,236 L382,266" class="arrow s-crm" marker-end="url(#c-crm)"/>
+        <rect x="300" y="266" width="164" height="40" rx="3" class="fill-crm s-crm box"/>
+        <text x="312" y="291" class="t-sm">a real CRM call is spent</text>
+
+        <path d="M382,306 L382,336" class="arrow s-stale" marker-end="url(#c-stale)"/>
+        <rect x="240" y="336" width="224" height="34" rx="3" class="fill-surf s-stale box"/>
+        <text x="252" y="358" class="t-sm t-b">answered into a document nobody has</text>
+
+        <!-- RIGHT: with -->
+        <rect x="500" y="26" width="466" height="356" rx="4" class="fill-host s-host box"/>
+        <text x="516" y="50" class="t-hd c-host">Identity check + per-build nonce</text>
+
+        <rect x="516" y="66" width="200" height="52" rx="3" class="fill-surf s-stale box"/>
+        <text x="528" y="86" class="t-sm t-b">build <tspan class="rid">N−1</tspan> — dying</text>
+        <text x="528" y="104" class="t-mono-sm">nonce: 8f3c… (stale)</text>
+
+        <rect x="516" y="140" width="200" height="42" rx="3" class="fill-surf s-host box"/>
+        <text x="528" y="158" class="t-sm t-b">build <tspan class="rid">N</tspan> — live</text>
+        <text x="528" y="174" class="t-mono-sm">nonce: 21ab… (current)</text>
+
+        <path d="M716,92 C766,92 766,214 786,214" class="arrow s-stale" marker-end="url(#c-stale)"/>
+        <path d="M716,162 C752,162 760,200 786,206" class="arrow s-host" marker-end="url(#c-host)"/>
+
+        <rect x="786" y="192" width="164" height="60" rx="3" class="fill-surf s-host box"/>
+        <text x="798" y="210" class="t-sm"><tspan class="t-mono-sm">event.source</tspan> matches</text>
+        <text x="798" y="228" class="t-sm">nonce === current?</text>
+        <text x="798" y="246" class="t-sm c-host t-b">only build N passes</text>
+
+        <path d="M868,252 L868,282" class="arrow s-deny" marker-end="url(#c-deny)"/>
+        <rect x="760" y="282" width="190" height="40" rx="3" class="fill-deny s-deny box"/>
+        <text x="772" y="300" class="t-sm c-deny t-b">stale → dropped</text>
+        <text x="772" y="316" class="t-sm">no call, no reply, no cost</text>
+
+        <rect x="516" y="336" width="434" height="34" rx="3" class="fill-surf s-host box"/>
+        <text x="528" y="358" class="t-sm">the live document's call proceeds exactly as section 02 draws it</text>
+      </svg>
+    </div>
+    <figcaption>
+      <b>The nonce is not belt-and-braces; it is the check that works.</b> It is minted per build,
+      baked into that build's shim, and carried on every message in both directions — so a
+      document that is no longer on screen cannot spend the account's rate-limit budget, and a
+      reply meant for a dead page cannot arrive in a live one. Both directions are asserted:
+      AC-17 on the host, AC-12 in the shim.
+    </figcaption>
+  </figure>
+</section>
+
+<!-- =================================================================
+     4. THE FAILURE FAN
+     ============================================================== -->
+<section>
+  <h2><span class="num">04</span> Where every failure lands</h2>
+  <p class="lede">
+    F8.3 asks for HighLevel failures surfaced clearly in the preview. The generated app's own
+    <code>try</code>/<code>catch</code> is the one thing here we cannot rely on — it is model
+    output — so the guarantee lives on the host, which sees every failure whether the app
+    handled it or not (D17).
+  </p>
+
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 980 470" role="img"
+           aria-label="One hl call fans out to seven exits: a path outside the grammar, no connection or an expired one, an upstream HighLevel error, the fifty-call budget, a thirty-second timeout, a blocked outbound connection, and an uncaught throw. Each exit is labelled with exactly what the user ends up seeing.">
+        <defs>
+          <marker id="d-host" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="head-host"/>
+          </marker>
+          <marker id="d-deny" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="head-deny"/>
+          </marker>
+        </defs>
+
+        <rect x="14" y="196" width="188" height="70" rx="4" class="fill-void s-void box"/>
+        <text x="26" y="220" class="t-sm t-b">one call from the app</text>
+        <text x="26" y="240" class="t-mono-sm">await hl('POST',</text>
+        <text x="26" y="256" class="t-mono-sm">&#160;&#160;'/contacts/search', …)</text>
+
+        <!-- spine -->
+        <path d="M202,231 L268,231" class="arrow s-void"/>
+        <path d="M268,34 L268,436" class="arrow s-rule"/>
+
+        <g>
+          <!-- rows: y, colour, condition, what the user sees -->
+          <path d="M268,46 L330,46" class="arrow s-host" marker-end="url(#d-host)"/>
+          <rect x="330" y="26" width="230" height="40" rx="3" class="fill-host s-host box"/>
+          <text x="342" y="42" class="t-sm t-b">it works</text>
+          <text x="342" y="58" class="t-sm">resolves with HighLevel's body</text>
+          <rect x="584" y="26" width="382" height="40" rx="3" class="fill-surf s-host box"/>
+          <text x="596" y="51" class="t-sm">the dashboard renders real records — <tspan class="t-b">the demo</tspan></text>
+
+          <path d="M268,102 L330,102" class="arrow s-deny" marker-end="url(#d-deny)"/>
+          <rect x="330" y="82" width="230" height="40" rx="3" class="fill-deny s-deny box"/>
+          <text x="342" y="98" class="t-sm t-b">path outside the grammar</text>
+          <text x="342" y="114" class="t-mono-sm">'/../../projects'</text>
+          <rect x="584" y="82" width="382" height="40" rx="3" class="fill-surf s-deny box"/>
+          <text x="596" y="107" class="t-sm">rejected in the host; <tspan class="t-b">no request is made</tspan>; banner carries the message</text>
+
+          <path d="M268,158 L330,158" class="arrow s-deny" marker-end="url(#d-deny)"/>
+          <rect x="330" y="138" width="230" height="40" rx="3" class="fill-deny s-deny box"/>
+          <text x="342" y="154" class="t-sm t-b">connection dead or absent</text>
+          <text x="342" y="170" class="t-mono-sm">hl_reconnect_required · hl_not_connected</text>
+          <rect x="584" y="138" width="382" height="40" rx="3" class="fill-surf s-deny box"/>
+          <text x="596" y="163" class="t-sm">banner + <tspan class="t-b">Reconnect HighLevel</tspan> → the dashboard</text>
+
+          <path d="M268,214 L330,214" class="arrow s-deny" marker-end="url(#d-deny)"/>
+          <rect x="330" y="194" width="230" height="40" rx="3" class="fill-deny s-deny box"/>
+          <text x="342" y="210" class="t-sm t-b">upstream said no</text>
+          <text x="342" y="226" class="t-mono-sm">hl_bad_request · hl_rate_limited · …</text>
+          <rect x="584" y="194" width="382" height="40" rx="3" class="fill-surf s-deny box"/>
+          <text x="596" y="219" class="t-sm">banner carries HighLevel's own message, verbatim</text>
+
+          <path d="M268,270 L330,270" class="arrow s-deny" marker-end="url(#d-deny)"/>
+          <rect x="330" y="250" width="230" height="40" rx="3" class="fill-deny s-deny box"/>
+          <text x="342" y="266" class="t-sm t-b">50-call budget spent</text>
+          <text x="342" y="282" class="t-sm">a render loop, most likely</text>
+          <rect x="584" y="250" width="382" height="40" rx="3" class="fill-surf s-deny box"/>
+          <text x="596" y="275" class="t-sm">rejected <tspan class="t-b">inside the frame</tspan>, nothing posted; banner names the limit</text>
+
+          <path d="M268,326 L330,326" class="arrow s-deny" marker-end="url(#d-deny)"/>
+          <rect x="330" y="306" width="230" height="40" rx="3" class="fill-deny s-deny box"/>
+          <text x="342" y="322" class="t-sm t-b">no reply in 30 s</text>
+          <text x="342" y="338" class="t-sm">the broker itself is broken</text>
+          <rect x="584" y="306" width="382" height="40" rx="3" class="fill-surf s-deny box"/>
+          <text x="596" y="331" class="t-sm">rejects rather than spinning forever</text>
+
+          <path d="M268,382 L330,382" class="arrow s-deny" marker-end="url(#d-deny)"/>
+          <rect x="330" y="362" width="230" height="40" rx="3" class="fill-deny s-deny box"/>
+          <text x="342" y="378" class="t-sm t-b">the app went round us</text>
+          <text x="342" y="394" class="t-mono-sm">fetch() → connect-src 'none'</text>
+          <rect x="584" y="362" width="382" height="40" rx="3" class="fill-surf s-deny box"/>
+          <text x="596" y="387" class="t-sm">violation reported over the error channel and shown</text>
+
+          <path d="M268,436 L330,436" class="arrow s-deny" marker-end="url(#d-deny)"/>
+          <rect x="330" y="418" width="230" height="38" rx="3" class="fill-deny s-deny box"/>
+          <text x="342" y="434" class="t-sm t-b">uncaught throw / rejection</text>
+          <text x="342" y="450" class="t-sm">the app forgot to catch</text>
+          <rect x="584" y="418" width="382" height="38" rx="3" class="fill-surf s-deny box"/>
+          <text x="596" y="442" class="t-sm">runtime banner carries the message; Refresh re-runs it</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>
+      <b>Eight exits, one entry, and nothing exits silently.</b> Two of them never reach the
+      network at all — the path grammar and the call budget — and both are refusals we make
+      about code we did not write. Every banner clears on the next build (AC-37).
+    </figcaption>
+  </figure>
+</section>
+
+<!-- =================================================================
+     5. THE PROTOCOL
+     ============================================================== -->
+<section>
+  <h2><span class="num">05</span> The contract, as cards</h2>
+  <p class="lede">
+    No HTTP contract changes in this slice. The one new contract is the message protocol across
+    the glass — and the acceptance rules under it, which are the security half.
+  </p>
+
+  <div class="cards">
+    <div class="card void">
+      <h3><span class="chip post">frame → host</span> a CRM call</h3>
+      <pre>{ genesis: 'preview', v: 1,
+  nonce: string,
+  id:    string,
+  kind:  'hl',
+  method:'GET'|'POST'|'PUT',
+  path:  string,
+  payload?: unknown }</pre>
+      <p>Posted with <code>'*'</code>. The path is model output, so it is re-checked against the same grammar the server matches on.</p>
+    </div>
+
+    <div class="card void">
+      <h3><span class="chip post">frame → host</span> something broke</h3>
+      <pre>{ genesis: 'preview', v: 1,
+  nonce: string,
+  kind:  'error',
+  message: string }</pre>
+      <p>Uncaught throws, unhandled rejections, CSP violations and the spent call budget all arrive here.</p>
+    </div>
+
+    <div class="card">
+      <h3><span class="chip get">host → frame</span> the answer</h3>
+      <pre>{ genesis: 'preview-host', v: 1,
+  nonce, id, ok: true,
+  data: unknown }
+
+{ …, ok: false,
+  error: { message, status, code? } }</pre>
+      <p>HighLevel's body, unwrapped — Slice 9's prompt carries recorded payloads as examples, so re-shaping one would make them lies.</p>
+    </div>
+
+    <div class="card deny">
+      <h3><span class="chip no">host</span> accepted only if</h3>
+      <pre>event.source === frame.contentWindow
+genesis === 'preview' &amp;&amp; v === 1
+nonce === currentBuildNonce
+id is a non-empty string
+method ∈ { GET, POST, PUT }
+path is a string</pre>
+      <p>Anything else is dropped in silence: no reply, no HighLevel call. A reply never carries a token, a uid or a location id.</p>
+    </div>
+  </div>
+</section>
+
+<!-- =================================================================
+     6. WHERE THE RISK LIVES
+     ============================================================== -->
+<section>
+  <h2><span class="num">06</span> Where this slice puts its risk</h2>
+  <p class="lede">
+    Thirty-nine acceptance criteria, and the shape of their distribution is itself a decision:
+    almost everything here is pure enough to test as a function, because the parts that are not
+    — a real browser running real generated code — can only be proven once, at L5.
+  </p>
+
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 980 232" role="img"
+           aria-label="Acceptance criteria by test level: twenty-four at L1 unit, fourteen at L2 component, one at L5 end to end, and none at L3 rules or L4 integration because the slice adds no collection and no server route.">
+        <g>
+          <text x="14" y="30" class="t-hd c-soft">L1 · unit — the document, the shim, the broker, the store signals</text>
+          <rect x="14" y="40" width="700" height="26" rx="2" class="fill-host s-host box"/>
+          <text x="726" y="58" class="t-mono">24 ACs</text>
+
+          <text x="14" y="94" class="t-hd c-soft">L2 · component — every state and banner of the new panel</text>
+          <rect x="14" y="104" width="408" height="26" rx="2" class="fill-void s-void box"/>
+          <text x="434" y="122" class="t-mono">14 ACs</text>
+
+          <text x="14" y="158" class="t-hd c-soft">L5 · end to end — the demo, in a real browser, against the emulators</text>
+          <rect x="14" y="168" width="30" height="26" rx="2" class="fill-crm s-crm box"/>
+          <text x="56" y="186" class="t-mono">1 AC</text>
+
+          <text x="14" y="222" class="t-sm c-soft">L3 rules: <tspan class="t-b">0</tspan> — no collection is added, and the case count is checked against main rather than assumed. &#160;&#160;L4 integration: <tspan class="t-b">0</tspan> — no server route is added; the proxy is already covered.</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>
+      <b>Two zeroes that are results, not omissions.</b> The slice touches no
+      <code>functions/</code> file and no rules block; the definition of done requires both
+      counts to be <em>measured</em> against <code>main</code>, which is the practice Slice 9
+      established for exactly this shape of change.
+    </figcaption>
+  </figure>
+
+  <div class="tw" style="margin-top:1.25rem">
+    <table>
+      <thead><tr><th>#</th><th>Risk</th><th>What holds it</th></tr></thead>
+      <tbody>
+        <tr><td class="rid">R1</td><td>Playwright may not read inside a sandboxed <code>srcdoc</code> frame — where AC-39's evidence lives</td><td>It drives frames over CDP, so an opaque origin should be reachable; the named fallback is host-visible evidence plus the hand-check in the definition of done</td></tr>
+        <tr><td class="rid">R2</td><td>The shim is a string, so nothing typechecks it</td><td>Evaluated for real in eight L1 cases with stubbed globals, and executed in a browser at L5; its surface is three globals and one function</td></tr>
+        <tr><td class="rid">R3</td><td>Generated code can hang the tab — the sandbox does not stop a busy loop</td><td>Out of scope and said so; the version of it that costs money is capped at 50 calls</td></tr>
+        <tr><td class="rid">R4</td><td><code>&lt;/script&gt;</code> inside generated JS would corrupt the document — rare, catastrophic, invisible</td><td>Made unrepresentable rather than unlikely: content is carried as data and installed through the DOM, never parsed as markup</td></tr>
+        <tr><td class="rid">R5</td><td>Every rebuild re-spends the CRM rate-limit budget</td><td>Exactly two triggers, both deliberate; a save gets a hint, not a rebuild</td></tr>
+        <tr><td class="rid">R6</td><td>Replies must be posted to <code>'*'</code> — an opaque origin has no name</td><td>Replies carry response bodies and error text only; the nonce and source checks mean a document that is not ours is never answered</td></tr>
+        <tr><td class="rid">R7</td><td>No <code>allow-same-origin</code> means storage APIs throw inside generated code</td><td>The throw is caught by the error channel and shown, so it fails loudly; a prompt line is a Slice 12 note</td></tr>
+        <tr><td class="rid">R8</td><td>CRM data rendered by generated code is an XSS sink</td><td>Contained by construction — no origin, no credential, no storage; worst case is a defaced preview of the user's own data</td></tr>
+        <tr><td class="rid">R9</td><td>A large PR: four new modules, a rewritten panel, a shared error-path change</td><td>The shared change is three additive call sites; there is no server surface at all, and the only honest split has an undemoable first half</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- =================================================================
+     7. WHAT DOES NOT MOVE
+     ============================================================== -->
+<section>
+  <h2><span class="num">07</span> What deliberately does not move</h2>
+  <p class="lede">
+    Worth stating as loudly as what does. The proxy, the allowlist, the error envelope and the
+    system prompt are all upstream of this slice, and the shim's job is to match them exactly
+    rather than extend them.
+  </p>
+  <ul class="plain">
+    <li><b>No Firestore change</b> — no collection, no field, no index, no rules edit.</li>
+    <li><b>No <code>functions/</code> change</b> — no route, no schema, no allowlist row, no prompt text. <code>hlKnowledge.ts</code> is untouched.</li>
+    <li><b>No new dependency</b> — the brief offers Sandpack and WebContainers; <code>srcdoc</code> costs nothing and controls everything.</li>
+    <li><b>No new environment variable</b>, so <code>.env.example</code> is unchanged.</li>
+    <li><b><code>hl()</code>'s contract is now implemented twice</b> — once as prose in the system prompt, once as code in the shim. Neither may move without the other; <code>hl(</code> is the seam.</li>
+  </ul>
+</section>
+
+<footer>
+  Genesis · Slice 10 — Live preview · design companion to <code>docs/slices/10-live-preview/02-prd.md</code>, which is the contract · 2026-08-18
+</footer>
+
+</main>
+</body>
+</html>

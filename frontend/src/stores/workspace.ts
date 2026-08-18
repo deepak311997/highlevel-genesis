@@ -162,6 +162,32 @@ export interface WorkspaceStore {
   /** The snapshot a restore is in flight for, or null. Disables every row's Restore. */
   restoringId: Ref<string | null>
   restoreError: Ref<string | null>
+  /**
+   * The two signals the preview panel watches — **one question each** (D12).
+   *
+   * `generationsApplied` counts the generations that actually stored something.
+   * The preview rebuilds *by itself* when it moves, which is the slice's whole
+   * demo: a generation finishes and the running app refreshes unasked.
+   *
+   * `filesRevision` counts every change to the stored file set — that same event
+   * **and** a successful manual save. When it moves past what the preview last
+   * built, the panel shows a *Files changed — Refresh* hint and rebuilds only
+   * when asked.
+   *
+   * A save deliberately does not move `generationsApplied`, and that asymmetry is
+   * the point of having two counters. Saves are frequent, and every rebuild
+   * re-runs the generated app's HighLevel calls against a 100-request/10-second
+   * account budget — auto-rebuilding on save would spend the user's CRM allowance
+   * on each keystroke-batch they commit. A visible hint is the honest middle: the
+   * panel is never silently stale, and the user decides when to spend.
+   *
+   * Two counters rather than one flag with a meaning attached, because a flag has
+   * to be *interpreted* — "changed by what, and does that one rebuild?" — at
+   * every reader, and a counter is comparable against what was last built without
+   * anyone having to clear it.
+   */
+  generationsApplied: Ref<number>
+  filesRevision: Ref<number>
   atLimit: ComputedRef<boolean>
   canSend: ComputedRef<boolean>
   open: (projectId: string) => Promise<void>
@@ -313,6 +339,8 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
 
   const streamingFiles = ref<Record<string, string>>({})
   const generateFileError = ref<string | null>(null)
+  const generationsApplied = ref(0)
+  const filesRevision = ref(0)
 
   /**
    * The path **this generation** selected on the user's behalf, if any.
@@ -784,6 +812,10 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
             }
           : entry,
       )
+      // The stored file set has changed, so the preview is stale — but only the
+      // hint moves (D12). A rebuild here would re-run the app's HighLevel calls
+      // on every save; the user decides when to spend that.
+      filesRevision.value += 1
     } catch (err) {
       if (!current(gen)) return
       saveError.value = err instanceof Error ? err.message : 'Could not save that file.'
@@ -806,7 +838,8 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
    * no answer that could have changed.
    */
   async function applyGenerationFiles(written: string[], gen: number): Promise<void> {
-    if (written.length > 0) {
+    const wroteFiles = written.length > 0
+    if (wroteFiles) {
       await loadFiles()
       /*
        * A turn that stored files also recorded a version (D2, D21), so an **open**
@@ -818,6 +851,20 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
       if (snapshotsLoaded.value) await loadSnapshots()
     }
     if (!current(gen)) return
+
+    /*
+     * Both signals, in one place, **after** the refetch and behind the guard
+     * above (D12). After, because `generationsApplied` is what rebuilds the
+     * preview unasked and the preview builds out of `files` — moved before the
+     * list settled, the one screen whose job is to show what this turn wrote
+     * would render the previous turn's file set. Behind the guard, because a
+     * generation whose project has since been left must not make the project now
+     * on screen rebuild for it.
+     */
+    if (wroteFiles) {
+      filesRevision.value += 1
+      generationsApplied.value += 1
+    }
 
     const id = projectId.value
     if (id === null) return
@@ -943,7 +990,19 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
        * Nothing was written, so nothing on screen is stale, and re-reading the
        * tabs would discard an unsaved edit for a change that did not happen.
        */
-      if (result.changed) await applyRestoredFiles(result.files, gen)
+      if (result.changed) {
+        await applyRestoredFiles(result.files, gen)
+        if (!current(gen)) return
+        /*
+         * The stored file set has changed — by more than any save ever does — so
+         * the preview is stale and says so. Only the hint moves (Slice 10, D12):
+         * `generationsApplied` is the *unasked* rebuild, and a rebuild re-runs
+         * the restored app's HighLevel calls against a 100-request/10-second
+         * account budget. A restore is a deliberate act whose result the user may
+         * want to read before spending that, so they decide when to spend it.
+         */
+        filesRevision.value += 1
+      }
     } catch (err) {
       if (!current(gen)) return
       // The batch is all-or-nothing, so a failure wrote nothing: the files, the
@@ -1019,6 +1078,8 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     saveError.value = null
     streamingFiles.value = {}
     generateFileError.value = null
+    generationsApplied.value = 0
+    filesRevision.value = 0
   }
 
   /**
@@ -1301,6 +1362,8 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     snapshotsError,
     restoringId,
     restoreError,
+    generationsApplied,
+    filesRevision,
     atLimit,
     canSend,
     open,

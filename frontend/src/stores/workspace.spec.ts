@@ -1748,6 +1748,43 @@ describe('saveFile', () => {
     expect(store.saving).toBe(false)
     expect(store.saveError).toBeNull()
   })
+
+  /**
+   * AC-24, D12. A save moves `filesRevision` and **only** `filesRevision`.
+   *
+   * The two counters answer two different questions, which is the whole reason
+   * there are two of them. `generationsApplied` is what rebuilds the preview
+   * unasked; a save deliberately leaves it alone, because saves are frequent and
+   * every rebuild re-runs the generated app's HighLevel calls against a
+   * 100-request/10-second account budget — rebuilding on each keystroke-batch a
+   * developer commits would spend their CRM allowance on it. `filesRevision`
+   * moving is what the panel renders as a **Files changed — Refresh** hint: never
+   * silently stale, never spending the budget uninvited.
+   */
+  it('moves filesRevision and not generationsApplied on a successful save', async () => {
+    const store = await openedOnIndex()
+    store.editContent('<h1>People</h1>\n')
+    fetchMock.mockResolvedValueOnce(response({ file: { ...stored, content: '<h1>People</h1>\n' } }))
+
+    await store.saveFile()
+
+    expect(store.filesRevision).toBe(1)
+    expect(store.generationsApplied).toBe(0)
+  })
+
+  /* A save that failed stored nothing, so nothing the preview reads has changed.
+   * Offering a Refresh for bytes the server rejected would spend a rebuild to
+   * render exactly the document already on screen. */
+  it('moves neither counter when the save fails', async () => {
+    const store = await openedOnIndex()
+    store.editContent('<h1>People</h1>\n')
+    fetchMock.mockResolvedValueOnce(response({ error: 'Could not save that file.' }, 500))
+
+    await store.saveFile()
+
+    expect(store.filesRevision).toBe(0)
+    expect(store.generationsApplied).toBe(0)
+  })
 })
 
 /**
@@ -2557,6 +2594,177 @@ describe('the stream — files', () => {
     expect(store.files).toEqual([])
     expect(store.streamingFiles).toEqual({})
   })
+
+  /**
+   * AC-23, D12. The rebuild signal moves **after** the refetch, never before.
+   *
+   * The ordering is the assertion, and it is load-bearing rather than pedantic:
+   * `generationsApplied` is what makes the preview rebuild unasked, and the
+   * preview assembles its document out of `files`. Bumped before the list
+   * settled, the one screen whose entire job is to show what the generation just
+   * wrote would build the *previous* turn's file set.
+   *
+   * `filesRevision` moves on the same event, so the panel that has just rebuilt
+   * by itself does not then also claim its files have changed.
+   */
+  it('increments both counters after the file list has settled, and not before', async () => {
+    const store = await openedWithFiles()
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+
+    const slow = deferred()
+    fetchMock.mockReturnValueOnce(slow.promise)
+    stream.push(
+      frame('done', { message: ASSISTANT_MESSAGE, files: ['index.html'], fileError: null }),
+    )
+    stream.close()
+    await vi.waitFor(() => {
+      expect(store.filesLoading).toBe(true)
+    })
+
+    // The list request is open, so nothing downstream may act on it yet.
+    expect(store.generationsApplied).toBe(0)
+    expect(store.filesRevision).toBe(0)
+
+    slow.settle(response({ files: [{ ...INDEX_FILE, size: 40 }] }))
+    await running
+
+    expect(store.generationsApplied).toBe(1)
+    expect(store.filesRevision).toBe(1)
+    expect(store.files).toEqual([{ ...INDEX_FILE, size: 40 }])
+  })
+
+  /* A turn that stored nothing — prose-only, or a refused op set — issued no
+   * request and changed no file, so a rebuild would re-run the app's HighLevel
+   * calls to produce the document already on screen. */
+  it('leaves both counters at zero on a done that stored no file', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(
+      cannedStream(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null })),
+    )
+
+    await store.retryGeneration()
+
+    expect(store.generationsApplied).toBe(0)
+    expect(store.filesRevision).toBe(0)
+  })
+
+  /* Same rule for the turn that never reached `done`: what streamed was watched,
+   * not stored (D20), so the stored file set the preview reads is untouched. */
+  it('leaves both counters at zero when the stream ends in an error', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(
+      cannedStream(
+        frame('file_start', { path: 'app.js' }),
+        frame('file_chunk', { path: 'app.js', text: 'const a = 1' }),
+        frame('error', {
+          error: 'The reply was interrupted.',
+          code: 'upstream_error',
+          message: null,
+        }),
+      ),
+    )
+
+    await store.retryGeneration()
+
+    expect(store.generateError).toBe('The reply was interrupted.')
+    expect(store.generationsApplied).toBe(0)
+    expect(store.filesRevision).toBe(0)
+  })
+
+  it('leaves both counters at zero when the generation is aborted', async () => {
+    const store = await openedWithFiles()
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    stream.push(frame('file_start', { path: 'app.js' }))
+    await vi.waitFor(() => {
+      expect(store.generating).toBe(true)
+    })
+
+    store.reset()
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: ['app.js'], fileError: null }))
+    stream.close()
+    await running
+
+    expect(store.generationsApplied).toBe(0)
+    expect(store.filesRevision).toBe(0)
+  })
+
+  /**
+   * And the narrow window the guard exists for: the project is left **while the
+   * refetch is in flight**, so the increment is the first thing to run after the
+   * `await` returns. A counter bumped there would make the project now on screen
+   * rebuild its preview for a generation that belonged to another one.
+   */
+  it('does not move the counters for a generation whose project was left mid-refetch', async () => {
+    const store = await openedWithFiles()
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+
+    const slow = deferred()
+    fetchMock.mockReturnValueOnce(slow.promise)
+    stream.push(
+      frame('done', { message: ASSISTANT_MESSAGE, files: ['index.html'], fileError: null }),
+    )
+    stream.close()
+    await vi.waitFor(() => {
+      expect(store.filesLoading).toBe(true)
+    })
+
+    fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [] }))
+    await store.open('proj-2')
+
+    slow.settle(response({ files: [INDEX_FILE] }))
+    await running
+
+    expect(store.generationsApplied).toBe(0)
+    expect(store.filesRevision).toBe(0)
+  })
+
+  /* Both counters describe one project's file history, so they go back to zero
+   * with the rest of it. A preview mounted against a project it has never built
+   * for must not read a leftover count as "a generation just landed". */
+  it('zeroes both counters on reset', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(
+      cannedStream(
+        frame('done', { message: ASSISTANT_MESSAGE, files: ['index.html'], fileError: null }),
+      ),
+    )
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE] }))
+    await store.retryGeneration()
+    expect(store.generationsApplied).toBe(1)
+
+    store.reset()
+
+    expect(store.generationsApplied).toBe(0)
+    expect(store.filesRevision).toBe(0)
+  })
+
+  it('zeroes both counters when another project is opened', async () => {
+    const store = await openedWithFiles()
+    fetchMock.mockResolvedValueOnce(
+      cannedStream(
+        frame('done', { message: ASSISTANT_MESSAGE, files: ['index.html'], fileError: null }),
+      ),
+    )
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE] }))
+    await store.retryGeneration()
+    expect(store.filesRevision).toBe(1)
+
+    fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [] }))
+    await store.open('proj-2')
+
+    expect(store.generationsApplied).toBe(0)
+    expect(store.filesRevision).toBe(0)
+  })
 })
 
 /**
@@ -3167,5 +3375,76 @@ describe('restoreSnapshot', () => {
     expect(store.files).toEqual([])
     expect(store.restoringId).toBeNull()
     expect(store.restoreError).toBeNull()
+  })
+})
+
+/**
+ * What a restore owes the preview — found at ship time, when Slice 10 rebased
+ * onto a `main` that had already taken Slice 11.
+ *
+ * The two slices never touched the same lines: Slice 11 wrote `restoreSnapshot`,
+ * Slice 10 wrote the two counters, and the rebase produced one trivial conflict in
+ * the store's exported interface. The result was still wrong. A restore rewrites
+ * the **whole** stored file set — Slice 10's `filesRevision` counts exactly that,
+ * and moved for a one-file save while sitting still for a twenty-file rollback.
+ * The preview kept rendering the version the user had just replaced, with no hint
+ * that it was stale and no way to know except pressing Refresh on spec.
+ *
+ * `generationsApplied` deliberately does **not** move (Slice 10, D12). It is the
+ * unasked rebuild, and every rebuild re-runs the generated app's HighLevel calls
+ * against a 100-request/10-second account budget; a restore is a deliberate act
+ * whose result the user may want to read before spending that. The hint is the
+ * honest middle, and it is the same answer a save gets for the same reason.
+ */
+describe('restoreSnapshot — the preview’s signals', () => {
+  async function openedWithHistory(): Promise<ReturnType<typeof useWorkspaceStore>> {
+    fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE, ABOUT_FILE] }))
+    const store = useWorkspaceStore()
+    await store.open('proj-1')
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+    await store.loadSnapshots()
+    fetchMock.mockClear()
+    return store
+  }
+
+  it('moves filesRevision and not generationsApplied on a restore that changed the files', async () => {
+    const store = await openedWithHistory()
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE], changed: true }))
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+
+    await store.restoreSnapshot('snap-1')
+
+    expect(store.filesRevision).toBe(1)
+    expect(store.generationsApplied).toBe(0)
+  })
+
+  /*
+   * Slice 11's D10: `changed: false` is the project already *being* that version.
+   * Nothing was written, so the document on screen is the document the files
+   * describe — offering a Refresh would spend a rebuild to render it again.
+   */
+  it('moves neither counter when the restore changed nothing', async () => {
+    const store = await openedWithHistory()
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE, ABOUT_FILE], changed: false }))
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+
+    await store.restoreSnapshot('snap-1')
+
+    expect(store.filesRevision).toBe(0)
+    expect(store.generationsApplied).toBe(0)
+  })
+
+  /* A restore that failed wrote nothing — the batch is all-or-nothing. */
+  it('moves neither counter when the restore fails', async () => {
+    const store = await openedWithHistory()
+    fetchMock.mockResolvedValueOnce(response({ error: 'Could not restore that version.' }, 500))
+
+    await store.restoreSnapshot('snap-1')
+
+    expect(store.restoreError).not.toBeNull()
+    expect(store.filesRevision).toBe(0)
+    expect(store.generationsApplied).toBe(0)
   })
 })
