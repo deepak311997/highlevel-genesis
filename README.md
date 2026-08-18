@@ -55,9 +55,15 @@ npm run install:all      # root + frontend + functions
 npm run dev              # emulators + Vite, one command
 ```
 
-Then open **http://localhost:5173**. Sign up with any address — the Auth emulator issues the
-verification link rather than sending mail, and the Emulator UI's **Authentication** tab shows
-it. Use `localhost`, not `127.0.0.1`: the Vite dev server binds IPv6 by default.
+Then open **http://localhost:5173**. Sign up with any address: the Auth emulator issues the
+verification link instead of sending mail, and serves it from its own endpoint —
+
+```bash
+curl http://localhost:9099/emulator/v1/projects/demo-genesis/oobCodes
+```
+
+Open the `oobLink` from the newest entry and the account is verified. Use `localhost`, not
+`127.0.0.1`, for the app: the Vite dev server binds IPv6 by default.
 
 `npm run dev` wraps `firebase emulators:exec` around the Vite server, so one Ctrl-C stops
 both and the emulator data is exported to `.emulator-data` on the way out. To run the
@@ -72,8 +78,14 @@ npm --prefix frontend run dev:emulator   # in a second terminal, Vite wired to t
 | Surface        | URL                                                |
 | -------------- | -------------------------------------------------- |
 | App (Vite dev) | http://localhost:5173                              |
-| Emulator UI    | http://localhost:4000                              |
 | Functions      | http://localhost:5001/demo-genesis/asia-south1/api |
+| Auth emulator  | http://localhost:9099                              |
+| Emulator UI    | http://localhost:4000 — `npm run emulators` only   |
+
+The Emulator UI is the one thing the two commands differ on: `emulators:start` serves it,
+`emulators:exec` — which is what `npm run dev` wraps around Vite — does not. Everything the
+UI would show is on the endpoints above, which is why the verification link is fetched from
+`oobCodes` rather than clicked out of a console.
 
 The emulators run under the throwaway project id `demo-genesis`, which keeps everything local
 and offline. A real Firebase project is needed only to deploy.
