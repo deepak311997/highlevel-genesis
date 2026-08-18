@@ -126,7 +126,14 @@ describe('the generate function’s deployment surface', () => {
  * difference appears only in the deployed endpoint, which is what this reads.
  */
 describe('the api function\u2019s secret bindings', () => {
-  it.each(['HL_CLIENT_SECRET', 'OAUTH_STATE_SECRET'])('binds %s as a secret', (key) => {
+  it.each([
+    'HL_CLIENT_SECRET',
+    'OAUTH_STATE_SECRET',
+    'HL_CLIENT_ID',
+    'HL_VERSION_ID',
+    'HL_REDIRECT_URI',
+    'ALLOWED_ORIGINS',
+  ])('binds %s as a secret', (key) => {
     expect(secretsOf(deployed.api)).toContain(key)
   })
 
@@ -141,6 +148,40 @@ describe('the api function\u2019s secret bindings', () => {
       expect(secretsOf(deployed.generate)).not.toContain(key)
     },
   )
+})
+
+/**
+ * The four that are configuration rather than credentials, and are Secret
+ * Manager values anyway.
+ *
+ * None of them authorises anything — the credential half of the marketplace app
+ * is `HL_CLIENT_SECRET`, above. They are here because the alternative is
+ * `functions/.env`, and everything in that file becomes a plain environment
+ * variable on the Cloud Run service: readable by anyone with Viewer on the
+ * project, and printed into the deploy log by whatever writes the file. On a
+ * public repository that second one is a published value.
+ *
+ * The cost of the move is one Secret Manager entry each. The benefit is that the
+ * deploy no longer synthesises a `.env` at all, so there is no step that can leak
+ * one — the values go from Secret Manager to the Cloud Run revision as
+ * `secretKeyRef`s and are resolved when the instance starts.
+ */
+describe('the origin allowlist reaches both functions', () => {
+  /*
+   * `generate.ts` imports `originAllowlist` from `./api`, so the CORS layer on
+   * the streaming endpoint reads the same value the CRUD one does. A binding on
+   * `api` alone would leave `generate` resolving it to `''` and falling back to
+   * the localhost defaults — which, in production, rejects the real site.
+   */
+  it.each(['api', 'generate'] as const)('binds ALLOWED_ORIGINS on %s', (name) => {
+    expect(secretsOf(deployed[name])).toContain('ALLOWED_ORIGINS')
+  })
+
+  /* The model key stays where it was: one function, the one that spends money. */
+  it('binds ANTHROPIC_API_KEY on generate alone', () => {
+    expect(secretsOf(deployed.generate)).toContain('ANTHROPIC_API_KEY')
+    expect(secretsOf(deployed.api)).not.toContain('ANTHROPIC_API_KEY')
+  })
 })
 
 /**

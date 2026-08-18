@@ -173,77 +173,100 @@ else
   say "4. key — skipped (--no-key)"
 fi
 
-# ─── variables ────────────────────────────────────────────────────────────────
+# ─── configuration ────────────────────────────────────────────────────────────
 #
-# Read out of the local .env files rather than asked for, so the deployed
-# configuration is the one that was verified by hand locally. Nothing secret is
-# read: the two values that were once in functions/.env are `defineSecret`s now
-# and live in Secret Manager, which the deploy binds but never reads.
-say "5. repository variables"
+# Everything the deploy needs beyond the key itself lives in Secret Manager, and
+# nothing is held in GitHub. Three reasons, in order of how much they matter:
+#
+#  1. GitHub prints a step's whole `env:` block into the run log and masks a
+#     secret but not a variable. This repository is public, so a variable there
+#     was a published value.
+#  2. One home instead of two. The functions already read their credentials from
+#     Secret Manager; splitting the rest across repository variables meant the
+#     answer to "what is this deployment configured with" was in two places.
+#  3. The project id and the Firestore database id are in neither: they are read
+#     from `.firebaserc` and `firebase.json`, which are committed. A copy in
+#     GitHub would be a second source of truth for a value that has one.
+#
+# **The SPA's values are not secret and this does not pretend otherwise.** Vite
+# compiles every one of them into the bundle, which is served to every visitor.
+# What Secret Manager buys for them is a single home and a deploy log that does
+# not republish them — not confidentiality, which is impossible for a value the
+# browser must have.
+say "5. configuration → Secret Manager"
 
 value_of() { # file, key
   [[ -f "$1" ]] || return 0
   sed -n "s/^$2=//p" "$1" | head -1 | sed 's/[[:space:]]*$//'
 }
 
-set_var() { # name, value
+# Piped, never passed as an argument: an argument is visible in `ps` for as long
+# as the call takes.
+put_secret() { # name, value
   local name="$1" value="${2:-}"
   if [[ -z "$value" ]]; then
     echo "  $name — blank locally, skipped"
     return 0
   fi
-  echo "  $name (variable)"
-  run gh variable set "$name" --repo "$REPO" --body "$value"
-}
-
-# The same thing, as a masked secret.
-#
-# GitHub prints a step's whole `env:` block into the run log and masks a secret
-# but not a variable. This repository is public, so a variable there is a
-# published value — which is fine for anything the bundle or the repository
-# already publishes, and not fine for the HighLevel app's identifiers.
-#
-# Piped rather than passed as an argument: an argument is visible in `ps` for as
-# long as the call takes.
-set_secret() { # name, value
-  local name="$1" value="${2:-}"
-  if [[ -z "$value" ]]; then
-    echo "  $name — blank locally, skipped"
-    return 0
-  fi
-  echo "  $name (secret, masked in logs)"
   if $DRY_RUN; then
-    printf '  would run: gh secret set %s --repo %s (value from stdin)\n' "$name" "$REPO"
+    printf '  would set %s (%d chars, from stdin)\n' "$name" "${#value}"
+    return 0
+  fi
+  if gcloud secrets describe "$name" --project "$PROJECT_ID" >/dev/null 2>&1; then
+    printf '%s' "$value" | gcloud secrets versions add "$name" --data-file=- --project "$PROJECT_ID" >/dev/null
+    echo "  $name — new version"
   else
-    printf '%s' "$value" | gh secret set "$name" --repo "$REPO"
+    printf '%s' "$value" | gcloud secrets create "$name" \
+      --replication-policy=automatic --data-file=- --project "$PROJECT_ID" >/dev/null
+    echo "  $name — created"
   fi
 }
 
-set_var FIREBASE_PROJECT_ID "$PROJECT_ID"
-
-for key in VITE_FIREBASE_API_KEY VITE_FIREBASE_AUTH_DOMAIN VITE_FIREBASE_PROJECT_ID \
-           VITE_FIREBASE_STORAGE_BUCKET VITE_FIREBASE_MESSAGING_SENDER_ID \
-           VITE_FIREBASE_APP_ID VITE_GOOGLE_RECAPTCHA_V3_KEY; do
-  set_var "$key" "$(value_of frontend/.env "$key")"
+# The four that the `api` function declares with defineSecret. The credentials it
+# also declares — HL_CLIENT_SECRET, OAUTH_STATE_SECRET, ANTHROPIC_API_KEY — are
+# checked below rather than written, because this script never handles a value a
+# human has not already put somewhere deliberate.
+for key in HL_CLIENT_ID HL_VERSION_ID HL_REDIRECT_URI ALLOWED_ORIGINS; do
+  put_secret "$key" "$(value_of functions/.env "$key")"
 done
 
-# Already in the committed firebase.json, so masking it would be theatre.
-set_var FIRESTORE_DATABASE_ID "$(value_of functions/.env FIRESTORE_DATABASE_ID)"
+# The SPA build's whole .env, as one secret, because the deploy writes it back
+# out as one file. Per-key secrets would be seven entries and seven chances for
+# the workflow and this script to disagree about the list.
+if [[ -f frontend/.env ]]; then
+  # Only the keys the app reads. `firebase apps:sdkconfig WEB` prints two more —
+  # storageBucket and messagingSenderId — and src/lib/firebase.ts stopped
+  # carrying them, since nothing this app loads looks at either.
+  FRONTEND_ENV="$(grep -E '^(VITE_FIREBASE_API_KEY|VITE_FIREBASE_AUTH_DOMAIN|VITE_FIREBASE_PROJECT_ID|VITE_FIREBASE_APP_ID|VITE_GOOGLE_RECAPTCHA_V3_KEY)=' frontend/.env || true)"
+  FRONTEND_ENV+=$'\n# Blank: production is same-origin through the Hosting rewrite.\nVITE_FUNCTIONS_BASE_URL=\n'
+  put_secret FRONTEND_ENV "$FRONTEND_ENV"
+else
+  echo "  FRONTEND_ENV — no frontend/.env here, skipped"
+fi
 
-# Not published anywhere else, and this repository is public.
-for key in HL_CLIENT_ID HL_VERSION_ID HL_REDIRECT_URI ALLOWED_ORIGINS; do
-  set_secret "$key" "$(value_of functions/.env "$key")"
-done
+# ─── GitHub cleanup ───────────────────────────────────────────────────────────
+#
+# Earlier versions of this script put all of the above in GitHub, as variables
+# and then as secrets. Both are removed rather than left: a stale variable still
+# resolves in a workflow expression, so one left behind is a value that keeps
+# being published long after the workflow stopped reading it.
+say "6. GitHub — only the key should remain"
 
-# Left behind by an earlier run of this script, when these were variables. A
-# variable and a secret of the same name can coexist, and the variable is the one
-# that ends up in the log — so the cleanup is the point, not tidiness.
-for key in HL_CLIENT_ID HL_VERSION_ID HL_REDIRECT_URI ALLOWED_ORIGINS; do
+for key in FIREBASE_PROJECT_ID FIRESTORE_DATABASE_ID VITE_FIREBASE_API_KEY \
+           VITE_FIREBASE_AUTH_DOMAIN VITE_FIREBASE_PROJECT_ID VITE_FIREBASE_STORAGE_BUCKET \
+           VITE_FIREBASE_MESSAGING_SENDER_ID VITE_FIREBASE_APP_ID \
+           VITE_GOOGLE_RECAPTCHA_V3_KEY HL_CLIENT_ID HL_VERSION_ID \
+           HL_REDIRECT_URI ALLOWED_ORIGINS; do
   if gh variable list --repo "$REPO" --json name -q '.[].name' | grep -qx "$key"; then
-    echo "  $key — deleting the stale variable"
+    echo "  deleting variable $key"
     run gh variable delete "$key" --repo "$REPO"
   fi
+  if gh secret list --repo "$REPO" --json name -q '.[].name' | grep -qx "$key"; then
+    echo "  deleting secret $key"
+    run gh secret delete "$key" --repo "$REPO"
+  fi
 done
+echo "  keeping FIREBASE_SERVICE_ACCOUNT"
 
 # ─── Secret Manager ───────────────────────────────────────────────────────────
 #
@@ -252,7 +275,7 @@ done
 # about the binding — and that is a five-second check here against a ten-minute
 # failure in CI. Creating one would mean this script handling secret values,
 # which it deliberately never does.
-say "6. Secret Manager"
+say "7. Secret Manager — the credentials"
 MISSING=()
 for secret in ANTHROPIC_API_KEY HL_CLIENT_SECRET OAUTH_STATE_SECRET; do
   if gcloud secrets describe "$secret" --project "$PROJECT_ID" >/dev/null 2>&1; then

@@ -26,6 +26,43 @@ afterEach(() => {
 })
 
 describe('firebase bootstrap', () => {
+  /**
+   * The config carries what a loaded SDK reads, and nothing else.
+   *
+   * `storageBucket` and `messagingSenderId` were in here because
+   * `firebase apps:sdkconfig WEB` prints them, not because anything wanted them:
+   * this app imports `firebase/app`, `firebase/auth` and App Check, and none of
+   * those three looks at either field. They were two more values to carry
+   * through a `.env`, a repository variable and a deploy log, for no behaviour at
+   * all.
+   *
+   * Asserted rather than just deleted, because the failure mode of adding one
+   * back is silence — an unread config key costs nothing at runtime and so
+   * nothing ever complains.
+   */
+  it('carries no configuration the loaded SDKs do not read', async () => {
+    // Stubbed *present*, which is the only way this test can fail: the default
+    // test environment sets neither, so asserting their absence against it would
+    // pass whether the code read them or not.
+    vi.stubEnv('VITE_FIREBASE_STORAGE_BUCKET', 'genesis-test.appspot.com')
+    vi.stubEnv('VITE_FIREBASE_MESSAGING_SENDER_ID', '000000000000')
+    vi.resetModules()
+
+    const { app } = await import('./firebase')
+    const keys = Object.keys(app.options)
+
+    expect(keys).not.toContain('storageBucket')
+    expect(keys).not.toContain('messagingSenderId')
+
+    // A subset rather than an exact list: `appId` is spread in only when it is
+    // configured, and the test environment does not configure it. What this pins
+    // is that nothing *outside* the set can appear.
+    expect(keys.every((key) => ['apiKey', 'authDomain', 'projectId', 'appId'].includes(key))).toBe(
+      true,
+    )
+    expect(keys).toEqual(expect.arrayContaining(['apiKey', 'authDomain', 'projectId']))
+  })
+
   it('does not connect to an emulator outside emulator mode', async () => {
     const { connectAuthEmulator } = await import('firebase/auth')
 
