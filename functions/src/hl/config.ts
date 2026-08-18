@@ -65,24 +65,6 @@ export function hlClientId(): string {
 }
 
 /**
- * The app **version** the consent screen should honour.
- *
- * Required by the v2 authorize endpoint, and its absence is not a soft failure:
- * without it HighLevel answers `No integration found with the id: <app id>`,
- * naming the app it could not resolve, which reads like a broken client id and
- * sends you to regenerate keys that were never the problem.
- *
- * The value is the app id — the segment of `HL_CLIENT_ID` before the hyphen —
- * but it is configured separately rather than derived, because "they happen to
- * be equal today" is not a contract HighLevel has offered.
- */
-export const HL_VERSION_ID = defineSecret('HL_VERSION_ID')
-
-export function hlVersionId(): string {
-  return requiredSecret(HL_VERSION_ID, 'HL_VERSION_ID')
-}
-
-/**
  * The marketplace app's client secret, from Secret Manager.
  *
  * `defineSecret` rather than `required()`, for the reason `ANTHROPIC_API_KEY` is

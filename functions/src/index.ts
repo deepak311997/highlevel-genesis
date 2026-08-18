@@ -4,7 +4,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler'
 
 import { ALLOWED_ORIGINS, createApiApp } from './api'
 import { deleteExpiredUnverifiedUsers } from './auth/cleanup'
-import { HL_CLIENT_ID, HL_CLIENT_SECRET, HL_REDIRECT_URI, HL_VERSION_ID } from './hl/config'
+import { HL_CLIENT_ID, HL_CLIENT_SECRET, HL_REDIRECT_URI } from './hl/config'
 import { OAUTH_STATE_SECRET } from './hl/state'
 
 setGlobalOptions({ region: 'asia-south1', maxInstances: 10 })
@@ -46,7 +46,6 @@ export const api = onRequest(
       HL_CLIENT_SECRET,
       OAUTH_STATE_SECRET,
       HL_CLIENT_ID,
-      HL_VERSION_ID,
       HL_REDIRECT_URI,
       ALLOWED_ORIGINS,
     ],
