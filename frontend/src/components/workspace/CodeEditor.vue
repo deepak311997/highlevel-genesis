@@ -14,6 +14,9 @@ import {
   type ModelRegistry,
   type MonacoModelApi,
 } from '@/lib/editorModels'
+// Names only — this module holds no monaco import, so referencing it here does
+// not drag the editor chunk back in front of the dynamic import.
+import { THEME_DARK, THEME_LIGHT } from '@/lib/editorTheme'
 import { useWorkspaceStore } from '@/stores/workspace'
 
 /**
@@ -259,7 +262,7 @@ onBeforeUnmount(() => {
       v-if="status === 'ready'"
       width="100%"
       height="100%"
-      :theme="dark ? 'vs-dark' : 'vs'"
+      :theme="dark ? THEME_DARK : THEME_LIGHT"
       :options="options"
       @mount="onMount"
       @update:value="onUpdateValue"

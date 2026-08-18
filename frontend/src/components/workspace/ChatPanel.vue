@@ -113,8 +113,8 @@ function retry(): void {
 
 <template>
   <section class="flex h-full min-h-0 flex-col" data-testid="chat-panel">
-    <header class="flex shrink-0 items-center justify-between gap-3 px-4 py-3">
-      <h2 class="text-sm font-semibold">Chat</h2>
+    <header class="flex shrink-0 items-center justify-between gap-3 px-3 py-2.5">
+      <h2 class="label-micro">Chat</h2>
       <!-- Only while a stream is open (D30, AC-39). -->
       <Badge v-if="workspace.generating" variant="secondary" data-testid="chat-generating">
         Generating…

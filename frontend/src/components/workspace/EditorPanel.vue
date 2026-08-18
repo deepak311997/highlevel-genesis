@@ -38,7 +38,7 @@ import { Separator } from '@/components/ui/separator'
          `SnapshotSheet` owns everything past the click — this panel neither
          knows nor stores whether the sheet is open (D20). -->
     <header class="flex shrink-0 items-center justify-between px-4 py-3">
-      <h2 class="text-sm font-semibold">Code</h2>
+      <h2 class="label-micro">Code</h2>
       <SnapshotSheet />
     </header>
 
