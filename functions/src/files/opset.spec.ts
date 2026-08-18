@@ -188,8 +188,40 @@ describe('fileErrorCopy — the whole table (D9, D10)', () => {
     ],
     [{ reason: 'incomplete' }, 'The reply was cut short, so no files were saved. Try again.'],
     [{ reason: 'write-failed' }, 'The generated files could not be saved. Try again.'],
+    [
+      { reason: 'edit-unknown-file', path: 'theme.css' },
+      'Genesis could not apply the change: "theme.css" is not a file in this project. Nothing was changed.',
+    ],
+    [
+      { reason: 'edit-no-match', path: 'styles.css' },
+      'Genesis could not apply the change to "styles.css": the text it was changing is no longer in the file. Nothing was changed.',
+    ],
+    [
+      { reason: 'edit-ambiguous', path: 'styles.css' },
+      'Genesis could not apply the change to "styles.css": the text it was changing appears more than once, so Genesis could not tell which one to change. Nothing was changed.',
+    ],
+    [
+      { reason: 'edit-malformed', path: 'styles.css' },
+      'Genesis could not apply the change to "styles.css": it was written in a form Genesis could not read. Nothing was changed.',
+    ],
+    [
+      { reason: 'edit-stale', path: 'styles.css' },
+      'Genesis could not apply the change to "styles.css": the file changed while Genesis was writing. Nothing was changed.',
+    ],
   ] as [FileRejection, string][])('renders the %o reason verbatim', (reason, copy) => {
     expect(fileErrorCopy(reason)).toBe(copy)
+  })
+
+  it.each([
+    'edit-unknown-file',
+    'edit-no-match',
+    'edit-ambiguous',
+    'edit-malformed',
+    'edit-stale',
+  ] as const)('puts a hostile path through displayPath for %s', (reason) => {
+    const copy = fileErrorCopy({ reason, path: 'a\nb'.padEnd(120, 'x') })
+    expect(copy).not.toContain('\n')
+    expect(copy.length).toBeLessThan(220)
   })
 })
 

@@ -27,12 +27,23 @@ import { createSseParser } from './sse'
 /** What a turn is: a new prompt, or a re-run of the one already stored. */
 export type GenerateTurn = { content: string } | { retry: true }
 
+/** Whether a whole-file block makes a file or replaces one. */
+export type FileWriteMode = 'create' | 'rewrite'
+
 export type GenerateEvent =
   | { type: 'user'; message: Message }
   | { type: 'token'; text: string }
-  | { type: 'file_start'; path: string }
+  | { type: 'file_start'; path: string; mode: FileWriteMode }
   | { type: 'file_chunk'; path: string; text: string }
   | { type: 'file_end'; path: string }
+  /**
+   * A located change: `from`/`to` are 1-based lines into the file as the server
+   * read it, `to` exclusive. `from === to` is an insertion — the four verbs that
+   * are not a whole-file write all arrive as this one shape.
+   */
+  | { type: 'edit_start'; path: string; from: number; to: number }
+  | { type: 'edit_chunk'; path: string; text: string }
+  | { type: 'edit_end'; path: string }
   | { type: 'done'; message: Message; files: string[]; fileError: string | null }
   | { type: 'error'; error: string; code: string; message: Message | null }
 
@@ -106,16 +117,35 @@ function toEvent(name: string, data: unknown): GenerateEvent | null {
     return typeof data['text'] === 'string' ? { type: 'token', text: data['text'] } : null
   }
 
-  if (name === 'file_start' || name === 'file_end') {
+  if (name === 'file_start') {
     const path = data['path']
     if (typeof path !== 'string') return null
-    return name === 'file_start' ? { type: 'file_start', path } : { type: 'file_end', path }
+    // Tolerant like every other narrowing here: anything that is not the word
+    // `create` means the file was already there, which is the safer thing to say.
+    return { type: 'file_start', path, mode: data['mode'] === 'create' ? 'create' : 'rewrite' }
   }
 
-  if (name === 'file_chunk') {
+  if (name === 'file_end' || name === 'edit_end') {
+    const path = data['path']
+    if (typeof path !== 'string') return null
+    return name === 'file_end' ? { type: 'file_end', path } : { type: 'edit_end', path }
+  }
+
+  if (name === 'file_chunk' || name === 'edit_chunk') {
     const { path, text } = data
     if (typeof path !== 'string' || typeof text !== 'string') return null
-    return { type: 'file_chunk', path, text }
+    return name === 'file_chunk'
+      ? { type: 'file_chunk', path, text }
+      : { type: 'edit_chunk', path, text }
+  }
+
+  if (name === 'edit_start') {
+    const { path, from, to } = data
+    // The range is what the browser splices with, so a malformed one is dropped
+    // rather than coerced — the `done` refetch is one event away either way.
+    if (typeof path !== 'string' || typeof from !== 'number' || typeof to !== 'number') return null
+    if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from) return null
+    return { type: 'edit_start', path, from, to }
   }
 
   if (name === 'done') {

@@ -1,4 +1,5 @@
 import type { FileMeta } from './filesApi'
+import type { StreamMode } from './streamingDocuments'
 
 /**
  * The file tree's decisions, made once and here.
@@ -8,11 +9,17 @@ import type { FileMeta } from './filesApi'
  * own tests rather than inside a `computed` or a template.
  */
 
-/** One row of the tree: a filename, and whether this turn is still writing it. */
+/** One row of the tree: a filename, and what this turn is doing to it. */
 export interface FileRow {
   path: string
-  /** True while a `file_start` has arrived for this path and no `file_end` has. */
-  writing: boolean
+  /**
+   * What the reply is doing to this file right now, or `idle`.
+   *
+   * Three words rather than a boolean, because the three mean different things to
+   * a reader watching: a file appearing, a file being replaced, and a file being
+   * changed in place.
+   */
+  state: 'idle' | StreamMode
 }
 
 /** The generated app's entry point — the file a reader opens first. */
@@ -37,15 +44,19 @@ export function compareFilePaths(a: string, b: string): number {
  * The tree the user sees: what is stored, plus what is arriving, as one list.
  *
  * A file being written for the first time has no stored document yet and must
- * still appear; one being *rewritten* is in both lists and must appear once,
- * marked. The union is over paths rather than documents because a streaming path
- * has no document to take.
+ * still appear; one being changed is in both and must appear once, marked. The
+ * union is over paths rather than documents because a streaming path may have no
+ * document to take.
  */
-export function mergeFileTree(stored: FileMeta[], streaming: string[]): FileRow[] {
-  const writing = new Set(streaming)
-  const paths = new Set([...stored.map((file) => file.path), ...streaming])
+export function mergeFileTree(
+  stored: FileMeta[],
+  streaming: Record<string, StreamMode>,
+): FileRow[] {
+  const paths = new Set([...stored.map((file) => file.path), ...Object.keys(streaming)])
 
-  return [...paths].sort(compareFilePaths).map((path) => ({ path, writing: writing.has(path) }))
+  return [...paths]
+    .sort(compareFilePaths)
+    .map((path) => ({ path, state: streaming[path] ?? 'idle' }))
 }
 
 /**

@@ -22,10 +22,9 @@ const store = reactive({
   generating: false,
   streamingText: '',
   /* Read by `StreamingStatus` and `MessageBody`, which the placeholder now mounts. */
-  streamingFiles: {},
+  streamingStates: {},
   selectFile: vi.fn(),
   generateError: null as string | null,
-  generateFileError: null as string | null,
   loadMessages: vi.fn(),
   retryGeneration: vi.fn(),
 })
@@ -122,7 +121,6 @@ beforeEach(() => {
   store.generating = false
   store.streamingText = ''
   store.generateError = null
-  store.generateFileError = null
   vi.clearAllMocks()
 })
 
@@ -603,38 +601,6 @@ describe('ChatPanel — file chips', () => {
  * Its own notice rather than `generateError`'s: the reply itself succeeded and is
  * in the transcript, so offering the Retry that belongs to a failed generation
  * would be the wrong action for the wrong problem.
- */
-describe('ChatPanel — the generation’s file error', () => {
-  it('renders the file error with no retry', () => {
-    store.messagesLoaded = true
-    store.messages = [ASSISTANT]
-    store.generateFileError = 'That reply left “app.js” unfinished, so nothing was saved.'
-
-    const wrapper = mount(ChatPanel, MOUNT)
-
-    expect(wrapper.find('[data-testid="generate-file-error"]').text()).toContain(
-      'That reply left “app.js” unfinished, so nothing was saved.',
-    )
-    expect(wrapper.find('[data-testid="generate-retry"]').exists()).toBe(false)
-  })
-
-  it('renders nothing when the turn wrote its files cleanly', () => {
-    store.messagesLoaded = true
-    store.messages = [ASSISTANT]
-
-    const wrapper = mount(ChatPanel, MOUNT)
-
-    expect(wrapper.find('[data-testid="generate-file-error"]').exists()).toBe(false)
-  })
-})
-
-/*
- * The failure, in the transcript.
- *
- * A turn that failed is written down now, carrying why, so it survives a
- * refresh and reads in order with everything else. It used to exist only as a
- * flag in memory: the reply vanished, a banner appeared under the panel, and
- * reloading swallowed the whole turn as if the user had never spoken.
  */
 describe('a failed turn', () => {
   const FAILED = {

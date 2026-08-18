@@ -12,9 +12,9 @@ import { reactive } from 'vue'
  * *which file is being written*, which the store already knows and the panel was throwing away.
  */
 
-const store = reactive<{ streamingText: string; streamingFiles: Record<string, string> }>({
+const store = reactive<{ streamingText: string; streamingStates: Record<string, string> }>({
   streamingText: '',
-  streamingFiles: {},
+  streamingStates: {},
 })
 
 vi.mock('@/stores/workspace', () => ({ useWorkspaceStore: () => store }))
@@ -23,7 +23,7 @@ const StreamingStatus = (await import('./StreamingStatus.vue')).default
 
 function set(text: string, files: Record<string, string> = {}): void {
   store.streamingText = text
-  store.streamingFiles = files
+  store.streamingStates = files
 }
 
 describe('before anything has arrived', () => {

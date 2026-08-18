@@ -263,21 +263,6 @@ function retry(): void {
       </Button>
     </div>
 
-    <!--
-      A turn whose files were refused. Its own notice, and deliberately without a
-      Retry: the reply itself succeeded and is in the transcript above, so what went
-      wrong is the model's output and the fix is the next prompt.
-    -->
-    <div
-      v-if="workspace.generateFileError"
-      data-testid="generate-file-error"
-      class="border-t border-border p-3"
-    >
-      <Alert>
-        <AlertDescription>{{ workspace.generateFileError }}</AlertDescription>
-      </Alert>
-    </div>
-
     <MessageComposer v-if="showComposer" />
   </section>
 </template>

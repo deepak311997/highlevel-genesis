@@ -5,6 +5,12 @@ import { ApiError } from '@/lib/api'
 import { mergeFileTree, type FileRow } from '@/lib/files'
 import { getFile, listFiles, saveFile as putFile, type FileMeta } from '@/lib/filesApi'
 import { streamGeneration, type GenerateTurn } from '@/lib/generateApi'
+import { dispatchGenerationEvent, type GenerationSink } from '@/lib/generationSink'
+import {
+  splitAtRange,
+  StreamingDocuments,
+  type StreamMode,
+} from '@/lib/streamingDocuments'
 import { listMessages, MESSAGE_LIMIT, type Message } from '@/lib/messagesApi'
 import { getProject, type Project } from '@/lib/projectsApi'
 import { listSnapshots, restoreSnapshot as postRestore, type Snapshot } from '@/lib/snapshotsApi'
@@ -121,21 +127,18 @@ export interface WorkspaceStore {
   /** Kept apart from `fileError`: one renders beside Save, one instead of the editor. */
   saveError: Ref<string | null>
   /**
-   * The bytes of the current generation, per path — **watched, not stored**.
-   *
-   * A mutated `Record` rather than a re-assigned object: a chunk arrives per frame,
-   * and replacing the whole object each time would invalidate every computed
-   * reading any file's buffer instead of just the one that changed.
+   * Every path this turn is writing, and what it is doing to each — **watched,
+   * not stored**.
    */
-  streamingFiles: Ref<Record<string, string>>
+  streamingStates: ComputedRef<Record<string, StreamMode>>
+  /** What one path looks like right now, mid-change, or `undefined`. */
+  streamingContent: (path: string) => string | undefined
   /** The tree the panel renders: stored ∪ streaming, streaming marked. */
   fileTree: ComputedRef<FileRow[]>
   /** What the editor shows — the streaming buffer while one exists, else the file. */
   editorContent: ComputedRef<string>
   /** The notice for the **active** tab: a generation replaced this buffer. */
   fileReplaced: ComputedRef<boolean>
-  /** The last generation's `fileError`, kept apart from `generateError`. */
-  generateFileError: Ref<string | null>
   /**
    * The project's version history — **metadata only**, newest first. A version is
    * up to 20 files of up to 100 KB each, and opening a history sheet must not ship
@@ -333,8 +336,14 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
   const fileError = computed(() => activeBuffer.value?.error ?? null)
   const fileReplaced = computed(() => activeBuffer.value?.replaced ?? false)
 
-  const streamingFiles = ref<Record<string, string>>({})
-  const generateFileError = ref<string | null>(null)
+  /**
+   * What the reply is writing, per path — the whole of the live editor view.
+   *
+   * A class rather than a `Record` because the composition rule (prefix + body +
+   * suffix) and the lazy base have invariants across four fields, and one owner is
+   * how they stay true. See `lib/streamingDocuments.ts`.
+   */
+  const documents = new StreamingDocuments()
   const generationsApplied = ref(0)
   const filesRevision = ref(0)
 
@@ -351,7 +360,8 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
    */
   let autoSelected: string | null = null
 
-  const fileTree = computed(() => mergeFileTree(files.value, Object.keys(streamingFiles.value)))
+  const streamingStates = computed(() => documents.states())
+  const fileTree = computed(() => mergeFileTree(files.value, streamingStates.value))
 
   /**
    * The streaming buffer wins while the file is being written: a new file has no
@@ -361,7 +371,7 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
   const editorContent = computed(() => {
     const path = selectedPath.value
     if (path === null) return ''
-    return streamingFiles.value[path] ?? activeBuffer.value?.content ?? ''
+    return documents.content(path) ?? activeBuffer.value?.content ?? ''
   })
 
   /**
@@ -999,8 +1009,7 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     autoSelected = null
     saving.value = false
     saveError.value = null
-    streamingFiles.value = {}
-    generateFileError.value = null
+    documents.clear()
     generationsApplied.value = 0
     filesRevision.value = 0
   }
@@ -1019,6 +1028,117 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     snapshotsError.value = null
     restoringId.value = null
     restoreError.value = null
+  }
+
+  /**
+   * The store's half of the streaming protocol — one method per frame.
+   *
+   * Built per generation so it closes over that turn's number and project id: a
+   * reply belonging to a project the user has since left cannot write into the one
+   * they are looking at, and the guard is the same `current(gen)` every other
+   * async path here uses.
+   */
+  function createSink(gen: number, id: string): GenerationSink {
+    /**
+     * What a change should be composed around: whatever the browser is already
+     * showing for that path, then whatever it has read. `undefined` means it holds
+     * neither, and the base has to be fetched.
+     *
+     * The first branch is what makes a second change to one file land on the first
+     * one's result rather than on the stored bytes.
+     */
+    function baseFor(path: string): string | undefined {
+      return documents.content(path) ?? buffers.value[path]?.content
+    }
+
+    /** Go and get a file the browser does not hold, so the change can be placed. */
+    async function fetchBase(path: string, from: number, to: number): Promise<void> {
+      try {
+        const file = await getFile(id, path)
+        if (!current(gen)) return
+        documents.rebase(path, splitAtRange(file.content, from, to))
+      } catch {
+        // Nothing to say: the new text is on screen by itself, and `done` refetches
+        // the stored file a moment later either way.
+      }
+    }
+
+    /**
+     * The first path a reply touches opens itself, but **only into an empty
+     * panel**: moving a user off the file they were reading, mid-reply, is the
+     * screen being taken away from them. Recorded as this generation's own
+     * selection, so a turn that stores nothing can put the panel back.
+     */
+    function openIntoEmptyPanel(path: string): void {
+      if (openTabs.value.length > 0) return
+      openTab(path)
+      selectedPath.value = path
+      autoSelected = path
+    }
+
+    return {
+      onUserMessage(message) {
+        messages.value = [...messages.value.filter((m) => m.id !== PENDING_ID), message]
+      },
+
+      onToken(text) {
+        // Re-assigned, not pushed to: one reactive write per token.
+        streamingText.value += text
+      },
+
+      onFileStart(path, mode) {
+        documents.beginFile(path, mode)
+        openIntoEmptyPanel(path)
+      },
+
+      onFileChunk(path, text) {
+        documents.push(path, text)
+      },
+
+      /*
+       * Neither end frame closes anything here: the row stays marked until the
+       * whole generation resolves, because until `done` says so the file is
+       * watched rather than stored. The methods exist because the protocol has
+       * the frames — a sink that quietly lacked them would be a sink that could
+       * be given a frame nobody handles.
+       */
+      onFileEnd() {
+        return undefined
+      },
+
+      onEditStart(path, from, to) {
+        const base = baseFor(path)
+        documents.beginEdit(path, base === undefined ? null : splitAtRange(base, from, to))
+        if (base === undefined) void fetchBase(path, from, to)
+        openIntoEmptyPanel(path)
+      },
+
+      onEditChunk(path, text) {
+        documents.push(path, text)
+      },
+
+      onEditEnd() {
+        return undefined
+      },
+
+      async onDone(message, written) {
+        messages.value = [...messages.value, message]
+        await applyGenerationFiles(written, gen)
+      },
+
+      /*
+       * An `error` carries the message the server actually **persisted**, or `null`
+       * when nothing had been produced. Appending the server's copy rather than the
+       * client's accumulated text makes the interrupted case the same rendering
+       * path as the successful one — and a refused file set is not here at all: it
+       * arrives as an `[error: …]` marker inside the message.
+       */
+      onFailure(error, _code, message) {
+        if (message !== null) messages.value = [...messages.value, message]
+        generateError.value = error
+        return Promise.resolve()
+      },
+    }
   }
 
   /**
@@ -1045,85 +1165,20 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     generating.value = true
     streamingText.value = ''
     generateError.value = null
-    streamingFiles.value = {}
-    generateFileError.value = null
+    documents.clear()
     // Whatever the last generation selected for itself is the last generation's
     // business; this one has borrowed nothing yet.
     autoSelected = null
 
+    const sink = createSink(gen, id)
+
     try {
       for await (const event of streamGeneration(id, turn, ours.signal)) {
         if (!current(gen)) return
-
-        /*
-         * The prompt as stored. The bubble was drawn the moment the user hit send,
-         * so this replaces that placeholder with the document — which is what makes
-         * its id and timestamp real rather than guessed.
-         */
-        if (event.type === 'user') {
-          messages.value = [...messages.value.filter((m) => m.id !== PENDING_ID), event.message]
-          continue
-        }
-
-        if (event.type === 'token') {
-          // Re-assigned, not pushed to: one reactive write per token.
-          streamingText.value += event.text
-          continue
-        }
-
-        if (event.type === 'file_start') {
-          streamingFiles.value[event.path] = ''
-          /*
-           * The first streamed file opens itself, but only into an empty panel:
-           * moving a user off the file they were reading, mid-reply, is the screen
-           * being taken away from them.
-           *
-           * Recorded as this generation's own selection, so a turn that stores
-           * nothing can put the panel back.
-           */
-          if (openTabs.value.length === 0) {
-            openTab(event.path)
-            selectedPath.value = event.path
-            autoSelected = event.path
-          }
-          continue
-        }
-
-        if (event.type === 'file_chunk') {
-          /*
-           * Keyed by the frame's own path, so interleaved files cannot bleed into
-           * each other and a client that missed a `file_start` still routes
-           * correctly. Mutated in place: replacing the whole record per chunk would
-           * invalidate every computed reading any file's buffer.
-           */
-          streamingFiles.value[event.path] = (streamingFiles.value[event.path] ?? '') + event.text
-          continue
-        }
-
-        // `file_end` closes nothing here: the row stays marked until the whole
-        // generation resolves, because until `done` says so the file is watched
-        // rather than stored.
-        if (event.type === 'file_end') continue
-
-        if (event.type === 'done') {
-          messages.value = [...messages.value, event.message]
-          generateFileError.value = event.fileError
-          await applyGenerationFiles(event.files, gen)
-          return
-        }
-
-        /*
-         * An `error` carries the message the server actually **persisted**, or
-         * `null` when nothing had been produced. Appending the server's copy rather
-         * than the client's accumulated text makes the interrupted case the same
-         * rendering path as the successful one.
-         *
-         * Reached by exhaustion, so the compiler keeps this branch honest if a
-         * seventh event is ever added.
-         */
-        if (event.message !== null) messages.value = [...messages.value, event.message]
-        generateError.value = event.error
-        return
+        // One `switch`, in `generationSink.ts`, and one method per frame — so a
+        // frame added to the protocol is a compile error rather than a branch
+        // nobody wrote.
+        if ((await dispatchGenerationEvent(sink, event)) === 'closed') return
       }
     } catch (err) {
       if (!current(gen)) return
@@ -1166,7 +1221,7 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
          * After the `done` branch's refetch rather than before it, so the tree does
          * not flash empty for the length of the list request.
          */
-        streamingFiles.value = {}
+        documents.clear()
         generating.value = false
         // A turn that never reached `done` stored nothing, so the tab it opened for
         // itself goes back — see `closeAutoSelected`.
@@ -1278,11 +1333,11 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     fileError,
     saving,
     saveError,
-    streamingFiles,
+    streamingStates,
+    streamingContent: (path: string) => documents.content(path),
     fileTree,
     editorContent,
     fileReplaced,
-    generateFileError,
     snapshots,
     snapshotsLoading,
     snapshotsLoaded,

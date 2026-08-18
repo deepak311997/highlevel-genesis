@@ -15,7 +15,7 @@ import { editorEdit, type EditorEdit } from './editorContent'
 
 /**
  * What monaco does with the returned edit, modelled — an append concatenates at
- * the end, a replace substitutes the whole document.
+ * the end, a splice replaces the range that actually changed.
  *
  * This is the round trip's oracle (AC-5). Written here rather than imported so
  * the spec states its own expectation of monaco rather than sharing a definition
@@ -23,7 +23,8 @@ import { editorEdit, type EditorEdit } from './editorContent'
  */
 function apply(current: string, edit: EditorEdit | null): string {
   if (edit === null) return current
-  return edit.kind === 'append' ? current + edit.text : edit.text
+  if (edit.kind === 'append') return current + edit.text
+  return current.slice(0, edit.offset) + edit.text + current.slice(edit.offset + edit.length)
 }
 
 describe('editorEdit', () => {
@@ -58,8 +59,37 @@ describe('editorEdit', () => {
     ['a different file’s content', '<h1>Contacts</h1>', 'body { margin: 0 }'],
     ['a server repair that changed earlier bytes', '<h1>Contacts', '<!doctype html>\n<h1>Contacts'],
     ['a shorter string', '<h1>Contacts</h1>\n', '<h1>Contacts'],
-  ])('returns a replace for %s', (_label, current, next) => {
-    expect(editorEdit(current, next)).toEqual({ kind: 'replace', text: next })
+  ])('returns a splice for %s', (_label, current, next) => {
+    expect(editorEdit(current, next)?.kind).toBe('splice')
+    expect(apply(current, editorEdit(current, next))).toBe(next)
+  })
+
+  /**
+   * AC-30 — the point of the splice. A change in the middle of a long file must
+   * not touch the bytes around it, or Monaco re-tokenises the whole document and
+   * the viewport leaves what the user was reading.
+   */
+  it('touches only the range that changed, in the middle of a long file', () => {
+    const before = `${'x\n'.repeat(200)}old\n${'y\n'.repeat(200)}`
+    const after = before.replace('old', 'new')
+
+    const edit = editorEdit(before, after)
+
+    expect(edit).toEqual({ kind: 'splice', offset: 400, length: 3, text: 'new' })
+  })
+
+  it('deletes with an empty text rather than rewriting the document', () => {
+    const edit = editorEdit('a\nb\nc\n', 'a\nc\n')
+    expect(edit).toEqual({ kind: 'splice', offset: 2, length: 2, text: '' })
+  })
+
+  it('never produces a negative length, however the strings overlap', () => {
+    for (const [current, next] of CORPUS) {
+      const edit = editorEdit(current, next)
+      if (edit?.kind !== 'splice') continue
+      expect(edit.length).toBeGreaterThanOrEqual(0)
+      expect(edit.offset + edit.length).toBeLessThanOrEqual(current.length)
+    }
   })
 
   /**

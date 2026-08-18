@@ -1,0 +1,1472 @@
+<title>Change What Changed</title>
+
+<style>
+  :root {
+    --ground: #e7ebe9;
+    --surface: #fbfcfb;
+    --surface-2: #f1f4f2;
+    --ink: #0f1513;
+    --ink-soft: #4a5551;
+    --ink-faint: #7c8783;
+    --rule: #c6d0cc;
+    --rule-soft: #dbe2df;
+
+    --edit: #3a3aa6;
+    --edit-wash: #e3e3f7;
+    --spend: #a32d1c;
+    --spend-wash: #f8e1dd;
+    --save: #0c6650;
+    --save-wash: #d6ece5;
+    --keep: #6d7a76;
+    --keep-wash: #e4eae7;
+
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+    --measure: 68ch;
+    --wide: 1120px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0c1110;
+      --surface: #141a19;
+      --surface-2: #1a2120;
+      --ink: #e6ecea;
+      --ink-soft: #a3afab;
+      --ink-faint: #76827e;
+      --rule: #2a3432;
+      --rule-soft: #202826;
+
+      --edit: #a6a6f4;
+      --edit-wash: #23234f;
+      --spend: #ef9b8b;
+      --spend-wash: #481d16;
+      --save: #6ed2b3;
+      --save-wash: #0e372d;
+      --keep: #8b9793;
+      --keep-wash: #222a28;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0c1110;
+    --surface: #141a19;
+    --surface-2: #1a2120;
+    --ink: #e6ecea;
+    --ink-soft: #a3afab;
+    --ink-faint: #76827e;
+    --rule: #2a3432;
+    --rule-soft: #202826;
+
+    --edit: #a6a6f4;
+    --edit-wash: #23234f;
+    --spend: #ef9b8b;
+    --spend-wash: #481d16;
+    --save: #6ed2b3;
+    --save-wash: #0e372d;
+    --keep: #8b9793;
+    --keep-wash: #222a28;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: var(--wide);
+    margin: 0 auto;
+    padding: 0 1.25rem 6rem;
+  }
+
+  /* ---- masthead ---------------------------------------------------- */
+
+  header.masthead {
+    padding: 4.5rem 0 2.5rem;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 1.5rem;
+  }
+
+  h1 {
+    font-family: var(--mono);
+    font-size: clamp(2.1rem, 6vw, 3.4rem);
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    line-height: 1.02;
+    text-wrap: balance;
+    margin: 0 0 1.25rem;
+  }
+
+  .standfirst {
+    max-width: var(--measure);
+    font-size: 1.08rem;
+    color: var(--ink-soft);
+    margin: 0 0 2.5rem;
+  }
+
+  .headline-figures {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+
+  .figure-cell {
+    flex: 1 1 12rem;
+    padding: 1.1rem 1.25rem;
+    border-right: 1px solid var(--rule-soft);
+  }
+
+  .figure-cell:last-child { border-right: 0; }
+
+  .figure-cell .n {
+    display: block;
+    font-family: var(--mono);
+    font-size: 1.9rem;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+
+  .figure-cell .n.save { color: var(--save); }
+  .figure-cell .n.edit { color: var(--edit); }
+
+  .figure-cell .k {
+    display: block;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-top: 0.4rem;
+  }
+
+  /* ---- sections with a gutter rail --------------------------------- */
+
+  section {
+    display: grid;
+    grid-template-columns: 8rem minmax(0, 1fr);
+    gap: 0 2rem;
+    padding: 3.5rem 0 0;
+    border-top: 1px solid var(--rule-soft);
+    margin-top: 3.5rem;
+  }
+
+  section:first-of-type { border-top: 0; margin-top: 0; }
+
+  .rail {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    padding-top: 0.55rem;
+  }
+
+  .rail span {
+    position: sticky;
+    top: 1.25rem;
+    display: block;
+  }
+
+  .body { min-width: 0; }
+
+  @media (max-width: 760px) {
+    section { grid-template-columns: 1fr; gap: 0; }
+    .rail { padding-top: 0; margin-bottom: 0.75rem; }
+    .rail span { position: static; }
+  }
+
+  h2 {
+    font-family: var(--mono);
+    font-size: clamp(1.35rem, 3vw, 1.75rem);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    text-wrap: balance;
+    margin: 0 0 1rem;
+  }
+
+  h3 {
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    margin: 2.25rem 0 0.75rem;
+  }
+
+  p, ul, ol { max-width: var(--measure); }
+  p { margin: 0 0 1.05rem; }
+  ul, ol { margin: 0 0 1.05rem; padding-left: 1.2rem; }
+  li { margin-bottom: 0.4rem; }
+
+  a { color: var(--edit); }
+
+  strong { font-weight: 650; }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    background: var(--surface-2);
+    border: 1px solid var(--rule-soft);
+    border-radius: 3px;
+    padding: 0.08em 0.32em;
+  }
+
+  .lede {
+    font-size: 1.05rem;
+    color: var(--ink-soft);
+  }
+
+  /* ---- figures ------------------------------------------------------ */
+
+  figure {
+    margin: 2rem 0;
+    padding: 0;
+  }
+
+  .fig-frame {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 1.5rem 1.25rem;
+    overflow-x: auto;
+  }
+
+  figure svg {
+    display: block;
+    width: 100%;
+    min-width: 560px;
+    max-width: 100%;
+    height: auto;
+  }
+
+  figcaption {
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    line-height: 1.55;
+    color: var(--ink-faint);
+    margin-top: 0.75rem;
+    max-width: 78ch;
+  }
+
+  /* svg theming */
+  .s-ink   { stroke: var(--ink-soft); }
+  .s-rule  { stroke: var(--rule); }
+  .s-edit  { stroke: var(--edit); }
+  .s-spend { stroke: var(--spend); }
+  .s-save  { stroke: var(--save); }
+  .s-keep  { stroke: var(--keep); }
+
+  .f-ink   { fill: var(--ink); }
+  .f-soft  { fill: var(--ink-soft); }
+  .f-faint { fill: var(--ink-faint); }
+  .f-edit  { fill: var(--edit); }
+  .f-spend { fill: var(--spend); }
+  .f-save  { fill: var(--save); }
+  .f-keep  { fill: var(--keep); }
+  .f-surface { fill: var(--surface); }
+  .f-surface2 { fill: var(--surface-2); }
+  .f-edit-w  { fill: var(--edit-wash); }
+  .f-spend-w { fill: var(--spend-wash); }
+  .f-save-w  { fill: var(--save-wash); }
+  .f-keep-w  { fill: var(--keep-wash); }
+
+  .t {
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .t-sm { font-family: var(--mono); font-size: 10.5px; }
+  .t-lg { font-family: var(--mono); font-size: 14px; font-weight: 600; }
+  .t-num { font-variant-numeric: tabular-nums; }
+
+  /* ---- tables ------------------------------------------------------- */
+
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    background: var(--surface);
+    margin: 1.5rem 0;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+  }
+
+  th, td {
+    text-align: left;
+    padding: 0.7rem 0.9rem;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: top;
+  }
+
+  thead th {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    background: var(--surface-2);
+    white-space: nowrap;
+  }
+
+  tbody tr:last-child td { border-bottom: 0; }
+
+  td.num, th.num {
+    text-align: right;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  td.mono { font-family: var(--mono); font-size: 0.82rem; white-space: nowrap; }
+
+  .rate {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+  .rate.read  { background: var(--save-wash);  color: var(--save); }
+  .rate.full  { background: var(--spend-wash); color: var(--spend); }
+  .rate.out   { background: var(--edit-wash);  color: var(--edit); }
+
+  tfoot td {
+    font-family: var(--mono);
+    font-weight: 650;
+    background: var(--surface-2);
+    border-top: 1px solid var(--rule);
+  }
+
+  /* ---- code card ---------------------------------------------------- */
+
+  pre {
+    margin: 1.5rem 0;
+    padding: 1.1rem 1.25rem;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    line-height: 1.65;
+    color: var(--ink);
+  }
+
+  pre .tag  { color: var(--edit); font-weight: 600; }
+  pre .old  { color: var(--spend); }
+  pre .new  { color: var(--save); }
+  pre .dim  { color: var(--ink-faint); }
+
+  /* ---- frame contract cards ----------------------------------------- */
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 0.85rem;
+    margin: 1.5rem 0;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--edit);
+    border-radius: 3px;
+    padding: 0.95rem 1rem;
+  }
+
+  .card .name {
+    font-family: var(--mono);
+    font-size: 0.88rem;
+    font-weight: 650;
+    color: var(--edit);
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+
+  .card .payload {
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    color: var(--ink-soft);
+    display: block;
+    margin-bottom: 0.6rem;
+    word-break: break-word;
+  }
+
+  .card .when {
+    font-size: 0.82rem;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+
+  /* ---- pull quote / callout ----------------------------------------- */
+
+  .callout {
+    border-left: 3px solid var(--spend);
+    background: var(--surface);
+    padding: 1rem 1.15rem;
+    margin: 1.75rem 0;
+    max-width: var(--measure);
+  }
+
+  .callout p { margin: 0; }
+
+  .callout .label {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--spend);
+    display: block;
+    margin-bottom: 0.45rem;
+  }
+
+  /* ---- legend ------------------------------------------------------- */
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.1rem;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--ink-soft);
+    margin-bottom: 1rem;
+  }
+
+  .legend span { display: inline-flex; align-items: center; gap: 0.4rem; }
+
+  .swatch {
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 2px;
+    display: inline-block;
+  }
+
+  .sw-save  { background: var(--save); }
+  .sw-spend { background: var(--spend); }
+  .sw-edit  { background: var(--edit); }
+
+  footer {
+    margin-top: 4.5rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--ink-faint);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--edit);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    html { scroll-behavior: smooth; }
+  }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <p class="eyebrow">Genesis · Slice 14 · design companion to <code>02-prd.md</code></p>
+    <h1>Change what changed</h1>
+    <p class="standfirst">
+      Today a follow-up prompt can decide <em>which files</em> to rewrite, but not <em>which
+      lines</em>. Adding one theme re-emits eight kilobytes of stylesheet to change forty lines —
+      billed at output rates, generated serially, and reconstructed from context every time. This
+      slice gives the model a located change, and reshapes the request so the parts that did not
+      change are not paid for twice.
+    </p>
+    <div class="headline-figures">
+      <div class="figure-cell">
+        <span class="n save">64%</span>
+        <span class="k">cheaper per follow-up turn</span>
+      </div>
+      <div class="figure-cell">
+        <span class="n edit">8.75&times;</span>
+        <span class="k">fewer output tokens</span>
+      </div>
+      <div class="figure-cell">
+        <span class="n">2</span>
+        <span class="k">cache breakpoints, of 4</span>
+      </div>
+      <div class="figure-cell">
+        <span class="n">0</span>
+        <span class="k">new collections, rules, indexes</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- =============================================================== -->
+  <section>
+    <div class="rail"><span>The bill</span></div>
+    <div class="body">
+      <h2>Where the money actually goes</h2>
+      <p class="lede">
+        On <code>claude-opus-5</code> output is five times the price of input — $25 against $5 per
+        million tokens — and a cache read is a tenth of input, $0.50. Those three rates decide
+        everything below.
+      </p>
+      <p>
+        Take a real project after turn one: <code>index.html</code> 6&nbsp;KB,
+        <code>styles.css</code> 8&nbsp;KB, <code>app.js</code> 14&nbsp;KB — 28&nbsp;KB, about 7,000
+        tokens. Turn two is <em>“add a dark theme.”</em> Today the model answers by re-emitting two
+        whole files. The re-emitted bytes are the largest single line on the bill, and because
+        output is generated serially where input is processed in parallel, they are also almost all
+        of the minute the user spends watching.
+      </p>
+
+      <figure>
+        <div class="fig-frame">
+          <div class="legend" aria-hidden="true">
+            <span><i class="swatch sw-save"></i> cache read · 0.1&times; input</span>
+            <span><i class="swatch sw-spend"></i> full-price input · 1&times;</span>
+            <span><i class="swatch sw-edit"></i> output · 5&times; input</span>
+          </div>
+          <svg viewBox="0 0 900 230" role="img"
+               aria-label="Cost of one follow-up turn, before and after. Before: 13.1 cents, of which 8.75 is output. After: 4.7 cents, of which 1.0 is output and the transcript has moved from full-price input to a cache read.">
+            <!-- BEFORE -->
+            <text class="t f-soft" x="0" y="20">on <tspan class="f-ink">main</tspan> today</text>
+
+            <rect class="f-save"  x="0"     y="32" width="6"   height="34" />
+            <rect class="f-spend" x="6"     y="32" width="44"  height="34" />
+            <rect class="f-spend" x="50"    y="32" width="203" height="34" opacity="0.62" />
+            <rect class="f-edit"  x="253"   y="32" width="508" height="34" />
+
+            <line class="s-rule" x1="50" y1="32" x2="50" y2="66" stroke-width="1" />
+            <line class="s-rule" x1="253" y1="32" x2="253" y2="66" stroke-width="1" />
+
+            <text class="t-sm f-faint" x="60"  y="53">project state · 7,000 tok</text>
+            <text class="t-sm f-surface" x="263" y="53">reply: two files re-emitted whole · 3,500 tok</text>
+
+            <text class="t-lg f-ink t-num" x="775" y="55">$0.131</text>
+
+            <text class="t-sm f-faint" x="0" y="84">system 2,000</text>
+            <line class="s-rule" x1="3"  y1="70" x2="3"  y2="76" stroke-width="1" />
+            <text class="t-sm f-spend" x="92" y="84">transcript 1,500 · full price</text>
+            <line class="s-spend" x1="28" y1="70" x2="28" y2="80" stroke-width="1" />
+            <line class="s-spend" x1="28" y1="80" x2="88" y2="80" stroke-width="1" />
+
+            <!-- AFTER -->
+            <text class="t f-soft" x="0" y="140">after this slice</text>
+
+            <rect class="f-save"  x="0"   y="152" width="6"   height="34" />
+            <rect class="f-save"  x="6"   y="152" width="5"   height="34" />
+            <rect class="f-spend" x="11"  y="152" width="203" height="34" opacity="0.62" />
+            <rect class="f-edit"  x="214" y="152" width="58"  height="34" />
+
+            <line class="s-rule" x1="11"  y1="152" x2="11"  y2="186" stroke-width="1" />
+            <line class="s-rule" x1="214" y1="152" x2="214" y2="186" stroke-width="1" />
+
+            <text class="t-sm f-faint" x="21"  y="173">project state · 7,000 tok</text>
+            <text class="t-sm f-edit"  x="282" y="173">reply: two edit blocks · 400 tok</text>
+
+            <text class="t-lg f-save t-num" x="775" y="175">$0.047</text>
+
+            <text class="t-sm f-save" x="0" y="204">system + transcript now both cache reads</text>
+            <line class="s-save" x1="5" y1="190" x2="5" y2="199" stroke-width="1" />
+          </svg>
+        </div>
+        <figcaption>
+          One follow-up turn, to scale. The output block is what this slice cuts; moving the
+          transcript from full-price input to a cache read is the second cut. The project-state
+          block does not move — it is the dominant remaining line, and it is named as the next
+          slice rather than claimed here.
+        </figcaption>
+      </figure>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Part of the request</th>
+              <th>Before</th>
+              <th>After</th>
+              <th class="num">Tokens</th>
+              <th class="num">Before</th>
+              <th class="num">After</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>System prompt</td>
+              <td><span class="rate read">cache read</span></td>
+              <td><span class="rate read">cache read · 1h</span></td>
+              <td class="num">2,000</td>
+              <td class="num">$0.0010</td>
+              <td class="num">$0.0010</td>
+            </tr>
+            <tr>
+              <td>Transcript</td>
+              <td><span class="rate full">full price</span></td>
+              <td><span class="rate read">cache read</span></td>
+              <td class="num">1,500</td>
+              <td class="num">$0.0075</td>
+              <td class="num">$0.0008</td>
+            </tr>
+            <tr>
+              <td>Project state — every file, whole</td>
+              <td><span class="rate full">full price</span></td>
+              <td><span class="rate full">full price</span></td>
+              <td class="num">7,000</td>
+              <td class="num">$0.0350</td>
+              <td class="num">$0.0350</td>
+            </tr>
+            <tr>
+              <td>The reply</td>
+              <td><span class="rate out">3,500 out</span></td>
+              <td><span class="rate out">400 out</span></td>
+              <td class="num">&mdash;</td>
+              <td class="num">$0.0875</td>
+              <td class="num">$0.0100</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="4">One follow-up turn</td>
+              <td class="num">$0.1310</td>
+              <td class="num">$0.0468</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div class="callout">
+        <span class="label">The case this was built for</span>
+        <p>
+          A 100&nbsp;KB file rewritten to change ten lines is 25,000 output tokens — sixty-three
+          cents and several minutes of streaming. The same change as an edit is about 400 tokens.
+          The saving is not uniform; it scales with how much of the file the user did not ask about.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- =============================================================== -->
+  <section>
+    <div class="rail"><span>The prefix</span></div>
+    <div class="body">
+      <h2>Why the transcript was never cacheable</h2>
+      <p class="lede">
+        Prompt caching matches a prefix, and the prefix is ordered <code>tools</code> →
+        <code>system</code> → <code>messages</code>. A change at any level invalidates that level
+        and everything after it.
+      </p>
+      <p>
+        The project's files go into the request as a <code>system</code> block, appended after the
+        <code>cache_control</code> breakpoint so they do not invalidate the cheat-sheet above them.
+        That was the right call for the system prompt and it has a consequence nobody wrote down:
+        the block changes on every turn that writes a file — which is most turns — and it sits
+        <em>in front of</em> the entire conversation. No breakpoint anywhere in <code>messages</code>
+        can ever hit while it is there.
+      </p>
+      <p>
+        Moving it past the transcript, to the tail of the final user message, costs nothing —
+        documents-before-query is the recommended placement for long context anyway — and it makes
+        the conversation cacheable for the first time. <code>buildContext</code> already drops
+        trailing assistant turns, so the last assistant message is the second-to-last message: the
+        last block that is byte-identical between consecutive turns, and exactly where the
+        breakpoint belongs.
+      </p>
+
+      <figure>
+        <div class="fig-frame">
+          <svg viewBox="0 0 900 300" role="img"
+               aria-label="Before: the volatile project-state block sits in the system section, in front of the whole transcript, so everything after it is full price. After: the project state moves to the tail of the last user message and a second breakpoint on the last assistant turn makes the whole conversation a cache read.">
+            <defs>
+              <marker id="p-arrow-spend" viewBox="0 0 9 8" refX="8" refY="4"
+                      markerWidth="7" markerHeight="7" orient="auto">
+                <path class="f-spend" d="M0,0 L9,4 L0,8 Z" />
+              </marker>
+              <marker id="p-arrow-save" viewBox="0 0 9 8" refX="8" refY="4"
+                      markerWidth="7" markerHeight="7" orient="auto">
+                <path class="f-save" d="M0,0 L9,4 L0,8 Z" />
+              </marker>
+            </defs>
+
+            <!-- BEFORE -->
+            <text class="t f-soft" x="0" y="16">on <tspan class="f-ink">main</tspan></text>
+
+            <rect class="f-save-w s-save" x="0"   y="28" width="150" height="42" stroke-width="1" rx="2" />
+            <text class="t-sm f-save" x="12" y="46">SYSTEM PROMPT</text>
+            <text class="t-sm f-faint" x="12" y="60">stable · 2,000 tok</text>
+            <polygon class="f-save" points="150,28 162,34 150,40" />
+            <text class="t-sm f-save" x="118" y="22">breakpoint</text>
+
+            <rect class="f-spend-w s-spend" x="170" y="28" width="200" height="42" stroke-width="1" rx="2" />
+            <text class="t-sm f-spend" x="182" y="46">PROJECT STATE</text>
+            <text class="t-sm f-faint" x="182" y="60">changes every turn · 7,000</text>
+
+            <rect class="f-surface2 s-rule" x="386" y="28" width="70" height="42" stroke-width="1" rx="2" />
+            <text class="t-sm f-faint" x="410" y="53">u₁</text>
+            <rect class="f-surface2 s-rule" x="462" y="28" width="70" height="42" stroke-width="1" rx="2" />
+            <text class="t-sm f-faint" x="486" y="53">a₁</text>
+            <rect class="f-surface2 s-rule" x="538" y="28" width="70" height="42" stroke-width="1" rx="2" />
+            <text class="t-sm f-faint" x="562" y="53">u₂</text>
+            <rect class="f-surface2 s-rule" x="614" y="28" width="86" height="42" stroke-width="1" rx="2" />
+            <text class="t-sm f-faint" x="634" y="53">prompt</text>
+
+            <path class="s-spend" d="M 250 78 L 250 92 L 700 92" fill="none" stroke-width="1.5"
+                  marker-end="url(#p-arrow-spend)" />
+            <text class="t-sm f-spend" x="258" y="108">one changed block invalidates the whole conversation behind it — full price, every turn</text>
+
+            <line class="s-rule" x1="0" y1="140" x2="900" y2="140" stroke-width="1" stroke-dasharray="2 4" />
+
+            <!-- AFTER -->
+            <text class="t f-soft" x="0" y="172">after</text>
+
+            <rect class="f-save-w s-save" x="0" y="184" width="150" height="42" stroke-width="1" rx="2" />
+            <text class="t-sm f-save" x="12" y="202">SYSTEM PROMPT</text>
+            <text class="t-sm f-faint" x="12" y="216">ttl 1h · 2,000 tok</text>
+            <polygon class="f-save" points="150,184 162,190 150,196" />
+
+            <rect class="f-save-w s-save" x="170" y="184" width="70" height="42" stroke-width="1" rx="2" />
+            <text class="t-sm f-save" x="194" y="209">u₁</text>
+            <rect class="f-save-w s-save" x="246" y="184" width="70" height="42" stroke-width="1" rx="2" />
+            <text class="t-sm f-save" x="270" y="209">a₁</text>
+            <rect class="f-save-w s-save" x="322" y="184" width="70" height="42" stroke-width="1" rx="2" />
+            <text class="t-sm f-save" x="346" y="209">u₂</text>
+            <rect class="f-save-w s-save" x="398" y="184" width="70" height="42" stroke-width="1" rx="2" />
+            <text class="t-sm f-save" x="422" y="209">a₂</text>
+            <polygon class="f-save" points="468,184 480,190 468,196" />
+            <text class="t-sm f-save" x="436" y="178">breakpoint</text>
+
+            <rect class="f-spend-w s-spend" x="488" y="184" width="212" height="42" stroke-width="1" rx="2" />
+            <text class="t-sm f-spend" x="500" y="202">PROJECT STATE + prompt</text>
+            <text class="t-sm f-faint" x="500" y="216">last user message · 7,000</text>
+
+            <path class="s-save" d="M 60 234 L 60 250 L 470 250" fill="none" stroke-width="1.5"
+                  marker-end="url(#p-arrow-save)" />
+            <text class="t-sm f-save" x="68" y="266">the whole conversation is a cache read at 0.1&times; — and grows by two blocks a turn</text>
+          </svg>
+        </div>
+        <figcaption>
+          The only structural change is where the volatile block sits. Nothing else about the
+          request moves, and <code>system</code> becomes the <code>SYSTEM_PROMPT</code> array by
+          identity on every request — a property that was conditional before and is now
+          unconditional.
+        </figcaption>
+      </figure>
+
+      <p>
+        Two breakpoints of the four allowed, and the 1-hour TTL goes on the system prompt only:
+        2,000 tokens that never change, where a 2&times; write premium is four tenths of a cent an
+        hour and a user who thinks for six minutes should not repay it. Mixed TTLs are legal in
+        this order — 1-hour entries must precede 5-minute ones, and <code>system</code> precedes
+        <code>messages</code>.
+      </p>
+      <p>
+        One smaller change rides along for the same reason. <code>projectState.ts</code> orders
+        files by ascending length so the most complete files fit the budget — which means a file
+        that grows past its neighbour <em>reorders the block</em>, and a change to
+        <code>app.js</code> moves <code>styles.css</code>'s bytes. Selection stays by size;
+        rendering becomes stable — <code>index.html</code>, then path.
+      </p>
+    </div>
+  </section>
+
+  <!-- =============================================================== -->
+  <section>
+    <div class="rail"><span>Prior art</span></div>
+    <div class="body">
+      <h2>Five ways this has been solved, and what we take from each</h2>
+      <p class="lede">
+        None of this is invented. The format below is chosen against what the field already
+        knows — and against one fact specific to us: our model is <code>claude-opus-5</code>, so
+        the shape it was trained on is a real argument.
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>System</th>
+              <th>Format</th>
+              <th>Matching</th>
+              <th>What we take</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Anthropic text editor tool</strong><br /><span class="mono">str_replace</span></td>
+              <td><code>old_str</code> / <code>new_str</code> in a tool call</td>
+              <td><strong>Exact, and must match exactly once.</strong> The documented error for two
+                or more asks the model for more context</td>
+              <td>The matching rule, wholesale. This is what our model is trained on and what
+                Claude Code itself uses</td>
+            </tr>
+            <tr>
+              <td><strong>Aider</strong></td>
+              <td><code>&lt;&lt;&lt;&lt;&lt;&lt;&lt; SEARCH</code> / <code>=======</code> /
+                <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt; REPLACE</code> in a fence</td>
+              <td>A ladder: exact → whitespace-insensitive → indentation-preserving → fuzzy
+                (<code>difflib</code>)</td>
+              <td>The idea of feeding failures back to the model. Not the fuzzy tail, and not the
+                markers — <code>=======</code> alone on a line is a Markdown heading underline, and
+                <code>.md</code> is an allowed extension</td>
+            </tr>
+            <tr>
+              <td><strong>OpenAI Codex</strong></td>
+              <td><code>*** Begin Patch</code> with <code>@@</code> context markers</td>
+              <td>Exact → trimmed line endings → whitespace-ignored</td>
+              <td>Deliberately no line numbers, and structured errors that name the mismatch</td>
+            </tr>
+            <tr>
+              <td><strong>RooCode / Cline</strong></td>
+              <td>Search/replace blocks</td>
+              <td>“Middle-out” fuzzy matching by Levenshtein distance from an estimated region</td>
+              <td>Nothing. Robust to drift, and correspondingly able to land in the wrong place</td>
+            </tr>
+            <tr>
+              <td><strong>Cursor</strong></td>
+              <td>The frontier model writes a lazy sketch; a specialised <em>apply</em> model merges
+                it</td>
+              <td>Speculative edits — the original file is the draft, so unchanged chunks are
+                accepted in bulk at ~1000&nbsp;tok/s</td>
+              <td>The diagnosis, not the cure. It solves the same cost problem with a second model,
+                a second key and a second failure mode</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Three conclusions. <strong>Cursor's answer is out</strong> for a structural reason rather
+        than a budgetary one: Genesis makes one streaming call per turn, and everything from the
+        message cap to the SSE contract is built on that. <strong>Line numbers are out</strong>,
+        unanimously — models miscount, and a number is stale the moment an earlier edit in the same
+        reply changes the line count above it. Echoing the text is also a check that the model is
+        changing what it thinks it is changing, which a number is not. And
+        <strong>Aider's fuzzy tail is out while its exact head is in</strong>: a Levenshtein match
+        that lands three lines off writes a broken app and reports success, which is the exact
+        failure this feature exists to prevent.
+      </p>
+    </div>
+  </section>
+
+  <!-- =============================================================== -->
+  <section>
+    <div class="rail"><span>The block</span></div>
+    <div class="body">
+      <h2>Four more verbs, because “add” is not “change”</h2>
+      <p class="lede">
+        The model has exactly one verb today — <em>write this file</em> — and users ask for at
+        least four different things. Collapsing them is what forces a rewrite: “add one more
+        theme” is an <strong>insertion</strong>, and the only way to express an insertion with a
+        rewrite is to re-emit everything around it.
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>The user asks for</th><th>Verb</th><th>Anchor</th><th>Resolves to</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>“build me a dashboard” · “start over with a table”</td>
+              <td class="mono">&lt;genesis:file&gt;</td>
+              <td>—</td>
+              <td>the whole file</td>
+            </tr>
+            <tr>
+              <td>“add one more theme”</td>
+              <td class="mono">&lt;genesis:append&gt;</td>
+              <td>—</td>
+              <td><code>from = to</code> at end of file</td>
+            </tr>
+            <tr>
+              <td>“put a dark-mode toggle in the header”</td>
+              <td class="mono">&lt;genesis:after&gt;<br />&lt;genesis:before&gt;</td>
+              <td>kept</td>
+              <td><code>from = to</code> beside it</td>
+            </tr>
+            <tr>
+              <td>“make the cards rounded” · “drop the search box”</td>
+              <td class="mono">&lt;genesis:edit&gt;</td>
+              <td>replaced</td>
+              <td><code>from</code>..<code>to</code> over it</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        This is the same verb set Anthropic's own text editor tool exposes — <code>create</code>,
+        <code>insert</code>, <code>str_replace</code> — which is the strongest evidence available,
+        since that is the tool <code>claude-opus-5</code> is post-trained on. Three grammars cover
+        all five: one section, two sections separated by <code>&lt;genesis:add&gt;</code>, two
+        separated by <code>&lt;genesis:with&gt;</code>.
+      </p>
+
+<pre><span class="dim">add — no anchor at all, so nothing can be matched wrongly</span>
+<span class="tag">&lt;genesis:append path="styles.css"&gt;</span>
+<span class="new">.theme-dark .card { background: #111; }</span>
+<span class="tag">&lt;/genesis:append&gt;</span>
+
+<span class="dim">add at a place — the anchor is kept</span>
+<span class="tag">&lt;genesis:after path="index.html"&gt;</span>
+<span class="dim">  &lt;h1&gt;Contacts&lt;/h1&gt;</span>
+<span class="tag">&lt;genesis:add&gt;</span>
+<span class="new">  &lt;button id="theme"&gt;Dark mode&lt;/button&gt;</span>
+<span class="tag">&lt;/genesis:after&gt;</span>
+
+<span class="dim">change — the anchor is replaced; an empty replacement deletes</span>
+<span class="tag">&lt;genesis:edit path="styles.css"&gt;</span>
+<span class="old">.card { background: #ffffff; }</span>
+<span class="tag">&lt;genesis:with&gt;</span>
+<span class="new">.card { background: var(--surface); }</span>
+<span class="tag">&lt;/genesis:edit&gt;</span>
+</pre>
+
+      <div class="callout">
+        <span class="label">Why the insert verbs are not sugar</span>
+        <p>
+          Expressed as a replace, “add one more theme” makes the model echo the neighbouring rule
+          <em>twice</em> — once as the anchor and again inside the replacement. That costs tokens,
+          and it invites the model to paraphrase the copy it is re-emitting, silently altering code
+          the user never mentioned. <code>append</code> is the cheapest op in the set: no anchor, no
+          matching, and therefore no way to land in the wrong place.
+        </p>
+      </div>
+
+      <h3>Five verbs, two wire shapes</h3>
+      <p>
+        The authoring surface and the wire are different problems. The model needs verbs that match
+        intent, because picking one is a judgement it makes token by token. The browser needs a
+        single contract — <em>this file, these lines, this text</em> — because it has to splice into
+        a Monaco model. So the server resolves every verb to a range before the first chunk goes
+        out: <code>file</code> keeps its own frames, and all four of the others collapse to
+        <code>edit_start { path, from, to }</code>, where <strong><code>from === to</code> is a pure
+        insertion</strong> and <code>from &lt; to</code> is a replacement. A sixth verb would be a
+        new grammar and no new frame.
+      </p>
+      <p>
+        Reusing the grammar is the point. One splitter, one hold-back bound, one chunking-invariance
+        property — the property that caught a real bug in Slice&nbsp;6 when a partial line arrived
+        across two deltas. A namespaced tag also survives contact with the content: no realistic
+        HTML, CSS, JavaScript or Markdown file emits <code>&lt;genesis:with&gt;</code> alone on a
+        line, which is exactly the claim that cannot be made about <code>=======</code>.
+      </p>
+
+      <h3>What it becomes</h3>
+      <p>
+        On the server, every edit is applied to a working copy and what leaves the LLM layer is a
+        whole-file <code>{ path, content }</code> — the same shape a <code>&lt;genesis:file&gt;</code>
+        block produces. That single decision is why this slice is small: path rules, the 100&nbsp;KB
+        byte cap, the 20-file cap, create-versus-merge, the single <code>WriteBatch</code> and the
+        snapshot of the resulting file set are all untouched, and every invariant Slices 6 and 11
+        paid for holds by construction rather than by a second implementation agreeing with the
+        first.
+      </p>
+    </div>
+  </section>
+
+  <!-- =============================================================== -->
+  <section>
+    <div class="rail"><span>The turn</span></div>
+    <div class="body">
+      <h2>Where the anchor is resolved, and where it is resolved again</h2>
+
+      <figure>
+        <div class="fig-frame">
+          <svg viewBox="0 0 900 250" role="img"
+               aria-label="A turn, left to right. During the stream the splitter closes the find section, the anchor resolves against the files read before the stream, and edit_start carries a line range to the browser. At write time the files are re-read and every edit is applied again — that application is the authoritative one, and it is what the batch commits.">
+            <defs>
+              <marker id="t-arrow" viewBox="0 0 9 8" refX="8" refY="4"
+                      markerWidth="7" markerHeight="7" orient="auto">
+                <path class="f-soft" d="M0,0 L9,4 L0,8 Z" />
+              </marker>
+              <marker id="t-arrow-edit" viewBox="0 0 9 8" refX="8" refY="4"
+                      markerWidth="7" markerHeight="7" orient="auto">
+                <path class="f-edit" d="M0,0 L9,4 L0,8 Z" />
+              </marker>
+            </defs>
+
+            <rect class="f-surface2 s-rule" x="0" y="24" width="470" height="150"
+                  stroke-width="1" stroke-dasharray="3 4" rx="3" />
+            <text class="t-sm f-faint" x="12" y="42">DURING THE STREAM · advisory</text>
+
+            <rect class="f-surface2 s-rule" x="490" y="24" width="410" height="150"
+                  stroke-width="1" rx="3" />
+            <text class="t-sm f-faint" x="502" y="42">AT WRITE TIME · authoritative</text>
+
+            <!-- stream lane -->
+            <rect class="f-surface s-rule" x="16" y="60" width="94" height="44" stroke-width="1" rx="2" />
+            <text class="t-sm f-ink" x="30" y="80">SDK delta</text>
+            <text class="t-sm f-faint" x="38" y="94">tokens</text>
+
+            <line class="s-ink" x1="110" y1="82" x2="132" y2="82" stroke-width="1.2" marker-end="url(#t-arrow)" />
+
+            <rect class="f-surface s-rule" x="136" y="60" width="104" height="44" stroke-width="1" rx="2" />
+            <text class="t-sm f-ink" x="150" y="80">splitter</text>
+            <text class="t-sm f-faint" x="150" y="94">line-oriented</text>
+
+            <line class="s-ink" x1="240" y1="82" x2="262" y2="82" stroke-width="1.2" marker-end="url(#t-arrow)" />
+
+            <rect class="f-edit-w s-edit" x="266" y="60" width="118" height="44" stroke-width="1" rx="2" />
+            <text class="t-sm f-edit" x="278" y="80">resolve anchor</text>
+            <text class="t-sm f-faint" x="278" y="94">files read at t₀</text>
+
+            <line class="s-edit" x1="325" y1="104" x2="325" y2="126" stroke-width="1.2" marker-end="url(#t-arrow-edit)" />
+            <rect class="f-surface s-edit" x="252" y="130" width="146" height="34" stroke-width="1" rx="2" />
+            <text class="t-sm f-edit" x="262" y="152">edit_start · from, to</text>
+
+            <text class="t-sm f-faint" x="16" y="152">to the browser →</text>
+
+            <!-- crossing -->
+            <line class="s-rule" x1="470" y1="99" x2="490" y2="99" stroke-width="1.2" marker-end="url(#t-arrow)" />
+
+            <!-- write lane -->
+            <rect class="f-surface s-rule" x="506" y="60" width="104" height="44" stroke-width="1" rx="2" />
+            <text class="t-sm f-ink" x="518" y="80">re-read files</text>
+            <text class="t-sm f-faint" x="518" y="94">the cap read</text>
+
+            <line class="s-ink" x1="610" y1="82" x2="632" y2="82" stroke-width="1.2" marker-end="url(#t-arrow)" />
+
+            <rect class="f-edit-w s-edit" x="636" y="60" width="110" height="44" stroke-width="1" rx="2" />
+            <text class="t-sm f-edit" x="648" y="80">apply, again</text>
+            <text class="t-sm f-faint" x="648" y="94">at t₉</text>
+
+            <line class="s-ink" x1="746" y1="82" x2="768" y2="82" stroke-width="1.2" marker-end="url(#t-arrow)" />
+
+            <rect class="f-surface s-rule" x="772" y="60" width="112" height="44" stroke-width="1" rx="2" />
+            <text class="t-sm f-ink" x="784" y="80">validate</text>
+            <text class="t-sm f-faint" x="784" y="94">unchanged rules</text>
+
+            <line class="s-ink" x1="828" y1="104" x2="828" y2="126" stroke-width="1.2" marker-end="url(#t-arrow)" />
+            <rect class="f-save-w s-save" x="700" y="130" width="184" height="34" stroke-width="1" rx="2" />
+            <text class="t-sm f-save" x="712" y="152">one batch · one commit</text>
+
+            <text class="t-sm f-faint" x="0" y="206">The stream-time resolution exists so the browser can show the change in place. It is never what gets stored.</text>
+            <line class="s-rule" x1="0" y1="214" x2="900" y2="214" stroke-width="1" stroke-dasharray="2 4" />
+            <text class="t-sm f-faint" x="0" y="236">Message, file writes, snapshot and any prune stage on the same batch, exactly as Slice 11 left them.</text>
+          </svg>
+        </div>
+        <figcaption>
+          Two applications of the same edit, and only the right-hand one is authoritative. The
+          re-read it needs already happens — <code>planFileWrites</code> reads the current files for
+          the cap check and the snapshot merge — so the safety is free.
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- =============================================================== -->
+  <section>
+    <div class="rail"><span>The hazard</span></div>
+    <div class="body">
+      <h2>A generation can run for nine minutes</h2>
+      <p class="lede">
+        The editor is read-only for the length of a stream, which closes one tab. It does not close
+        a second device, or a <code>PUT</code> from another window. A patch carries a claim about
+        what it is patching, and that claim can expire mid-flight.
+      </p>
+
+      <figure>
+        <div class="fig-frame">
+          <svg viewBox="0 0 900 300" role="img"
+               aria-label="Without write-time re-resolution a concurrent save is silently reverted: the turn commits a whole file computed from content that is nine minutes stale. With it, the anchor no longer resolves, the turn refuses whole, and the user's save survives.">
+            <defs>
+              <marker id="h-arrow-spend" viewBox="0 0 9 8" refX="8" refY="4"
+                      markerWidth="7" markerHeight="7" orient="auto">
+                <path class="f-spend" d="M0,0 L9,4 L0,8 Z" />
+              </marker>
+              <marker id="h-arrow-save" viewBox="0 0 9 8" refX="8" refY="4"
+                      markerWidth="7" markerHeight="7" orient="auto">
+                <path class="f-save" d="M0,0 L9,4 L0,8 Z" />
+              </marker>
+            </defs>
+
+            <!-- WITHOUT -->
+            <text class="t f-spend" x="0" y="18">without write-time re-resolution</text>
+
+            <line class="s-rule" x1="40" y1="60" x2="820" y2="60" stroke-width="1" />
+            <circle class="f-soft" cx="60" cy="60" r="4" />
+            <text class="t-sm f-faint" x="46" y="80">t₀ read</text>
+            <circle class="f-spend" cx="420" cy="60" r="4" />
+            <text class="t-sm f-spend" x="386" y="80">t₃ user saves</text>
+            <circle class="f-soft" cx="800" cy="60" r="4" />
+            <text class="t-sm f-faint" x="778" y="80">t₉ commit</text>
+
+            <path class="s-spend" d="M 60 46 C 260 8, 600 8, 796 46" fill="none"
+                  stroke-width="1.5" marker-end="url(#h-arrow-spend)" />
+            <text class="t-sm f-spend" x="330" y="26">whole file derived from t₀</text>
+
+            <rect class="f-spend-w s-spend" x="560" y="94" width="330" height="34" stroke-width="1" rx="2" />
+            <text class="t-sm f-spend" x="572" y="115">the user's save is silently reverted</text>
+
+            <line class="s-rule" x1="0" y1="152" x2="900" y2="152" stroke-width="1" stroke-dasharray="2 4" />
+
+            <!-- WITH -->
+            <text class="t f-save" x="0" y="184">with write-time re-resolution</text>
+
+            <line class="s-rule" x1="40" y1="226" x2="820" y2="226" stroke-width="1" />
+            <circle class="f-soft" cx="60" cy="226" r="4" />
+            <text class="t-sm f-faint" x="46" y="246">t₀ read</text>
+            <circle class="f-save" cx="420" cy="226" r="4" />
+            <text class="t-sm f-save" x="386" y="246">t₃ user saves</text>
+            <circle class="f-soft" cx="800" cy="226" r="4" />
+            <text class="t-sm f-faint" x="770" y="246">t₉ re-read</text>
+
+            <path class="s-save" d="M 420 212 C 560 176, 700 176, 794 212" fill="none"
+                  stroke-width="1.5" marker-end="url(#h-arrow-save)" />
+            <text class="t-sm f-save" x="516" y="196">anchor matched against t₃</text>
+
+            <rect class="f-save-w s-save" x="500" y="260" width="390" height="34" stroke-width="1" rx="2" />
+            <text class="t-sm f-save" x="512" y="281">no match → turn refuses whole → the save survives</text>
+          </svg>
+        </div>
+        <figcaption>
+          The refusal names its cause — <em>“styles.css changed while Genesis was writing”</em> —
+          and the window is narrow. The alternative is a surgical request that quietly performs a
+          rollback, which is worse than the whole-file rewrite it replaced.
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- =============================================================== -->
+  <section>
+    <div class="rail"><span>Failure</span></div>
+    <div class="body">
+      <h2>One edit block in, eight ways out</h2>
+      <p class="lede">
+        Every refusal keeps the two properties Slice&nbsp;6 established: the whole turn's files are
+        refused together, and the assistant message still commits — now carrying the reason, so it
+        survives a reload <em>and</em> reaches the model on the next turn.
+      </p>
+
+      <figure>
+        <div class="fig-frame">
+          <svg viewBox="0 0 900 420" role="img"
+               aria-label="One edit block resolves to one of eight outcomes: applied, or seven distinct refusals — no match, ambiguous, unknown file, malformed, unterminated, stale, and over the byte cap. Each refusal leaves every stored file byte-identical.">
+            <defs>
+              <marker id="f-arrow-save" viewBox="0 0 9 8" refX="8" refY="4"
+                      markerWidth="7" markerHeight="7" orient="auto">
+                <path class="f-save" d="M0,0 L9,4 L0,8 Z" />
+              </marker>
+              <marker id="f-arrow-spend" viewBox="0 0 9 8" refX="8" refY="4"
+                      markerWidth="7" markerHeight="7" orient="auto">
+                <path class="f-spend" d="M0,0 L9,4 L0,8 Z" />
+              </marker>
+            </defs>
+
+            <rect class="f-edit-w s-edit" x="0" y="184" width="150" height="52" stroke-width="1" rx="2" />
+            <text class="t f-edit" x="16" y="208">&lt;genesis:edit&gt;</text>
+            <text class="t-sm f-faint" x="16" y="224">one block</text>
+
+            <line class="s-rule" x1="150" y1="210" x2="196" y2="210" stroke-width="1" />
+            <line class="s-rule" x1="196" y1="30" x2="196" y2="392" stroke-width="1" />
+
+            <!-- applied -->
+            <path class="s-save" d="M 196 30 L 250 30" fill="none" stroke-width="1.4" marker-end="url(#f-arrow-save)" />
+            <rect class="f-save-w s-save" x="262" y="14" width="140" height="32" stroke-width="1" rx="2" />
+            <text class="t-sm f-save" x="274" y="34">applied</text>
+            <text class="t-sm f-faint" x="418" y="34">the change, in place, and one snapshot of the resulting set</text>
+
+            <!-- refusals -->
+            <path class="s-spend" d="M 196 82 L 250 82" fill="none" stroke-width="1.4" marker-end="url(#f-arrow-spend)" />
+            <rect class="f-spend-w s-spend" x="262" y="66" width="140" height="32" stroke-width="1" rx="2" />
+            <text class="t-sm f-spend" x="274" y="86">edit-no-match</text>
+            <text class="t-sm f-faint" x="418" y="86">“…the text it was changing is no longer in the file.”</text>
+
+            <path class="s-spend" d="M 196 126 L 250 126" fill="none" stroke-width="1.4" marker-end="url(#f-arrow-spend)" />
+            <rect class="f-spend-w s-spend" x="262" y="110" width="140" height="32" stroke-width="1" rx="2" />
+            <text class="t-sm f-spend" x="274" y="130">edit-ambiguous</text>
+            <text class="t-sm f-faint" x="418" y="130">“…appears more than once, so Genesis could not tell which.”</text>
+
+            <path class="s-spend" d="M 196 170 L 250 170" fill="none" stroke-width="1.4" marker-end="url(#f-arrow-spend)" />
+            <rect class="f-spend-w s-spend" x="262" y="154" width="140" height="32" stroke-width="1" rx="2" />
+            <text class="t-sm f-spend" x="274" y="174">edit-unknown-file</text>
+            <text class="t-sm f-faint" x="418" y="174">“…‘theme.css’ is not a file in this project.”</text>
+
+            <path class="s-spend" d="M 196 214 L 250 214" fill="none" stroke-width="1.4" marker-end="url(#f-arrow-spend)" />
+            <rect class="f-spend-w s-spend" x="262" y="198" width="140" height="32" stroke-width="1" rx="2" />
+            <text class="t-sm f-spend" x="274" y="218">edit-malformed</text>
+            <text class="t-sm f-faint" x="418" y="218">no separator, or an empty find section</text>
+
+            <path class="s-spend" d="M 196 258 L 250 258" fill="none" stroke-width="1.4" marker-end="url(#f-arrow-spend)" />
+            <rect class="f-spend-w s-spend" x="262" y="242" width="140" height="32" stroke-width="1" rx="2" />
+            <text class="t-sm f-spend" x="274" y="262">edit-unterminated</text>
+            <text class="t-sm f-faint" x="418" y="262">the reply ended inside the block</text>
+
+            <path class="s-spend" d="M 196 302 L 250 302" fill="none" stroke-width="1.4" marker-end="url(#f-arrow-spend)" />
+            <rect class="f-spend-w s-spend" x="262" y="286" width="140" height="32" stroke-width="1" rx="2" />
+            <text class="t-sm f-spend" x="274" y="306">edit-stale</text>
+            <text class="t-sm f-faint" x="418" y="306">the file changed while Genesis was writing</text>
+
+            <path class="s-spend" d="M 196 346 L 250 346" fill="none" stroke-width="1.4" marker-end="url(#f-arrow-spend)" />
+            <rect class="f-keep-w s-keep" x="262" y="330" width="140" height="32" stroke-width="1" rx="2" />
+            <text class="t-sm f-keep" x="274" y="350">too-large</text>
+            <text class="t-sm f-faint" x="418" y="350">the existing byte-cap refusal, unchanged</text>
+
+            <path class="s-spend" d="M 196 390 L 250 390" fill="none" stroke-width="1.4" marker-end="url(#f-arrow-spend)" />
+            <rect class="f-keep-w s-keep" x="262" y="374" width="140" height="32" stroke-width="1" rx="2" />
+            <text class="t-sm f-keep" x="274" y="394">incomplete</text>
+            <text class="t-sm f-faint" x="418" y="394">the existing truncation refusal, unchanged</text>
+          </svg>
+        </div>
+        <figcaption>
+          Grey exits are refusals that already exist and are reached unchanged; red exits are new.
+          On every one of them the stored file set is byte-identical to what it was before the
+          turn, and <strong>Retry</strong> re-runs with the reason in the transcript — which is the
+          repair loop, at the cost of one click rather than a second billed generation.
+        </figcaption>
+      </figure>
+
+      <div class="callout">
+        <span class="label">Why no automatic repair round</span>
+        <p>
+          Aider, Cline and Codex all feed the failure back to the model automatically, and they are
+          right that the feedback is what makes edits usable. What they need that we do not is the
+          <em>automatic</em> round trip: they are editing files the model has only seen partially.
+          Ours was shown every file verbatim in the same request, so an exact-match failure is rare
+          — and an unconditional second streaming call would spend on every turn what a click
+          spends on few.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- =============================================================== -->
+  <section>
+    <div class="rail"><span>The wire</span></div>
+    <div class="body">
+      <h2>Three frames, and what the browser does with them</h2>
+      <p class="lede">
+        <code>POST /generate</code> is otherwise unchanged: same request, same auth, same
+        two-channel error rule, same terminal events.
+      </p>
+
+      <div class="cards">
+        <div class="card">
+          <span class="name">edit_start</span>
+          <span class="payload">{ path: string, from: number, to: number }</span>
+          <p class="when">The find section closed and the anchor resolved. Lines are 1-based into
+            the file as the server read it, <code>to</code> exclusive.</p>
+        </div>
+        <div class="card">
+          <span class="name">edit_chunk</span>
+          <span class="payload">{ path: string, text: string }</span>
+          <p class="when">Replacement text as it streams. Trailing newlines are held back and
+            normalised exactly as <code>file_chunk</code>'s are.</p>
+        </div>
+        <div class="card">
+          <span class="name">edit_end</span>
+          <span class="payload">{ path: string }</span>
+          <p class="when">The block closed. Nothing follows for that path until
+            <code>done</code>, which refetches as it already does.</p>
+        </div>
+      </div>
+
+      <p>
+        An edit whose anchor does <strong>not</strong> resolve emits no frames at all and no part of
+        its content reaches any <code>token</code> frame — the browser never sees a change that is
+        not going to happen.
+      </p>
+
+      <h3>Rendering a change you only have a fragment of</h3>
+      <p>
+        The store composes <code>prefix + accumulated + suffix</code> into the streaming buffer that
+        already exists and already wins over the stored file during a stream. So an edit is a
+        different way to fill the same slot, not a second display path. If the browser holds no
+        content for that path it fetches it once, buffers chunks meanwhile, and splices when the
+        fetch lands; if the fetch fails it shows the replacement alone and <code>done</code> repairs
+        it.
+      </p>
+      <p>
+        In Monaco the edit lands through a <strong>splice</strong> — common prefix, common suffix,
+        and the minimal range between them — applied over that range rather than over the whole
+        document. This is the user-visible half of the whole slice: only the segments that need
+        updating are updated, in the editor as well as in the model's output. It improves whole-file
+        rewrites too, since a rewrite that shares a prefix now splices instead of replacing.
+      </p>
+      <p>
+        Slice&nbsp;7 paid for the lesson that makes this a pure module with its own tests: a
+        full-range replace per chunk is the same class of mistake as <code>setValue</code> — it
+        re-tokenises the whole document for a ten-line change and moves the viewport away from what
+        changed — and it is invisible below L5, because jsdom computes no layout.
+      </p>
+    </div>
+  </section>
+
+  <!-- =============================================================== -->
+  <section>
+    <div class="rail"><span>Proof</span></div>
+    <div class="body">
+      <h2>Where the risk lives</h2>
+      <p class="lede">
+        Thirty-eight acceptance criteria, distributed by the level that can actually prove them.
+        The shape of this chart is a design statement: almost everything decidable was pushed into
+        pure functions.
+      </p>
+
+      <figure>
+        <div class="fig-frame">
+          <svg viewBox="0 0 900 200" role="img"
+               aria-label="Acceptance criteria by the level that proves them: 25 at L1 unit, 5 at L2 component, 9 at L4 integration, 1 at L5 end-to-end. A few criteria are proven at two levels, and one is measured from the diff rather than tested.">
+            <text class="t f-soft" x="0" y="20">L1 · unit</text>
+            <rect class="f-edit" x="120" y="8" width="625" height="18" rx="2" />
+            <text class="t f-ink t-num" x="757" y="22">25</text>
+            <text class="t-sm f-faint" x="128" y="42">grammar, chunking invariance, matching, refusal copy, frame order, breakpoints, the splice</text>
+
+            <text class="t f-soft" x="0" y="80">L2 · component</text>
+            <rect class="f-edit" x="120" y="68" width="125" height="18" rx="2" opacity="0.72" />
+            <text class="t f-ink t-num" x="257" y="82">5</text>
+            <text class="t-sm f-faint" x="128" y="102">the composed buffer, the lazy fetch, the tree state, the two chips</text>
+
+            <text class="t f-soft" x="0" y="140">L4 · integration</text>
+            <rect class="f-edit" x="120" y="128" width="225" height="18" rx="2" opacity="0.72" />
+            <text class="t f-ink t-num" x="357" y="142">9</text>
+            <text class="t-sm f-faint" x="128" y="162">the stored bytes, the snapshot, each refusal leaving the tree identical, the byte ratio</text>
+
+            <text class="t f-soft" x="0" y="192">L5 · browser</text>
+            <rect class="f-edit" x="120" y="180" width="25" height="18" rx="2" opacity="0.72" />
+            <text class="t f-ink t-num" x="157" y="194">1</text>
+            <text class="t-sm f-faint" x="180" y="194">the demo walk — the lines above the edit do not move</text>
+
+            <line class="s-rule" x1="0" y1="176" x2="900" y2="176" stroke-width="0" />
+          </svg>
+        </div>
+        <figcaption>
+          One end-to-end walk, per the project's rule that L5 covers the demo line and no more.
+          AC-38 appears at no level at all: it is measured with <code>git diff --stat</code>, because
+          “this slice adds no collection and no rules block” is a fact about the diff rather than a
+          test.
+        </figcaption>
+      </figure>
+
+      <div class="callout">
+        <span class="label">What no test here can prove</span>
+        <p>
+          The edit-versus-rewrite policy is a prompt, and this repository's fixtures are
+          hand-authored: they say what the model is <em>told</em>, never what it <em>does</em>. Two
+          hand-checks against the real model are therefore in the definition of done rather than in
+          the suite — that a second prompt produces edit blocks rather than whole files, and that a
+          third prompt within five minutes shows a non-zero <code>cacheReadInputTokens</code>.
+        </p>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Risk</th><th>Mitigation</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>The model does not adopt the format.</strong> A model that keeps writing
+                whole files leaves the slice inert.</td>
+              <td>The worked example sits in the cached prefix beside the file-block example that
+                already works. The hand-check is required before merge — and the format is the
+                variable, not the architecture.</td>
+            </tr>
+            <tr>
+              <td><strong>Anchor failures are routine</strong>, making refusals the normal
+                experience.</td>
+              <td>Transcript feedback plus Retry is the cheap repair. If the hand-check shows
+                failures are common, the automatic round-trip becomes the next slice rather than a
+                guess made now.</td>
+            </tr>
+            <tr>
+              <td><strong>A file's own content contains a delimiter line.</strong></td>
+              <td>The same exposure <code>&lt;/genesis:file&gt;</code> has carried since Slice 6,
+                mitigated by the same thing — and it is why <code>=======</code> was rejected.</td>
+            </tr>
+            <tr>
+              <td><strong>The splice makes the editor worse, invisibly.</strong></td>
+              <td>A pure module with its own tests, plus a real-browser assertion about screen
+                positions rather than about the function.</td>
+            </tr>
+            <tr>
+              <td><strong>Moving the project state into a user message regresses quality.</strong></td>
+              <td>Documents-before-query is the recommended placement for long context; the change
+                is four lines to revert, and the hand-check is against real generations.</td>
+            </tr>
+            <tr>
+              <td><strong>PR size</strong> — the edit protocol and the request reshaping in one
+                branch.</td>
+              <td>One subject: the cost of a follow-up turn. The caching half is four files and
+                mostly tests, and it lifts out cleanly if review asks.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- =============================================================== -->
+  <section>
+    <div class="rail"><span>Not here</span></div>
+    <div class="body">
+      <h2>Deliberately left out</h2>
+      <p class="lede">
+        Each of these is a slice, and each is cheaper <em>after</em> this one.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Not in this slice</th><th>Why, and where it goes</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>A per-generation diff view</td>
+              <td>Stretch S3 (F10.3). Nearly free once ops carry a located range.</td>
+            </tr>
+            <tr>
+              <td>Deleting a whole file from a generation</td>
+              <td>Restore stays the only operation in the product that deletes a file document.</td>
+            </tr>
+            <tr>
+              <td>An automatic repair round-trip</td>
+              <td>Only if the hand-check shows anchor failures are common enough to pay for.</td>
+            </tr>
+            <tr>
+              <td>Shrinking or retrieving the project-state block</td>
+              <td><strong>The next cost slice.</strong> After this one it is the dominant input line
+                — the chart at the top says so.</td>
+            </tr>
+            <tr>
+              <td>Per-turn <code>effort</code> selection</td>
+              <td>An edit turn is small, well-specified work where a lower effort would plausibly
+                do — but choosing needs to know the turn is an edit before the model has decided.</td>
+            </tr>
+            <tr>
+              <td>A fast-apply model</td>
+              <td>Rejected outright: a second vendor, a second key and a second failure mode for a
+                saving this slice gets without any of them.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Genesis · Slice 14 — Targeted edits · design companion to
+    <code>docs/slices/14-targeted-edits/02-prd.md</code> · 2026-08-18 ·
+    the acceptance criteria and the test matrix live in the markdown, which is the contract.
+  </footer>
+
+</div>

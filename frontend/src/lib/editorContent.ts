@@ -15,7 +15,7 @@
  * file changes.
  *
  * Both branches are applied through `model.applyEdits` by the caller — an append
- * as a zero-width range at the end, a replace over `getFullModelRange()` (P4).
+ * as a zero-width range at the end, a splice over the range that actually changed.
  * Neither is a `setValue`, so AC-10's negative is provable outright: the fake
  * model records no `setValue` call at all, ever, rather than "none for this file
  * during this window". `applyEdits` also leaves the cursor and scroll where they
@@ -24,14 +24,18 @@
  */
 
 /**
- * A discriminated union rather than `{ append?: string; replace?: string }`.
- *
- * The two carry the same type and mean opposite things — one is a suffix, the
- * other a whole document — so an optional-field shape would let a caller apply
- * the wrong one with no complaint from the compiler. `kind` is what the caller
- * switches on, and what `exhaustive` narrowing keeps honest.
+ * A discriminated union rather than optional fields: the two mean different
+ * things and `kind` is what the caller switches on.
  */
-export type EditorEdit = { kind: 'append'; text: string } | { kind: 'replace'; text: string }
+export type EditorEdit =
+  | { kind: 'append'; text: string }
+  /**
+   * The minimal changed range: replace `length` characters at `offset` with
+   * `text`. A whole-document replace is this with `offset: 0`, so the caller has
+   * one branch instead of two — and a located change touches only its own lines,
+   * which is the point of the slice made visible.
+   */
+  | { kind: 'splice'; offset: number; length: number; text: string }
 
 /**
  * The edit that turns `current` into `next`, or `null` when there is nothing to do.
@@ -43,6 +47,28 @@ export type EditorEdit = { kind: 'append'; text: string } | { kind: 'replace'; t
  */
 export function editorEdit(current: string, next: string): EditorEdit | null {
   if (current === next) return null
+  // The streaming-tail case, kept apart because the viewport should follow it.
   if (next.startsWith(current)) return { kind: 'append', text: next.slice(current.length) }
-  return { kind: 'replace', text: next }
+
+  const shorter = Math.min(current.length, next.length)
+
+  let start = 0
+  while (start < shorter && current[start] === next[start]) start += 1
+
+  // The suffix scan stops at the prefix, so the two can never overlap and
+  // `length` can never go negative.
+  let end = 0
+  while (
+    end < shorter - start &&
+    current[current.length - 1 - end] === next[next.length - 1 - end]
+  ) {
+    end += 1
+  }
+
+  return {
+    kind: 'splice',
+    offset: start,
+    length: current.length - start - end,
+    text: next.slice(start, next.length - end),
+  }
 }

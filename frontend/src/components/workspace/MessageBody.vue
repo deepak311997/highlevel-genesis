@@ -41,17 +41,30 @@ const props = defineProps<{
 
 const workspace = useWorkspaceStore()
 
-/** A run of file markers, collapsed; prose, parsed. */
-type Section = { kind: 'markdown'; blocks: Block[] } | { kind: 'files'; paths: string[] }
+/** One file a turn touched, and whether it was changed rather than written. */
+interface FileRef {
+  path: string
+  changed: boolean
+}
+
+type Section =
+  | { kind: 'markdown'; blocks: Block[] }
+  | { kind: 'files'; refs: FileRef[] }
+  | { kind: 'error'; text: string }
 
 const sections = computed<Section[]>(() => {
   const out: Section[] = []
 
   for (const part of splitMessageContent(props.content)) {
-    if (part.kind === 'file') {
+    if (part.kind === 'file' || part.kind === 'edit') {
+      const ref = { path: part.path, changed: part.kind === 'edit' }
       const last = out[out.length - 1]
-      if (last?.kind === 'files') last.paths.push(part.path)
-      else out.push({ kind: 'files', paths: [part.path] })
+      if (last?.kind === 'files') last.refs.push(ref)
+      else out.push({ kind: 'files', refs: [ref] })
+      continue
+    }
+    if (part.kind === 'error') {
+      out.push({ kind: 'error', text: part.text })
       continue
     }
     const blocks = parseMarkdown(part.text)
@@ -62,11 +75,22 @@ const sections = computed<Section[]>(() => {
 })
 
 /**
- * The icon for a path, by extension.
- *
- * Four buckets rather than a lookup of every extension the model might invent:
- * the icon is a scanning aid, and a reader who cannot tell a `.mjs` from a `.js`
- * at a glance is not helped by a fifth glyph.
+ * What the group heading says. Written and changed are counted apart, because
+ * "3 files written" over a turn that changed one line of one of them is the
+ * sentence this slice exists to stop the product saying.
+ */
+function summaryOf(refs: readonly FileRef[]): string {
+  const changed = refs.filter((ref) => ref.changed).length
+  const written = refs.length - changed
+  const parts: string[] = []
+  if (written > 0) parts.push(`${String(written)} ${written === 1 ? 'file' : 'files'} written`)
+  if (changed > 0) parts.push(`${String(changed)} changed`)
+  return parts.join(' · ')
+}
+
+/**
+ * The icon for a path, by extension. Four buckets rather than one per extension:
+ * the icon is a scanning aid.
  */
 function iconFor(path: string) {
   if (/\.(?:html?|vue)$/i.test(path)) return FileCode2
@@ -85,6 +109,16 @@ function iconFor(path: string) {
         :caret="streaming === true && index === sections.length - 1"
       />
 
+      <!-- The refusal, in the bubble rather than beside it: a banner is cleared by
+           a reload and a transcript is not. -->
+      <p
+        v-else-if="section.kind === 'error'"
+        data-testid="message-error"
+        class="rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-2 text-xs text-destructive"
+      >
+        {{ section.text }}
+      </p>
+
       <div
         v-else
         data-testid="file-group"
@@ -93,19 +127,23 @@ function iconFor(path: string) {
         <p
           class="border-b border-border-strong px-2.5 py-1.5 text-[0.6875rem] font-medium uppercase tracking-wide text-muted-foreground"
         >
-          {{ section.paths.length }} {{ section.paths.length === 1 ? 'file' : 'files' }} written
+          {{ summaryOf(section.refs) }}
         </p>
         <button
-          v-for="path in section.paths"
-          :key="path"
+          v-for="ref in section.refs"
+          :key="ref.path"
           type="button"
           data-testid="file-chip"
+          :data-changed="String(ref.changed)"
           class="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          :title="`Open ${path}`"
-          @click="workspace.selectFile(path)"
+          :title="`Open ${ref.path}`"
+          @click="workspace.selectFile(ref.path)"
         >
-          <component :is="iconFor(path)" class="size-3.5 shrink-0 text-muted-foreground" />
-          <span class="truncate font-mono text-xs">{{ path }}</span>
+          <component :is="iconFor(ref.path)" class="size-3.5 shrink-0 text-muted-foreground" />
+          <span class="truncate font-mono text-xs">{{ ref.path }}</span>
+          <span v-if="ref.changed" class="label-micro ml-auto shrink-0 text-muted-foreground">
+            changed
+          </span>
         </button>
       </div>
     </template>

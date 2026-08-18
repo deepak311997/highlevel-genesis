@@ -1,0 +1,1216 @@
+<title>Anatomy of a Turn</title>
+
+<style>
+  :root {
+    --ground: #ebedf3;
+    --surface: #fbfbfe;
+    --surface-2: #f2f3f9;
+    --ink: #11131b;
+    --ink-soft: #4c5063;
+    --ink-faint: #81859a;
+    --rule: #cbcfdd;
+    --rule-soft: #dee1ec;
+
+    --client: #17677f;
+    --client-wash: #d7ecf2;
+    --server: #57399f;
+    --server-wash: #e4ddf8;
+    --store: #8f5410;
+    --store-wash: #f8e9d2;
+    --model: #a01c3c;
+    --model-wash: #fadde4;
+
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+    --measure: 70ch;
+    --wide: 1140px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0b0d13;
+      --surface: #14161f;
+      --surface-2: #1a1d28;
+      --ink: #e8eaf2;
+      --ink-soft: #a5a9bc;
+      --ink-faint: #777c91;
+      --rule: #2a2e3d;
+      --rule-soft: #212431;
+
+      --client: #63c8e2;
+      --client-wash: #0d323e;
+      --server: #b3a1f2;
+      --server-wash: #261e4c;
+      --store: #e8ac52;
+      --store-wash: #3d2709;
+      --model: #f28ca2;
+      --model-wash: #43101e;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0b0d13;
+    --surface: #14161f;
+    --surface-2: #1a1d28;
+    --ink: #e8eaf2;
+    --ink-soft: #a5a9bc;
+    --ink-faint: #777c91;
+    --rule: #2a2e3d;
+    --rule-soft: #212431;
+
+    --client: #63c8e2;
+    --client-wash: #0d323e;
+    --server: #b3a1f2;
+    --server-wash: #261e4c;
+    --store: #e8ac52;
+    --store-wash: #3d2709;
+    --model: #f28ca2;
+    --model-wash: #43101e;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16.5px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page { max-width: var(--wide); margin: 0 auto; padding: 0 1.25rem 6rem; }
+
+  /* ---------- masthead ---------- */
+
+  header.masthead { padding: 4.5rem 0 2.75rem; }
+
+  .kicker {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 1.75rem;
+  }
+
+  h1 {
+    font-size: clamp(2.4rem, 7vw, 4.4rem);
+    font-weight: 800;
+    letter-spacing: -0.045em;
+    line-height: 0.98;
+    text-wrap: balance;
+    margin: 0 0 1.5rem;
+  }
+
+  .standfirst {
+    max-width: var(--measure);
+    font-size: 1.15rem;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+
+  /* ---------- lane legend ---------- */
+
+  .lanes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: 0.7rem;
+    margin: 2.75rem 0 0;
+  }
+
+  .lane {
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--rule);
+    background: var(--surface);
+    border-radius: 3px;
+    padding: 0.85rem 0.95rem;
+  }
+
+  .lane.client { border-top-color: var(--client); }
+  .lane.server { border-top-color: var(--server); }
+  .lane.store  { border-top-color: var(--store); }
+  .lane.model  { border-top-color: var(--model); }
+
+  .lane .who {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    font-weight: 650;
+    display: block;
+    margin-bottom: 0.3rem;
+  }
+  .lane.client .who { color: var(--client); }
+  .lane.server .who { color: var(--server); }
+  .lane.store  .who { color: var(--store); }
+  .lane.model  .who { color: var(--model); }
+
+  .lane .what { font-size: 0.83rem; color: var(--ink-soft); }
+
+  /* ---------- sections ---------- */
+
+  section {
+    padding-top: 3.75rem;
+    margin-top: 3.75rem;
+    border-top: 1px solid var(--rule);
+  }
+
+  .sec-num {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 0.85rem;
+  }
+
+  h2 {
+    font-size: clamp(1.6rem, 3.4vw, 2.25rem);
+    font-weight: 750;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    text-wrap: balance;
+    margin: 0 0 1.1rem;
+  }
+
+  h3 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 2.5rem 0 0.7rem;
+  }
+
+  p, ul, ol { max-width: var(--measure); }
+  p { margin: 0 0 1.05rem; }
+  ul, ol { margin: 0 0 1.05rem; padding-left: 1.25rem; }
+  li { margin-bottom: 0.45rem; }
+
+  .lede { font-size: 1.06rem; color: var(--ink-soft); }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.85em;
+    background: var(--surface-2);
+    border: 1px solid var(--rule-soft);
+    border-radius: 3px;
+    padding: 0.06em 0.32em;
+  }
+
+  a { color: var(--server); }
+
+  /* ---------- the numbered walkthrough ---------- */
+
+  ol.steps { list-style: none; padding: 0; margin: 1.75rem 0; max-width: none; counter-reset: step; }
+  ol.steps.cont { counter-reset: step 9; }
+
+  ol.steps > li {
+    counter-increment: step;
+    display: grid;
+    grid-template-columns: 2.6rem 7.5rem minmax(0, 1fr);
+    gap: 0 1.1rem;
+    padding: 0.95rem 0;
+    border-bottom: 1px solid var(--rule-soft);
+    margin: 0;
+    align-items: start;
+  }
+
+  ol.steps > li:last-child { border-bottom: 0; }
+
+  ol.steps > li::before {
+    content: counter(step, decimal-leading-zero);
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-faint);
+    padding-top: 0.2rem;
+  }
+
+  .chip {
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.22rem 0.45rem;
+    border-radius: 2px;
+    white-space: nowrap;
+    justify-self: start;
+    margin-top: 0.15rem;
+  }
+
+  .chip.client { background: var(--client-wash); color: var(--client); }
+  .chip.server { background: var(--server-wash); color: var(--server); }
+  .chip.store  { background: var(--store-wash);  color: var(--store); }
+  .chip.model  { background: var(--model-wash);  color: var(--model); }
+
+  .step-body { min-width: 0; }
+  .step-body p { margin: 0; max-width: 62ch; }
+  .step-body p + p { margin-top: 0.5rem; }
+  .step-body .title { font-weight: 650; }
+  .step-body .note { font-size: 0.9rem; color: var(--ink-soft); }
+
+  @media (max-width: 720px) {
+    ol.steps > li { grid-template-columns: 2.2rem minmax(0, 1fr); }
+    .chip { grid-column: 2; margin-bottom: 0.4rem; }
+    .step-body { grid-column: 2; }
+  }
+
+  .boundary {
+    display: grid;
+    grid-template-columns: 2.6rem minmax(0, 1fr);
+    gap: 0 1.1rem;
+    padding: 1.1rem 0;
+    border-top: 2px solid var(--server);
+    border-bottom: 1px solid var(--rule-soft);
+    margin: 0;
+  }
+
+  .boundary .flag {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--server);
+    grid-column: 2;
+    margin-bottom: 0.3rem;
+    display: block;
+  }
+
+  .boundary p { grid-column: 2; margin: 0; font-size: 0.92rem; color: var(--ink-soft); }
+
+  /* ---------- figures ---------- */
+
+  figure { margin: 2.25rem 0; padding: 0; }
+
+  .fig-frame {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 1.5rem 1.25rem;
+    overflow-x: auto;
+  }
+
+  figure svg { display: block; width: 100%; min-width: 620px; max-width: 100%; height: auto; }
+
+  figcaption {
+    font-size: 0.86rem;
+    line-height: 1.55;
+    color: var(--ink-faint);
+    margin-top: 0.8rem;
+    max-width: 82ch;
+  }
+
+  .s-ink { stroke: var(--ink-soft); }
+  .s-rule { stroke: var(--rule); }
+  .s-client { stroke: var(--client); }
+  .s-server { stroke: var(--server); }
+  .s-store { stroke: var(--store); }
+  .s-model { stroke: var(--model); }
+
+  .f-ink { fill: var(--ink); }
+  .f-soft { fill: var(--ink-soft); }
+  .f-faint { fill: var(--ink-faint); }
+  .f-client { fill: var(--client); }
+  .f-server { fill: var(--server); }
+  .f-store { fill: var(--store); }
+  .f-model { fill: var(--model); }
+  .f-surface { fill: var(--surface); }
+  .f-surface2 { fill: var(--surface-2); }
+  .f-client-w { fill: var(--client-wash); }
+  .f-server-w { fill: var(--server-wash); }
+  .f-store-w { fill: var(--store-wash); }
+  .f-model-w { fill: var(--model-wash); }
+
+  .t { font-family: var(--mono); font-size: 12px; }
+  .t-sm { font-family: var(--mono); font-size: 10.5px; }
+  .t-lg { font-family: var(--mono); font-size: 13px; font-weight: 650; }
+  .t-num { font-variant-numeric: tabular-nums; }
+
+  /* ---------- tables ---------- */
+
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    background: var(--surface);
+    margin: 1.6rem 0;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+
+  th, td {
+    text-align: left;
+    padding: 0.72rem 0.9rem;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: top;
+  }
+
+  thead th {
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    background: var(--surface-2);
+    white-space: nowrap;
+  }
+
+  tbody tr:last-child td { border-bottom: 0; }
+  td.mono { font-family: var(--mono); font-size: 0.8rem; }
+
+  /* ---------- code ---------- */
+
+  pre {
+    margin: 1.5rem 0;
+    padding: 1.1rem 1.2rem;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    line-height: 1.7;
+    color: var(--ink);
+  }
+
+  pre .k { color: var(--server); font-weight: 650; }
+  pre .s { color: var(--store); }
+  pre .c { color: var(--ink-faint); }
+  pre .m { color: var(--model); }
+
+  /* ---------- callout ---------- */
+
+  .callout {
+    border-left: 3px solid var(--server);
+    background: var(--surface);
+    padding: 1rem 1.15rem;
+    margin: 1.75rem 0;
+    max-width: var(--measure);
+    border-radius: 0 3px 3px 0;
+  }
+  .callout.warn { border-left-color: var(--model); }
+  .callout p { margin: 0; }
+  .callout p + p { margin-top: 0.65rem; }
+  .callout .label {
+    font-family: var(--mono);
+    font-size: 0.67rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--server);
+    display: block;
+    margin-bottom: 0.45rem;
+  }
+  .callout.warn .label { color: var(--model); }
+
+  footer {
+    margin-top: 4.5rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    color: var(--ink-faint);
+  }
+
+  :focus-visible { outline: 2px solid var(--server); outline-offset: 2px; }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <p class="kicker">Genesis · architecture walkthrough · one generation, end to end</p>
+    <h1>Anatomy of a turn</h1>
+    <p class="standfirst">
+      A user types a sentence and an application appears. Between those two moments there are four
+      processes, twenty steps, three stream layers and exactly one database commit. This traces the
+      path a prompt actually takes through the code that exists today — and then runs it a second
+      time, because the second prompt is a different problem from the first.
+    </p>
+
+    <div class="lanes">
+      <div class="lane client">
+        <span class="who">Browser</span>
+        <span class="what">Vue 3 SPA · Pinia <code>workspace</code> store · Monaco · sandboxed
+          preview iframe</span>
+      </div>
+      <div class="lane server">
+        <span class="who">generate</span>
+        <span class="what">Cloud Function v2, <code>asia-south1</code> · its own function, 540 s
+          timeout, 512 MiB</span>
+      </div>
+      <div class="lane store">
+        <span class="who">Firestore</span>
+        <span class="what">named database <code>hl-genesis</code> · projects · messages · files ·
+          snapshots</span>
+      </div>
+      <div class="lane model">
+        <span class="who">Anthropic</span>
+        <span class="what"><code>claude-opus-5</code> · <code>messages.stream()</code> ·
+          <code>max_tokens: 64000</code></span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============================================================ -->
+  <section>
+    <p class="sec-num">01 — The map</p>
+    <h2>Four processes and two rewrites</h2>
+    <p class="lede">
+      The browser never talks to Firestore and never talks to Anthropic. Both are reached only
+      through Cloud Functions, and the browser reaches those through same-origin Hosting rewrites —
+      so there is no CORS preflight on the hot path and no second hostname in the app.
+    </p>
+
+    <figure>
+      <div class="fig-frame">
+        <svg viewBox="0 0 900 300" role="img"
+             aria-label="The browser calls two Hosting rewrites: slash api goes to the api function, slash generate goes to the generate function. Only those functions touch Firestore, Anthropic and HighLevel. Firestore security rules deny every client outright.">
+          <defs>
+            <marker id="m1-ink" viewBox="0 0 9 8" refX="8" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+              <path class="f-soft" d="M0,0 L9,4 L0,8 Z" />
+            </marker>
+            <marker id="m1-model" viewBox="0 0 9 8" refX="8" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+              <path class="f-model" d="M0,0 L9,4 L0,8 Z" />
+            </marker>
+          </defs>
+
+          <rect class="f-client-w s-client" x="0" y="88" width="176" height="96" stroke-width="1.5" rx="4" />
+          <text class="t-lg f-client" x="18" y="120">Browser</text>
+          <text class="t-sm f-soft" x="18" y="140">Vue 3 · Pinia · Monaco</text>
+          <text class="t-sm f-soft" x="18" y="156">preview iframe</text>
+          <text class="t-sm f-faint" x="18" y="172">ID token · App Check</text>
+
+          <text class="t-sm f-faint" x="196" y="106">Firebase Hosting rewrites</text>
+          <line class="s-rule" x1="196" y1="114" x2="330" y2="114" stroke-width="1" stroke-dasharray="3 3" />
+
+          <line class="s-ink" x1="176" y1="130" x2="330" y2="130" stroke-width="1.4" marker-end="url(#m1-ink)" />
+          <text class="t-sm f-soft" x="200" y="126">/api/**</text>
+          <line class="s-ink" x1="176" y1="160" x2="330" y2="160" stroke-width="1.4" marker-end="url(#m1-ink)" />
+          <text class="t-sm f-soft" x="200" y="156">/generate</text>
+
+          <rect class="f-server-w s-server" x="342" y="34" width="182" height="98" stroke-width="1.5" rx="4" />
+          <text class="t-lg f-server" x="360" y="62">api</text>
+          <text class="t-sm f-soft" x="360" y="82">auth · oauth · projects</text>
+          <text class="t-sm f-soft" x="360" y="98">messages · files</text>
+          <text class="t-sm f-soft" x="360" y="114">snapshots · hl proxy</text>
+
+          <rect class="f-server-w s-server" x="342" y="150" width="182" height="86" stroke-width="1.5" rx="4" />
+          <text class="t-lg f-server" x="360" y="178">generate</text>
+          <text class="t-sm f-soft" x="360" y="198">SSE · unbuffered</text>
+          <text class="t-sm f-soft" x="360" y="214">540 s · 512 MiB</text>
+
+          <line class="s-ink" x1="524" y1="76" x2="646" y2="120" stroke-width="1.4" marker-end="url(#m1-ink)" />
+          <line class="s-ink" x1="524" y1="184" x2="646" y2="144" stroke-width="1.4" marker-end="url(#m1-ink)" />
+
+          <rect class="f-store-w s-store" x="654" y="98" width="176" height="72" stroke-width="1.5" rx="4" />
+          <text class="t-lg f-store" x="672" y="126">Firestore</text>
+          <text class="t-sm f-soft" x="672" y="146">hl-genesis · Admin SDK</text>
+          <text class="t-sm f-soft" x="672" y="162">rules deny all clients</text>
+
+          <line class="s-model" x1="524" y1="204" x2="646" y2="238" stroke-width="1.4" marker-end="url(#m1-model)" />
+          <rect class="f-model-w s-model" x="654" y="212" width="176" height="52" stroke-width="1.5" rx="4" />
+          <text class="t-lg f-model" x="672" y="238">Anthropic</text>
+          <text class="t-sm f-soft" x="672" y="254">claude-opus-5</text>
+
+          <line class="s-ink" x1="524" y1="60" x2="646" y2="42" stroke-width="1.4" marker-end="url(#m1-ink)" />
+          <rect class="f-surface2 s-rule" x="654" y="18" width="176" height="46" stroke-width="1.5" rx="4" />
+          <text class="t f-soft" x="672" y="40">HighLevel API</text>
+          <text class="t-sm f-faint" x="672" y="56">token attached server-side</text>
+
+          <path class="s-model" d="M 88 184 L 88 274 L 700 274" fill="none" stroke-width="1.3"
+                stroke-dasharray="4 4" marker-end="url(#m1-model)" />
+          <text class="t-sm f-model" x="100" y="290">no client SDK · no getDoc · no onSnapshot — this path does not exist</text>
+        </svg>
+      </div>
+      <figcaption>
+        The dashed line is the one that is deliberately absent. Every read and write of Firestore
+        goes through a function that authenticates the caller and scopes the query by the uid in the
+        verified token; security rules deny clients outright, so a mistake in a route is a bug
+        rather than a breach.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <p class="sec-num">02 — The first turn</p>
+    <h2>Twenty steps, one commit</h2>
+    <p class="lede">
+      The user has an empty project open. They type <em>“build a contact dashboard with search and
+      a list of upcoming appointments”</em> and press send.
+    </p>
+
+    <figure>
+      <div class="fig-frame">
+        <svg viewBox="0 0 900 812" role="img"
+             aria-label="Sequence diagram of one generation. The browser posts the prompt; the function verifies, parses, reads the project and transcript, writes the user message, builds the context and the parameters, reads the project files and opens the model stream — all before flushing headers. After the flush it emits the stored prompt, then token and file frames as the model streams, and finally commits the assistant message, the file writes and the snapshot in a single batch before sending done.">
+          <defs>
+            <marker id="m2-ink" viewBox="0 0 8 7" refX="7" refY="3.5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+              <path class="f-soft" d="M0,0 L8,3.5 L0,7 Z" />
+            </marker>
+            <marker id="m2-store" viewBox="0 0 8 7" refX="7" refY="3.5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+              <path class="f-store" d="M0,0 L8,3.5 L0,7 Z" />
+            </marker>
+            <marker id="m2-model" viewBox="0 0 8 7" refX="7" refY="3.5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+              <path class="f-model" d="M0,0 L8,3.5 L0,7 Z" />
+            </marker>
+            <marker id="m2-client" viewBox="0 0 8 7" refX="7" refY="3.5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+              <path class="f-client" d="M0,0 L8,3.5 L0,7 Z" />
+            </marker>
+          </defs>
+
+          <!-- headers -->
+          <rect class="f-client-w s-client" x="40" y="8" width="130" height="26" stroke-width="1" rx="3" />
+          <text class="t f-client" x="66" y="26">Browser</text>
+          <rect class="f-server-w s-server" x="300" y="8" width="130" height="26" stroke-width="1" rx="3" />
+          <text class="t f-server" x="322" y="26">generate</text>
+          <rect class="f-store-w s-store" x="560" y="8" width="130" height="26" stroke-width="1" rx="3" />
+          <text class="t f-store" x="583" y="26">Firestore</text>
+          <rect class="f-model-w s-model" x="770" y="8" width="120" height="26" stroke-width="1" rx="3" />
+          <text class="t f-model" x="793" y="26">Anthropic</text>
+
+          <!-- lifelines -->
+          <line class="s-client" x1="105" y1="34" x2="105" y2="800" stroke-width="1" stroke-dasharray="2 4" opacity="0.6" />
+          <line class="s-server" x1="365" y1="34" x2="365" y2="800" stroke-width="1" stroke-dasharray="2 4" opacity="0.6" />
+          <line class="s-store"  x1="625" y1="34" x2="625" y2="800" stroke-width="1" stroke-dasharray="2 4" opacity="0.6" />
+          <line class="s-model"  x1="830" y1="34" x2="830" y2="800" stroke-width="1" stroke-dasharray="2 4" opacity="0.6" />
+
+          <!-- 1 -->
+          <text class="t-sm f-faint t-num" x="0" y="66">01</text>
+          <line class="s-ink" x1="105" y1="62" x2="360" y2="62" stroke-width="1.3" marker-end="url(#m2-ink)" />
+          <text class="t-sm f-soft" x="112" y="56">POST /generate  { projectId, content }</text>
+          <text class="t-sm f-faint" x="112" y="76">+ ID token, App Check token</text>
+
+          <!-- 2 -->
+          <text class="t-sm f-faint t-num" x="0" y="104">02</text>
+          <path class="s-ink" d="M 365 96 L 395 96 L 395 110 L 370 110" fill="none" stroke-width="1.3" marker-end="url(#m2-ink)" />
+          <text class="t-sm f-soft" x="404" y="107">verify App Check → ID token → email_verified → uid; Zod-parse the body</text>
+
+          <!-- 3 -->
+          <text class="t-sm f-faint t-num" x="0" y="140">03</text>
+          <line class="s-store" x1="365" y1="136" x2="620" y2="136" stroke-width="1.3" marker-end="url(#m2-store)" />
+          <text class="t-sm f-soft" x="372" y="130">read project → 404 if absent or soft-deleted</text>
+
+          <!-- 4 -->
+          <text class="t-sm f-faint t-num" x="0" y="166">04</text>
+          <line class="s-store" x1="365" y1="162" x2="620" y2="162" stroke-width="1.3" marker-end="url(#m2-store)" />
+          <text class="t-sm f-soft" x="372" y="156">read transcript · ordered createdAt,seq · limit 200</text>
+
+          <!-- 5 -->
+          <text class="t-sm f-faint t-num" x="0" y="196">05</text>
+          <rect class="f-store-w" x="368" y="180" width="252" height="20" rx="2" opacity="0.55" />
+          <line class="s-store" x1="365" y1="192" x2="620" y2="192" stroke-width="2" marker-end="url(#m2-store)" />
+          <text class="t-sm f-store" x="374" y="196">write the user message — before anything expensive</text>
+
+          <!-- 6 -->
+          <text class="t-sm f-faint t-num" x="0" y="230">06</text>
+          <path class="s-ink" d="M 365 222 L 395 222 L 395 236 L 370 236" fill="none" stroke-width="1.3" marker-end="url(#m2-ink)" />
+          <text class="t-sm f-soft" x="404" y="233">buildContext: drop trailing assistant · trim to 80 k chars · drop leading assistant</text>
+
+          <!-- 7 -->
+          <text class="t-sm f-faint t-num" x="0" y="266">07</text>
+          <line class="s-store" x1="365" y1="262" x2="620" y2="262" stroke-width="1.3" marker-end="url(#m2-store)" />
+          <text class="t-sm f-soft" x="372" y="256">read the project's files, content included · ≤ 20</text>
+
+          <!-- 8 -->
+          <text class="t-sm f-faint t-num" x="0" y="300">08</text>
+          <path class="s-ink" d="M 365 292 L 395 292 L 395 306 L 370 306" fill="none" stroke-width="1.3" marker-end="url(#m2-ink)" />
+          <text class="t-sm f-soft" x="404" y="303">buildParams: system prompt (cached prefix) + project state</text>
+
+          <!-- 9 -->
+          <text class="t-sm f-faint t-num" x="0" y="336">09</text>
+          <line class="s-model" x1="365" y1="332" x2="825" y2="332" stroke-width="1.3" marker-end="url(#m2-model)" />
+          <text class="t-sm f-model" x="372" y="326">messages.stream() — opened before the headers go out</text>
+
+          <!-- the flush -->
+          <line class="s-server" x1="0" y1="356" x2="900" y2="356" stroke-width="2" />
+          <text class="t-sm f-server" x="0" y="372">THE FLUSH — 200, text/event-stream. Past this line the status code is spent: every failure is an error frame.</text>
+
+          <!-- 10 -->
+          <text class="t-sm f-faint t-num" x="0" y="398">10</text>
+          <line class="s-client" x1="365" y1="394" x2="110" y2="394" stroke-width="1.3" marker-end="url(#m2-client)" />
+          <text class="t-sm f-soft" x="120" y="388">200 + headers, then one keep-alive comment</text>
+
+          <!-- 11 -->
+          <text class="t-sm f-faint t-num" x="0" y="424">11</text>
+          <line class="s-client" x1="365" y1="420" x2="110" y2="420" stroke-width="1.3" marker-end="url(#m2-client)" />
+          <text class="t-sm f-soft" x="120" y="414">event: user — the prompt as stored, replacing the optimistic bubble</text>
+
+          <!-- 12 -->
+          <text class="t-sm f-faint t-num" x="0" y="454">12</text>
+          <line class="s-model" x1="825" y1="450" x2="370" y2="450" stroke-width="1.3" marker-end="url(#m2-model)" />
+          <text class="t-sm f-model" x="470" y="444">content_block_delta · text_delta …</text>
+
+          <!-- 13 -->
+          <text class="t-sm f-faint t-num" x="0" y="488">13</text>
+          <path class="s-ink" d="M 365 480 L 395 480 L 395 494 L 370 494" fill="none" stroke-width="1.3" marker-end="url(#m2-ink)" />
+          <text class="t-sm f-soft" x="404" y="491">mapStream drops thinking deltas → the collector splits prose from files</text>
+
+          <!-- 14 -->
+          <text class="t-sm f-faint t-num" x="0" y="524">14</text>
+          <line class="s-client" x1="365" y1="520" x2="110" y2="520" stroke-width="1.3" marker-end="url(#m2-client)" />
+          <text class="t-sm f-client" x="120" y="514">token · file_start · file_chunk · file_end</text>
+          <text class="t-sm f-faint" x="120" y="536">chat bubble grows; tree row appears; Monaco appends, read-only</text>
+
+          <!-- 15 -->
+          <text class="t-sm f-faint t-num" x="0" y="570">15</text>
+          <line class="s-model" x1="825" y1="566" x2="370" y2="566" stroke-width="1.3" marker-end="url(#m2-model)" />
+          <text class="t-sm f-model" x="470" y="560">message_delta · stop_reason, usage</text>
+
+          <!-- 16 -->
+          <text class="t-sm f-faint t-num" x="0" y="604">16</text>
+          <path class="s-ink" d="M 365 596 L 395 596 L 395 610 L 370 610" fill="none" stroke-width="1.3" marker-end="url(#m2-ink)" />
+          <text class="t-sm f-soft" x="404" y="607">collector.finish · validate the op set whole · plan the snapshot · log the turn</text>
+
+          <!-- 17 -->
+          <text class="t-sm f-faint t-num" x="0" y="646">17</text>
+          <rect class="f-store-w" x="368" y="626" width="252" height="34" rx="2" opacity="0.55" />
+          <line class="s-store" x1="365" y1="643" x2="620" y2="643" stroke-width="2.4" marker-end="url(#m2-store)" />
+          <text class="t-sm f-store" x="374" y="640">ONE WriteBatch, one commit:</text>
+          <text class="t-sm f-store" x="374" y="656">message + file writes + snapshot + prune</text>
+
+          <!-- 18 -->
+          <text class="t-sm f-faint t-num" x="0" y="690">18</text>
+          <line class="s-client" x1="365" y1="686" x2="110" y2="686" stroke-width="1.3" marker-end="url(#m2-client)" />
+          <text class="t-sm f-soft" x="120" y="680">event: done { message, files[], fileError } — then the socket closes</text>
+
+          <!-- 19 -->
+          <text class="t-sm f-faint t-num" x="0" y="722">19</text>
+          <line class="s-ink" x1="105" y1="718" x2="360" y2="718" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#m2-ink)" />
+          <text class="t-sm f-soft" x="112" y="712">GET /api/…/files  (and each open tab, and snapshots if the sheet is open)</text>
+
+          <!-- 20 -->
+          <text class="t-sm f-faint t-num" x="0" y="758">20</text>
+          <path class="s-client" d="M 105 750 L 75 750 L 75 764 L 100 764" fill="none" stroke-width="1.3" marker-end="url(#m2-client)" />
+          <text class="t-sm f-client" x="120" y="761">filesRevision++ → the preview iframe rebuilds with real CRM data</text>
+
+          <line class="s-rule" x1="0" y1="784" x2="900" y2="784" stroke-width="1" stroke-dasharray="2 4" />
+          <text class="t-sm f-faint" x="0" y="802">Throughout: a keep-alive comment every 15 s while nothing else is written; res.on('close') aborts the model stream if the user leaves.</text>
+        </svg>
+      </div>
+      <figcaption>
+        Steps 1–9 all happen before a byte of the response is written. That ordering is the design:
+        everything that can be decided cheaply is decided while a real HTTP status is still
+        available to say it with.
+      </figcaption>
+    </figure>
+
+    <ol class="steps">
+      <li>
+        <span class="chip client">Browser</span>
+        <div class="step-body">
+          <p class="title">The composer hands off to the store.</p>
+          <p class="note"><code>send()</code> trims the draft, refuses if a stream is already open
+            or a restore is running — the store is the boundary a keyboard shortcut cannot go
+            around — draws an optimistic user bubble under a sentinel id, clears the draft, and
+            calls <code>runGeneration({ content })</code>.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip client">Browser</span>
+        <div class="step-body">
+          <p class="title">One <code>fetch</code>, not an <code>EventSource</code>.</p>
+          <p class="note"><code>EventSource</code> cannot <code>POST</code> and cannot set headers,
+            so it could carry neither the ID token nor the App Check token, and its automatic
+            reconnect would silently start a <em>second paid generation</em>. Instead:
+            <code>fetch</code> with a <code>ReadableStream</code> body, an <code>AbortSignal</code>
+            the store owns, and the frames parsed by our own incremental SSE parser.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip server">generate</span>
+        <div class="step-body">
+          <p class="title">Attested, authenticated, parsed.</p>
+          <p class="note">App Check, then the Firebase ID token, then <code>email_verified</code>.
+            The uid comes from the verified token and nowhere else — no route in this product names
+            a user. Then Zod: <code>{ projectId, content }</code> or <code>{ projectId, retry:
+            true }</code>, exactly one of them.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip store">Firestore</span>
+        <div class="step-body">
+          <p class="title">The project, then the transcript, then the cap.</p>
+          <p class="note">A missing, soft-deleted or unreadable project all collapse into one 404.
+            The transcript comes back oldest-first, capped at 200. A <em>new</em> turn needs room
+            for two documents and a retry for one, so the cap is checked before a token is bought.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip store">Firestore</span>
+        <div class="step-body">
+          <p class="title">The prompt is written down before the expensive half begins.</p>
+          <p class="note">This is why the prompt travels in the body of the streaming request rather
+            than through a separate route. A turn that took two requests could fail between them —
+            the message lands, the client dies, and the transcript keeps a prompt no reply is ever
+            coming for. Writing it here buys the same durability with no window.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip server">generate</span>
+        <div class="step-body">
+          <p class="title">The transcript becomes a context, in three steps that must run in order.</p>
+          <p class="note">Drop <strong>trailing</strong> assistant turns — a trailing assistant
+            message is a prefill, and prefill is a 400 on this model, which is exactly what Retry
+            after an interruption produces every time. Trim from the oldest end to 80,000
+            characters, keeping the newest turn whole whatever the budget says. Drop
+            <strong>leading</strong> assistant turns, because the API requires the first message to
+            be <code>user</code>.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip store">Firestore</span>
+        <div class="step-body">
+          <p class="title">The project's files, with their content.</p>
+          <p class="note">On the first turn this is empty. On every turn after it, this read is what
+            makes the model able to change an app rather than replace it — see §04.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip server">generate</span>
+        <div class="step-body">
+          <p class="title">The request is assembled.</p>
+          <p class="note"><code>claude-opus-5</code>, <code>max_tokens: 64000</code>,
+            <code>effort: high</code>, and a three-block system prompt: who the model is, how it
+            writes files, and the HighLevel API cheat-sheet. The cheat-sheet is last and carries the
+            <code>cache_control</code> breakpoint, so the stable prefix is a cache read rather than
+            a re-send. The project's files go in <em>after</em> that breakpoint, because volatile
+            content above it would invalidate the whole cached prefix.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip model">Anthropic</span>
+        <div class="step-body">
+          <p class="title">The stream is opened — still before the flush.</p>
+          <p class="note">A missing API key, a refused request, a bad parameter: all of them are
+            still ordinary JSON errors with a real status line at this point. One second later they
+            would not be.</p>
+        </div>
+      </li>
+    </ol>
+
+    <div class="boundary">
+      <span class="flag">The flush — the one architectural boundary in this handler</span>
+      <p>
+        <code>res.flushHeaders()</code> spends the status line. Everything above answers with a real
+        HTTP status; everything below can only write an <code>error</code> frame onto a 200 that has
+        already gone out. The handler's ordering <em>is</em> that rule executed, and the error
+        handler is the same rule from the catch side.
+      </p>
+    </div>
+
+    <ol class="steps cont">
+      <li>
+        <span class="chip server">generate</span>
+        <div class="step-body">
+          <p class="title">Headers, then a comment, then the stored prompt.</p>
+          <p class="note"><code>Cache-Control: no-cache, no-transform</code> and
+            <code>X-Accel-Buffering: no</code> against intermediaries that buffer.
+            <code>Connection</code> is deliberately <em>not</em> set — it is hop-by-hop, and with
+            <code>keep-alive</code> on it the second prompt of every conversation comes back as an
+            empty 400 over the reused socket. A keep-alive comment goes out immediately so the
+            browser knows the request was accepted before the model has thought of anything.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip server">generate</span>
+        <div class="step-body">
+          <p class="title">Three layers turn SDK events into frames.</p>
+          <p class="note">The mapper drops thinking deltas, tracks usage, enforces an 800 KB output
+            cap and maps every ending to exactly one terminal event. The collector splits the reply
+            into prose and files <em>as it streams</em>. The handler frames the result as SSE.
+            Nothing above the collector knows the file-tag grammar exists.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip client">Browser</span>
+        <div class="step-body">
+          <p class="title">The store routes each frame to a different surface.</p>
+          <p class="note"><code>token</code> grows the chat bubble. <code>file_start</code> puts a
+            row in the tree and — only into an empty panel — opens the tab.
+            <code>file_chunk</code> appends to a buffer keyed by the frame's own path, so
+            interleaved files cannot bleed into each other. Monaco applies each chunk as an
+            <strong>append edit</strong>, never <code>setValue</code>: the naive version resets the
+            undo stack, snaps the viewport to line 1 and re-tokenises the whole file on every
+            chunk.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip server">generate</span>
+        <div class="step-body">
+          <p class="title">The terminal: one code path for success and interruption.</p>
+          <p class="note">The collector's end-of-input flush runs first, because a delimiter may end
+            at end of input as well as at a newline. The op set is then validated
+            <strong>whole</strong> — path shape, duplicates, the 100 KB byte cap, the 20-file union
+            cap — and refused whole if any of it fails, because a generated app is a set of files
+            that reference each other and writing two of three is broken in a way the user cannot
+            see.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip store">Firestore</span>
+        <div class="step-body">
+          <p class="title">One batch. One commit.</p>
+          <p class="note">The assistant message, every file write, the snapshot document, its file
+            subcollection and any pruned version all stage on the same <code>WriteBatch</code> —
+            worst case 63 writes, well inside Firestore's 500. Two commits would leave a crash
+            window in which the transcript says <code>[file: index.html]</code> and no such file
+            exists.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip client">Browser</span>
+        <div class="step-body">
+          <p class="title"><code>done</code>, and then the refetch.</p>
+          <p class="note">The bubble is replaced by the <em>server's</em> message document, not the
+            client's accumulated text. Then the file list is refetched, every open tab is re-read,
+            and a revision counter ticks — which is what rebuilds the preview. The refetch is
+            load-bearing rather than lazy: the server normalises content and computes
+            <code>size</code> and both timestamps, so the bytes the browser watched arrive are not
+            necessarily the bytes that were stored.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <p class="sec-num">03 — The split</p>
+    <h2>One reply, two destinations</h2>
+    <p class="lede">
+      The model writes a single stream of text. Some of it is a sentence to the user and some of it
+      is an application — and the boundary between them is decided line by line, as the bytes
+      arrive, rather than by a second parse at the end.
+    </p>
+
+    <pre><span class="c">what the model writes</span>
+
+I&#39;ll build a dashboard that lists your contacts with a search box,
+and shows the next seven days of appointments beside it.
+
+<span class="k">&lt;genesis:file path=&quot;index.html&quot;&gt;</span>
+<span class="s">&lt;!doctype html&gt;
+&lt;div id=&quot;contacts&quot;&gt;&lt;/div&gt;</span>
+<span class="k">&lt;/genesis:file&gt;</span>
+
+<span class="c">…and what comes out of the collector</span>
+
+<span class="m">token</span>       &quot;I&#39;ll build a dashboard that lists…&quot;
+<span class="m">file_start</span>  { path: &quot;index.html&quot; }
+<span class="m">token</span>       &quot;[file: index.html]\n&quot;      <span class="c">← the marker, into the transcript</span>
+<span class="m">file_chunk</span>  { path: &quot;index.html&quot;, text: &quot;&lt;!doctype html&gt;\n&quot; }
+<span class="m">file_end</span>    { path: &quot;index.html&quot; }
+</pre>
+
+    <figure>
+      <div class="fig-frame">
+        <svg viewBox="0 0 900 300" role="img"
+             aria-label="One text stream enters a line-oriented splitter. Prose leaves as token frames and becomes the chat bubble and the stored message; file content leaves as file frames and becomes the editor buffer and, at the end of the turn, the stored file documents.">
+          <defs>
+            <marker id="m3-ink" viewBox="0 0 9 8" refX="8" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+              <path class="f-soft" d="M0,0 L9,4 L0,8 Z" />
+            </marker>
+            <marker id="m3-client" viewBox="0 0 9 8" refX="8" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+              <path class="f-client" d="M0,0 L9,4 L0,8 Z" />
+            </marker>
+            <marker id="m3-store" viewBox="0 0 9 8" refX="8" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+              <path class="f-store" d="M0,0 L9,4 L0,8 Z" />
+            </marker>
+          </defs>
+
+          <rect class="f-model-w s-model" x="0" y="118" width="146" height="60" stroke-width="1.5" rx="4" />
+          <text class="t f-model" x="16" y="144">SDK deltas</text>
+          <text class="t-sm f-soft" x="16" y="162">one text stream</text>
+
+          <line class="s-ink" x1="146" y1="148" x2="196" y2="148" stroke-width="1.4" marker-end="url(#m3-ink)" />
+
+          <rect class="f-server-w s-server" x="204" y="106" width="168" height="84" stroke-width="1.5" rx="4" />
+          <text class="t f-server" x="220" y="132">line splitter</text>
+          <text class="t-sm f-soft" x="220" y="150">delimiters own a whole line</text>
+          <text class="t-sm f-soft" x="220" y="166">partial line held back</text>
+          <text class="t-sm f-faint" x="220" y="182">bounded — never unbounded</text>
+
+          <!-- prose branch -->
+          <path class="s-client" d="M 372 132 C 410 132, 410 74, 448 74" fill="none" stroke-width="1.5" marker-end="url(#m3-client)" />
+          <rect class="f-client-w s-client" x="456" y="52" width="150" height="44" stroke-width="1.5" rx="4" />
+          <text class="t f-client" x="472" y="72">token frames</text>
+          <text class="t-sm f-soft" x="472" y="88">prose only</text>
+
+          <line class="s-client" x1="606" y1="74" x2="654" y2="74" stroke-width="1.4" marker-end="url(#m3-client)" />
+          <rect class="f-surface2 s-rule" x="662" y="40" width="230" height="30" stroke-width="1" rx="3" />
+          <text class="t-sm f-soft" x="676" y="60">chat bubble, live</text>
+          <rect class="f-store-w s-store" x="662" y="78" width="230" height="30" stroke-width="1" rx="3" />
+          <text class="t-sm f-store" x="676" y="98">the stored assistant message</text>
+
+          <!-- file branch -->
+          <path class="s-store" d="M 372 166 C 410 166, 410 224, 448 224" fill="none" stroke-width="1.5" marker-end="url(#m3-store)" />
+          <rect class="f-store-w s-store" x="456" y="202" width="150" height="44" stroke-width="1.5" rx="4" />
+          <text class="t f-store" x="472" y="222">file frames</text>
+          <text class="t-sm f-soft" x="472" y="238">start · chunk · end</text>
+
+          <line class="s-store" x1="606" y1="224" x2="654" y2="224" stroke-width="1.4" marker-end="url(#m3-store)" />
+          <rect class="f-surface2 s-rule" x="662" y="190" width="230" height="30" stroke-width="1" rx="3" />
+          <text class="t-sm f-soft" x="676" y="210">the tree row, and Monaco</text>
+          <rect class="f-store-w s-store" x="662" y="228" width="230" height="30" stroke-width="1" rx="3" />
+          <text class="t-sm f-store" x="676" y="248">file documents, at the terminal</text>
+
+          <text class="t-sm f-faint" x="456" y="288">The code never enters the transcript. The message keeps a marker line; the bytes live in their own document.</text>
+        </svg>
+      </div>
+      <figcaption>
+        Splitting as it streams is what makes the file boundaries <em>live</em> — the tree row
+        appears the moment a block opens, rather than after the reply is complete. It also means the
+        streamed bytes and the stored bytes are equal by construction: the same normaliser produces
+        both.
+      </figcaption>
+    </figure>
+
+    <div class="callout warn">
+      <span class="label">The bug this shape exists to prevent</span>
+      <p>
+        SDK deltas have nothing to do with line boundaries. <code>&lt;genesis:fi</code> followed by
+        <code>le path="a.js"&gt;</code> is an ordinary pair of deltas, and a parser that scans each
+        delta on its own leaks the first half into the chat bubble and never opens the file — while
+        passing every test written by hand, because a hand-written test chunks on whole tags.
+      </p>
+      <p>
+        The same hazard exists one layer up, on the browser side: a chunk from a
+        <code>ReadableStream</code> can end in the middle of <code>event: to</code> /
+        <code>ken</code>. Both parsers are therefore driven <strong>split at every offset</strong> in
+        their tests, which is how a real bug in the file splitter was found.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <p class="sec-num">04 — The second turn</p>
+    <h2>“Now add a dark theme”</h2>
+    <p class="lede">
+      Every one of the twenty steps runs again, unchanged. Three things are different, and together
+      they are the whole of how Genesis modifies an app instead of replacing it.
+    </p>
+
+    <h3>The transcript is no longer empty</h3>
+    <p>
+      Step 4 now returns turn one's user and assistant documents, so step 6 sends a real
+      conversation. What it does <em>not</em> send is the code: the assistant document holds the
+      prose and a <code>[file: index.html]</code> marker line, never the file's contents. The
+      transcript is a record of what was said, not of what was built.
+    </p>
+
+    <h3>The project state block appears</h3>
+    <p>
+      Step 7 now returns three files, and step 8 renders them into a second system block — the
+      current content of every file, whole. Without it the model is shown a conversation describing
+      files it cannot see, so it writes them again from the description. This block is the single
+      thing that makes <em>“add a search box”</em> an edit rather than a rewrite.
+    </p>
+    <p>
+      Four properties in it are load-bearing. <strong>Whole files or no file</strong> — handed half
+      a file the model completes it from imagination and writes the whole thing back, silently
+      replacing code the user never mentioned. <strong>A skipped file is still named</strong> in a
+      manifest, because a model that cannot see <code>app.js</code> concludes there is no
+      <code>app.js</code> and creates a second one under another name. <strong>Its own budget</strong>
+      — 120,000 characters, separate from the transcript's 80,000 — so a long conversation can never
+      evict the code. And it is appended <strong>after</strong> the <code>cache_control</code>
+      breakpoint, so it never invalidates the cached prefix above it.
+    </p>
+
+    <h3>The writes are rewrites</h3>
+    <p>
+      A path the project already holds is written with <code>merge: true</code>, so
+      <code>createdAt</code> — the date the file was first generated — survives. A generation
+      creates and updates and <strong>never deletes</strong>; restoring a snapshot is the only
+      operation in the product that removes a file document, which is precisely what that
+      restraint was kept for.
+    </p>
+
+    <figure>
+      <div class="fig-frame">
+        <svg viewBox="0 0 900 330" role="img"
+             aria-label="What the model is sent on turn one versus turn two. Turn one: three system blocks and a single user message. Turn two: the same three system blocks, plus a project-state block holding every file whole, plus the full conversation. The reply on turn two re-emits whole files because that is the only thing it can write.">
+          <defs>
+            <marker id="m4-server" viewBox="0 0 9 8" refX="8" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+              <path class="f-server" d="M0,0 L9,4 L0,8 Z" />
+            </marker>
+            <marker id="m4-model" viewBox="0 0 9 8" refX="8" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+              <path class="f-model" d="M0,0 L9,4 L0,8 Z" />
+            </marker>
+          </defs>
+
+          <text class="t f-soft" x="0" y="18">TURN 1 · the project is empty</text>
+
+          <rect class="f-server-w s-server" x="0" y="30" width="96" height="40" stroke-width="1" rx="3" />
+          <text class="t-sm f-server" x="12" y="46">who you are</text>
+          <rect class="f-server-w s-server" x="102" y="30" width="110" height="40" stroke-width="1" rx="3" />
+          <text class="t-sm f-server" x="114" y="46">how to write files</text>
+          <rect class="f-server-w s-server" x="218" y="30" width="132" height="40" stroke-width="1" rx="3" />
+          <text class="t-sm f-server" x="230" y="46">HighLevel cheat-sheet</text>
+          <text class="t-sm f-faint" x="230" y="62">cached prefix ends here</text>
+          <polygon class="f-server" points="350,30 362,36 350,42" />
+
+          <rect class="f-surface2 s-rule" x="372" y="30" width="150" height="40" stroke-width="1" rx="3" />
+          <text class="t-sm f-soft" x="384" y="54">user: “build a dashboard”</text>
+
+          <text class="t-sm f-faint" x="540" y="54">— and nothing else exists yet</text>
+
+          <line class="s-rule" x1="0" y1="96" x2="900" y2="96" stroke-width="1" stroke-dasharray="2 4" />
+
+          <text class="t f-soft" x="0" y="126">TURN 2 · three files exist</text>
+
+          <rect class="f-server-w s-server" x="0" y="138" width="96" height="40" stroke-width="1" rx="3" />
+          <text class="t-sm f-server" x="12" y="154">who you are</text>
+          <rect class="f-server-w s-server" x="102" y="138" width="110" height="40" stroke-width="1" rx="3" />
+          <text class="t-sm f-server" x="114" y="154">how to write files</text>
+          <rect class="f-server-w s-server" x="218" y="138" width="132" height="40" stroke-width="1" rx="3" />
+          <text class="t-sm f-server" x="230" y="154">HighLevel cheat-sheet</text>
+          <text class="t-sm f-faint" x="230" y="170">byte-identical to turn 1</text>
+          <polygon class="f-server" points="350,138 362,144 350,150" />
+
+          <rect class="f-store-w s-store" x="372" y="138" width="196" height="40" stroke-width="1.5" rx="3" />
+          <text class="t-sm f-store" x="384" y="154">PROJECT STATE — new</text>
+          <text class="t-sm f-soft" x="384" y="170">index.html · styles.css · app.js, whole</text>
+
+          <rect class="f-surface2 s-rule" x="576" y="138" width="76" height="40" stroke-width="1" rx="3" />
+          <text class="t-sm f-soft" x="596" y="162">u₁</text>
+          <rect class="f-surface2 s-rule" x="658" y="138" width="76" height="40" stroke-width="1" rx="3" />
+          <text class="t-sm f-soft" x="678" y="162">a₁</text>
+          <rect class="f-surface2 s-rule" x="740" y="138" width="150" height="40" stroke-width="1" rx="3" />
+          <text class="t-sm f-soft" x="752" y="162">u₂: “add a dark theme”</text>
+
+          <text class="t-sm f-faint" x="576" y="196">the conversation — prose and markers, never code</text>
+
+          <line class="s-rule" x1="0" y1="222" x2="900" y2="222" stroke-width="1" stroke-dasharray="2 4" />
+
+          <text class="t f-soft" x="0" y="252">THE REPLY · what the model can write today</text>
+
+          <rect class="f-model-w s-model" x="0" y="264" width="300" height="44" stroke-width="1.5" rx="3" />
+          <text class="t-sm f-model" x="14" y="284">&lt;genesis:file path="styles.css"&gt;</text>
+          <text class="t-sm f-soft" x="14" y="300">…all 8 KB of it, to change forty lines</text>
+
+          <line class="s-model" x1="300" y1="286" x2="352" y2="286" stroke-width="1.4" marker-end="url(#m4-model)" />
+          <text class="t-sm f-faint" x="362" y="282">It knows which files to touch. It has no way to say which lines —</text>
+          <text class="t-sm f-faint" x="362" y="298">so the unchanged bytes are re-emitted, and billed, every time.</text>
+        </svg>
+      </div>
+      <figcaption>
+        The three system blocks above the breakpoint are byte-identical between the two turns, which
+        is what makes them a cache read. Everything below it is rebuilt per request.
+      </figcaption>
+    </figure>
+
+    <div class="callout">
+      <span class="label">Which is exactly where Slice 14 begins</span>
+      <p>
+        A follow-up turn can already choose <em>which files</em> to rewrite. It cannot choose
+        <em>which lines</em> — so “add one more theme” re-emits eight kilobytes to change forty
+        lines, at output rates, generated serially. Slice 14 adds a located change to the grammar
+        and moves the project-state block past the transcript so the conversation becomes
+        cacheable. The design companion for it works through the arithmetic.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <p class="sec-num">05 — When it goes wrong</p>
+    <h2>Two failure channels, decided by one line of code</h2>
+    <p class="lede">
+      Everything hinges on whether <code>res.flushHeaders()</code> has run. Before it, a failure is
+      an HTTP status the client can act on. After it, a 200 is already in flight and the only
+      honest thing left is a frame the client can parse.
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>What went wrong</th>
+            <th>Channel</th>
+            <th>What the browser does</th>
+            <th>What survives</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Project missing or soft-deleted</td>
+            <td class="mono">404 before the flush</td>
+            <td>Rolls the optimistic bubble back, restores the draft into the composer</td>
+            <td>Nothing was stored — the prompt is written after this check</td>
+          </tr>
+          <tr>
+            <td>Transcript at its 200-message cap</td>
+            <td class="mono">409 before the flush</td>
+            <td>Same rollback; no Retry offered, since retrying would fail again</td>
+            <td>Nothing was stored</td>
+          </tr>
+          <tr>
+            <td>Model refuses the request</td>
+            <td class="mono">error frame · refused</td>
+            <td>Appends the server's persisted message and shows the reason</td>
+            <td>The prompt, and a failed assistant turn with its reason</td>
+          </tr>
+          <tr>
+            <td>Upstream drops mid-stream</td>
+            <td class="mono">error frame · upstream</td>
+            <td>Keeps what streamed, marks it interrupted, offers Retry</td>
+            <td>The partial reply, flagged <code>truncated</code>. Files are refused whole</td>
+          </tr>
+          <tr>
+            <td>Connection lost after the flush</td>
+            <td class="mono">read throws</td>
+            <td>Keeps the bubble, offers Retry — the request may have reached the server</td>
+            <td>Whatever the server committed; the transcript reconciles on the way back in</td>
+          </tr>
+          <tr>
+            <td>The user closes the tab</td>
+            <td class="mono">res.on('close')</td>
+            <td>—</td>
+            <td>The model stream is aborted so it stops billing; the partial and its files are
+              still committed, because they belong to the project rather than to the connection</td>
+          </tr>
+          <tr>
+            <td>A bad path, a duplicate, an oversized file, an unterminated block</td>
+            <td class="mono">done, with fileError</td>
+            <td>Shows the reason; the tree does not move</td>
+            <td>The message commits; <strong>no</strong> file is written — the op set is refused
+              whole</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>
+      The listener that catches a departing user is on the <em>response</em>, not the request:
+      <code>express.json()</code> has already drained the request body by the time the handler runs,
+      so <code>req</code> emitted its <code>close</code> long ago and the disconnect would never be
+      observed.
+    </p>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <p class="sec-num">06 — In short</p>
+    <h2>Five properties worth carrying in your head</h2>
+    <ol>
+      <li><strong>The prompt is durable before the expensive half starts.</strong> One request per
+        turn, and the user message is committed before the model stream is opened.</li>
+      <li><strong>The flush is the boundary.</strong> Everything decidable cheaply is decided above
+        it, where a real status code is still available.</li>
+      <li><strong>The reply is split as it streams,</strong> so file boundaries are live and the
+        streamed bytes equal the stored bytes by construction.</li>
+      <li><strong>A turn commits once.</strong> Message, files, snapshot and prune share one batch,
+        so the transcript can never describe a file that does not exist.</li>
+      <li><strong>The second turn differs from the first only by what it is shown.</strong> The
+        transcript carries what was said; the project-state block carries what was built. Take that
+        block away and every follow-up prompt starts a new app.</li>
+    </ol>
+  </section>
+
+  <footer>
+    Genesis · architecture walkthrough · traced against <code>functions/src/generate.ts</code>,
+    <code>llm/</code>, <code>files/</code>, <code>snapshots/</code> and
+    <code>frontend/src/stores/workspace.ts</code> on <code>main</code> · 2026-08-18
+  </footer>
+
+</div>

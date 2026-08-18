@@ -312,7 +312,13 @@ const stored = (path: string, content: string): { id: string; data: StoredFile }
 const collected = (
   ops: { path: string; content: string }[],
   unterminated: string | null = null,
-): CollectResult => ({ messageText: 'prose', ops, unterminated, frames: [] })
+): CollectResult => ({
+  messageText: 'prose',
+  steps: ops.map((op) => ({ verb: 'file' as const, path: op.path, content: op.content })),
+  placed: ops.map(() => true),
+  unterminated,
+  frames: [],
+})
 
 describe('readStoredFiles', () => {
   /*

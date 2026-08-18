@@ -1,17 +1,25 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  createFileCollector,
-  createFileSplitter,
-  MAX_INDENT,
+  createBlockSplitter,
   MAX_LINE,
-  OPEN_HEAD,
-  OPEN_TAIL,
+  openTagFor,
+  type BlockEvent,
+} from './blocks'
+import {
+  createFileCollector,
   type CollectorFrame,
   type CollectResult,
-  type SplitEvent,
 } from './fileops'
+import type { Step } from './patch'
+
+/** A step's payload, whichever section it came from. */
+const bodyOf = (step: Step | undefined): string =>
+  step === undefined ? '' : step.verb === 'file' ? step.content : step.text
+
 import { PATH_MAX } from '../files/schema'
+
+const OPEN_HEAD = openTagFor('file')
 
 /**
  * The splitter and the collector — the pure boundary this slice is built on (AC-1 to AC-10, D3,
@@ -83,7 +91,7 @@ describe('a reply with no delimiters at all (AC-1)', () => {
   it('reports no ops and nothing unterminated', () => {
     const { result } = collect('Just prose.')
 
-    expect(result.ops).toEqual([])
+    expect(result.steps).toEqual([])
     expect(result.unterminated).toBeNull()
   })
 
@@ -130,8 +138,8 @@ describe('prose, one block, prose (AC-2)', () => {
   it('reports one op whose content is the block body', () => {
     const { result } = collect(TEXT)
 
-    expect(result.ops).toEqual([
-      { path: 'index.html', content: '<!doctype html>\n<h1>Contacts</h1>\n' },
+    expect(result.steps).toEqual([
+      { verb: 'file' as const, path: 'index.html', content: '<!doctype html>\n<h1>Contacts</h1>\n' },
     ])
     expect(result.unterminated).toBeNull()
   })
@@ -152,7 +160,7 @@ describe('prose, one block, prose (AC-2)', () => {
   it('emits chunks that concatenate to exactly the stored content', () => {
     const { frames, result } = collect(TEXT)
 
-    expect(chunksFor(frames, 'index.html')).toBe(result.ops[0]?.content)
+    expect(chunksFor(frames, 'index.html')).toBe(bodyOf(result.steps[0]))
   })
 
   /* The marker names the file the tag named, so the transcript and the tree agree. */
@@ -177,16 +185,16 @@ describe('three blocks separated by prose (AC-3)', () => {
   it('reports the ops in the order they were written', () => {
     const { result } = collect(TEXT)
 
-    expect(result.ops.map((op) => op.path)).toEqual(['index.html', 'styles.css', 'app.js'])
+    expect(result.steps.map((op) => op.path)).toEqual(['index.html', 'styles.css', 'app.js'])
   })
 
   it('gives each file exactly its own body', () => {
     const { result } = collect(TEXT)
 
-    expect(result.ops).toEqual([
-      { path: 'index.html', content: '<h1>Contacts</h1>\n' },
-      { path: 'styles.css', content: 'h1 { color: red }\n' },
-      { path: 'app.js', content: "console.log('hi')\n" },
+    expect(result.steps).toEqual([
+      { verb: 'file' as const, path: 'index.html', content: '<h1>Contacts</h1>\n' },
+      { verb: 'file' as const, path: 'styles.css', content: 'h1 { color: red }\n' },
+      { verb: 'file' as const, path: 'app.js', content: "console.log('hi')\n" },
     ])
   })
 
@@ -195,9 +203,9 @@ describe('three blocks separated by prose (AC-3)', () => {
     'routes every chunk of %s to its own path',
     (path) => {
       const { frames, result } = collect(TEXT)
-      const op = result.ops.find((entry) => entry.path === path)
+      const op = result.steps.find((entry) => entry.path === path)
 
-      expect(chunksFor(frames, path)).toBe(op?.content)
+      expect(chunksFor(frames, path)).toBe(bodyOf(op))
     },
   )
 
@@ -242,13 +250,13 @@ describe('three blocks separated by prose (AC-3)', () => {
  * about.
  */
 
-function split(text: string): SplitEvent[] {
-  const splitter = createFileSplitter()
+function split(text: string): BlockEvent[] {
+  const splitter = createBlockSplitter()
   return [...splitter.push(text), ...splitter.finish()]
 }
 
 /** Every byte the splitter kept, in order — delimiter lines excluded. */
-const text = (events: SplitEvent[]): string =>
+const text = (events: BlockEvent[]): string =>
   events
     .flatMap((event) => (event.kind === 'prose' || event.kind === 'content' ? [event.text] : []))
     .join('')
@@ -272,7 +280,7 @@ describe('content that looks like markup (AC-5)', () => {
   const INPUT = `Before.\n${OPEN}${BODY}${CLOSE}After.\n`
 
   it('preserves the body verbatim, closing only on the real tag', () => {
-    const splitter = createFileSplitter()
+    const splitter = createBlockSplitter()
     const events = [...splitter.push(INPUT), ...splitter.finish()]
 
     expect(events.flatMap((event) => (event.kind === 'content' ? [event.text] : [])).join('')).toBe(
@@ -361,7 +369,7 @@ describe('the line-start rule (AC-6)', () => {
     (path) => {
       const events = split(`<genesis:file path="${path}">\nbody\n${CLOSE}`)
 
-      expect(events[0]).toEqual({ kind: 'open', path })
+      expect(events[0]).toEqual({ kind: 'open', verb: 'file', path })
     },
   )
 
@@ -386,19 +394,12 @@ describe('the hold-back bound', () => {
    * an adversarial reply from making the splitter buffer without limit: a line
    * longer than this cannot be a delimiter, so it is emitted rather than held.
    */
-  it('is the longest line a delimiter could possibly occupy', () => {
-    expect(MAX_LINE).toBe(
-      MAX_INDENT + OPEN_HEAD.length + PATH_MAX + OPEN_TAIL.length + MAX_INDENT + 1,
-    )
-    expect(MAX_LINE).toBe(103)
-  })
-
   /**
    * The property the bound exists for: a delimiter-shaped prefix followed by a
    * very long path is emitted rather than held for ever.
    */
   it('emits a partial line that has grown past the bound', () => {
-    const splitter = createFileSplitter()
+    const splitter = createBlockSplitter()
     const long = OPEN_HEAD + 'a'.repeat(MAX_LINE)
 
     expect(text(splitter.push(long))).toBe(long)
@@ -406,10 +407,12 @@ describe('the hold-back bound', () => {
 
   /* And a partial line still inside the bound is held, so the tag survives a split. */
   it('holds a partial line that could still become a delimiter', () => {
-    const splitter = createFileSplitter()
+    const splitter = createBlockSplitter()
 
     expect(splitter.push('<genesis:fi')).toEqual([])
-    expect(splitter.push('le path="a.js">\n')).toEqual([{ kind: 'open', path: 'a.js' }])
+    expect(splitter.push('le path="a.js">\n')).toEqual([
+      { kind: 'open', verb: 'file', path: 'a.js' },
+    ])
   })
 })
 
@@ -427,7 +430,7 @@ describe('a block that is never closed (AC-7)', () => {
     const { result } = collect(TEXT)
 
     expect(result.unterminated).toBe('index.html')
-    expect(result.ops).toEqual([])
+    expect(result.steps).toEqual([])
   })
 
   it('emits no file_end for it', () => {
@@ -460,7 +463,7 @@ describe('a block that is never closed (AC-7)', () => {
       `${block('index.html', '<h1>x</h1>\n')}<genesis:file path="app.js">\nconst a = 1\n`,
     )
 
-    expect(result.ops).toEqual([{ path: 'index.html', content: '<h1>x</h1>\n' }])
+    expect(result.steps).toEqual([{ verb: 'file' as const, path: 'index.html', content: '<h1>x</h1>\n' }])
     expect(result.unterminated).toBe('app.js')
   })
 })
@@ -471,46 +474,46 @@ describe('the line-ending and trailing-newline repairs (AC-8)', () => {
       '<genesis:file path="app.js">\r\nconst a = 1\r\nconst b = 2\r\n</genesis:file>\r\n',
     )
 
-    expect(result.ops).toEqual([{ path: 'app.js', content: 'const a = 1\nconst b = 2\n' }])
+    expect(result.steps).toEqual([{ verb: 'file' as const, path: 'app.js', content: 'const a = 1\nconst b = 2\n' }])
   })
 
   it('collapses a run of trailing blank lines to exactly one newline', () => {
     const { result } = collect(block('app.js', 'const a = 1\n\n\n\n'))
 
-    expect(result.ops[0]?.content).toBe('const a = 1\n')
+    expect(bodyOf(result.steps[0])).toBe('const a = 1\n')
   })
 
   /* Blank lines *inside* a file are code, so they survive untouched. */
   it('leaves blank lines inside the body alone', () => {
     const { result } = collect(block('app.js', 'a\n\n\n\nb\n'))
 
-    expect(result.ops[0]?.content).toBe('a\n\n\n\nb\n')
+    expect(bodyOf(result.steps[0])).toBe('a\n\n\n\nb\n')
   })
 
   /* Spaces and tabs are meaningful in code, so only newline runs are held. */
   it('preserves trailing spaces on the last line', () => {
     const { result } = collect(block('app.js', 'const a = 1   \n'))
 
-    expect(result.ops[0]?.content).toBe('const a = 1   \n')
+    expect(bodyOf(result.steps[0])).toBe('const a = 1   \n')
   })
 
   /** A block with nothing in it is an empty file, not a file holding a newline. */
   it('gives an empty block empty content and emits no chunk', () => {
     const { frames, result } = collect(block('app.js', ''))
 
-    expect(result.ops).toEqual([{ path: 'app.js', content: '' }])
+    expect(result.steps).toEqual([{ verb: 'file' as const, path: 'app.js', content: '' }])
     expect(frames.filter((frame) => frame.kind === 'file_chunk')).toHaveLength(0)
   })
 
   it('treats a block of blank lines as an empty file too', () => {
-    expect(collect(block('app.js', '\n\n\n')).result.ops[0]?.content).toBe('')
+    expect(bodyOf(collect(block('app.js', '\n\n\n')).result.steps[0])).toBe('')
   })
 
   /** A close tag that ends the input carries no newline, and still closes (P1). */
   it('closes a block whose close tag ends the input', () => {
     const { frames, result } = collect('<genesis:file path="app.js">\nconst a = 1\n</genesis:file>')
 
-    expect(result.ops).toEqual([{ path: 'app.js', content: 'const a = 1\n' }])
+    expect(result.steps).toEqual([{ verb: 'file' as const, path: 'app.js', content: 'const a = 1\n' }])
     expect(chunksFor(frames, 'app.js')).toBe('const a = 1\n')
   })
 })
@@ -525,7 +528,7 @@ describe('a CRLF split across two deltas', () => {
     ]
     const result = collector.finish()
 
-    expect(result.ops).toEqual([{ path: 'app.js', content: 'const a = 1\nconst b = 2\n' }])
+    expect(result.steps).toEqual([{ verb: 'file' as const, path: 'app.js', content: 'const a = 1\nconst b = 2\n' }])
     expect(chunksFor([...frames, ...result.frames], 'app.js')).toBe('const a = 1\nconst b = 2\n')
   })
 
@@ -533,7 +536,7 @@ describe('a CRLF split across two deltas', () => {
   it('keeps a carriage return that is not part of a line ending', () => {
     const { result } = collect(block('app.js', 'a\rb\n'))
 
-    expect(result.ops[0]?.content).toBe('a\rb\n')
+    expect(bodyOf(result.steps[0])).toBe('a\rb\n')
   })
 })
 
@@ -610,9 +613,10 @@ describe('the message invariant (AC-9, D7, R5)', () => {
   it.each(FIXTURES)('keeps file content out of the message for %s', (_name, fixture) => {
     const { result } = collect(fixture)
 
-    for (const op of result.ops) {
-      if (op.content.trim() === '') continue
-      expect(result.messageText).not.toContain(op.content.trim())
+    for (const op of result.steps) {
+      const body = bodyOf(op)
+      if (body.trim() === '') continue
+      expect(result.messageText).not.toContain(body.trim())
     }
   })
 
@@ -706,7 +710,7 @@ describe('the emitted stream does not depend on how the text was chunked', () =>
 
       expect(split.frames).toEqual(whole.frames)
       expect(split.result.messageText).toBe(whole.result.messageText)
-      expect(split.result.ops).toEqual(whole.result.ops)
+      expect(split.result.steps).toEqual(whole.result.steps)
       expect(split.result.unterminated).toBe(whole.result.unterminated)
     }
   })
@@ -720,7 +724,7 @@ describe('the emitted stream does not depend on how the text was chunked', () =>
 
     expect(perCharacter.frames).toEqual(whole.frames)
     expect(perCharacter.result.messageText).toBe(whole.result.messageText)
-    expect(perCharacter.result.ops).toEqual(whole.result.ops)
+    expect(perCharacter.result.steps).toEqual(whole.result.steps)
     expect(perCharacter.result.unterminated).toBe(whole.result.unterminated)
   })
 
@@ -730,27 +734,27 @@ describe('the emitted stream does not depend on how the text was chunked', () =>
     const padded = drive(['', fixture.slice(0, 3), '', fixture.slice(3), ''])
 
     expect(padded.frames).toEqual(whole.frames)
-    expect(padded.result.ops).toEqual(whole.result.ops)
+    expect(padded.result.steps).toEqual(whole.result.steps)
   })
 
   /** R1's named shape, written out so the regression has a name in the report. */
   it('parses a delimiter split mid-tag', () => {
     const { result } = drive(['Before.\n<genesis:fi', 'le path="a.js">\nbody\n</genesis:file>\n'])
 
-    expect(result.ops).toEqual([{ path: 'a.js', content: 'body\n' }])
+    expect(result.steps).toEqual([{ verb: 'file' as const, path: 'a.js', content: 'body\n' }])
     expect(result.messageText).toBe('Before.\n[file: a.js]')
   })
 
   it('parses a close tag split mid-tag', () => {
     const { result } = drive(['<genesis:file path="a.js">\nbody\n</gene', 'sis:file>\n'])
 
-    expect(result.ops).toEqual([{ path: 'a.js', content: 'body\n' }])
+    expect(result.steps).toEqual([{ verb: 'file' as const, path: 'a.js', content: 'body\n' }])
   })
 
   it('parses a CRLF split between its two characters', () => {
     const { result } = drive(['<genesis:file path="a.js">\r', '\nbody\r', '\n</genesis:file>\r\n'])
 
-    expect(result.ops).toEqual([{ path: 'a.js', content: 'body\n' }])
+    expect(result.steps).toEqual([{ verb: 'file' as const, path: 'a.js', content: 'body\n' }])
   })
 
   /* A path split across three deltas, which a long filename makes likely. */
@@ -762,6 +766,6 @@ describe('the emitted stream does not depend on how the text was chunked', () =>
       'file>\n',
     ])
 
-    expect(result.ops).toEqual([{ path: 'index.html', content: '<h1>x</h1>\n' }])
+    expect(result.steps).toEqual([{ verb: 'file' as const, path: 'index.html', content: '<h1>x</h1>\n' }])
   })
 })

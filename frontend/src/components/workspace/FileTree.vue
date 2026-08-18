@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { groupFileTree, type FileKind } from '@/lib/files'
+import type { StreamMode } from '@/lib/streamingDocuments'
 import { useWorkspaceStore } from '@/stores/workspace'
 
 /**
@@ -38,6 +39,17 @@ const groups = computed(() => groupFileTree(workspace.fileTree))
  * generation introduces a kind the project did not have before.
  */
 const collapsed = ref(new Set<FileKind>())
+
+/**
+ * What a row says while it is being written. Three words rather than one,
+ * because a file appearing, a file being replaced and a file being changed in
+ * place are three different things to watch.
+ */
+const STATE_LABEL = {
+  creating: 'Creating',
+  rewriting: 'Rewriting',
+  editing: 'Editing',
+} as const satisfies Record<StreamMode, string>
 
 function toggle(kind: FileKind): void {
   // A new Set rather than a mutation: `ref` over a Set is not deeply reactive
@@ -111,7 +123,7 @@ function toggle(kind: FileKind): void {
                 data-testid="file-row"
                 :data-path="row.path"
                 :data-selected="String(row.path === workspace.selectedPath)"
-                :data-writing="String(row.writing)"
+                :data-state="row.state"
                 :aria-current="row.path === workspace.selectedPath ? 'true' : undefined"
                 :title="row.path"
                 class="group flex w-full items-center gap-1.5 rounded-sm py-1 pr-2 pl-[1.375rem] text-left hover:bg-secondary"
@@ -130,11 +142,11 @@ function toggle(kind: FileKind): void {
                      streams": without it a file whose bytes are still arriving is
                      indistinguishable from one that is stored. -->
                 <span
-                  v-if="row.writing"
+                  v-if="row.state !== 'idle'"
                   class="label-micro ml-auto shrink-0 text-primary"
-                  aria-label="Writing"
+                  :aria-label="STATE_LABEL[row.state]"
                 >
-                  Writing…
+                  {{ STATE_LABEL[row.state] }}…
                 </span>
               </button>
             </li>

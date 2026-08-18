@@ -16,6 +16,7 @@ import {
   buildParams,
   countHlCalls,
   createFileCollector,
+  writtenText,
   extractHlCalls,
   generateBodySchema,
   mapStream,
@@ -70,11 +71,17 @@ function encodeFrame(frame: CollectorFrame): string {
     case 'token':
       return encodeSse('token', { text: frame.text })
     case 'file_start':
-      return encodeSse('file_start', { path: frame.path })
+      return encodeSse('file_start', { path: frame.path, mode: frame.mode })
     case 'file_chunk':
       return encodeSse('file_chunk', { path: frame.path, text: frame.text })
     case 'file_end':
       return encodeSse('file_end', { path: frame.path })
+    case 'edit_start':
+      return encodeSse('edit_start', { path: frame.path, from: frame.from, to: frame.to })
+    case 'edit_chunk':
+      return encodeSse('edit_chunk', { path: frame.path, text: frame.text })
+    case 'edit_end':
+      return encodeSse('edit_end', { path: frame.path })
   }
 }
 
@@ -287,7 +294,7 @@ export async function handleGenerate(req: Request, res: Response, uid: string): 
 
   // The splitter sits between the mapper and the framing: nothing above it knows
   // the file-tag grammar exists.
-  const collector = createFileCollector()
+  const collector = createFileCollector(files)
 
   try {
     for await (const event of mapStream(stream)) {
@@ -357,10 +364,7 @@ async function finishTurn(
    * **The file blocks, not the chat text**: a call described in prose is not one
    * the app will ever run, and counting it would make the number mean "mentions".
    */
-  const hlCalls = countHlCalls(
-    extractHlCalls(collected.ops.map((op) => op.content).join('\n')),
-    process.env,
-  )
+  const hlCalls = countHlCalls(extractHlCalls(writtenText(collected.steps)), process.env)
 
   // Before the frame, so a turn is accounted for even if the socket dies while
   // it is being told about.
@@ -387,6 +391,22 @@ async function finishTurn(
   const plan = await planFileWrites(uid, projectId, collected, completed)
 
   /*
+   * The refusal goes into the transcript as a marker line, and it goes out as a
+   * `token` frame first — so the stored content stays exactly the concatenation of
+   * the frames the client received, and the reason survives a reload *and* reaches
+   * the model on the next turn, which is what makes Retry a repair rather than a
+   * re-roll. The copy is stripped of `]` and newlines, which are the only two
+   * characters that could break the marker out of its own line.
+   */
+  const fileError = plan.error === null ? null : fileErrorCopy(plan.error)
+  const errorMarker =
+    fileError === null ? '' : `\n[error: ${fileError.replace(/[\]\n]/g, '')}]\n`
+  if (errorMarker !== '' && !res.destroyed) {
+    res.write(encodeFrame({ kind: 'token', text: errorMarker }))
+  }
+  const content = collected.messageText + errorMarker
+
+  /*
    * Why the turn failed, persisted with it — which is what lets a failure
    * survive a refresh. Without it, an upstream error before the first token left
    * a transcript ending on a prompt and a footer alert a reload cleared.
@@ -402,10 +422,10 @@ async function finishTurn(
    * already owns; it is never committed separately.
    */
   const message =
-    collected.messageText === '' && failure === null
+    content === '' && failure === null
       ? null
       : await appendAssistantMessage(uid, projectId, {
-          content: collected.messageText,
+          content,
           truncated,
           error: failure,
           fileWrites: plan.writes,
@@ -426,7 +446,7 @@ async function finishTurn(
         message,
         // Sorted, which matches the list route's `orderBy('path')`.
         files: plan.writes.map((write) => write.path).sort(),
-        fileError: plan.error === null ? null : fileErrorCopy(plan.error),
+        fileError,
       }),
     )
     return
