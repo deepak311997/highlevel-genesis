@@ -6,41 +6,22 @@ import { createSseParser } from './sse'
 /**
  * `POST /generate` — the one call in the app that cannot go through `request`.
  *
- * ## Why not `request`, and why not `EventSource`
- *
  * `request` reads the whole body as JSON, which is exactly what must not happen
- * here. `EventSource` cannot set headers and cannot `POST` (D11), so it can
- * carry neither the ID token nor the App Check token — the workaround is a
- * credential in the query string, which puts a bearer token into browser
- * history, Hosting access logs and any intermediary's. Its built-in reconnect
- * would also silently start a *second* paid generation, which is not a feature
- * this endpoint wants.
+ * here. `EventSource` cannot set headers and cannot `POST`, so it can carry
+ * neither the ID token nor the App Check token — the workaround puts a bearer
+ * token into browser history and access logs — and its built-in reconnect would
+ * silently start a *second* paid generation. So: `fetch` with a `ReadableStream`,
+ * credentials from the shared `authHeaders()`, and the frames parsed by `sse.ts`.
  *
- * So: `fetch` with a `ReadableStream`, credentials from the shared
- * `authHeaders()` (D32), and the frames parsed by `sse.ts`.
+ * **The two failure channels are one code path for the caller.** A refusal decided
+ * before the server flushed its headers is an ordinary JSON error, so this
+ * *rejects before yielding anything* — which is what stops a placeholder bubble
+ * appearing for a request that never opened. A mid-stream failure arrives as an
+ * `error` event on a 200 and is yielded like any other.
  *
- * ## D9's two channels are one code path for the caller
- *
- * A refusal decided **before** the server flushed its headers is an ordinary
- * JSON error with a real status, so this **rejects, before yielding anything** —
- * which is what stops a placeholder bubble appearing for a request that never
- * opened. A failure that happened mid-stream arrives as an `error` event on a
- * 200, and is yielded like any other event. The store therefore has one `try`
- * and one loop.
- *
- * ## Narrowing is hand-written, not Zod
- *
- * `frontend/` has no Zod dependency and `messagesApi.ts` already establishes
- * that the typed clients assert the wire shape by hand. Adding a package for
- * three payloads is not the trade. Unrecognised events are skipped, and a
- * malformed one is skipped rather than thrown: a stream that died on one bad
- * frame would lose the whole reply, terminal event included.
- *
- * ## Every file frame repeats its path (D5)
- *
- * That is what lets the store route a chunk without tracking a mode — and what
- * stops a client that dropped a `file_start` from putting code in the chat
- * bubble. `token` keeps its meaning and carries chat text only.
+ * Narrowing is hand-written rather than Zod, matching the other typed clients.
+ * Unrecognised and malformed events are skipped rather than thrown: a stream that
+ * died on one bad frame would lose the whole reply, terminal event included.
  */
 
 /** What a turn is: a new prompt, or a re-run of the one already stored. */
@@ -60,10 +41,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * A message off the wire, or `null`.
- *
- * Shallow on purpose: this checks the fields the panel actually renders. A
- * deeper check would be a schema, and a schema would be Zod.
+ * A message off the wire, or `null` — shallow on purpose: this checks the fields
+ * the panel actually renders, and a deeper check would be a schema.
  */
 function asMessage(value: unknown): Message | null {
   if (!isRecord(value)) return null
@@ -87,19 +66,16 @@ function asMessage(value: unknown): Message | null {
 /**
  * The paths a generation wrote, or an empty list.
  *
- * Tolerant by design: a `done` from a server that predates the file half, or one
- * whose new fields arrived malformed, must still replace the placeholder bubble.
- * Defaulting is the difference between "no files were written" and a broken
- * reply — and an empty list is exactly what "no files were written" means, so the
- * fallback is also the truthful answer.
+ * Tolerant by design: a `done` whose new fields arrived malformed must still
+ * replace the placeholder bubble, and an empty list is exactly what "no files were
+ * written" means — so the fallback is also the truthful answer.
  */
 function asFiles(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   /*
-   * Built by narrowing rather than asserted with `as`: `Array.isArray` proves
-   * only that this is an array, and one entry that is not a string makes the
-   * whole list untrustworthy rather than partially usable — the paths are what
-   * the store refetches by.
+   * Built by narrowing rather than asserted: one entry that is not a string makes
+   * the whole list untrustworthy rather than partially usable, since the paths are
+   * what the store refetches by.
    */
   const paths: string[] = []
   for (const entry of value) {
@@ -117,9 +93,8 @@ function toEvent(name: string, data: unknown): GenerateEvent | null {
   if (!isRecord(data)) return null
 
   /*
-   * The prompt, as the server stored it. Emitted once, before any token, for a
-   * turn that carried one — a retry re-runs what is already in the transcript
-   * and emits nothing. The store swaps its optimistic bubble for this, so the
+   * The prompt, as the server stored it — emitted once, before any token, for a
+   * turn that carried one. The store swaps its optimistic bubble for this, so the
    * id and the timestamp on screen are the document's rather than a guess.
    */
   if (name === 'user') {
@@ -157,7 +132,7 @@ function toEvent(name: string, data: unknown): GenerateEvent | null {
   if (name === 'error') {
     const { error, code } = data
     if (typeof error !== 'string' || typeof code !== 'string') return null
-    // `message` is legitimately null when no text had been produced (D9).
+    // `message` is legitimately null when no text had been produced.
     return { type: 'error', error, code, message: asMessage(data['message']) }
   }
 
@@ -176,34 +151,31 @@ export async function* streamGeneration(
       headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
       /*
        * The prompt travels with the request that streams the reply, so a turn
-       * cannot half-happen: there is no window between storing the message and
-       * asking for an answer for a client to die in. A retry carries no prompt —
-       * the turn it re-runs is already in the transcript.
+       * cannot half-happen. A retry carries no prompt — the turn it re-runs is
+       * already in the transcript.
        */
       body: JSON.stringify({ projectId, ...turn }),
       signal,
     })
   } catch (err) {
     // An `ApiError` from `authHeaders` is already the right shape; a `TypeError`
-    // from `fetch` is a network failure, and status 0 with advice is the only
-    // thing that is ever right to say about one.
+    // from `fetch` is a network failure, and status 0 with advice is the only thing
+    // ever right to say about one.
     if (err instanceof ApiError) throw err
     throw connectionError()
   }
 
-  // Before a single event is yielded (AC-31) — and through `noteApiError`, so
-  // that a session which died while this tab sat open signs the user out from
-  // here too (Slice 12, AC-16). This is the only call in the app that does not go through
-  // `request`, so without these three lines it would be the one hole in the
-  // hook, on the call a long-open tab is most likely to make.
+  // Before a single event is yielded, and through `noteApiError`, so a session that
+  // died while this tab sat open signs the user out from here too. This is the only
+  // call that does not go through `request`, so without these lines it would be the
+  // one hole in the hook.
   if (!res.ok) {
     const err = await errorForResponse(res)
     noteApiError(err)
     throw err
   }
 
-  // The stream opened, which is proof the session is alive: the same latch
-  // `request` clears, cleared from the same evidence.
+  // The stream opened, which is proof the session is alive.
   rearmSessionExpiry()
 
   const reader = res.body?.getReader()
@@ -212,41 +184,29 @@ export async function* streamGeneration(
   }
 
   const parser = createSseParser()
-  // `{ stream: true }` so a multi-byte character split across two chunks
-  // survives — the byte-level counterpart of the frame-level problem `sse.ts`
-  // solves.
+  // `{ stream: true }` so a multi-byte character split across two chunks survives —
+  // the byte-level counterpart of the frame-level problem `sse.ts` solves.
   const decoder = new TextDecoder()
 
   /*
    * The body is released on **every** exit, and that is what the `try` is for.
    *
-   * A consumer that stops reading — a `break`, or a throw from inside its
-   * `for await` — finalises this generator, and finalising a generator does not
-   * close a `fetch` body. The socket stays open, `generate`'s `res.on('close')`
-   * never fires, and the model goes on producing to `max_tokens` for a reply
-   * nobody will ever read: a full completion billed for nothing. `runGeneration`
-   * has a live path into exactly that, because a throw from its loop body is
-   * swallowed by the `catch` below it and its `finally` nulls the controller
-   * without aborting it.
-   *
-   * Releasing it here rather than there is the choice that cannot be forgotten
-   * by the next caller: the module that took the reader gives it back.
+   * A consumer that stops reading finalises this generator, and finalising a
+   * generator does not close a `fetch` body: the socket stays open, the server's
+   * `close` never fires, and the model goes on producing to `max_tokens` for a
+   * reply nobody will read. Releasing it here rather than at the call site is the
+   * choice the next caller cannot forget.
    */
   try {
     for (;;) {
       /*
-       * Slice 12, AC-8. Only the read is wrapped, and deliberately so.
+       * Only the read is wrapped, deliberately. The opening `fetch`'s failure is
+       * mapped above; this is the other half — a connection lost *after* the
+       * headers flushed, which otherwise reached the screen as whatever the browser
+       * called it: `Failed to fetch` in Chrome, something else in Firefox.
        *
-       * The opening `fetch`'s failure is already mapped above; this is the other
-       * half — a connection lost *after* the headers flushed, which rejects here
-       * instead. Left unwrapped it reached the screen as whatever the browser
-       * called it: `Failed to fetch` in Chrome, `NetworkError when attempting to
-       * fetch resource.` in Firefox. Two browsers, two strings, neither ours.
-       *
-       * An abort rethrows untouched: a user who left the project did not lose
-       * their connection, and telling them to check it would be a lie.
-       *
-       * The frame loop below stays outside the `try`, so a bug in `sse.ts` is
+       * An abort rethrows untouched: a user who left the project did not lose their
+       * connection. The frame loop stays outside the `try`, so a bug in `sse.ts` is
        * reported as itself rather than laundered into a connection message.
        */
       let chunk: Awaited<ReturnType<typeof reader.read>>
@@ -266,10 +226,9 @@ export async function* streamGeneration(
       }
     }
   } finally {
-    // `cancel()` rejects on a stream that already errored — the dropped
-    // connection above is exactly that case — so the rejection is swallowed
-    // here rather than replacing the mapped `ApiError` with the browser's own,
-    // which is the string this whole path exists to keep off the screen.
+    // `cancel()` rejects on a stream that already errored — the dropped connection
+    // above is exactly that — so the rejection is swallowed rather than replacing
+    // the mapped `ApiError` with the browser's own.
     await reader.cancel().catch(() => undefined)
   }
 }
