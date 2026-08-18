@@ -4,45 +4,31 @@ import type { HlMethod } from './hlProxyApi'
 /**
  * The host half of the preview channel.
  *
- * ## Why there is a channel at all
- *
  * The generated app runs in a sandboxed `srcdoc` iframe with **no
- * `allow-same-origin`** (D16). That is the whole security posture: the frame has
- * an opaque origin, so it cannot read our cookies, cannot reach our API with the
- * user's credentials, and cannot touch anything on the parent page. It also
- * means it cannot call HighLevel by itself. So a shim inside the frame posts
- * `hl()` requests up to us, we verify them, we call `hlProxy` on our own
- * credentialed, same-origin page, and we post the JSON body back down.
- * **No credential ever enters the iframe** — not an ID token, not an App Check
- * token. What crosses is a method, a path, a payload and a response body.
+ * `allow-same-origin`**, which is the whole security posture: the frame has an
+ * opaque origin, so it cannot read our cookies, cannot reach our API with the
+ * user's credentials, and cannot touch the parent page. It also cannot call
+ * HighLevel by itself — so a shim inside the frame posts `hl()` requests up, we
+ * verify them, call `hlProxy` on our own credentialed page, and post the JSON body
+ * back down. **No credential ever enters the iframe.**
  *
- * ## Why origin is not the check, and the nonce is
- *
- * A message from an opaque origin arrives with `event.origin === 'null'` — the
- * literal four-character string, which every sandboxed frame everywhere also
- * has. It identifies nothing, so comparing it would be a check that looks like
- * security and is not. What does identify the peer is `event.source`: the exact
- * `Window` object of the iframe we are currently showing. And what distinguishes
- * the *current* document from the previous build's — which stays alive long
- * enough to post after a `srcdoc` swap — is a nonce minted per build and handed
- * only to that document (AC-17).
+ * **Origin is not the check; the nonce is.** A message from an opaque origin
+ * arrives with `event.origin === 'null'`, which every sandboxed frame everywhere
+ * also has — comparing it would look like security and not be. `event.source`
+ * identifies the peer, and a nonce minted per build distinguishes the *current*
+ * document from the previous one, which stays alive long enough to post after a
+ * `srcdoc` swap.
  *
  * Replies go out with `targetOrigin: '*'`, because an opaque origin has no
- * nameable origin string to target. `'*'` means any document that ends up in
- * that frame can read the reply, so what a reply may carry is the rule that makes
- * it safe: **no credential of any kind and nothing that identifies the Genesis
- * account** — no ID token, no App Check token, no uid. What it does carry is
- * HighLevel's own response body, verbatim (D17 forbids re-shaping it), and that
- * body embeds the connected `locationId` in most records. That is a HighLevel
- * tenant identifier, not a bearer credential, and it names data the frame is
- * already rendering; it is called out here because the shorter phrasing "never a
- * location id" was written elsewhere and is not true.
+ * nameable origin to target — so what a reply may carry is the rule that makes it
+ * safe: **no credential and nothing identifying the Genesis account**. It does
+ * carry HighLevel's own response body verbatim, which embeds the connected
+ * `locationId`: a tenant identifier rather than a bearer credential, naming data
+ * the frame is already rendering.
  *
- * ## Why a malformed message is dropped in silence
- *
- * No reply, no HighLevel call, no log the frame can observe (AC-18). A reply
- * that said *which* field was wrong would be an oracle for probing the gate, and
- * the only sender that can legitimately reach here already knows the protocol.
+ * **A malformed message is dropped in silence** — no reply, no call, nothing the
+ * frame can observe. A reply naming the wrong field would be an oracle for probing
+ * the gate, and the only legitimate sender already knows the protocol.
  */
 
 /** Bumped only for a breaking change to the message shapes below. */
@@ -65,11 +51,10 @@ function isPreviewMethod(value: unknown): value is PreviewMethod {
 }
 
 /**
- * An accepted message, as a discriminated union rather than optional-field soup.
- *
- * A runtime error report has no `id` and expects no reply; a HighLevel request
- * has both. Modelling that as one record with four optional fields would make
- * every reader re-derive which combination is real.
+ * An accepted message, as a discriminated union rather than optional-field soup: a
+ * runtime error report has no `id` and expects no reply, a HighLevel request has
+ * both, and one record with four optional fields would make every reader
+ * re-derive which combination is real.
  */
 export type PreviewMessage =
   | { kind: 'hl'; id: string; method: PreviewMethod; path: string; payload?: unknown }
@@ -86,8 +71,8 @@ export interface PreviewFailure {
  * Everything the gate needs, supplied by the component that owns the iframe.
  *
  * Passed in rather than imported so this module stays a pure function of its
- * inputs: `proxy` is `hlProxy` in the app and a stub in the spec, and `frame` is
- * `null` for the whole window between builds — during which nothing is accepted.
+ * inputs — and `frame` is `null` for the whole window between builds, during which
+ * nothing is accepted.
  */
 export interface BridgeContext {
   nonce: string
@@ -121,14 +106,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Parse, don't validate: an untrusted `postMessage` payload in, a
- * `PreviewMessage` or `null` out.
+ * Parse, don't validate: an untrusted `postMessage` payload in, a `PreviewMessage`
+ * or `null` out.
  *
- * Every field the dispatcher goes on to read is checked here and nowhere else,
- * so there is one place to look for what the host will accept. The nonce is a
- * parameter rather than read from a module-level variable because it changes on
- * every build, and a stale one must fail this check rather than be corrected
- * later.
+ * Every field the dispatcher goes on to read is checked here and nowhere else. The
+ * nonce is a parameter because it changes on every build, and a stale one must fail
+ * this check rather than be corrected later.
  */
 export function readPreviewMessage(data: unknown, nonce: string): PreviewMessage | null {
   if (!isRecord(data)) return null
@@ -149,9 +132,8 @@ export function readPreviewMessage(data: unknown, nonce: string): PreviewMessage
       id,
       method,
       path,
-      // Spread conditionally so an absent payload stays absent rather than
-      // becoming an explicit `undefined` — `hlProxy` distinguishes the two on a
-      // GET, where the payload becomes the query string.
+      // Spread conditionally so an absent payload stays absent rather than becoming
+      // an explicit `undefined` — `hlProxy` distinguishes the two on a GET.
       ...('payload' in data ? { payload: data['payload'] } : {}),
     }
   }
@@ -176,10 +158,9 @@ export function failureReply(nonce: string, id: string, failure: PreviewFailure)
     nonce,
     id,
     ok: false,
-    // Conditional spread, as in `functions/src/lib/errors.ts`: a client reads
-    // `code` as a string or as nothing, never as null. `PreviewFailure` uses
-    // null internally because it is a value we always compute; the wire shape
-    // is the server's envelope, and the two should not drift.
+    // Conditional spread: a client reads `code` as a string or as nothing, never as
+    // null. `PreviewFailure` uses null internally because it is a value we always
+    // compute; the wire shape is the server's envelope.
     error: { message, status, ...(code === null ? {} : { code }) },
   }
 }
@@ -194,18 +175,16 @@ function failureFor(err: unknown): PreviewFailure {
 }
 
 /**
- * The gate and the broker, in that order.
- *
- * `event.source` is compared before anything else is read, so a message from
- * another frame costs one identity comparison and nothing more. `ctx.frame`
- * being `null` — the state between builds — rejects everything, which is the
- * correct answer while no document is being shown.
+ * The gate and the broker, in that order. `event.source` is compared before
+ * anything else is read, so a message from another frame costs one identity
+ * comparison. `ctx.frame` being `null` — the state between builds — rejects
+ * everything, which is the correct answer while no document is shown.
  */
 export async function handlePreviewMessage(event: MessageEvent, ctx: BridgeContext): Promise<void> {
   if (ctx.frame === null || event.source !== ctx.frame) return
 
-  // `MessageEvent.data` is typed `any`; naming it `unknown` is what makes the
-  // parse below the only thing that can widen it.
+  // `MessageEvent.data` is typed `any`; naming it `unknown` is what makes the parse
+  // below the only thing that can widen it.
   const data: unknown = event.data
   const message = readPreviewMessage(data, ctx.nonce)
   if (message === null) return
@@ -222,8 +201,7 @@ export async function handlePreviewMessage(event: MessageEvent, ctx: BridgeConte
     const failure = failureFor(err)
     ctx.post(failureReply(ctx.nonce, message.id, failure))
     // Reported whether or not the generated app catches its own rejection: the
-    // app's try/catch is model output, so the host's record of what failed
-    // cannot depend on it (D17).
+    // app's try/catch is model output, so the host's record cannot depend on it.
     ctx.onFailure(failure)
   }
 }
