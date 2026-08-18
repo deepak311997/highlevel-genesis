@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import { Alert } from '@/components/ui/alert'
@@ -22,6 +22,18 @@ import { useAuthStore } from '@/stores/auth'
  */
 const CREDENTIAL_MESSAGE = 'Email or password is incorrect.'
 
+/**
+ * Why the sign-in page is showing, when the user did not ask for it (AC-11).
+ *
+ * A fixed map, looked up by the `?reason=` value — never a string interpolated
+ * from it. The query is attacker-controllable, so the only thing it is allowed
+ * to do is *select* one of the messages written here; an unrecognised value
+ * selects nothing and the page looks exactly as it always did.
+ */
+const NOTICES = new Map<string, string>([
+  ['session_expired', 'Your session expired. Sign in again.'],
+])
+
 type State = { kind: 'editing' } | { kind: 'submitting' } | { kind: 'failed'; message: string }
 
 // Prefilled when the user has just registered, so they do not retype it.
@@ -33,6 +45,11 @@ const state = ref<State>({ kind: 'editing' })
 const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
+
+const notice = computed<string | null>(() => {
+  const raw = route.query['reason']
+  return typeof raw === 'string' ? (NOTICES.get(raw) ?? null) : null
+})
 
 function messageFor(err: unknown): string {
   const code = (err as { code?: unknown }).code
@@ -77,6 +94,10 @@ async function submit(): Promise<void> {
       </CardHeader>
 
       <CardContent class="flex flex-col gap-4">
+        <!-- Default variant, so its role is `status`: a notice explains, it does
+             not interrupt. The failure alert below is the one that is `alert`. -->
+        <Alert v-if="notice !== null" data-testid="signin-notice">{{ notice }}</Alert>
+
         <form class="flex flex-col gap-4" novalidate @submit.prevent="submit">
           <Alert v-if="state.kind === 'failed'" variant="destructive" data-testid="signin-error">
             {{ state.message }}
