@@ -2,9 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const authHeaders = vi.hoisted(() => vi.fn())
 
-vi.mock('@/lib/apiClient', () => ({ authHeaders }))
+// Stubbed so importing `apiClient` for real below cannot reach the Firebase
+// SDK: the session-expiry latch is module state, and the only way to assert
+// this client shares it with `request` is to exercise the real one (AC-16).
+vi.mock('@/lib/firebase', () => ({ auth: { currentUser: null } }))
+vi.mock('@/lib/appCheck', () => ({ appCheckHeader: () => Promise.resolve({}) }))
+
+vi.mock('@/lib/apiClient', async () => ({
+  ...(await vi.importActual<typeof import('./apiClient')>('./apiClient')),
+  authHeaders,
+}))
 
 const { streamGeneration } = await import('./generateApi')
+const { registerSessionExpiredHook } = await import('./apiClient')
 const { ApiError } = await import('./api')
 
 /**
@@ -92,6 +102,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  registerSessionExpiredHook(null)
   vi.unstubAllGlobals()
 })
 
@@ -279,6 +290,65 @@ describe('streamGeneration — refusals', () => {
     fetchMock.mockResolvedValue(bodiless())
 
     await expect(collect()).rejects.toBeInstanceOf(ApiError)
+  })
+})
+
+/**
+ * AC-16. The stream is not a hole in the sign-out hook.
+ *
+ * `streamGeneration` is the one call that cannot go through `request`, so
+ * without this it is also the one call that could meet a dead session and say
+ * nothing about it — and it is the call a user is most likely to make on a tab
+ * left open long enough for the session to die.
+ */
+describe('streamGeneration — the session hook', () => {
+  it('invokes the session hook when the stream is refused with a 401 unauthenticated', async () => {
+    const hook = vi.fn()
+    registerSessionExpiredHook(hook)
+    fetchMock.mockResolvedValue(
+      refused({ error: 'Sign in and try again.', code: 'unauthenticated' }, 401),
+    )
+
+    await expect(collect()).rejects.toBeInstanceOf(ApiError)
+    expect(hook).toHaveBeenCalledTimes(1)
+  })
+
+  /* The page failed attestation, not the session — reloading fixes it, and
+   * signing the user out would throw away the reply they are waiting for. */
+  it('does not invoke it for a 401 app_check_failed', async () => {
+    const hook = vi.fn()
+    registerSessionExpiredHook(hook)
+    fetchMock.mockResolvedValue(
+      refused(
+        {
+          error: 'Request could not be verified. Reload the page and try again.',
+          code: 'app_check_failed',
+        },
+        401,
+      ),
+    )
+
+    await expect(collect()).rejects.toThrow('Request could not be verified')
+    expect(hook).not.toHaveBeenCalled()
+  })
+
+  /* A stream that opened proves the session is alive, so the next death is a
+   * new one — the same latch, cleared from the same place `request` clears it. */
+  it('re-arms the hook once a stream has opened', async () => {
+    const hook = vi.fn()
+    registerSessionExpiredHook(hook)
+    const dead = () => refused({ error: 'Sign in and try again.', code: 'unauthenticated' }, 401)
+
+    fetchMock.mockResolvedValue(dead())
+    await expect(collect()).rejects.toThrow()
+
+    fetchMock.mockResolvedValue(streaming([frame('done', { message: MESSAGE })]))
+    await collect()
+
+    fetchMock.mockResolvedValue(dead())
+    await expect(collect()).rejects.toThrow()
+
+    expect(hook).toHaveBeenCalledTimes(2)
   })
 })
 
