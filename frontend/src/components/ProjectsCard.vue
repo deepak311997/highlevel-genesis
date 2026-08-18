@@ -17,24 +17,17 @@ import type { Project } from '@/lib/projectsApi'
 /**
  * The projects list, on the dashboard.
  *
- * Four states, all of them shipped: loading, rows, empty and error-with-retry.
- * The error one is not theoretical — the card's only source of truth is an
- * endpoint, so "we could not ask" is a state it has to be able to say out loud.
+ * Four states: loading, rows, empty and error-with-retry. The error one is not
+ * theoretical — the card's only source of truth is an endpoint.
  *
- * **The project's name is a link to its workspace; the row is not** (Slice 4, D23).
- * Slice 3's D12 said rows would become links the moment the workspace existed, and
- * it does. Linking the name rather than the whole row is what keeps a mis-aimed tap
- * away from Rename and Delete — two destructive-ish actions sitting inside the same
- * rectangle.
+ * **The project's name is a link to its workspace; the row is not**, which keeps a
+ * mis-aimed tap away from Rename and Delete inside the same rectangle.
  */
 const projects = useProjectsStore()
 
 /**
- * How many rows a page holds.
- *
- * The server already caps a list at 100, so this is a reading problem rather
- * than a fetching one: a hundred rows in a card is a scroll, not a list you can
- * find anything in.
+ * How many rows a page holds. The server already caps a list at 100, so this is a
+ * reading problem rather than a fetching one.
  */
 const PAGE_SIZE = 10
 
@@ -42,12 +35,9 @@ const page = ref(0)
 const query = ref('')
 
 /**
- * The filter, over the loaded list rather than over a request.
- *
- * Same reasoning as the pager: everything the card could show is already in
- * memory, so filtering costs no round trip and cannot fail. Name *and*
- * description, because the row renders both — a search that ignored the line
- * the user is reading would look broken.
+ * The filter, over the loaded list rather than over a request: everything the card
+ * could show is already in memory, so it costs no round trip and cannot fail. Name
+ * *and* description, because the row renders both.
  */
 const filtered = computed(() => {
   const needle = query.value.trim().toLowerCase()

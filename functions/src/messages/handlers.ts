@@ -20,23 +20,18 @@ import {
 /**
  * A project's transcript.
  *
- * The uid is the one `withVerifiedUser` read off the ID token and the collection
- * path is built from it — `users/{uid}/projects/{id}/messages` — so the read is
- * scoped before a `where` clause is written and another user's transcript is not
- * addressable by a request. `readProject` is called first on every route here, so
- * "this project is gone" means exactly what it means in `/api/projects*`: absent,
- * soft-deleted and unreadable all collapse into one 404 (D14).
+ * The collection path is built from the token's uid, so the read is scoped before
+ * a `where` clause is written, and `readProject` runs first on every route here:
+ * absent, soft-deleted and unreadable collapse into one 404.
  */
 
 /**
  * Parse a snapshot, or `null` when it cannot describe a message.
  *
- * Fail closed, and say so in the log — the precedent runs through `parseStored`,
- * `readProfile` and `handleGetConnection`. A corrupt message is otherwise
- * **silent** by design: there is no by-id read of a message, so omission from the
- * transcript is the whole behaviour, and this line is the only thing that says a
- * document is broken rather than never written. No field of the document goes in
- * it — a message is the user's own prose, and from Slice 5 on the model's.
+ * There is no by-id read of a message, so omission from the transcript is the
+ * whole behaviour and this log line is the only thing that says a document is
+ * broken rather than never written. No field of it goes in the line — a message is
+ * the user's own prose, and the model's.
  */
 export function parseStoredMessage(snapshot: DocumentSnapshot): StoredMessage | null {
   // An absent document is not corruption, so it is not logged as such.
@@ -54,21 +49,15 @@ export function parseStoredMessage(snapshot: DocumentSnapshot): StoredMessage | 
 /**
  * The transcript's ordering, factored out so it has a test of its own.
  *
- * **The second `orderBy` is the slice's one real hazard** (D8, R1). A
- * `WriteBatch` resolves every `serverTimestamp()` sentinel in it to the *same*
- * commit timestamp, so the two messages of a turn are not nearly tied on
- * `createdAt` — they are exactly tied, on every single turn. Firestore then
- * breaks the tie by document name, and a name here is a random auto-id, so the
- * echo would render above the prompt roughly half the time: a deterministic bug
- * that looks like a flaky test.
+ * **The second `orderBy` is the hazard.** A `WriteBatch` resolves every
+ * `serverTimestamp()` in it to the *same* commit timestamp, so the two messages of
+ * a turn are exactly tied on `createdAt`. Firestore then breaks the tie by
+ * document name, which here is a random auto-id — the reply would render above the
+ * prompt roughly half the time: a deterministic bug that looks like a flaky test.
  *
- * It is a function rather than an inline chain because deleting the `seq` clause
- * would leave every emulator-backed test passing about half the time. As a
- * function it has an L1 test asserting the two calls *and their order*, so the
- * regression fails in one obvious place instead.
- *
- * The `limit` matches `MESSAGE_LIMIT`, the cap `POST` enforces, so "you are
- * seeing the whole conversation" is a guarantee rather than a hope.
+ * A function rather than an inline chain because deleting the `seq` clause would
+ * leave every emulator-backed test passing about half the time; as a function it
+ * has an L1 test asserting both calls *and their order*.
  */
 export function transcriptQuery(collection: Query): Query {
   return collection.orderBy('createdAt', 'asc').orderBy('seq', 'asc').limit(MESSAGE_LIMIT)
@@ -77,11 +66,9 @@ export function transcriptQuery(collection: Query): Query {
 /**
  * The transcript, parsed and ordered — **one definition, two readers.**
  *
- * `handleListMessages` answers with this and `/generate` builds the model's
- * context from it, so the corrupt-document filtering the LLM sees is
- * byte-identical to the one the browser sees. Two copies would be two answers to
- * "what is in this transcript", and the one that drifted would be the one
- * deciding what the model is told.
+ * The list route answers with this and `/generate` builds the model's context from
+ * it, so the corrupt-document filtering the model sees is byte-identical to the
+ * one the browser sees.
  */
 export async function readTranscript(uid: string, projectId: string): Promise<Message[]> {
   const snapshot = await transcriptQuery(getDb().collection(messagesPath(uid, projectId))).get()
@@ -98,8 +85,8 @@ export async function readTranscript(uid: string, projectId: string): Promise<Me
 export async function handleListMessages(req: Request, res: Response, uid: string): Promise<void> {
   const projectId = requireProjectId(req)
 
-  // The project first, and its answer is the whole of "gone" (D14). A transcript
-  // is not addressable without one, so there is nothing to read past this.
+  // The project first, and its answer is the whole of "gone". A transcript is not
+  // addressable without one.
   if ((await readProject(uid, projectId)) === null) throw notFound()
 
   res.json({ messages: await readTranscript(uid, projectId) })
@@ -112,12 +99,10 @@ const ASSISTANT_SEQ = 1
 /**
  * Re-read a document just written, or fail closed.
  *
- * `serverTimestamp()` is a sentinel until it commits, so the committed document
- * is the only place the real timestamp exists — answering from what we wrote
- * would put a sentinel where an ISO-8601 string belongs. The `null` branch is
- * unreachable: a complete document has just been written. It exists so a
- * half-written turn is an error rather than a response describing a message that
- * cannot be read back.
+ * `serverTimestamp()` is a sentinel until it commits, so the committed document is
+ * the only place the real timestamp exists. The `null` branch is unreachable; it
+ * exists so a half-written turn is an error rather than a response describing a
+ * message that cannot be read back.
  */
 function readBackOrFail(snapshot: DocumentSnapshot, detail: string): Message {
   const stored = parseStoredMessage(snapshot)
@@ -129,57 +114,38 @@ function readBackOrFail(snapshot: DocumentSnapshot, detail: string): Message {
 }
 
 /**
- * The assistant turn **and the turn's files**, in one batch (D11).
+ * The assistant turn **and the turn's files**, in one batch.
  *
- * Called by `/generate` and nowhere else, on every terminal path that produced
- * text — `done`, a mid-stream failure carrying a partial, and a client that
- * disconnected (D21, D22, D23). The `truncated` flag is the caller's to decide,
- * because only the caller knows *why* the stream ended.
- *
- * **One `WriteBatch` per turn**, and the message is why it is owned here rather
- * than in `files/`: the message contains `[file: index.html]`, so if that commits
- * and the file does not, the transcript is lying about the project's contents.
- * The message is the turn's anchor and the files hang off it (P7). Twenty-one
- * writes at the cap — one message, twenty files — is far inside Firestore's 500.
+ * **One `WriteBatch` per turn**, owned here rather than in `files/` because the
+ * message contains `[file: index.html]`: if that commits and the file does not,
+ * the transcript is lying about the project's contents. Twenty-one writes at the
+ * cap, far inside Firestore's 500.
  *
  * A batch resolves every `serverTimestamp()` in it to one commit timestamp, which
- * was Slice 4's hazard (R1). It is harmless here: the message keeps its `seq: 1`,
- * and the files live in a different collection ordered by name.
+ * is harmless here — the message keeps its `seq`, and the files live in a
+ * different collection ordered by name.
  *
- * The re-read still happens and still happens **after** the commit, because
- * `serverTimestamp()` is a sentinel until then — so the committed document is the
- * only place the real timestamp exists.
- *
- * **The turn is one object, not five positional parameters** (R10). The list was
- * `(uid, projectId, content, truncated, fileWrites)` and Slice 11 adds a sixth;
- * at that width a call reads as `(…, text, false, [], null)`, where a value in
- * the wrong slot is caught only if its neighbours happen to have different
- * types. The two path segments stay positional because they are what *addresses*
- * the write; everything that *is* the turn goes in the object.
- *
- * `seq` is 1 (D35). Both halves of a turn are written in requests of their own,
- * so their `createdAt` values genuinely differ and `seq` is belt and braces
- * rather than the tiebreak it was in Slice 4 — but the transcript query still
- * reads it, and every transcript written before this slice still needs it.
+ * **The turn is one object, not five positional parameters.** At that width a call
+ * reads as `(…, text, false, [], null)`, where a value in the wrong slot is caught
+ * only if its neighbours happen to have different types. The two path segments
+ * stay positional because they are what addresses the write.
  */
 export interface AssistantTurn {
   content: string
   truncated: boolean
   /**
-   * Why the turn failed, or `null`. Typed as a plain string rather than
-   * `GenerateErrorCode` on purpose: `llm/schema` imports this module, so naming
-   * its type here would close the cycle.
+   * Why the turn failed, or `null`. A plain string rather than
+   * `GenerateErrorCode`: `llm/schema` imports this module, so naming its type here
+   * would close the cycle.
    */
   error: string | null
   fileWrites: readonly FileWritePlan[]
   /**
-   * The turn's snapshot, or `null` when it stored no files (D2, D4).
+   * The turn's snapshot, or `null` when it stored no files.
    *
-   * Staged on this batch rather than committed after it, which is the whole of
-   * R5: writing the snapshot in its own commit afterwards is one line shorter
-   * and leaves a crash window in which the project's files moved and its history
-   * did not — a version list that is silently missing the version you are
-   * looking at.
+   * Staged on this batch rather than committed after it: a separate commit is one
+   * line shorter and leaves a crash window in which the project's files moved and
+   * its history did not.
    */
   snapshot: SnapshotPlan | null
 }
@@ -203,8 +169,8 @@ export async function appendAssistantMessage(
   })
 
   stageFileWrites(batch, uid, projectId, turn.fileWrites)
-  // D4, R5. On the turn's own batch, so the files and the history cannot part
-  // company across a crash.
+  // On the turn's own batch, so the files and the history cannot part company
+  // across a crash.
   if (turn.snapshot !== null) stageSnapshot(batch, turn.snapshot)
 
   await batch.commit()
@@ -215,18 +181,13 @@ export async function appendAssistantMessage(
 /**
  * Write the user's half of a turn, and hand back what was stored.
  *
- * `/generate` calls this inside the same request that streams the reply, before
- * it opens the stream — which is what preserves the property the old
- * two-request shape bought with a round trip: the prompt is durable before the
- * expensive, failure-prone half begins. What it no longer costs is a window
- * between the two calls for a dying client to strand a prompt in.
+ * `/generate` calls this inside the same request that streams the reply, before it
+ * opens the stream: the prompt is durable before the expensive, failure-prone half
+ * begins, without a window between two calls for a dying client to strand it in.
  *
- * **The cap is the caller's.** `/generate` reads the transcript anyway, so
- * counting again here would be a second query for a number it already holds.
- *
- * The project document is deliberately **not** touched (D15). `updatedAt` means
- * "the project's own fields changed", which is what the dashboard's ordering and
- * its "Updated" line both claim.
+ * **The cap is the caller's** — `/generate` reads the transcript anyway. The
+ * project document is deliberately not touched: `updatedAt` means the project's
+ * own fields changed, which is what the dashboard's ordering claims.
  */
 export async function appendUserMessage(
   uid: string,

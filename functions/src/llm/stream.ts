@@ -3,48 +3,34 @@ import type { MessageStreamEvent } from '@anthropic-ai/sdk/resources/messages'
 /**
  * The SDK's event stream, mapped to the three events this slice emits.
  *
- * ## Why the mapping lives here rather than in the handler
+ * Accumulation, the byte cap and the thinking-delta filter are the three places an
+ * off-by-one hides, and all three are pure — owned here they are driven from a
+ * hand-written event array with no emulator and no network. What is left for the
+ * handler is framing, persistence and one log line.
  *
- * Accumulation, the byte cap and the thinking-delta filter are the three places
- * an off-by-one or a dropped branch hides, and every one of them is pure. Owned
- * here, they are driven from a hand-written event array with no emulator and no
- * network; owned by the handler, they would only be reachable through an
- * emulator-backed test — which is exactly where such bugs survive. What is left
- * for the handler is framing, persistence and one log line.
- *
- * ## Exactly one terminal event, always
- *
- * Many `token`s, then **one** `end` or `error` — never both, never neither. The
- * consumer writes a frame and persists a document on the terminal, so two would
- * write two assistant messages for one turn and none would leave a stream that
- * never ends. `stream.spec.ts` asserts it on every shape rather than once.
+ * **Exactly one terminal event, always**: many `token`s, then one `end` or
+ * `error`. The consumer writes a frame and persists a document on the terminal, so
+ * two would write two assistant messages for one turn and none would leave a
+ * stream that never ends.
  */
 
 /**
- * The narrow port the mapper consumes.
- *
- * The SDK's `MessageStream` satisfies it as-is, and so does the emulator-only
- * fake — which is the whole point: this file has no idea which one it has, so
- * the same code path runs in tests and in production.
- *
- * `abort()` is here because the cap needs it. An orphaned generation still bills.
+ * The narrow port the mapper consumes. The SDK's `MessageStream` satisfies it
+ * as-is, and so does the emulator fake, so the same code path runs in tests and in
+ * production. `abort()` is here because the cap needs it — an orphaned generation
+ * still bills.
  */
 export interface LlmStream extends AsyncIterable<MessageStreamEvent> {
   abort: () => void
 }
 
 /**
- * The most text one reply may accumulate, in UTF-8 bytes (D22).
+ * The most text one reply may accumulate, in UTF-8 bytes.
  *
- * A Firestore document caps at 1,048,576 bytes, and `max_tokens: 64000` can in
- * principle produce more text than fits. This leaves room for the rest of the
- * document and for the overhead a write carries.
- *
- * Without a cap the failure mode is the worst one available: a generation that
- * succeeded completely, streamed perfectly, and then failed at the write —
- * losing everything the user just watched arrive. The cap converts that into a
- * truncated-but-saved reply. Typical output is ~250 KB, so it only bites on
- * pathological generations.
+ * A Firestore document caps at 1,048,576, and `max_tokens: 64000` can in principle
+ * produce more than fits. Without a cap the failure is the worst available: a
+ * generation that succeeded, streamed perfectly, and then failed at the write.
+ * Typical output is ~250 KB, so it only bites on pathological generations.
  */
 export const MAX_OUTPUT_BYTES = 800_000
 
@@ -105,19 +91,15 @@ function emptyAccumulator(): Accumulator {
 /**
  * Many `token`s, then exactly one terminal event.
  *
- * In the order the SDK produces them:
+ * `message_start` records the model and input counts; `message_delta` the stop
+ * reason and output count. Only a `text_delta` becomes a `token` — **thinking and
+ * signature deltas are dropped**, because they are the model's internal reasoning
+ * and forwarding them would put it in the chat bubble and into a parsed file.
  *
- * - `message_start` records the model and the input-side token counts.
- * - `content_block_delta` with `text_delta` is the only delta that becomes a
- *   `token`. **Thinking and signature deltas are dropped** (AC-11, D14): they are
- *   the model's internal reasoning, and forwarding them would put it in the chat
- *   bubble — and, from Slice 6, into a parsed file.
- * - `message_delta` records the stop reason and the output token count.
- * - Iteration ending is the terminal: `refusal` is an `error`, `max_tokens` is an
- *   `end` with `truncated: true` (D23 — a real, useful, incomplete answer is not
- *   a failure), anything else is an ordinary `end`.
- * - The iterator **throwing** is an `error` carrying the text produced so far
- *   (AC-12), so a mid-stream failure preserves the partial rather than losing it.
+ * Iteration ending is the terminal: `refusal` is an `error`, `max_tokens` an `end`
+ * with `truncated: true` — a real, useful, incomplete answer is not a failure —
+ * and the iterator *throwing* is an `error` carrying the text produced so far, so
+ * a mid-stream failure preserves the partial.
  */
 export async function* mapStream(stream: LlmStream): AsyncGenerator<LlmEvent> {
   const acc = emptyAccumulator()
@@ -145,19 +127,15 @@ export async function* mapStream(stream: LlmStream): AsyncGenerator<LlmEvent> {
       const size = Buffer.byteLength(text, 'utf8')
 
       /*
-       * **The cap is enforced whole-delta.** A delta that would take the total
-       * past the cap is neither appended nor emitted, and consumption stops.
-       *
-       * Slicing the delta by bytes would split a multi-byte character and store a
-       * replacement character, and it would also make the last `token` frame the
-       * client saw disagree with what was persisted. Dropping the whole delta
-       * keeps the stored text ≤ the cap, valid UTF-8, and byte-identical to the
-       * concatenation of the frames the client received.
+       * **The cap is enforced whole-delta.** Slicing by bytes would split a
+       * multi-byte character, and it would make the last frame the client saw
+       * disagree with what was persisted. Dropping the whole delta keeps the
+       * stored text valid UTF-8 and byte-identical to the frames received.
        */
       if (acc.bytes + size > MAX_OUTPUT_BYTES) {
         acc.truncated = true
         // An abandoned generation still bills, so the upstream stream is closed
-        // rather than left to run to completion unread.
+        // rather than left to run unread.
         stream.abort()
         break
       }
@@ -168,9 +146,9 @@ export async function* mapStream(stream: LlmStream): AsyncGenerator<LlmEvent> {
     }
   } catch {
     /*
-     * The reason is deliberately not surfaced. An upstream error message can
-     * carry request detail, and the client's answer is the same either way: what
-     * arrived, an "interrupted" marker, and a Retry. The handler logs the shape.
+     * The reason is deliberately not surfaced: an upstream message can carry
+     * request detail, and the client's answer is the same either way — what
+     * arrived, an "interrupted" marker, and a Retry.
      */
     yield {
       kind: 'error',
@@ -184,9 +162,9 @@ export async function* mapStream(stream: LlmStream): AsyncGenerator<LlmEvent> {
   }
 
   /*
-   * D18. The stop reason is read **before** any content: a refusal is a 200 with
-   * no content at all, so a terminal handler that reached for `content[0]` first
-   * would break on exactly the case it exists to report.
+   * The stop reason is read **before** any content: a refusal is a 200 with no
+   * content at all, so a handler reaching for `content[0]` first would break on
+   * exactly the case it exists to report.
    */
   if (acc.stopReason === 'refusal') {
     yield {
@@ -203,8 +181,8 @@ export async function* mapStream(stream: LlmStream): AsyncGenerator<LlmEvent> {
   yield {
     kind: 'end',
     text: acc.text,
-    // D22 and D23 set the same flag: the byte cap and `max_tokens` are both a
-    // reply that stopped short, and the UI has one thing to render for either.
+    // The byte cap and `max_tokens` set the same flag: both are a reply that
+    // stopped short, and the UI has one thing to render for either.
     truncated: acc.truncated || acc.stopReason === 'max_tokens',
     stopReason: acc.stopReason,
     model: acc.model,

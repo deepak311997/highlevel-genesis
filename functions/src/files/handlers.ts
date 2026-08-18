@@ -34,30 +34,20 @@ import {
 } from './schema'
 
 /**
- * A project's generated files — the reads, the batch, and the three routes'
- * shared parts.
+ * A project's generated files — the reads, the batch, and the three routes.
  *
- * The uid is the one `withVerifiedUser` read off the ID token and every path is
- * built from it, so another user's files are not addressable by a request rather
- * than merely refused. `readProject` is called first on every route here, so
- * "this project is gone" means exactly what it means in `/api/projects*`: absent,
- * soft-deleted and unreadable all collapse into one 404 (D14).
+ * Every path is built from the token's uid, so another user's files are not
+ * addressable rather than merely refused, and `readProject` runs first on every
+ * route: absent, soft-deleted and unreadable collapse into one 404.
  */
 
 /**
  * Parse a snapshot, or `null` when it cannot describe a file.
  *
- * Two ways to fail, and the second is this collection's own (D13). The schema
- * says what a file document is made of; the **`id === path` check** says the
- * document is about the file it is filed under. A document where the two
- * disagree cannot be shown in the right row of a tree or answered for the right
- * `GET`, so it is *known* to be unusable — omitted from the list, 404 by id.
- *
- * Fail closed and say so in the log: the precedent runs through `parseStored`,
- * `parseStoredMessage` and `readProfile`. The log line is the only warning
- * anybody gets, because from outside a corrupt file is indistinguishable from one
- * that was never generated. **No field of the document goes in it** — a file is
- * the user's own application.
+ * Two ways to fail: the schema, and the `id === path` check. A document where the
+ * two disagree cannot be shown in the right row of a tree or answered for the
+ * right `GET`, so it is omitted from the list and 404 by id. Nothing from the
+ * document reaches the log — a file is the user's own application.
  */
 export function parseStoredFile(snapshot: DocumentSnapshot): StoredFile | null {
   // An absent document is not corruption, so it is not logged as such.
@@ -78,17 +68,13 @@ export function parseStoredFile(snapshot: DocumentSnapshot): StoredFile | null {
 }
 
 /**
- * The path from the URL, or a refusal.
+ * The path from the URL, or a refusal — before any Firestore call.
  *
- * Called as the **first statement** of every handler that takes one, so a
- * malformed path costs no Firestore call at all — `requireProjectId`'s rule.
- * Express percent-decodes a route parameter, so `%2e%2e%2fsecrets.js` arrives
- * here as `../secrets.js` and fails to be a filename, which is D12's whole
- * argument: traversal is refused by the shape of a name rather than by a
- * sanitiser that has to be right about every encoding.
- *
- * The message describes the outcome rather than the rule, so a malformed path
- * and a stranger's file read the same to the caller.
+ * Express percent-decodes a route parameter, so `%2e%2e%2fsecrets.js` arrives as
+ * `../secrets.js` and simply fails to be a filename: traversal is refused by the
+ * shape of a name rather than by a sanitiser that must be right about every
+ * encoding. The message describes the outcome, so a malformed path and a
+ * stranger's file read the same.
  */
 export function requireFilePath(req: Request): string {
   const parsed = filePathSchema.safeParse(req.params['path'])
@@ -105,31 +91,17 @@ export function fileNotFound(): HttpError {
 
 /**
  * The project's files, content included, up to the cap — **one read, three
- * questions** (D14).
+ * questions**: is the union within `FILE_LIMIT`, which of a turn's writes are
+ * rewrites, and what does a snapshot copy.
  *
- * It used to be `readFilePaths`: `limit → select()`, ≤20 refs and no field data,
- * answering whether the union is within `FILE_LIMIT` and which of a turn's writes
- * are rewrites. Slice 11 added a third question — *what is this project's file
- * set?*, which a snapshot copies whole — and the rejected alternative was to keep
- * the projection and add a second full read beside it. That is the same bytes,
- * one more round trip, and two answers to "what does this project hold" which can
- * disagree about a document written between them. So the projection goes and the
- * documents come back.
+ * **A document that cannot be read is omitted**, which the callers rely on: the
+ * cap counts one fewer, and a rewrite of a corrupt path is planned with
+ * `exists: false`, so it is written whole and repaired rather than merged into
+ * rubble.
  *
- * **A document that cannot be read is omitted**, where the ref-counting version
- * counted it (P2). That is the PRD's own position — a copy of a document nothing
- * can read would be a copy of nothing — and it has two consequences the callers
- * rely on rather than work around: the `FILE_LIMIT` union check counts one fewer,
- * and a rewrite of a corrupt path is planned with `exists: false`, so it is
- * written whole and **repaired** instead of merged into rubble.
- *
- * `orderBy('path')` on a single field is served by Firestore's automatic index
- * (D30), so this adds nothing to `firestore.indexes.json`.
- *
- * Read immediately before the write and **not transactional**, exactly as the
- * other two guard-rails are (D23's last-write-wins says the same thing from the
- * other side). Two simultaneous generations at the cap can both land, which is a
- * guard-rail missing by one rather than a boundary being crossed.
+ * Read immediately before the write and not transactional: two simultaneous
+ * generations at the cap can both land, which is a guard-rail missing by one
+ * rather than a boundary being crossed.
  */
 export async function readStoredFiles(uid: string, projectId: string): Promise<StoredFile[]> {
   const snapshot = await getDb()
@@ -146,26 +118,23 @@ export async function readStoredFiles(uid: string, projectId: string): Promise<S
 /**
  * A file to write, and whether the project already holds it.
  *
- * The flag rides along rather than being re-read inside the batch, because the
- * read that answers it — `readStoredFiles` — has already happened for the cap
- * check and for the snapshot's merge, and a second one inside the write path
- * would be a second answer to the same question.
+ * The flag rides along rather than being re-read inside the batch: the read that
+ * answers it has already happened for the cap check and the snapshot's merge.
  */
 export interface FileWritePlan extends FileWrite {
   exists: boolean
 }
 
 /**
- * Stage every file of a turn onto a batch. **Nothing is committed here** (D11).
+ * Stage every file of a turn onto a batch. **Nothing is committed here.**
  *
  * The commit belongs to `appendAssistantMessage`, which owns the batch: the
- * assistant message says `[file: index.html]`, and if that commits and the file
- * does not, the transcript is lying about the project's contents.
+ * message says `[file: index.html]`, and if that commits and the file does not,
+ * the transcript is lying about the project's contents.
  *
- * **A rewrite carries no `createdAt` and merges**, which is the whole of AC-19: a
- * plain `set` would replace the document and reset the date the file was first
- * generated. A new file is written whole, so nothing from an earlier shape can
- * survive under it.
+ * **A rewrite merges and carries no `createdAt`** — a plain `set` would reset the
+ * date the file was first generated. A new file is written whole, so nothing from
+ * an earlier shape survives under it.
  */
 export function stageFileWrites(
   batch: WriteBatch,
@@ -201,41 +170,35 @@ export function stageFileWrites(
 export interface FileWriteOutcome {
   writes: FileWritePlan[]
   /**
-   * The project's file set as it stands **after** this turn (D1) — what a
-   * snapshot copies.
+   * The project's file set as it stands **after** this turn — what a snapshot
+   * copies.
    *
    * Not the writes: a turn that rewrites one of three files leaves a project of
-   * three, and a copy of the one write would restore an app missing two thirds
-   * of itself. Empty exactly when `writes` is, so a turn that stores nothing
-   * plans no snapshot and issues no read to plan one.
+   * three, and copying the one write would restore an app missing two thirds of
+   * itself. Empty exactly when `writes` is.
    */
   resulting: FileWrite[]
   error: FileRejection | null
 }
 
 /**
- * Turn a finished collection into the writes a turn should commit (D9, D10).
+ * Turn a finished collection into the writes a turn should commit.
  *
- * **Nothing is committed here and nothing is read unless there is something to
- * write.** The order of the three refusals is the order the user needs them in:
+ * Nothing is committed here, and nothing is read unless there is something to
+ * write. The three refusals are ordered as the user needs them:
  *
- * 1. **The turn did not complete.** A cut-off turn's last block is unterminated
- *    by construction, and its earlier blocks describe an app whose remaining
- *    parts were never written. One rule — *completed, or nothing* — is impossible
- *    to get subtly wrong, where "keep the blocks that closed" is a half-app that
- *    looks fine in the tree. A turn that attempted **no** file at all is silent
- *    here (P6): a prose-only reply is a legitimate turn, and a truncated
- *    prose-only reply is still one.
+ * 1. **The turn did not complete** — its last block is unterminated by
+ *    construction and its earlier blocks describe an app whose remaining parts
+ *    were never written. *Completed, or nothing* is impossible to get subtly
+ *    wrong, where "keep the blocks that closed" is a half-app that looks fine in
+ *    the tree. A turn that attempted no file is silent here.
  * 2. **A block was left open**, on a turn that otherwise completed.
  * 3. **The set failed validation** — path, duplicate, byte cap or file cap.
  *
- * `completed` is the caller's to decide, and it is read from the **mapper's own**
- * `truncated` rather than from the flag the message carries. The two differ in
- * exactly one case, and D10 names it: a client that disconnects *after* a clean
- * `end`. The message is marked truncated because the client left mid-stream, and
- * the files are still written — they belong to the project, not to the
- * connection, and a model that finished cleanly produced a complete app whether
- * or not anyone was still listening.
+ * `completed` comes from the **mapper's** `truncated`, not the message's. They
+ * differ for a client that disconnects after a clean `end`: the message is marked
+ * truncated, and the files are still written — they belong to the project, not
+ * the connection.
  */
 export async function planFileWrites(
   uid: string,
@@ -257,12 +220,8 @@ export async function planFileWrites(
     }
   }
 
-  /*
-   * A prose-only reply reads nothing at all: no cap to check, nothing to write —
-   * and therefore, from Slice 11, **no merge and no snapshot** (D2). The read
-   * not happening is the whole of that clause: `mergeSnapshotFiles` is below
-   * this line, so a turn with no ops cannot reach it.
-   */
+  // A prose-only reply reads nothing at all: no cap to check, nothing to write,
+  // and therefore no merge and no snapshot.
   if (collected.ops.length === 0) return { writes: [], resulting: [], error: null }
 
   const existing = await readStoredFiles(uid, projectId)
@@ -278,23 +237,15 @@ export async function planFileWrites(
 }
 
 /**
- * One document a query returned, parsed — or `null`, logged, and skipped (D13).
+ * One document a query returned, parsed — or `null`, logged, and skipped.
  *
- * Shared by the two readers below because both fail closed the same two ways,
- * and the reason they must not drift is concrete: the file tree and the model's
- * view of the project would otherwise disagree about which files exist. The
- * **schema is the parameter**, because the schema is the entire difference
- * between them — `readFileList` parses a projection with no `content`,
- * `readProjectFiles` parses the whole document.
+ * Shared by the two readers below because both fail closed the same two ways, and
+ * the drift would be concrete: the file tree and the model's view of the project
+ * disagreeing about which files exist. The **schema is the parameter**, because it
+ * is the entire difference between them.
  *
- * Deliberately not folded into {@link parseStoredFile}, which additionally
- * answers for an *absent* document. A query never returns one, so sharing that
- * function would give both list readers a branch neither can reach.
- *
- * **No field of the document goes in the log line** — a file is the user's own
- * application, and a log sink is a disclosure channel like any other. The line is
- * also the only warning anybody gets, because from outside a corrupt file is
- * indistinguishable from one that was never generated.
+ * Deliberately not folded into {@link parseStoredFile}, which also answers for an
+ * *absent* document — a branch a query reader could never reach.
  */
 function parseQueriedFile<T extends { path: string }>(
   doc: QueryDocumentSnapshot,
@@ -306,8 +257,8 @@ function parseQueriedFile<T extends { path: string }>(
     return null
   }
 
-  // The id *is* the path (D13), so a document filed under a name it does not
-  // claim cannot be shown in the right row of a tree or sent as the right file.
+  // The id *is* the path, so a document filed under a name it does not claim
+  // cannot be shown in the right row of a tree or sent as the right file.
   if (parsed.data.path !== doc.id) {
     logAuthEvent('file.unreadable', { outcome: 'invalid', detail: 'id mismatch' })
     return null
@@ -317,16 +268,12 @@ function parseQueriedFile<T extends { path: string }>(
 }
 
 /**
- * The list, parsed and ordered — metadata only.
+ * The list, parsed and ordered — **metadata only**.
  *
- * `orderBy('path')` on a single field is served by Firestore's automatic index,
- * and `select()` adds no requirement (D30) — stated because Slices 3 and 4 both
- * paid for a missing composite index and the emulator does not enforce them.
- *
- * `select(...)` is what makes this a projection rather than a read of the whole
- * project's code: opening a workspace must not ship 20 × 100 KB for files nobody
- * has clicked on. The cap matches `FILE_LIMIT`, so "you are seeing every file" is
- * a guarantee rather than a hope — `LIST_LIMIT` / `PROJECT_LIMIT`'s rule.
+ * `select(...)` is what keeps opening a workspace from shipping 20 × 100 KB of
+ * code nobody has clicked on. The cap matches `FILE_LIMIT`, so "you are seeing
+ * every file" is a guarantee rather than a hope, and a single-field `orderBy`
+ * needs no entry in `firestore.indexes.json`.
  */
 export async function readFileList(uid: string, projectId: string): Promise<FileMeta[]> {
   const snapshot = await getDb()
@@ -343,24 +290,16 @@ export async function readFileList(uid: string, projectId: string): Promise<File
 }
 
 /**
- * The same list, **with the content** — what a generation is shown (Slice 9 D26).
+ * The same list, **with the content** — what a generation is shown.
  *
- * A second reader beside `readFileList`, not a widening of it. `readFileList` is
- * deliberately a projection with no `content`, and widening it would ship
- * 20 × 100 KB of code to every workspace that merely opens a file tree — a cost
- * paid on every page load to serve one caller that runs once per generation.
- * Rejected for the same reason: a `withContent` flag, which is the same widening
- * with a boolean in front of it, and leaves the expensive read one default away.
+ * A second reader rather than a widening of `readFileList`, which would ship
+ * every project's code to every workspace that merely opens a file tree — a cost
+ * on every page load to serve one caller that runs once per generation. What the
+ * two share is everything that could drift: the collection, the order, the cap,
+ * and the fail-closed handling of a document that cannot describe a file.
  *
- * What it *does* share is everything that could drift: the collection, the
- * `orderBy('path')`, the `FILE_LIMIT` cap and the fail-closed handling of a
- * document that cannot describe a file. Two different reads answering two
- * different questions — "what files does this project hold" and "what is in
- * them" — never two different answers to either.
- *
- * The stored documents come back rather than the wire shape: the caller is
- * `buildProjectState`, which wants `path` and `content` and has no use for
- * ISO-8601 timestamps.
+ * The stored documents come back rather than the wire shape: the caller wants
+ * `path` and `content` and has no use for ISO-8601 timestamps.
  */
 export async function readProjectFiles(uid: string, projectId: string): Promise<StoredFile[]> {
   const snapshot = await getDb()
@@ -374,16 +313,14 @@ export async function readProjectFiles(uid: string, projectId: string): Promise<
     .filter((file): file is StoredFile => file !== null)
 }
 
-/** One file's document reference. The id *is* the path (D13). */
+/** One file's document reference. The id *is* the path. */
 function fileRef(uid: string, projectId: string, path: string): DocumentReference {
   return getDb().doc(`${filesPath(uid, projectId)}/${path}`)
 }
 
 /**
- * A project's file tree — or the 404 the project earns.
- *
- * The project first, and its answer is the whole of "gone" (D14). A file is not
- * addressable without one, so there is nothing to read past this.
+ * A project's file tree — or the 404 the project earns. A file is not addressable
+ * without a project, so there is nothing to read past that.
  */
 export async function handleListFiles(req: Request, res: Response, uid: string): Promise<void> {
   const projectId = requireProjectId(req)
@@ -396,9 +333,8 @@ export async function handleListFiles(req: Request, res: Response, uid: string):
 /**
  * One file, with its content.
  *
- * The id, then the path, then the project: a refusal costs no Firestore call at
- * all — `handleCreateProject`'s rule, restated. `%2e%2e%2fsecrets.js` is refused
- * here, before anything composes a document path out of it.
+ * The id, then the path, then the project: a refusal costs no Firestore call, and
+ * `%2e%2e%2fsecrets.js` is refused before anything composes a document path.
  */
 export async function handleGetFile(req: Request, res: Response, uid: string): Promise<void> {
   const projectId = requireProjectId(req)
@@ -413,19 +349,12 @@ export async function handleGetFile(req: Request, res: Response, uid: string): P
 }
 
 /**
- * Save an edit. **`PUT` does not create** (D19).
+ * Save an edit. **`PUT` does not create** — a path the project does not hold is a
+ * 404, which keeps the write surface to documents the generator made.
  *
- * Creating a file by hand is not in F5.1, and refusing it keeps the write surface
- * to documents the generator made — so a path the project does not hold is a 404
- * rather than a new file.
- *
- * Deliberately not transactional, and not optimistically concurrent (D23). Last
- * write wins: two tabs editing one file is a case a user has to work at, and the
- * realistic collision — a generation against an editor — is closed by D21, where
- * it actually happens, by making the panel read-only while a stream is open.
- *
- * The order is the same as every other mutation in this codebase: id, path, body,
- * project. A refused body writes nothing and costs no read.
+ * Last write wins, deliberately: two tabs editing one file is a case a user has
+ * to work at, and the realistic collision — a generation against an editor — is
+ * closed where it happens, by the panel going read-only while a stream is open.
  */
 export async function handlePutFile(req: Request, res: Response, uid: string): Promise<void> {
   const projectId = requireProjectId(req)
@@ -436,13 +365,12 @@ export async function handlePutFile(req: Request, res: Response, uid: string): P
 
   const ref = fileRef(uid, projectId, path)
   // A document that will not parse is unreadable, which from outside is the same
-  // answer as a file that was never generated (D13).
+  // answer as a file that was never generated.
   if (parseStoredFile(await ref.get()) === null) throw fileNotFound()
 
   await ref.update({
     content: body.content,
-    // Recomputed server-side: `size` is not a field a caller may choose, which is
-    // what `.strict()` on the body makes a property rather than a promise.
+    // Recomputed server-side: `size` is not a field a caller may choose.
     size: byteLength(body.content),
     updatedAt: FieldValue.serverTimestamp(),
     // `createdAt` is deliberately untouched — it is the date the file was first

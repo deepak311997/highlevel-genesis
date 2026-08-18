@@ -4,11 +4,10 @@ import { z } from 'zod'
 /**
  * `users/{uid}` — the profile, and the two boundaries around it.
  *
- * The document is written only by the Admin SDK inside `PUT /api/profile`;
- * `firestore.rules` denies it to every client, owner included. That is the
- * project's one data-access pattern, and this file is where the shape of it is
- * stated: what a caller may send, what the stored document must look like to be
- * usable, and what goes back on the wire.
+ * Written only by the Admin SDK inside `PUT /api/profile`; `firestore.rules`
+ * denies it to every client. This file states the shape from three directions:
+ * what a caller may send, what the stored document must look like to be usable,
+ * and what goes back on the wire.
  */
 
 export const USERS = 'users'
@@ -22,13 +21,12 @@ export const DISPLAY_NAME_MAX = 80
 /**
  * The `PUT` body.
  *
- * `.strict()` is the load-bearing call. The trap named for this slice is a route
- * that authenticates its caller and then trusts a uid it was handed; `/me` gives
- * the request nowhere to put one, and this makes a body that tries anyway a 400
- * rather than a field silently dropped. "We do not read `uid`" is a promise;
- * "a body containing `uid` is refused" is a property.
+ * `.strict()` is load-bearing. The trap is a route that authenticates its caller
+ * and then trusts a uid it was handed; `/profile` gives the request nowhere to put
+ * one, and this makes a body that tries anyway a 400. "We do not read `uid`" is a
+ * promise; "a body containing `uid` is refused" is a property.
  *
- * Every field is optional, so `{}` is a valid ensure. `null` is distinct from
+ * Every field is optional, so `{}` is a valid ensure, and `null` is distinct from
  * absent: absent leaves the stored name alone, `null` clears it.
  */
 export const profileBodySchema = z
@@ -45,17 +43,14 @@ export const firestoreTimestamp = z.custom<Timestamp>(
 )
 
 /**
- * The stored document, **parsed rather than asserted**.
+ * The stored document, **parsed rather than asserted** — Firestore returns
+ * whatever is there, including a document from an older shape. Parsing lets the
+ * route answer "not created yet", which is truthful and repaired by the next
+ * ensure, instead of rendering blanks the user cannot act on.
  *
- * `snapshot.data() as T` is a lie the compiler believes: Firestore returns
- * whatever is there, including a document from an older shape or an interrupted
- * write. Parsing means a document that cannot describe a profile is *known* not
- * to, and the route can answer "not created yet" — truthful, and repaired by the
- * next ensure — instead of rendering blanks the user cannot act on.
- *
- * `displayName` gets a `.catch(null)` and the other three do not, deliberately:
- * a name is cosmetic and degrades, an address and a creation date are what the
- * card is made of.
+ * `displayName` gets a `.catch(null)` and the other three do not: a name is
+ * cosmetic and degrades, an address and a creation date are what the card is made
+ * of.
  */
 export const storedProfileSchema = z.object({
   email: z.string().min(1),

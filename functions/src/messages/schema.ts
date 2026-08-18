@@ -7,77 +7,43 @@ import { firestoreTimestamp } from '../users/schema'
  * `users/{uid}/projects/{projectId}/messages/{messageId}` — a chat message, and
  * the boundaries around it.
  *
- * The documents are written only by the Admin SDK inside
- * `/api/projects/:projectId/messages`; `firestore.rules` denies the collection to
- * every client, owner included. This file is where the shape of it is stated,
- * from two directions: what a caller may send, and what the stored document must
- * look like to be usable.
- *
- * **`role` is not in the body schema, and that is the security decision of the
- * slice** (D5). The server assigns it, so a body carrying one is a 400 under
- * `.strict()` rather than a key we happened not to read. Slice 4 recorded that it
- * would matter from Slice 5 on, and it now does: the transcript *is* the LLM's
+ * Written only by the Admin SDK; `firestore.rules` denies the collection to every
+ * client. **`role` is the server's to assign** — the transcript *is* the model's
  * context, so a client that could author an assistant turn could write its own
- * future prompt into a context that will also carry HighLevel API knowledge and
- * the user's project files. Refused before anything depended on it being allowed.
+ * future prompt into a context carrying HighLevel knowledge and the user's files.
+ * `/generate`'s `.strict()` body is where that is refused.
  *
- * **The path is the ownership.** A message lives under its project, which lives
- * under its owner's uid — the one `withVerifiedUser` read off the ID token — so
- * there is no `ownerUid` field here and no equality check anywhere. Another
- * user's transcript is not addressable by a request rather than merely refused.
+ * **The path is the ownership**: a message lives under its project, which lives
+ * under its owner's uid, so there is no `ownerUid` field and no equality check.
  */
 
 export const MESSAGES = 'messages'
 
 /**
- * The most messages one project may hold, and the most the list returns.
- *
- * The two are the same number on purpose, which is `PROJECT_LIMIT` /
- * `LIST_LIMIT`'s rule one level down: an unpaginated list is only honest if it
- * cannot truncate. 200 messages is 100 exchanges. It is a product limit the
- * composer states out loud (AC-32), not a hidden truncation.
+ * The most messages one project may hold, and the most the list returns — the
+ * same number, so the list cannot truncate. 200 messages is 100 exchanges, and it
+ * is a product limit the composer states out loud rather than a hidden cut-off.
  */
 export const MESSAGE_LIMIT = 200
 
 /** About a page of prose, which is what a considered prompt looks like. */
 export const CONTENT_MAX = 4000
 
-/**
- * One place composes the path, from `projectsPath` rather than a second `'users'`
- * literal, so the three segments cannot drift.
- */
+/** One place composes the path, so the three segments cannot drift. */
 export function messagesPath(uid: string, projectId: string): string {
   return `${projectsPath(uid)}/${projectId}/${MESSAGES}`
 }
 
 /**
- * The `POST` body — `content`, and nothing else.
- *
- * The trim happens before the limit, so padding cannot be smuggled past it, and
- * `.min(1)` after the trim is what makes a whitespace-only prompt a 400 rather
- * than an empty bubble. Enforced here and not in the composer, because the
- * composer is not the boundary.
- */
-export const createMessageBodySchema = z
-  .object({ content: z.string().trim().min(1).max(CONTENT_MAX) })
-  .strict()
-
-export type CreateMessageBody = z.infer<typeof createMessageBodySchema>
-
-/**
  * The stored document, **parsed rather than asserted**.
  *
- * Nothing here carries a `.catch`, and that is the whole of D27: content is the
- * message, `createdAt` is how it is ordered and dated, `seq` is what breaks the
- * commit-timestamp tie, and a `role` outside the two has no side of the
- * transcript to sit on. A document missing or corrupting any of them cannot be
- * rendered in the right place, so it is *known* to be unusable and omitted —
- * there is no by-id read of a message, so omission is the whole behaviour.
+ * Nothing here carries a `.catch`: a document missing or corrupting any of these
+ * cannot be rendered in the right place, so it is omitted — and there is no by-id
+ * read of a message, so omission is the whole behaviour.
  *
- * **`content` deliberately carries no maximum** (D11), where the body schema has
- * one. The echo of a 4,000-character prompt is longer than 4,000 characters, so a
- * maximum here would make the server's own write unreadable on the way back out.
- * A stored document is not a request body.
+ * **`content` carries no maximum**, where a request body would: the echo of a
+ * 4,000-character prompt is longer than 4,000 characters, so a maximum here would
+ * make the server's own write unreadable on the way back out.
  */
 export const storedMessageSchema = z
   .object({
@@ -86,53 +52,30 @@ export const storedMessageSchema = z
     seq: z.number().int().min(0),
     createdAt: firestoreTimestamp,
     /**
-     * Whether the reply stopped short of what the model had to say (D24).
+     * Whether the reply stopped short of what the model had to say — a client
+     * disconnect, a mid-stream failure, `max_tokens`, or the accumulation cap.
      *
-     * `true` for a client disconnect, a mid-stream failure, `stop_reason:
-     * 'max_tokens'`, and the 800,000-byte accumulation cap. One flat boolean
-     * rather than a discriminated union on `role`: the union is the right instinct
-     * in general, and for a single flag it doubles the schema a reviewer reads and
-     * buys nothing.
-     *
-     * **Defaulted, not `.catch`ed**, and the difference is D27's rule holding.
-     * Slice 4's documents do not carry this field at all, so a required one would
-     * make every message written before this slice unreadable — silently emptying
-     * every existing transcript (R7). A default on an *absent* field is a
-     * migration. A `.catch` on a *corrupt* one would be silently accepting a
-     * document that is wrong about itself, which is the thing D27 forbids: a
-     * `truncated: 'yes'` is a bug somewhere, not an old document.
+     * **Defaulted, not `.catch`ed.** Documents written before this field existed do
+     * not carry it, and a required field would make every one of them unreadable;
+     * a `.catch` would instead accept a document that is wrong about itself.
      */
     truncated: z.boolean().default(false),
-
     /**
-     * Why the turn failed, or `null` for one that did not.
-     *
-     * A failed generation used to persist nothing at all — the reply was written
-     * only when it had prose, so an upstream error before the first token left a
-     * transcript ending on a prompt, and the only trace was an in-memory flag
-     * that a refresh cleared. The chat could not show what happened because
-     * nothing had been written down.
-     *
-     * Defaulted rather than required, for `truncated`'s reason: every message
-     * written before this field existed lacks it, and a required field would make
-     * those documents unreadable and silently empty the transcript.
+     * Why the turn failed, or `null` for one that did not — which is what lets a
+     * failure survive a refresh. Defaulted for `truncated`'s reason: documents
+     * written before this field existed lack it.
      */
     error: z.string().nullable().default(null),
   })
   /**
    * **A message says something: prose, or the reason there is none.**
    *
-   * This is `min(1)` on `content`, narrowed rather than dropped. A generation
-   * that fails before its first token now persists an assistant document with
-   * no prose and an `error`, which is what lets a failure survive a refresh — and
-   * a blanket minimum made the server's own write unreadable on the way back
-   * out: the handler committed it, the read-back refused to parse it, and the
-   * turn ended in an `internal` frame instead of the `upstream` one it had
-   * already decided on.
-   *
-   * What the rule was protecting is still protected. A blank document with
-   * nothing to explain it cannot be rendered as anything but an empty bubble, so
-   * it is still *known* to be unusable and still omitted (D27).
+   * `min(1)` on `content`, narrowed rather than dropped. A generation that fails
+   * before its first token persists an assistant document with no prose and an
+   * `error`, and a blanket minimum made that write unreadable on the way back out
+   * — the turn then ended in an `internal` frame instead of the `upstream` one it
+   * had already decided on. A blank document with nothing to explain it is still
+   * omitted.
    */
   .refine((message) => message.content.length > 0 || message.error !== null)
 

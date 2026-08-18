@@ -19,11 +19,8 @@ import { useHlStore, type ProbeResult, type ProbeState, type SurfaceProbe } from
 const hl = useHlStore()
 
 /**
- * One message per outcome the callback can return.
- *
- * Keyed by the same union the server redirects with, so a new code cannot be
- * added on one side alone without this map going stale — and the fallback
- * covers exactly that, rather than rendering nothing.
+ * One message per outcome the callback can return, keyed by the same union the
+ * server redirects with; the fallback covers a code added on one side alone.
  */
 const ERROR_COPY: Record<string, string> = {
   denied: 'Connection cancelled. You can try again whenever you like.',
@@ -38,10 +35,8 @@ function copyFor(code: string): string {
 }
 
 /**
- * The three surfaces the probe reads, in the order they are shown.
- *
- * A table rather than three near-copies in the template, so a fourth surface is
- * one line here and nothing in the markup.
+ * The three surfaces the probe reads, in the order shown — a table rather than
+ * three near-copies in the template.
  */
 const SURFACES = [
   { key: 'contacts', label: 'Contacts' },
@@ -56,12 +51,9 @@ const rows = computed(() => {
 })
 
 /**
- * What one row says on its right-hand side.
- *
- * The zero case is deliberately first among the counts: `0` is falsy, so any
- * truthiness test here would report an empty location as unreadable. `null` is
- * the other half — "the response carried no number we recognise" — and that is
- * an em dash rather than a `NaN` or a lie (AC-41, AC-45).
+ * What one row says on its right-hand side. The zero case is explicit because `0`
+ * is falsy, and a truthiness test would report an empty location as unreadable;
+ * `null` — no number we recognise — is an em dash rather than a `NaN` or a lie.
  */
 function describe(probe: SurfaceProbe): string {
   if (probe.error !== null) return probe.error
@@ -74,11 +66,9 @@ function describe(probe: SurfaceProbe): string {
 const probeNeedsReconnect = computed(() => rows.value.some((row) => row.probe.reconnect))
 
 /**
- * The section-level alert, as distinct from a row's own message.
- *
- * Two things earn one: a surface that can only be fixed by reconnecting, whose
- * own reason is the most useful copy available; and a probe where every surface
- * failed, which a set of three identical rows states poorly.
+ * The section-level alert, as distinct from a row's own message. Two things earn
+ * one: a surface only reconnecting can fix, and a probe where every surface failed
+ * — which three identical rows state poorly.
  */
 const probeAlert = computed<string | null>(() => {
   const reconnecting = rows.value.find((row) => row.probe.reconnect)
@@ -91,12 +81,9 @@ const probeAlert = computed<string | null>(() => {
 })
 
 /**
- * What the check button says, keyed off the probe state rather than off
- * `probeResult`.
- *
- * `probeResult` is null both before the first check *and* for the duration of
- * every check after it — the store clears it when a probe starts — so a label
- * keyed off the result reverts to "Check data access" mid-probe (AC-19).
+ * What the check button says, keyed off the probe *state*: `probeResult` is null
+ * both before the first check and for the duration of every check after it, so a
+ * label keyed off the result reverts to "Check data access" mid-probe.
  */
 const CHECK_LABELS: Record<ProbeState, string> = {
   idle: 'Check data access',

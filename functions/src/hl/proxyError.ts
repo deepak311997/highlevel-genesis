@@ -5,25 +5,18 @@ import { HlNotConnectedError, HlReconnectRequiredError, HlRefreshUnavailableErro
 /**
  * Every way a proxied call can fail, turned into one of our conditions.
  *
- * Pure and separate from the handler on purpose: this is the half of F8.3 a
- * reader has to be able to check against the PRD's failure table line by line,
- * and the half whose one catastrophic mistake is invisible in a handler test.
+ * Pure and separate from the handler, because this is the half a reader has to
+ * check against the failure table line by line.
  *
- * ## The proxy never answers 401 (D20)
+ * **The proxy never answers 401.** `apiClient` reads a 401 as "your session
+ * died", so mirroring HighLevel's would sign the user out of Genesis because
+ * their *CRM* token was revoked. A HighLevel 401 becomes `409
+ * hl_reconnect_required`, which is both true and actionable: with proactive skew
+ * a 401 is never an expiry we should have caught, it is a revoked install or a
+ * removed scope.
  *
- * `apiClient` reads a 401 as "your session died". Mirroring HighLevel's 401
- * would therefore sign the user out of Genesis because their *CRM* token was
- * revoked — two unrelated sessions, one of them perfectly good. A HighLevel 401
- * becomes `409 hl_reconnect_required`, which is both true and actionable: with
- * D25's proactive five-minute skew a 401 is never an expiry we should have
- * caught, it is a revoked install or a removed scope, and both are fixed by
- * reconnecting.
- *
- * ## What `detail` may carry (D19)
- *
- * Upstream's own text about the *request*, truncated. Never ours about our
- * internals, and never a field we went looking for in their body — only the
- * three message fields HighLevel actually uses.
+ * `detail` may carry upstream's own text about the *request*, truncated — never
+ * ours about our internals, and never a field we went looking for.
  */
 
 /** Long enough for a real upstream message, short enough to exclude a page. */
@@ -32,24 +25,16 @@ const DETAIL_MAX = 200
 /**
  * The largest body worth parsing to find a two-hundred-character message.
  *
- * The proxy's cap allows an upstream response of 5 MiB, and every failing one
- * arrives here. Parsing megabytes to read `message` would make the *error* path
- * the most expensive path through the proxy — measurably so, around 12 ms of
- * CPU and 10 MiB of heap on a 5 MiB body — on the one path whose size is chosen
- * by upstream rather than by us.
- *
- * 64 KiB is roughly 700× the largest recorded HighLevel error body
- * (`location-401-missing-scope.json` is 84 bytes). Anything past it is a page,
- * a stack trace or a payload, none of which `detail` may carry anyway.
+ * Every failing response arrives here and may be 5 MiB. Parsing megabytes to read
+ * `message` would make the *error* path the most expensive path through the proxy
+ * — around 12 ms of CPU and 10 MiB of heap on a 5 MiB body. 64 KiB is roughly
+ * 700× the largest recorded HighLevel error body.
  */
 const PARSEABLE_MAX = 64 * 1024
 
 /**
- * The user-facing copy, in one map beside the codes.
- *
- * F8.3's strings are read together far more often than they are read one at a
- * time — "does every failure have a message a user could act on?" is a question
- * about the set, not about a line in a switch.
+ * The user-facing copy, in one map beside the codes: "does every failure have a
+ * message a user could act on?" is a question about the set.
  */
 const MESSAGES = {
   route_not_allowed: 'That HighLevel route is not available through Genesis.',
@@ -69,18 +54,12 @@ const MESSAGES = {
 export type ProxyErrorCode = keyof typeof MESSAGES
 
 /**
- * The same set, as **data** — one table, two consumers (Slice 9 D5).
+ * The same set, as **data** — one table, two consumers.
  *
- * Slice 9's cheat-sheet has to name every code a rejected `hl()` call can carry,
- * so that generated code can branch on one; a hand-written list in the system
- * prompt would drift on the first code added here, and the drift is invisible —
- * generated code branching on a `code` that no longer exists simply never runs
- * that branch.
- *
- * Derived from `MESSAGES` rather than written out, and `ProxyErrorCode` is
- * derived from the same object, so the array and the type cannot disagree.
- * `MESSAGES` itself stays private: its *values* are user-facing copy, which is
- * this module's business and nobody else's.
+ * The cheat-sheet has to name every code a rejected `hl()` call can carry, and a
+ * hand-written list would drift invisibly: generated code branching on a `code`
+ * that no longer exists simply never runs that branch. `MESSAGES` itself stays
+ * private, because its values are user-facing copy.
  */
 export const PROXY_ERROR_CODES = Object.keys(MESSAGES) as readonly ProxyErrorCode[]
 
@@ -92,15 +71,10 @@ export function proxyError(status: number, code: ProxyErrorCode, detail?: string
 /**
  * The three refusals the allowlist itself issues, and their statuses.
  *
- * `403` for both route refusals rather than `404`, because 403 states the true
- * reason (D21): the path may well exist at HighLevel and we are declining to
- * reach it, whereas a 404 implies it does not exist and sends a generated app
- * looking for a typo. `route_disabled` is deliberately *not* `route_not_allowed`
- * — the row exists and is safed, and a caller that cannot tell those apart
- * cannot tell a policy from an omission (D5, R5).
- *
- * `400` for `invalid_path`, because the caller sent a path parameter outside the
- * grammar rather than asking for a route we refuse.
+ * `403` rather than `404` for the route refusals, because the path may well exist
+ * at HighLevel and we are declining to reach it — a 404 sends a generated app
+ * looking for a typo. `route_disabled` is deliberately not `route_not_allowed`: a
+ * caller that cannot tell them apart cannot tell a policy from an omission.
  */
 const ROUTE_STATUS = {
   route_not_allowed: 403,
@@ -111,22 +85,18 @@ const ROUTE_STATUS = {
 export type RouteRefusalCode = keyof typeof ROUTE_STATUS
 
 /**
- * A refusal decided by the table, before any Firestore read and any upstream
- * call. Here rather than in the handler so that **every** copy string and every
- * status this surface can answer with is readable in one file (F8.3).
+ * A refusal decided by the table, before any Firestore read or upstream call.
+ * Here rather than in the handler, so every copy string and status this surface
+ * can answer with is readable in one file.
  */
 export function routeRefusal(code: RouteRefusalCode): HttpError {
   return new HttpError(ROUTE_STATUS[code], MESSAGES[code], code)
 }
 
 /**
- * HighLevel's own message, or nothing.
- *
- * `message` first because that is the field their errors actually use — see
- * `tests/fixtures/highlevel/location-401-missing-scope.json` — then the two
- * OAuth-shaped fields their token endpoint answers with. Anything unparseable,
- * or a value that is not a string, yields nothing rather than
- * `"[object Object]"`.
+ * HighLevel's own message, or nothing. `message` first because that is the field
+ * their errors use, then the two OAuth-shaped fields. Anything unparseable, or a
+ * value that is not a string, yields nothing rather than `"[object Object]"`.
  */
 export function detailFrom(raw: string): string | undefined {
   if (raw.length > PARSEABLE_MAX) return undefined
@@ -161,11 +131,9 @@ export function mapUpstreamStatus(status: number, raw: string): HttpError {
 }
 
 /**
- * A token-resolution failure, mapped.
- *
- * Rethrows anything it does not recognise rather than flattening it to a 500:
- * an unrecognised error is not a token condition, and swallowing it here would
- * leave the terminal handler with nothing to log.
+ * A token-resolution failure, mapped. Rethrows what it does not recognise rather
+ * than flattening it to a 500 — an unrecognised error is not a token condition,
+ * and swallowing it would leave the terminal handler with nothing to log.
  */
 export function mapTokenError(err: unknown): HttpError {
   if (err instanceof HlNotConnectedError) return proxyError(409, 'hl_not_connected')
@@ -175,12 +143,11 @@ export function mapTokenError(err: unknown): HttpError {
 }
 
 /**
- * The upstream call was aborted because it outlived {@link hlUpstreamTimeoutMs}.
+ * The upstream call outlived its timeout.
  *
- * A distinct class rather than an inspection of the `AbortError` `fetch`
- * raises, because an abort is also how the size cap stops a read — the two
- * failures are indistinguishable from the exception alone, and they map to
- * different statuses.
+ * A distinct class rather than an inspection of `fetch`'s `AbortError`, because an
+ * abort is also how the size cap stops a read: indistinguishable from the
+ * exception alone, and they map to different statuses.
  */
 export class UpstreamTimeoutError extends Error {
   constructor() {
@@ -198,11 +165,9 @@ export class UpstreamTooLargeError extends Error {
 }
 
 /**
- * A failure of the call itself, as distinct from a status it answered with.
- *
- * The tail is `502 hl_unavailable` rather than a rethrow, because at this point
- * every remaining possibility is a network-shaped one — DNS, a refused
- * connection, a reset — and each of them means the same thing to a caller.
+ * A failure of the call itself, as distinct from a status it answered with. The
+ * tail is `502 hl_unavailable` rather than a rethrow: every remaining possibility
+ * is network-shaped, and each means the same thing to a caller.
  */
 export function mapForwardError(err: unknown): HttpError {
   if (err instanceof UpstreamTimeoutError) return proxyError(504, 'hl_timeout')
@@ -211,13 +176,10 @@ export function mapForwardError(err: unknown): HttpError {
 }
 
 /**
- * Whether a failed refresh means the grant is dead.
- *
- * **Only `invalid_grant` on a 400.** §3's first rule is never to destroy a
- * refresh token that may still be valid, so a 500, a network error and a
- * timeout are all transient by definition — the asymmetry is deliberate and it
- * is what keeps a HighLevel blip from being recorded as a dead connection
- * (D26).
+ * Whether a failed refresh means the grant is dead — **only `invalid_grant` on a
+ * 400**. Never destroy a refresh token that may still be valid: a 500, a network
+ * error and a timeout are transient by definition, and the asymmetry is what keeps
+ * a HighLevel blip from being recorded as a dead connection.
  */
 export function isDefinitiveRefreshFailure(err: unknown): boolean {
   if (!(err instanceof HlRequestError)) return false
