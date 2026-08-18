@@ -8,8 +8,21 @@ import {
   storeRedirect,
 } from './redirect'
 
-/** Stands in for the router's registered paths. */
-const KNOWN = ['/', '/health', '/dashboard', '/signin'] as const
+/**
+ * Stands in for the router's registered paths.
+ *
+ * These are the *patterns* `router.getRoutes()` yields, not concrete paths —
+ * including the parameterised workspace route and the catch-all, both of which
+ * the real router registers.
+ */
+const KNOWN = [
+  '/',
+  '/health',
+  '/dashboard',
+  '/signin',
+  '/projects/:projectId',
+  '/:pathMatch(.*)*',
+] as const
 
 describe('safeRedirect', () => {
   it('returns a known same-origin path unchanged', () => {
@@ -45,6 +58,34 @@ describe('safeRedirect', () => {
 
   it('falls back for a path that matches no registered route', () => {
     expect(safeRedirect('/not-a-route', KNOWN)).toBe(DEFAULT_REDIRECT)
+  })
+
+  /*
+   * The allowlist is over route *patterns*, so a concrete workspace path has to
+   * be matched against `/projects/:projectId` rather than looked up in it. A
+   * membership test returns a deep-linked user to the dashboard instead of the
+   * project they asked for (C2).
+   */
+  it('returns a concrete path for a parameterised route', () => {
+    expect(safeRedirect('/projects/abc123', KNOWN)).toBe('/projects/abc123')
+  })
+
+  it('keeps a query and hash on a parameterised path', () => {
+    expect(safeRedirect('/projects/abc123?tab=files#top', KNOWN)).toBe(
+      '/projects/abc123?tab=files#top',
+    )
+  })
+
+  /* `/:pathMatch(.*)*` matches everything, so treating it as an entry would
+   * make the allowlist mean nothing at all. */
+  it('still refuses a path the catch-all would swallow', () => {
+    expect(safeRedirect('/not-a-route', KNOWN)).toBe(DEFAULT_REDIRECT)
+    expect(safeRedirect('/admin/secrets', KNOWN)).toBe(DEFAULT_REDIRECT)
+  })
+
+  /* A `:param` is one segment, never the rest of the path. */
+  it('refuses an extra segment', () => {
+    expect(safeRedirect('/projects/abc/extra', KNOWN)).toBe(DEFAULT_REDIRECT)
   })
 
   it('falls back for null and undefined', () => {
