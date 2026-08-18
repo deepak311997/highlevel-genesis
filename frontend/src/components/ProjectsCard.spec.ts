@@ -98,7 +98,7 @@ describe('ProjectsCard', () => {
 
   /*
    * AC-2. The loading state's placeholders are the shared `Skeleton`, not a
-   * hand-rolled `animate-pulse` div — the testid still resolves to the same
+   * hand-rolled pulsing div — the testid still resolves to the same
    * element, and what it holds carries the primitive's slot attribute.
    */
   it('renders Skeleton placeholders while loading', () => {
