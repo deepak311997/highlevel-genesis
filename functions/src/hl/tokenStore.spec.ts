@@ -1,6 +1,8 @@
 import { Timestamp } from 'firebase-admin/firestore'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { isSealed, openToken } from './tokenCrypto'
+
 import type { DocumentReference, Transaction } from 'firebase-admin/firestore'
 
 import type { TokenResponse } from './schema'
@@ -155,13 +157,34 @@ function fakeDb(
   return { commits, updates }
 }
 
+/**
+ * What was persisted, as the tokens it will be read back as.
+ *
+ * Asserted through `openToken` rather than against a literal, which is what makes
+ * this two assertions in one: the grant that was written is the one the refresh
+ * issued, **and** it went into Firestore sealed. A plain equality against
+ * `'access-1'` would fail the moment sealing worked, which is the wrong way round.
+ */
+function expectStored(written: unknown, accessToken: string, refreshToken: string): void {
+  const stored = written as { accessToken: string; refreshToken: string }
+
+  expect(isSealed(stored.accessToken)).toBe(true)
+  expect(isSealed(stored.refreshToken)).toBe(true)
+  expect(openToken(stored.accessToken)).toBe(accessToken)
+  expect(openToken(stored.refreshToken)).toBe(refreshToken)
+}
+
 beforeEach(() => {
   vi.stubGlobal('console', { ...console, info: vi.fn() })
+  // The tokens are sealed on the way into Firestore and opened on the way out,
+  // so the rotation cannot run without a key — see tokenCrypto.ts.
+  process.env['HL_TOKEN_SECRET'] = 'test-token-secret-not-a-real-key-0123456789'
 })
 
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.resetAllMocks()
+  delete process.env['HL_TOKEN_SECRET']
 })
 
 describe('the transactional rotation', () => {
@@ -172,7 +195,7 @@ describe('the transactional rotation', () => {
     await expect(firestoreTokenDeps().refresh(UID)).resolves.toBe('access-1')
 
     expect(refreshTokens).toHaveBeenCalledTimes(1)
-    expect(db.commits[0]).toMatchObject({ accessToken: 'access-1', refreshToken: 'refresh-1' })
+    expectStored(db.commits[0], 'access-1', 'refresh-1')
   })
 
   /*
@@ -189,7 +212,7 @@ describe('the transactional rotation', () => {
     expect(refreshTokens).toHaveBeenCalledTimes(1)
     expect(refreshTokens).toHaveBeenCalledWith('refresh-0')
     // The grant the one refresh issued, not a second one and not nothing.
-    expect(db.commits[0]).toMatchObject({ accessToken: 'access-1', refreshToken: 'refresh-1' })
+    expectStored(db.commits[0], 'access-1', 'refresh-1')
     expect(db.commits[0]).not.toHaveProperty('needsReconnect')
   })
 

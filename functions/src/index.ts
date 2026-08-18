@@ -6,6 +6,7 @@ import { ALLOWED_ORIGINS, createApiApp } from './api'
 import { deleteExpiredUnverifiedUsers } from './auth/cleanup'
 import { HL_CLIENT_ID, HL_CLIENT_SECRET, HL_REDIRECT_URI, HL_VERSION_ID } from './hl/config'
 import { OAUTH_STATE_SECRET } from './hl/state'
+import { HL_TOKEN_SECRET } from './hl/tokenCrypto'
 
 setGlobalOptions({ region: 'asia-south1', maxInstances: 10 })
 
@@ -30,16 +31,17 @@ export const api = onRequest(
      * list* that grants access, and `api` is one function assembled from a dozen
      * routers.
      *
-     * Only two are credentials. The other four are configuration that lived in
+     * Only three are credentials. The other four are configuration that lived in
      * `functions/.env` until that file's synthesis started printing every line into
      * a world-readable deploy log.
      *
-     * `index.spec.ts` asserts all six, because the emulator resolves a secret from
+     * `index.spec.ts` asserts all seven, because the emulator resolves a secret from
      * `process.env` whether it was granted or not.
      */
     secrets: [
       HL_CLIENT_SECRET,
       OAUTH_STATE_SECRET,
+      HL_TOKEN_SECRET,
       HL_CLIENT_ID,
       HL_VERSION_ID,
       HL_REDIRECT_URI,

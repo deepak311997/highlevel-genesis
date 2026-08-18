@@ -94,7 +94,7 @@ describe('the generate function’s deployment surface', () => {
 })
 
 /**
- * `api`'s two secrets, and why they are secrets rather than environment.
+ * `api`'s credential secrets, and why they are secrets rather than environment.
  *
  * Both were read straight from `process.env` until the deploy pipeline was written, which meant
  * both were carried in `functions/.env` — and everything in that file is uploaded as a plain
@@ -103,11 +103,17 @@ describe('the generate function’s deployment surface', () => {
  * is less sensitive than that one: `HL_CLIENT_SECRET` is half of the marketplace app's
  * credentials and is displayed exactly once at creation, and `OAUTH_STATE_SECRET` is the key the
  * OAuth `state` is sealed under — recover it and the uid a callback carries becomes forgeable.
+ *
+ * `HL_TOKEN_SECRET` joined them for the same reason and one of its own: it is the key every
+ * stored HighLevel token is sealed under, so carrying it as plain Cloud Run environment would
+ * hand a Viewer both the ciphertext and the means to read it — which is the whole of what
+ * sealing them defends against.
  */
 describe('the api function\u2019s secret bindings', () => {
   it.each([
     'HL_CLIENT_SECRET',
     'OAUTH_STATE_SECRET',
+    'HL_TOKEN_SECRET',
     'HL_CLIENT_ID',
     'HL_VERSION_ID',
     'HL_REDIRECT_URI',
@@ -121,7 +127,7 @@ describe('the api function\u2019s secret bindings', () => {
    * and streams the model; it never exchanges an authorization code and never
    * seals a state parameter, so it has no business holding either value.
    */
-  it.each(['HL_CLIENT_SECRET', 'OAUTH_STATE_SECRET'])(
+  it.each(['HL_CLIENT_SECRET', 'OAUTH_STATE_SECRET', 'HL_TOKEN_SECRET'])(
     'does not grant %s to the generate function',
     (key) => {
       expect(secretsOf(deployed.generate)).not.toContain(key)

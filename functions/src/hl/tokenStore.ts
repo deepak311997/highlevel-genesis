@@ -7,6 +7,7 @@ import { getDb } from '../lib/firebase'
 import { isDefinitiveRefreshFailure } from './proxyError'
 import { logAuthEvent } from '../lib/log'
 import { refreshTokens } from './exchange'
+import { openToken, sealToken } from './tokenCrypto'
 import {
   HlNotConnectedError,
   HlReconnectRequiredError,
@@ -57,7 +58,26 @@ function parseStored(data: unknown): StoredTokens | undefined {
     logAuthEvent('hl.tokens.unreadable', { outcome: 'invalid' })
     return undefined
   }
-  return parsed.data
+
+  /*
+   * **Unsealed here, in the one place that reads them.** Both callers below come
+   * through this function, so the tokens are ciphertext everywhere above Firestore
+   * and plaintext for exactly as long as a request needs them.
+   *
+   * A value that will not open — a rotated secret, a truncated document — is
+   * reported as *no connection*, the same answer an unparseable one gets and for
+   * the same reason: reconnecting overwrites the document, so it is the fix.
+   */
+  try {
+    return {
+      ...parsed.data,
+      accessToken: openToken(parsed.data.accessToken),
+      refreshToken: openToken(parsed.data.refreshToken),
+    }
+  } catch {
+    logAuthEvent('hl.tokens.unreadable', { outcome: 'invalid' })
+    return undefined
+  }
 }
 
 /**
@@ -206,9 +226,11 @@ async function rotate(uid: string): Promise<string> {
       }
     }
 
+    // Sealed on the way down, which is also the migration: a connection stored
+    // before this existed is read as plaintext once and written back sealed.
     tx.update(ref, {
-      accessToken: next.access_token,
-      refreshToken: next.refresh_token,
+      accessToken: sealToken(next.access_token),
+      refreshToken: sealToken(next.refresh_token),
       expiresAt: Timestamp.fromMillis(Date.now() + next.expires_in * 1000),
       updatedAt: FieldValue.serverTimestamp(),
     })

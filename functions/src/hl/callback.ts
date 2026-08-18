@@ -11,6 +11,7 @@ import {
   listInstalledLocations,
 } from './exchange'
 import { getDb } from '../lib/firebase'
+import { sealToken } from './tokenCrypto'
 import { describeError, logAuthEvent, logHlOAuthEvent } from '../lib/log'
 import { openState } from './state'
 import type { TokenResponse } from './schema'
@@ -259,8 +260,8 @@ export async function handleCallback(req: Request, res: Response): Promise<void>
     await getDb()
       .doc(`${CONNECTIONS}/${uid}`)
       .set({
-        accessToken: located.access_token,
-        refreshToken: located.refresh_token,
+        accessToken: sealToken(located.access_token),
+        refreshToken: sealToken(located.refresh_token),
         expiresAt: Timestamp.fromMillis(Date.now() + located.expires_in * 1000),
         locationId: located.locationId,
         locationName,

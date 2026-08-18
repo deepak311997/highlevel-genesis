@@ -96,6 +96,7 @@ function redirectedTo(): string {
 
 beforeEach(() => {
   process.env['OAUTH_STATE_SECRET'] = SECRET
+  process.env['HL_TOKEN_SECRET'] = SECRET
   process.env['HL_REDIRECT_URI'] = REDIRECT_URI
   state = sealState('PZ9kQxLm3nR7vB2t')
 
@@ -114,6 +115,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
   vi.clearAllMocks()
   delete process.env['OAUTH_STATE_SECRET']
+  delete process.env['HL_TOKEN_SECRET']
   delete process.env['HL_REDIRECT_URI']
 })
 
