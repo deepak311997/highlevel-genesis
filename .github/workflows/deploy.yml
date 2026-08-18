@@ -93,11 +93,15 @@ jobs:
           npm --prefix frontend ci
           npm --prefix functions ci
 
-      # Everything here is compiled into the bundle and is public by design — it
-      # identifies the Firebase project, it does not authorise anything. Held as
-      # repository *variables* rather than secrets for exactly that reason: a
-      # secret that is printed on every page view is a secret that teaches people
-      # to ignore the label.
+      # Variables, not secrets, and the line is drawn on *marginal disclosure*.
+      #
+      # Every value here is compiled into the SPA bundle and served to every
+      # visitor, so a public Actions log discloses nothing a browser's Network
+      # tab does not. Labelling them secret would mask them here and teach people
+      # that the label means nothing, which is how a real one gets ignored.
+      #
+      # Anything NOT already public — see the functions step below — is a secret,
+      # because this repository is public and so are its run logs.
       - name: Write frontend/.env
         env:
           VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
@@ -129,19 +133,29 @@ jobs:
             exit 1
           fi
 
-      # Nothing secret. Both of the values that were once here —
-      # HL_CLIENT_SECRET and OAUTH_STATE_SECRET — are `defineSecret`s bound to
-      # the `api` function, so they come from Secret Manager at runtime and this
-      # workflow never handles them. That is why the only repository secret below
-      # is the service account key: the deploy needs permission to bind secrets,
-      # not the secrets themselves.
+      # None of these is a credential — the two that were, HL_CLIENT_SECRET and
+      # OAUTH_STATE_SECRET, are `defineSecret`s bound to the `api` function and
+      # never pass through this workflow at all.
+      #
+      # The HighLevel four are `secrets` anyway, and the reason is this
+      # repository being public. GitHub prints a step's whole `env:` block into
+      # the run log, and it masks a secret but not a variable — so as variables,
+      # HL_CLIENT_ID and HL_VERSION_ID were published to anyone who opened the
+      # Actions tab. They identify the marketplace app rather than authorising
+      # anything, so this is not a breach; it is a detail about someone's
+      # integration that had no reason to be world-readable, and `secrets` costs
+      # nothing to fix it.
+      #
+      # FIRESTORE_DATABASE_ID stays a variable deliberately: it is already in
+      # firebase.json, which is committed. Masking a value the repository
+      # publishes on its own would be theatre.
       - name: Write functions/.env
         env:
           FIRESTORE_DATABASE_ID: ${{ vars.FIRESTORE_DATABASE_ID }}
-          HL_CLIENT_ID: ${{ vars.HL_CLIENT_ID }}
-          HL_VERSION_ID: ${{ vars.HL_VERSION_ID }}
-          HL_REDIRECT_URI: ${{ vars.HL_REDIRECT_URI }}
-          ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS }}
+          HL_CLIENT_ID: ${{ secrets.HL_CLIENT_ID }}
+          HL_VERSION_ID: ${{ secrets.HL_VERSION_ID }}
+          HL_REDIRECT_URI: ${{ secrets.HL_REDIRECT_URI }}
+          ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
         run: |
           {
             echo "FIRESTORE_DATABASE_ID=$FIRESTORE_DATABASE_ID"

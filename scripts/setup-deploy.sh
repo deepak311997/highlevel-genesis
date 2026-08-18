@@ -192,8 +192,31 @@ set_var() { # name, value
     echo "  $name — blank locally, skipped"
     return 0
   fi
-  echo "  $name"
+  echo "  $name (variable)"
   run gh variable set "$name" --repo "$REPO" --body "$value"
+}
+
+# The same thing, as a masked secret.
+#
+# GitHub prints a step's whole `env:` block into the run log and masks a secret
+# but not a variable. This repository is public, so a variable there is a
+# published value — which is fine for anything the bundle or the repository
+# already publishes, and not fine for the HighLevel app's identifiers.
+#
+# Piped rather than passed as an argument: an argument is visible in `ps` for as
+# long as the call takes.
+set_secret() { # name, value
+  local name="$1" value="${2:-}"
+  if [[ -z "$value" ]]; then
+    echo "  $name — blank locally, skipped"
+    return 0
+  fi
+  echo "  $name (secret, masked in logs)"
+  if $DRY_RUN; then
+    printf '  would run: gh secret set %s --repo %s (value from stdin)\n' "$name" "$REPO"
+  else
+    printf '%s' "$value" | gh secret set "$name" --repo "$REPO"
+  fi
 }
 
 set_var FIREBASE_PROJECT_ID "$PROJECT_ID"
@@ -204,8 +227,22 @@ for key in VITE_FIREBASE_API_KEY VITE_FIREBASE_AUTH_DOMAIN VITE_FIREBASE_PROJECT
   set_var "$key" "$(value_of frontend/.env "$key")"
 done
 
-for key in FIRESTORE_DATABASE_ID HL_CLIENT_ID HL_VERSION_ID HL_REDIRECT_URI ALLOWED_ORIGINS; do
-  set_var "$key" "$(value_of functions/.env "$key")"
+# Already in the committed firebase.json, so masking it would be theatre.
+set_var FIRESTORE_DATABASE_ID "$(value_of functions/.env FIRESTORE_DATABASE_ID)"
+
+# Not published anywhere else, and this repository is public.
+for key in HL_CLIENT_ID HL_VERSION_ID HL_REDIRECT_URI ALLOWED_ORIGINS; do
+  set_secret "$key" "$(value_of functions/.env "$key")"
+done
+
+# Left behind by an earlier run of this script, when these were variables. A
+# variable and a secret of the same name can coexist, and the variable is the one
+# that ends up in the log — so the cleanup is the point, not tidiness.
+for key in HL_CLIENT_ID HL_VERSION_ID HL_REDIRECT_URI ALLOWED_ORIGINS; do
+  if gh variable list --repo "$REPO" --json name -q '.[].name' | grep -qx "$key"; then
+    echo "  $key — deleting the stale variable"
+    run gh variable delete "$key" --repo "$REPO"
+  fi
 done
 
 # ─── Secret Manager ───────────────────────────────────────────────────────────
