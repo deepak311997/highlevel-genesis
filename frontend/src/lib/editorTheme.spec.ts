@@ -13,15 +13,14 @@ import {
 } from './editorTheme'
 
 /**
- * The editor's ground has to be the app's ground, or the seam shows where the
- * editor meets the panel beside it — and that seam is exactly what a stock
- * Monaco theme produces, because `vs` is pure white and Instrument's background
- * is not.
+ * The editor's ground has to be the app's ground, or the seam shows where the editor meets the
+ * panel beside it — and that seam is exactly what a stock Monaco theme produces, because `vs` is
+ * pure white and Instrument's background is not.
  *
- * Monaco takes hex and `style.css` is written in `hsl()`, so the two cannot
- * share a literal. Converting here is what keeps them from drifting: a later
- * palette change that moves `--background` and forgets the editor fails this,
- * rather than shipping a visible edge nobody looks for.
+ * Monaco takes hex and `style.css` is written in `hsl()`, so the two cannot share a literal.
+ * Converting here is what keeps them from drifting: a later palette change that moves
+ * `--background` and forgets the editor fails this, rather than shipping a visible edge nobody
+ * looks for.
  */
 
 const css = readFileSync(join(process.cwd(), 'src/style.css'), 'utf8')
@@ -42,7 +41,7 @@ function hslToHex(h: number, s: number, l: number): string {
   const c = (1 - Math.abs(2 * lig - 1)) * sat
   const x = c * (1 - Math.abs(((h / 60) % 2) - 1))
   const m = lig - c / 2
-  const [r, g, b] = (
+  const [r, g, b] =
     h < 60
       ? [c, x, 0]
       : h < 120
@@ -54,7 +53,6 @@ function hslToHex(h: number, s: number, l: number): string {
             : h < 300
               ? [x, 0, c]
               : [c, 0, x]
-  )
   const hex = (v: number): string =>
     Math.round((v + m) * 255)
       .toString(16)
@@ -64,11 +62,8 @@ function hslToHex(h: number, s: number, l: number): string {
 
 describe('the editor theme', () => {
   /*
-   * The converter, proven before it is trusted — the rest of this file is only
-   * as good as this function. The cases are exact by construction rather than
-   * sampled from the palette: `--primary` is written `hsl(230 88% 56%)`, which
-   * is a *rounding* of the brand's #2B4BF2 and converts back to #2C4DF2. A test
-   * asserting the brand hex here would be asserting the rounding error.
+   * The converter, proven before it is trusted — the rest of this file is only as good as this
+   * function.
    */
   it('converts hsl to hex', () => {
     expect(hslToHex(0, 0, 100)).toBe('#FFFFFF')

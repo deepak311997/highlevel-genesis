@@ -17,18 +17,11 @@ import {
 /**
  * AC-17 and AC-18 — the two deliverable documents, held true by a test.
  *
- * These are the slice's only artefacts that no other check can reach. The README
- * has `check-readme.mjs`, the environment has `check-secrets.mjs`; the Loom shot
- * list and the release checklist are prose, and prose is exactly where a
- * requirement goes quiet. So the two mechanical claims they make get asserted:
- * the shot list covers the brief's nine beats, in order, inside five minutes;
- * and every checklist line says who closes it.
- *
- * Each check is asserted **twice** — once over a fixture that proves the check
- * can fail, and once over the real committed document that proves it passes
- * today. That is the PRD's own rule for this slice's checks (test matrix, final
- * paragraph): a fixture alone proves the regex works, and the real file alone
- * proves nothing about what happens when someone edits it.
+ * These are the slice's only artefacts that no other check can reach. The README has `check-
+ * readme.mjs`, the environment has `check-secrets.mjs`; the Loom shot list and the release
+ * checklist are prose, and prose is exactly where a requirement goes quiet. So the two
+ * mechanical claims they make get asserted: the shot list covers the brief's nine beats, in
+ * order, inside five minutes; and every checklist line says who closes it.
  */
 
 const readReal = (path) => readFileSync(path, 'utf8')
@@ -154,14 +147,7 @@ describe('loomProblems — AC-17', () => {
     expect(problems.join('\n')).toMatch(/outro/)
   })
 
-  /*
-   * A row with a Length is time on the recording, whatever its Beat cell says.
-   * Skipping the rows it cannot name let a shot list buy itself as much time as
-   * it liked: an unslugged `| 0 | intro card | 0:40 | … |` costs the recorder
-   * forty seconds and cost the budget nothing, so a 5:30 document passed a 5:00
-   * cap. The cap is the brief's, so the row is counted and reported, not
-   * dropped.
-   */
+  /* A row with a Length is time on the recording, whatever its Beat cell says. */
   it('counts and reports a timed row whose beat cell is not a slug', () => {
     const shotList = loomFixture(PINNED)
     const lines = shotList.split('\n')
@@ -234,13 +220,7 @@ describe('checkboxLines', () => {
     expect(checkboxLines(text)).toEqual([])
   })
 
-  /*
-   * The tag has to be on the `- [ ]` line itself.
-   *
-   * Items here run to several lines — a procedure, then an evidence slot — and a
-   * tag on the third line of one item is invisible when the file is skimmed for
-   * who owns what, which is the only reason the tag exists.
-   */
+  /* The tag has to be on the `- [ ]` line itself. */
   it('does not read an owner tag off a continuation line', () => {
     const lines = checkboxLines(
       ['- [ ] Open the live URL and sign in.', '      **(human)**'].join('\n'),
@@ -293,9 +273,8 @@ describe('the real release-checklist.md', () => {
   const linesFor = (owner) => checkboxLines(text).filter((line) => line.owners[0] === owner)
 
   /*
-   * The counts are pinned so the ledger is visible in the test rather than only
-   * in the document — D2's three owners, and how much each is carrying. Adding
-   * an item is meant to be a deliberate edit here too.
+   * The counts are pinned so the ledger is visible in the test rather than only in the document
+   * — D2's three owners, and how much each is carrying.
    */
   it('carries D2s three owners: 2 automated, 6 this PR, 12 human', () => {
     expect(linesFor('(automated)')).toHaveLength(2)
@@ -328,9 +307,8 @@ describe('the real release-checklist.md', () => {
   })
 
   /*
-   * D11, written down rather than remembered. The epoch-millisecond finding cost
-   * a day once and is one sentence away from being over-generalised into
-   * "HighLevel uses epoch ms everywhere".
+   * D11, written down rather than remembered. The epoch-millisecond finding cost a day once and
+   * is one sentence away from being over-generalised into "HighLevel uses epoch ms everywhere".
    */
   it('says the epoch-millisecond finding is about the events query, not a create body', () => {
     expect(text).toMatch(/GET\s+`?\/calendars\/events`?/)

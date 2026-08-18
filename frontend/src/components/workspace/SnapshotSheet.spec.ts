@@ -6,16 +6,12 @@ import { toast } from 'vue-sonner'
 import type { Snapshot } from '@/lib/snapshotsApi'
 
 /**
- * Version history — the sheet (AC-29, AC-30).
+ * Version history — the sheet.
  *
- * The store is stubbed rather than instantiated, `EditorPanel.spec.ts`'s shape:
- * plain reactive values, not refs, because Pinia auto-unwraps refs on the store
- * object and a component therefore reads `workspace.generating` as a boolean.
- * Mocking it as `{ value: false }` would make every guard truthy.
- *
- * `SheetContent` is a Reka UI dialog and portals its content to `document.body`,
- * so everything below the trigger is queried on the document rather than on the
- * wrapper — the same arrangement `ProjectFormDialog.spec.ts` uses.
+ * The store is stubbed rather than instantiated, `EditorPanel.spec.ts`'s shape: plain reactive
+ * values, not refs, because Pinia auto-unwraps refs on the store object and a component
+ * therefore reads `workspace.generating` as a boolean. Mocking it as `{ value: false }` would
+ * make every guard truthy.
  */
 const store = reactive({
   snapshots: [] as Snapshot[],
@@ -110,14 +106,7 @@ afterEach(() => {
 })
 
 describe('the trigger', () => {
-  /**
-   * AC-29 — the sheet is opened from the code panel, and it does not fetch
-   * until it is.
-   *
-   * A history nobody has asked for is a request nobody has asked for: the list
-   * route reads a collection per call, and mounting the workspace would spend
-   * one on every project opened. The fetch is the *opening*, not the mounting.
-   */
+  /** AC-29 — the sheet is opened from the code panel, and it does not fetch until it is. */
   it('renders a History trigger', () => {
     const wrapper = mountSheet()
 
@@ -175,10 +164,9 @@ describe('the four states', () => {
   })
 
   /**
-   * The error branch is first, `FileTree.vue`'s rule and for its reason: a
-   * failed first request leaves `snapshotsLoaded` false, so a loading branch
-   * ahead of it would render a skeleton that never resolves and never show the
-   * failure at all.
+   * The error branch is first, `FileTree.vue`'s rule and for its reason: a failed first request
+   * leaves `snapshotsLoaded` false, so a loading branch ahead of it would render a skeleton that
+   * never resolves and never show the failure at all.
    */
   it('renders the failure and a Try again that retries', async () => {
     store.snapshotsError = 'Could not load version history.'
@@ -193,16 +181,9 @@ describe('the four states', () => {
   })
 
   /*
-   * The store keeps the list when a refetch fails, and says why: an emptied
-   * history under a Restore button claims "this project has no versions", which
-   * is a different thing from "we could not reach the server". Rendering the
-   * error *instead of* the rows throws that away at the last step — the user is
-   * reading twenty versions, a generation finishes behind the open sheet, its
-   * refetch 500s, and the list they were reading disappears.
-   *
-   * So the failure renders like a failed *restore* does: above the list, with
-   * the list still under it. The first-load case below keeps the old behaviour,
-   * because then there is genuinely nothing to keep.
+   * The store keeps the list when a refetch fails, and says why: an emptied history under a
+   * Restore button claims "this project has no versions", which is a different thing from "we
+   * could not reach the server".
    */
   it('keeps a loaded list on screen when a refetch fails', async () => {
     store.snapshots = [snapshot(1), snapshot(2)]
@@ -227,11 +208,9 @@ describe('the four states', () => {
   })
 
   /*
-   * A failed restore is about one attempt on one visit. Left in the store it
-   * outlives the visit: close the sheet, generate successfully, reopen — and the
-   * banner for the abandoned attempt is still sitting above a list that is now
-   * correct. `confirmingId` is already withdrawn on the same event for the same
-   * reason.
+   * A failed restore is about one attempt on one visit. Left in the store it outlives the visit:
+   * close the sheet, generate successfully, reopen — and the banner for the abandoned attempt is
+   * still sitting above a list that is now correct.
    */
   it('drops a stale restore failure when the sheet is closed', async () => {
     store.snapshotsLoaded = true
@@ -305,13 +284,7 @@ describe('restoring', () => {
     return open()
   }
 
-  /**
-   * AC-30 — the confirm is two states of *one row*, not a dialog over the sheet.
-   *
-   * A modal over a sheet is a second focus trap on top of the first, and the
-   * row is where the version's identity already is — a separate overlay would
-   * have to restate it to be safe to click.
-   */
+  /** AC-30 — the confirm is two states of *one row*, not a dialog over the sheet. */
   it('turns the row into a confirm rather than opening a second overlay', async () => {
     await openWithTwo()
 
@@ -375,10 +348,9 @@ describe('restoring', () => {
   })
 
   /**
-   * AC-30's last clause. A generation is writing the very files a restore would
-   * overwrite, so the button is off — **and the list still renders**, because
-   * "come back when this finishes" is a different message from "there is no
-   * history", and a blanked sheet says the second.
+   * AC-30's last clause. A generation is writing the very files a restore would overwrite, so
+   * the button is off — **and the list still renders**, because "come back when this finishes"
+   * is a different message from "there is no history", and a blanked sheet says the second.
    */
   it('disables every Restore during a generation, with the reason on screen', async () => {
     store.generating = true
@@ -390,18 +362,7 @@ describe('restoring', () => {
     }
     expect(must('snapshot-generating').text()).not.toBe('')
   })
-  /**
-   * AC-4 — a restore that worked says so, and **the sheet stays open**.
-   *
-   * Nothing on screen reports a successful restore: the files were already
-   * rendered, the row does not change, and the version the project is on is not
-   * written anywhere. The outcome is transient and leaves nothing to read, which
-   * is the one thing D4 lets a toast carry.
-   *
-   * The sheet staying open is the other half. A restore is the sort of thing a
-   * user does twice — try one version, read it, try the one before — and closing
-   * the history on them would make the second attempt a re-open and a re-fetch.
-   */
+  /** AC-4 — a restore that worked says so, and **the sheet stays open**. */
   it('confirms a successful restore with a toast naming the version', async () => {
     store.restoreSnapshot.mockResolvedValue('restored')
     await openWithTwo()
@@ -414,16 +375,7 @@ describe('restoring', () => {
     expect(el('snapshot-sheet')).not.toBeNull()
   })
 
-  /**
-   * AC-5, E8 — the restore of the version the project already is.
-   *
-   * The silent case Slice 11 shipped: the request went out, the server wrote
-   * nothing because there was nothing to write, and the sheet looked exactly as
-   * it does when a restore rewrote every file. It is not a failure — there is no
-   * error surface for it and there should not be one — so it is told the same
-   * way the success is, and it names the version so the user knows *which*
-   * version they are already on.
-   */
+  /** AC-5, E8 — the restore of the version the project already is. */
   it('says so when the restore changed nothing', async () => {
     store.restoreSnapshot.mockResolvedValue('unchanged')
     await openWithTwo()
@@ -437,14 +389,7 @@ describe('restoring', () => {
     expect(el('snapshot-restore-error')).toBeNull()
   })
 
-  /**
-   * The seq is read from the row the user confirmed and never sent to the store.
-   *
-   * The toast needs the version's *number* and the store needs its *id*, and the
-   * cheap way to have both is to widen the call. That would give the restore
-   * route a second, redundant identifier for the thing it is already looking up
-   * — one the client could get wrong — so the number stays where it was read.
-   */
+  /** The seq is read from the row the user confirmed and never sent to the store. */
   it('still calls the store with the snapshot id alone', async () => {
     await openWithTwo()
 
@@ -455,17 +400,7 @@ describe('restoring', () => {
     expect(store.restoreSnapshot).toHaveBeenCalledTimes(1)
     expect(store.restoreSnapshot).toHaveBeenCalledWith('snap-2')
   })
-  /**
-   * AC-6, E9, D4 — a failure stays where it can be read.
-   *
-   * The restore is the app's one transient notice, and it is deliberately not
-   * symmetric: success and the no-op leave nothing on screen, while a failure
-   * has a banner of its own inside this sheet, with the list still under it. A
-   * toast for it would give the user four seconds to read the server's reason
-   * and no way to get it back — and it would be raised over the banner saying
-   * the same thing, which is the duplication that makes people stop reading
-   * both.
-   */
+  /** AC-6, E9, D4 — a failure stays where it can be read. */
   it('renders a failed restore inline and toasts nothing', async () => {
     store.restoreSnapshot.mockImplementation(() => {
       store.restoreError = 'That version could not be restored. Try again.'

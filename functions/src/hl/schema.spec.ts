@@ -30,9 +30,8 @@ describe('tokenResponseSchema', () => {
   })
 
   /*
-   * Recorded from an agency-wide install — the shape the marketplace's own
-   * install button produces. It carries no `locationId` at all, which is the
-   * detail the callback branches on.
+   * Recorded from an agency-wide install — the shape the marketplace's own install button
+   * produces.
    */
   it('accepts a real Company token response and reports no location', () => {
     const parsed = tokenResponseSchema.parse(fixture('token-response-company'))
@@ -69,9 +68,8 @@ describe('tokenResponseSchema', () => {
   })
 
   /*
-   * HighLevel adds fields over time — `appId` and `versionId` appear on the
-   * location response and not the company one. Unknown keys are dropped rather
-   * than rejected, so a new field is not an outage.
+   * HighLevel adds fields over time — `appId` and `versionId` appear on the location response
+   * and not the company one.
    */
   it('drops unknown fields instead of failing on them', () => {
     const withExtra = { ...(fixture('token-response-location') as object), somethingNew: true }
@@ -81,12 +79,7 @@ describe('tokenResponseSchema', () => {
 })
 
 describe('locationDetailSchema', () => {
-  /*
-   * The surprise: `GET /locations/{id}` does **not** return a bare location.
-   * It wraps it — `{ location: {...}, traceId }` — so reading `.name` off the
-   * response body yields undefined and the connection panel silently shows an
-   * id instead of a name.
-   */
+  /* The surprise: `GET /locations/{id}` does **not** return a bare location. */
   it('reads the name out of the wrapper HighLevel actually sends', () => {
     const parsed = locationDetailSchema.parse(fixture('location'))
 

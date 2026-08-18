@@ -10,29 +10,10 @@ import type { ProjectFile } from './projectState'
 import { SYSTEM_PROMPT } from './prompt'
 
 /**
- * The request parameters — AC-6, and three decisions that are easy to undo by
- * accident.
+ * The request parameters — AC-6, and three decisions that are easy to undo by accident.
  *
- * The model id and `max_tokens` are `CLAUDE.md`'s non-negotiables, pinned to
- * exact values rather than "starts with claude" so a downgrade is a failing test
- * and not a quieter bill.
- *
- * **There is no `thinking` key, and that is the decision** (D14). Thinking is on
- * by default on `claude-opus-5`, so omitting the field is a choice either way;
- * `{ type: 'disabled' }` carries a documented Opus-5 failure mode this slice
- * cannot afford — with thinking off the model can leak `<thinking>` tags into its
- * *visible* output, which is ugly in a chat bubble today and corruption from
- * Slice 6, when that same text is parsed into files. A key appearing here later
- * should be a deliberate change with this case rewritten, not a silent one.
- *
- * ## Nothing here counts the stable prefix's blocks
- *
- * Every assertion below is written against `SYSTEM_PROMPT.length` and
- * `.at(-1)`, never against a literal. How many blocks the prefix is split into
- * is `prompt.ts`'s business and has changed once already; what this file owns is
- * the *relationship* — the appended block is last, and the breakpoint is the
- * element immediately before it. A hard-coded count here would turn an ordinary
- * edit to the prompt into a failure in a file that has no opinion about it.
+ * The model id and `max_tokens` are `CLAUDE.md`'s non-negotiables, pinned to exact values rather
+ * than "starts with claude" so a downgrade is a failing test and not a quieter bill.
  */
 
 const CONTEXT: MessageParam[] = [{ role: 'user', content: 'build a contact dashboard' }]
@@ -45,9 +26,8 @@ const FILES: readonly ProjectFile[] = [
 /**
  * `system` as blocks.
  *
- * The SDK types it `string | TextBlockParam[] | undefined`, and every decision
- * in this slice is about the array form — a string would carry no
- * `cache_control` at all and so no breakpoint.
+ * The SDK types it `string | TextBlockParam[] | undefined`, and every decision in this slice is
+ * about the array form — a string would carry no `cache_control` at all and so no breakpoint.
  */
 function systemBlocks(params: MessageStreamParams): TextBlockParam[] {
   const { system } = params
@@ -77,36 +57,17 @@ describe('buildParams', () => {
     expect(buildParams([]).max_tokens).toBe(64_000)
   })
 
-  /*
-   * AC-22, D17 — the re-tune Slice 5 D15 named, arriving as planned rather than
-   * as churn. `low` was chosen when this endpoint generated prose; it now
-   * generates code against a fifteen-hundred-token cheat-sheet, and `high` is
-   * the documented minimum for intelligence-sensitive work and the API default.
-   *
-   * `xhigh` was rejected rather than overlooked: the visible thing in this
-   * demo is *tokens appearing*, and R2 — the Hosting-rewrite window — is argued
-   * rather than measured. Choosing properly needs an effort sweep against real
-   * generations, which is a named manual check in the definition of done.
-   *
-   * The boundary is one level above this value: `thinking: { type: 'disabled' }`
-   * is accepted at effort `high` or below on `claude-opus-5` and returns a `400`
-   * at `xhigh` and `max`. So at `high` the two settings are independent, and the
-   * case below asserting no `thinking` key rests on D14's own reasoning rather
-   * than on the API refusing the combination. It is the *sweep* that would make
-   * them load-bearing on each other.
-   */
+  /* AC-22, D17 — the re-tune Slice 5 D15 named, arriving as planned rather than as churn. */
   it('asks for effort high', () => {
     expect(EFFORT).toBe('high')
     expect(buildParams([]).output_config?.effort).toBe('high')
   })
 
   /*
-   * AC-13, and the cache guarantee in one line. A project with no files gets the
-   * *same array*, not a copy and not a copy with something appended — asserted
-   * by identity, because a structurally equal copy would pass a `toEqual` and
-   * still be a different object to reason about. Anything added above the
-   * breakpoint per call is a cache miss on every request, and nothing reports it
-   * but the bill.
+   * AC-13, and the cache guarantee in one line. A project with no files gets the *same array*,
+   * not a copy and not a copy with something appended — asserted by identity, because a
+   * structurally equal copy would pass a `toEqual` and still be a different object to reason
+   * about.
    */
   it('sends the system prompt itself, with nothing appended', () => {
     expect(buildParams([]).system).toBe(SYSTEM_PROMPT)
@@ -148,15 +109,13 @@ describe('buildParams', () => {
 })
 
 /**
- * AC-12 and AC-14's wiring — D11, which is one sentence: **the copy is made only
- * when there is something volatile to append, and it is appended after the
- * breakpoint.**
+ * AC-12 and AC-14's wiring — D11, which is one sentence: **the copy is made only when there is
+ * something volatile to append, and it is appended after the breakpoint.**
  *
- * Both halves matter and they fail differently. Appending above the breakpoint
- * invalidates the cached prefix on every request whose project changed, which is
- * every request — no error, no frame, just the bill. Copying unconditionally is
- * harmless to the cache and merely makes AC-13 unassertable, which is how it
- * would survive review.
+ * Both halves matter and they fail differently. Appending above the breakpoint invalidates the
+ * cached prefix on every request whose project changed, which is every request — no error, no
+ * frame, just the bill. Copying unconditionally is harmless to the cache and merely makes AC-13
+ * unassertable, which is how it would survive review.
  */
 describe('the project’s files in the system array', () => {
   it('appends exactly one block, and it is last', () => {
@@ -201,15 +160,10 @@ describe('the project’s files in the system array', () => {
 /**
  * AC-6's second clause, as a scan rather than a review note.
  *
- * `client.messages.stream()` is a brief requirement, not a style choice (D13),
- * and the way it gets undone is not a decision — it is one call site written the
- * obvious way. `no-firestore.spec.ts`'s technique, applied to the LLM: a scanner
- * tested on synthetic source first, then run over the tree.
- *
- * **Comments are stripped before scanning**, and that is not a convenience. Prose
- * in this repository names both call shapes constantly — the module header a few
- * lines up names them in the same sentence — so a scan over raw text reports the
- * documentation and misses nothing else. The ban is on the *call*.
+ * `client.messages.stream()` is a brief requirement, not a style choice, and the way it gets
+ * undone is not a decision — it is one call site written the obvious way. `no-
+ * firestore.spec.ts`'s technique, applied to the LLM: a scanner tested on synthetic source
+ * first, then run over the tree.
  */
 const NON_STREAMING = /\.\s*messages\s*\.\s*create\s*[(<]/
 const STREAMING = /\.\s*messages\s*\.\s*stream\s*[(<]/
@@ -245,9 +199,8 @@ const matching = (pattern: RegExp): string[] =>
 
 describe('the scan itself', () => {
   /*
-   * Tested before it is trusted. A scanner that catches less than the rule it
-   * enforces is worse than no scanner, because `toEqual([])` reads as proof
-   * either way.
+   * Tested before it is trusted. A scanner that catches less than the rule it enforces is worse
+   * than no scanner, because `toEqual([])` reads as proof either way.
    */
   it.each([
     ['a direct call', 'const m = await client.messages.create({ model })'],
@@ -274,9 +227,8 @@ describe('the scan itself', () => {
 
 describe('the LLM call shape, scanned over functions/src', () => {
   /*
-   * The requirement, and self-enforcing at this size: 64,000 output tokens
-   * cannot be delivered inside the SDK's non-streaming HTTP timeout, so the two
-   * halves of D13 hold each other up.
+   * The requirement, and self-enforcing at this size: 64,000 output tokens cannot be delivered
+   * inside the SDK's non-streaming HTTP timeout, so the two halves of D13 hold each other up.
    */
   it('calls messages.stream somewhere', () => {
     expect(matching(STREAMING).length).toBeGreaterThan(0)

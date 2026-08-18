@@ -18,18 +18,10 @@ import {
 /**
  * The op set, refused whole (AC-12 to AC-15, D8, D9, D15).
  *
- * A generated app is a *set* of files that reference each other — `index.html`
- * names `app.js` in a `<script src>` — so writing two of three produces an app
- * that is broken in a way the user cannot see until the preview fails, and cannot
- * fix without knowing which file is missing. Every case below therefore asserts
- * the whole set was refused, not that one op was dropped.
- *
- * The copy is asserted **verbatim** against the PRD's table, because `fileError`
- * is the only thing the user is told and a reworded sentence is a product change.
- *
- * A file of its own rather than more of `schema.spec.ts`: that file is about what
- * a *name* may be, this one is about what a *set* may be, and the two are the
- * slice's two separate refusal boundaries.
+ * A generated app is a *set* of files that reference each other — `index.html` names `app.js` in
+ * a `<script src>` — so writing two of three produces an app that is broken in a way the user
+ * cannot see until the preview fails, and cannot fix without knowing which file is missing.
+ * Every case below therefore asserts the whole set was refused, not that one op was dropped.
  */
 
 const op = (path: string, content = 'x'): FileOp => ({ path, content })
@@ -121,11 +113,7 @@ describe('validateFileOps — the path and the duplicate (AC-11, AC-14)', () => 
     )
   })
 
-  /*
-   * P5's order, and it is deterministic so `fileError` is reproducible from a
-   * fixture. Path first, because a path we cannot name is the one whose *identity*
-   * the other two messages depend on.
-   */
+  /* P5's order, and it is deterministic so `fileError` is reproducible from a fixture. */
   it('reports the path failure when an op is both unnameable and oversized', () => {
     const result = validateFileOps([op('../x.js', 'a'.repeat(FILE_BYTES_MAX + 1))], [])
 
@@ -211,9 +199,8 @@ describe('putFileBodySchema', () => {
   })
 
   /*
-   * `.strict()` is the load-bearing call. `path`, `size` and both timestamps are
-   * the server's to write, so a body carrying one is refused rather than quietly
-   * stripped.
+   * `.strict()` is the load-bearing call. `path`, `size` and both timestamps are the server's to
+   * write, so a body carrying one is refused rather than quietly stripped.
    */
   it.each([
     ['an extra key', { content: 'hello', path: 'other.js' }],
@@ -270,10 +257,9 @@ describe('storedFileSchema', () => {
   })
 
   /*
-   * **No maximum on stored `content`**, where the body schema has one. Both
-   * writers enforce the cap, so an oversized document cannot arrive — and if one
-   * somehow did, refusing to read it would lose the user's file rather than
-   * protect anything. A stored document is not a request body.
+   * **No maximum on stored `content`**, where the body schema has one. Both writers enforce the
+   * cap, so an oversized document cannot arrive — and if one somehow did, refusing to read it
+   * would lose the user's file rather than protect anything.
    */
   it('reads back a document over the cap rather than losing it', () => {
     expect(

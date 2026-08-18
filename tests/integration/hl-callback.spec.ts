@@ -5,13 +5,10 @@ import { adminDb, fetchNoRedirect, resetEmulators, seedUser } from './helpers'
 /**
  * `GET /api/oauth/callback` — the unauthenticated endpoint.
  *
- * HighLevel redirects a browser here and there is no session on the request, so
- * the encrypted `state` is the whole authorisation: it names the Firebase user
- * this connection belongs to. Most of what follows is therefore about refusing
- * things, and every refusal has to leave no trace in Firestore.
- *
- * The fake HighLevel selects its behaviour from the authorization code, so the
- * intent of each test is on the line that writes the code rather than in setup.
+ * HighLevel redirects a browser here and there is no session on the request, so the encrypted
+ * `state` is the whole authorisation: it names the Firebase user this connection belongs to.
+ * Most of what follows is therefore about refusing things, and every refusal has to leave no
+ * trace in Firestore.
  */
 
 const PASSWORD = 'Correct-Horse-9'
@@ -29,14 +26,12 @@ async function freshState(): Promise<string> {
   return new URL(authorizeUrl).searchParams.get('state') ?? ''
 }
 
-
 /**
  * A fresh code per call.
  *
- * The fake consumes a code on first use, exactly as HighLevel does, so reusing
- * one across tests exercises the replay path by accident and fails for a reason
- * that has nothing to do with what is under test. Only the prefix carries
- * meaning — it selects the install shape.
+ * The fake consumes a code on first use, exactly as HighLevel does, so reusing one across tests
+ * exercises the replay path by accident and fails for a reason that has nothing to do with what
+ * is under test. Only the prefix carries meaning — it selects the install shape.
  */
 let codeCounter = 0
 function code(prefix: string): string {
@@ -87,8 +82,7 @@ describe('the happy path', () => {
     await callback(`code=${code('loc')}&state=${encodeURIComponent(state)}`)
 
     const expiresAt = (await connectionDoc()).data()?.['expiresAt'] as
-      | { toMillis(): number }
-      | undefined
+      { toMillis(): number } | undefined
     expect(expiresAt).toBeDefined()
     expect((expiresAt?.toMillis() ?? 0) - Date.now()).toBeGreaterThan(80_000_000)
   })
@@ -105,9 +99,8 @@ describe('the happy path', () => {
 
 describe('an agency-wide install', () => {
   /*
-   * The shape the marketplace's own install button produces. It is usable, but
-   * only after asking which sub-accounts it covers and trading it for a
-   * location-scoped token.
+   * The shape the marketplace's own install button produces. It is usable, but only after asking
+   * which sub-accounts it covers and trading it for a location-scoped token.
    */
   it('resolves a bulk install covering exactly one sub-account', async () => {
     const res = await callback(`code=${code('company-one')}&state=${encodeURIComponent(state)}`)
@@ -117,9 +110,8 @@ describe('an agency-wide install', () => {
   })
 
   /*
-   * The case that must never be guessed. Picking the first would bind a Genesis
-   * project to an arbitrary client's CRM — the tenant-isolation mistake this
-   * slice exists to avoid.
+   * The case that must never be guessed. Picking the first would bind a Genesis project to an
+   * arbitrary client's CRM — the tenant-isolation mistake this slice exists to avoid.
    */
   it('refuses a bulk install spanning several sub-accounts', async () => {
     const res = await callback(`code=${code('company-multi')}&state=${encodeURIComponent(state)}`)
@@ -175,9 +167,8 @@ describe('refusals', () => {
   })
 
   /*
-   * Replay. HighLevel consumes an authorization code on first use, so a re-sent
-   * callback URL fails at the exchange — which is what made a single-use state
-   * store unnecessary. The existing connection must survive it untouched.
+   * Replay. HighLevel consumes an authorization code on first use, so a re-sent callback URL
+   * fails at the exchange — which is what made a single-use state store unnecessary.
    */
   it('leaves an existing connection alone when a callback URL is replayed', async () => {
     // Deliberately the SAME code twice — that is the replay.

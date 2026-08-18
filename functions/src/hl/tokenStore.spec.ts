@@ -6,21 +6,16 @@ import type { DocumentReference, Transaction } from 'firebase-admin/firestore'
 import type { TokenResponse } from './schema'
 
 /**
- * The rotation, and the one thing about it that no emulator-backed test can
- * see: **a Firestore transaction retry re-runs the body**.
+ * The rotation, and the one thing about it that no emulator-backed test can see: **a Firestore
+ * transaction retry re-runs the body**.
  *
- * `tests/integration/hl-token-refresh.spec.ts` proves what the emulator can
- * prove — that a rotation persists, that `invalid_grant` marks and a 500 does
- * not, that concurrent callers converge. It cannot prove this, for two reasons
- * that compound: the emulator does not implement the pessimistic read lock, and
- * the fake token endpoint mints a fresh grant for *any* refresh token and never
- * invalidates one. So the emulator is a HighLevel that does not rotate, against
- * a Firestore that does not lock — and the failure this file is about needs a
- * HighLevel that *does* rotate.
- *
- * The fake below is the faithful one: it spends a refresh token on use and
- * answers `400 invalid_grant` to anyone who presents it again, which is what
- * `HIGHLEVEL_PLATFORM.md` §3 says the real endpoint does.
+ * `tests/integration/hl-token-refresh.spec.ts` proves what the emulator can prove — that a
+ * rotation persists, that `invalid_grant` marks and a 500 does not, that concurrent callers
+ * converge. It cannot prove this, for two reasons that compound: the emulator does not implement
+ * the pessimistic read lock, and the fake token endpoint mints a fresh grant for *any* refresh
+ * token and never invalidates one. So the emulator is a HighLevel that does not rotate, against
+ * a Firestore that does not lock — and the failure this file is about needs a HighLevel that
+ * *does* rotate.
  */
 
 const getDb = vi.hoisted(() => vi.fn())
@@ -80,9 +75,8 @@ function issued(n: number): TokenResponse {
 }
 
 /**
- * HighLevel's documented behaviour: each refresh issues a new refresh token and
- * **invalidates the one presented** (§3). Presenting a spent one is
- * `400 invalid_grant`.
+ * HighLevel's documented behaviour: each refresh issues a new refresh token and **invalidates
+ * the one presented** (§3). Presenting a spent one is `400 invalid_grant`.
  */
 function rotatingHighLevel(): void {
   const spent = new Set<string>()
@@ -109,11 +103,10 @@ interface FakeDb {
 /**
  * A Firestore that retries, modelled on the only two properties that matter.
  *
- * `attempts` is how many times the SDK re-invokes the body before a commit
- * sticks — the real default is five. The second property is the one the bug
- * lives in: **an attempt that does not commit discards its writes**, so the
- * next attempt re-reads a document that has not moved. Anything the body did to
- * the outside world on the way — spending a refresh token, say — is not
+ * `attempts` is how many times the SDK re-invokes the body before a commit sticks — the real
+ * default is five. The second property is the one the bug lives in: **an attempt that does not
+ * commit discards its writes**, so the next attempt re-reads a document that has not moved.
+ * Anything the body did to the outside world on the way — spending a refresh token, say — is not
  * discarded with it.
  */
 function fakeDb(
@@ -183,20 +176,9 @@ describe('the transactional rotation', () => {
   })
 
   /*
-   * The hazard. A retried transaction re-enters the body and re-reads a
-   * document that the aborted attempt did not change — so a body that decides
-   * "this token is stale, refresh it" decides that again, with the **same**
-   * refresh token the first attempt already spent.
-   *
-   * Against a HighLevel that rotates, that second call is `invalid_grant`,
-   * which is indistinguishable from a genuinely dead grant: the connection is
-   * marked `needsReconnect`, the perfectly good grant the first attempt was
-   * issued is discarded with the rolled-back write, and the user has to
-   * reinstall the marketplace app to recover. A blip becomes a reinstall.
-   *
-   * The refresh token is spent by the *network call*, not by the transaction,
-   * so a rollback cannot take it back. The only thing that can is not spending
-   * it twice.
+   * The hazard. A retried transaction re-enters the body and re-reads a document that the
+   * aborted attempt did not change — so a body that decides "this token is stale, refresh it"
+   * decides that again, with the **same** refresh token the first attempt already spent.
    */
   it('spends the refresh token once even when the transaction is retried', async () => {
     rotatingHighLevel()
@@ -268,17 +250,7 @@ describe('markNeedsReconnect', () => {
     expect(db.updates[0]).toMatchObject({ needsReconnect: true })
   })
 
-  /*
-   * Best effort, deliberately.
-   *
-   * The write races a disconnect: `handleDeleteConnection` hard-deletes the
-   * document, so a proxy call that resolved a connection and then got a 401
-   * from HighLevel can find nothing left to mark. `.update()` rejects on a
-   * missing document, and an unguarded rejection here would replace the
-   * `409 hl_reconnect_required` the caller is owed with a `500 internal` — the
-   * marking, which is an optimisation, would have eaten the answer, which is
-   * the contract (D20, AC-31).
-   */
+  /* Best effort, deliberately. */
   it('does not turn a vanished connection into a failed request', async () => {
     fakeDb({ exists: false })
 

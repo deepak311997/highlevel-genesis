@@ -4,28 +4,11 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { adminDb, getJson, idTokenFor, resetEmulators, seedUser } from './helpers'
 
 /**
- * `/api/projects/:projectId/messages` — the whole of the browser's access to a
- * transcript.
+ * `/api/projects/:projectId/messages` — the whole of the browser's access to a transcript.
  *
- * `users/{uid}/projects/{projectId}/messages` is denied to every client by
- * `firestore.rules` and written only by the Admin SDK inside these two routes.
- * Two properties are worth more than the rest here.
- *
- * The first is structural: the document path is
- * `users/{token uid}/projects/{id}/messages`, so another user's transcript is not
- * addressable by a request at all. There is no `ownerUid` comparison anywhere for
- * a test to catch missing — which is why the cross-tenant cases assert bob's
- * documents are *unchanged* rather than only that alice got a 404.
- *
- * The second is ordering, and it is the reason this file exists rather than
- * trusting the L1 query test alone. Slice 4 wrote both messages of a turn in one
- * `WriteBatch`, which gives every `serverTimestamp()` in it the same commit
- * timestamp — so the pair was exactly tied on `createdAt`, every single turn.
- * Slice 5 splits the turn across two requests (D3), so the timestamps genuinely
- * differ now and `seq` is belt and braces rather than the tiebreak it was. The
- * seeded tie cases below keep proving the tie is still broken the right way
- * round, because a transcript can still *hold* tied documents: Slice 4 wrote
- * plenty of them.
+ * `users/{uid}/projects/{projectId}/messages` is denied to every client by `firestore.rules` and
+ * written only by the Admin SDK inside these two routes. Two properties are worth more than the
+ * rest here.
  */
 
 const PASSWORD = 'Correct-Horse-9'
@@ -126,11 +109,10 @@ function codeOf(body: unknown): string | undefined {
 /**
  * The 404 the routes produce, asserted by its message as well as its code.
  *
- * The app's terminal catch-all also answers `404 not_found`, so a case checking
- * only the status and the code would pass against a route that does not exist —
- * which is precisely the state these tests start in. The user-facing copy is what
- * separates "this route answered" from "nothing matched", and it is the *project*
- * copy on purpose (D14): the project is what is gone.
+ * The app's terminal catch-all also answers `404 not_found`, so a case checking only the status
+ * and the code would pass against a route that does not exist — which is precisely the state
+ * these tests start in. The user-facing copy is what separates "this route answered" from
+ * "nothing matched", and it is the *project* copy on purpose: the project is what is gone.
  */
 function expectNotFound(res: { status: number; body: unknown }): void {
   expect(res.status).toBe(404)
@@ -157,13 +139,10 @@ beforeEach(async () => {
 
 describe('GET /api/projects/:projectId/messages', () => {
   /*
-   * AC-2, and the ordering hazard from the direction that matters. The two
-   * documents carry the *same* `createdAt` — which is not a contrivance, it is
-   * what Slice 4's `WriteBatch` actually produced and what every transcript
-   * written before this slice is full of — so ordering by `createdAt` alone
-   * would fall through to Firestore's `__name__` tiebreak. `msg-b` sorts before
-   * `msg-a` by name, so a handler missing the second `orderBy` returns the
-   * assistant first and fails here.
+   * AC-2, and the ordering hazard from the direction that matters. The two documents carry the
+   * *same* `createdAt` — which is not a contrivance, it is what Slice 4's `WriteBatch` actually
+   * produced and what every transcript written before this slice is full of — so ordering by
+   * `createdAt` alone would fall through to Firestore's `__name__` tiebreak.
    */
   it('returns the user message before its assistant reply when the two share a timestamp', async () => {
     const tied = Timestamp.fromMillis(1_700_000_500_000)
@@ -191,14 +170,7 @@ describe('GET /api/projects/:projectId/messages', () => {
     ])
   })
 
-  /**
-   * AC-2's wire shape: five keys, and `seq` is not one of them.
-   *
-   * R7's L4 half, too. The seeded document is **Slice-4-shaped** — written by
-   * `seedMessage` with no `truncated` key at all — so reading `truncated: false`
-   * back off the wire proves the parse default carries an existing document
-   * rather than rejecting it.
-   */
+  /** AC-2's wire shape: five keys, and `seq` is not one of them. */
   it('puts the wire shape on the wire, carrying no seq', async () => {
     await seedMessage(aliceUid, 'proj-1', 'msg-a')
 
@@ -219,10 +191,9 @@ describe('GET /api/projects/:projectId/messages', () => {
   })
 
   /*
-   * AC-3. Across separate turns the commit timestamps genuinely differ, so this
-   * is the case `seq` costs nothing on — and the one that would catch a handler
-   * ordering by `seq` first, which would put every user message above every
-   * assistant one across the whole history.
+   * Across separate turns the commit timestamps genuinely differ, so this is the case `seq`
+   * costs nothing on — and the one that would catch a handler ordering by `seq` first, which
+   * would put every user message above every assistant one across the whole history.
    */
   it('returns turns oldest-first across turns as well as within them', async () => {
     const turns = ['first', 'second', 'third']
@@ -250,10 +221,9 @@ describe('GET /api/projects/:projectId/messages', () => {
   })
 
   /*
-   * AC-4. "This project has no messages yet" is the chat panel's empty state and
-   * an ordinary place to be — answering it through the error channel would make
-   * the first client that forgot to translate a 404 show an error on a healthy
-   * project.
+   * "This project has no messages yet" is the chat panel's empty state and an ordinary place to
+   * be — answering it through the error channel would make the first client that forgot to
+   * translate a 404 show an error on a healthy project.
    */
   it('answers 200 with an empty array rather than 404 when there are none', async () => {
     const res = await getJson(path('proj-1'), auth(aliceToken))
@@ -279,10 +249,8 @@ describe('GET /api/projects/:projectId/messages', () => {
   })
 
   /*
-   * AC-8. The 404 alone would be satisfied by a handler that read bob's
-   * collection and then refused; the unchanged-documents assertion is what proves
-   * it was never reachable. Alice's request names
-   * `users/{alice}/projects/bob-1/messages`, which does not exist.
+   * The 404 alone would be satisfied by a handler that read bob's collection and then refused;
+   * the unchanged-documents assertion is what proves it was never reachable.
    */
   it("answers 404 for bob's project and leaves his transcript untouched", async () => {
     await seedProject(bobUid, 'bob-1')
@@ -314,14 +282,10 @@ describe('GET /api/projects/:projectId/messages', () => {
   })
 
   /*
-   * AC-10. `a%2Fb` earns its place: it arrives at the router as one segment and
-   * Express decodes it to `a/b`, so it is a path separator routing let through —
-   * exactly what the id schema exists to catch, since `getDb().doc()` composes by
-   * concatenation and a slash changes the *depth* of the path.
-   *
-   * `..` is absent deliberately: the WHATWG URL parser removes double-dot
-   * segments before the request is sent, so it cannot be tested over the wire.
-   * It is covered at L1 in `functions/src/projects/schema.spec.ts`.
+   * `a%2Fb` earns its place: it arrives at the router as one segment and Express decodes it to
+   * `a/b`, so it is a path separator routing let through — exactly what the id schema exists to
+   * catch, since `getDb().doc()` composes by concatenation and a slash changes the *depth* of
+   * the path.
    */
   it.each(['a'.repeat(65), 'bad!id', 'a%2Fb', 'has%20space'])(
     'refuses the malformed id %s with 400',
@@ -334,18 +298,8 @@ describe('GET /api/projects/:projectId/messages', () => {
   )
 
   /*
-   * AC-15. Omission is the whole behaviour, and it is asserted for all three
-   * shapes rather than only the parseable-but-wrong ones — because two of the
-   * three never reach the parser at all. A Firestore `orderBy` **excludes
-   * documents where the field is absent**, so the one seeded without `createdAt`
-   * is filtered by the query itself. The observable outcome is identical either
-   * way, which is the only thing an integration test can see: the transcript is
-   * shorter and its healthy siblings are still there.
-   *
-   * The two documents that must actually exercise the parse — a missing `content`
-   * and a bad `role` — are therefore seeded **with** a valid `createdAt` and
-   * `seq`, or they would prove nothing about it. The `message.unreadable` log
-   * line is asserted at L1, where the process's console is reachable.
+   * Omission is the whole behaviour, and it is asserted for all three shapes rather than only
+   * the parseable-but-wrong ones — because two of the three never reach the parser at all.
    */
   it('omits documents that cannot be parsed, and returns their siblings', async () => {
     await seedMessage(aliceUid, 'proj-1', 'good', {
@@ -386,18 +340,9 @@ describe('GET /api/projects/:projectId/messages', () => {
 /**
  * **`POST /api/projects/:projectId/messages` is gone, and its tests with it.**
  *
- * A turn used to take two requests: this route wrote the prompt, then
- * `POST /generate` streamed the reply. The split made the prompt durable before
- * the expensive half started, but it put the sequencing in the browser — and a
- * client that died between the two left a transcript ending on a prompt no reply
- * was ever coming for. A turn is one request now, and `/generate` writes both
+ * A turn used to take two requests: this route wrote the prompt, then `POST /generate` streamed
+ * the reply. The split made the prompt durable before the expensive half started, but it put the
+ * sequencing in the browser — and a client that died between the two left a transcript ending on
+ * a prompt no reply was ever coming for. A turn is one request now, and `/generate` writes both
  * halves in the order that keeps the guarantee.
- *
- * Everything this block asserted still holds; it is asserted against the
- * endpoint that now does the writing, in
- * `generate.spec.ts` — "the prompt travels with the turn": one document at
- * `seq` 0, content trimmed on the way in, the 4,000-character cap, the
- * transcript cap refusing a new turn at 199 where only one of the pair would
- * fit, the project document left untouched, and every refusal — 401, 403, 404 —
- * still refusing before a byte is written.
  */

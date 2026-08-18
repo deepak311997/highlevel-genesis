@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const getIdToken = vi.hoisted(() => vi.fn())
-const currentUser = vi.hoisted(() => ({ value: null as { getIdToken: () => Promise<string> } | null }))
+const currentUser = vi.hoisted(() => ({
+  value: null as { getIdToken: () => Promise<string> } | null,
+}))
 
 vi.mock('@/lib/firebase', () => ({
   auth: {
@@ -21,10 +23,9 @@ const { ApiError } = await import('./api')
 /**
  * The client for the HighLevel connection endpoints.
  *
- * Every call is authenticated, and the header assembly is the part worth
- * testing: an ID token read once and cached would start failing silently on a
- * tab left open past its hourly rotation, and a missing App Check header turns
- * a working disconnect into a 401.
+ * Every call is authenticated, and the header assembly is the part worth testing: an ID token
+ * read once and cached would start failing silently on a tab left open past its hourly rotation,
+ * and a missing App Check header turns a working disconnect into a 401.
  */
 
 let fetchMock: ReturnType<typeof vi.fn>
@@ -74,9 +75,8 @@ describe('getConnection', () => {
   })
 
   /*
-   * Read per request, not cached. Firebase rotates the ID token roughly hourly,
-   * and a cached one turns a tab left open into a stream of 401s that look like
-   * a broken session.
+   * Read per request, not cached. Firebase rotates the ID token roughly hourly, and a cached one
+   * turns a tab left open into a stream of 401s that look like a broken session.
    */
   it('fetches a fresh token for every request', async () => {
     await getConnection()

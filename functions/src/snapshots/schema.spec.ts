@@ -45,9 +45,8 @@ describe('storedSnapshotSchema', () => {
   })
 
   /*
-   * The origin allowlist is what makes `originLabel` exhaustive on the client:
-   * a third value would render as nothing at all, so the document is unreadable
-   * instead.
+   * The origin allowlist is what makes `originLabel` exhaustive on the client: a third value
+   * would render as nothing at all, so the document is unreadable instead.
    */
   it('refuses an origin outside the allowlist', () => {
     expect(storedSnapshotSchema.safeParse(snapshot({ origin: 'manual' })).success).toBe(false)

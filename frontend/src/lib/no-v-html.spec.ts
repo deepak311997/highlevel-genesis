@@ -6,17 +6,10 @@ import { describe, expect, it } from 'vitest'
 /**
  * **`v-html` appears nowhere in `frontend/src`.**
  *
- * `markdown.ts` renders model output, and its safety argument is structural: the
- * parser returns tagged data, the template prints it through interpolation, and
- * Vue escapes every text node. That argument holds only while nobody reaches for
- * `v-html` — one `v-html="message.content"` in a future component and the whole
- * property is gone, silently, with every test still green.
- *
- * A sanitiser is the usual answer and is deliberately not the one here: it makes
- * the safe path depend on a dependency's bug count, whereas this makes it depend
- * on a string not appearing. In `no-pulse.spec.ts`'s exact shape, for its
- * reasons — needle built by concatenation, this file skipped, offenders reported
- * by path, and the scanner tested before it is trusted.
+ * `markdown.ts` renders model output, and its safety argument is structural: the parser returns
+ * tagged data, the template prints it through interpolation, and Vue escapes every text node.
+ * That argument holds only while nobody reaches for `v-html` — one `v-html="message.content"` in
+ * a future component and the whole property is gone, silently, with every test still green.
  */
 
 const SRC = join(process.cwd(), 'src')
@@ -64,11 +57,10 @@ function sourceFiles(dir: string): string[] {
 /**
  * Comments removed before the scan, so documenting the rule is not breaking it.
  *
- * Crude on purpose — a `//` inside a string literal takes the rest of that line
- * with it. The consequence of over-stripping here is a missed offence in a line
- * that also contains a URL, and the consequence of under-stripping is a scan
- * nobody keeps; between a rule that is slightly permissive and a rule that gets
- * deleted, the first one still catches the case it exists for.
+ * Crude on purpose — a `//` inside a string literal takes the rest of that line with it. The
+ * consequence of over-stripping here is a missed offence in a line that also contains a URL, and
+ * the consequence of under-stripping is a scan nobody keeps; between a rule that is slightly
+ * permissive and a rule that gets deleted, the first one still catches the case it exists for.
  */
 function stripComments(text: string): string {
   return text
@@ -83,9 +75,8 @@ export function offences(source: string): string[] {
   const hits: string[] = []
   if (text.includes(NEEDLE)) hits.push(NEEDLE)
   /*
-   * Assignment or object property — `el.innerHTML = x` and `h('div', {
-   * innerHTML: x })` are the same hazard wearing different syntax. A bare read,
-   * `expect(el.innerHTML)`, is followed by neither and is not caught.
+   * Assignment or object property — `el.innerHTML = x` and `h('div', { innerHTML: x })` are the
+   * same hazard wearing different syntax.
    */
   if (/innerHTML\s*[:=][^=]/.test(text)) hits.push('innerHTML')
   return hits

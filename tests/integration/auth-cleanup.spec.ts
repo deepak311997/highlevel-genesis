@@ -3,10 +3,9 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { adminAuth, applyVerification, latestCodeFor, postJson, resetEmulators } from './helpers'
 
 /**
- * The cleanup runs inside the functions runtime, so the integration suite
- * reaches it the same way production's scheduler does — except the emulator has
- * no scheduler, so it is invoked directly through a test-only endpoint that
- * only exists under FUNCTIONS_EMULATOR.
+ * The cleanup runs inside the functions runtime, so the integration suite reaches it the same
+ * way production's scheduler does — except the emulator has no scheduler, so it is invoked
+ * directly through a test-only endpoint that only exists under FUNCTIONS_EMULATOR.
  */
 const DAY_MS = 24 * 60 * 60 * 1000
 

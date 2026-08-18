@@ -8,15 +8,11 @@ import * as deployed from './index'
 /**
  * What actually gets deployed.
  *
- * This file exists because of a real failure: `deleteExpiredUnverifiedUsers`
- * was written, unit-tested and integration-tested, and then its `onSchedule`
- * trigger was dropped in an unrelated commit. Every test stayed green, because
- * every test called the function directly — none of them asked whether anything
- * in production ever would. The sweep silently stopped existing for two days.
- *
- * A handler with no trigger is dead code wearing a passing test. These
- * assertions are deliberately structural: they check the deployment surface,
- * which is the one thing the other levels cannot see.
+ * This file exists because of a real failure: `deleteExpiredUnverifiedUsers` was written, unit-
+ * tested and integration-tested, and then its `onSchedule` trigger was dropped in an unrelated
+ * commit. Every test stayed green, because every test called the function directly — none of
+ * them asked whether anything in production ever would. The sweep silently stopped existing for
+ * two days.
  */
 describe('deployed function surface', () => {
   it.each(['api', 'generate', 'cleanupUnverifiedUsers'])('exports %s', (name) => {
@@ -34,18 +30,11 @@ describe('deployed function surface', () => {
 /**
  * `/generate`'s deployment surface, and the honest limit of what it proves.
  *
- * `__endpoint` carries the secret binding, the timeout and the memory — three
- * things no other test level can see, because every one of them is decided by
- * the deploy rather than by a request. A function that lost its
- * `ANTHROPIC_API_KEY` binding would pass every unit and integration test in this
- * repository and then answer 500 on the first real generation, because under the
- * emulator the key is never read at all (D20).
- *
- * It carries **nothing** about middleware, so the guards are covered from two
- * other directions instead: a source scan below, and — the behavioural proof —
- * the 401 and 403 that `tests/integration/generate.spec.ts` asserts over the
- * wire. Neither is enough alone, and the structural one is the weaker of the
- * two; this comment says so rather than implying otherwise.
+ * `__endpoint` carries the secret binding, the timeout and the memory — three things no other
+ * test level can see, because every one of them is decided by the deploy rather than by a
+ * request. A function that lost its `ANTHROPIC_API_KEY` binding would pass every unit and
+ * integration test in this repository and then answer 500 on the first real generation, because
+ * under the emulator the key is never read at all.
  */
 interface DeployedEndpoint {
   secretEnvironmentVariables?: { key: string }[]
@@ -66,10 +55,9 @@ function secretsOf(fn: unknown): string[] {
 
 describe('the generate function’s deployment surface', () => {
   /*
-   * D19. The key lives in Secret Manager and is bound to this function alone —
-   * so `api` cannot read it, and nothing about it is in `functions/.env`, where
-   * everything is uploaded as a plain environment variable readable by anyone
-   * with Viewer on the project.
+   * The key lives in Secret Manager and is bound to this function alone — so `api` cannot read
+   * it, and nothing about it is in `functions/.env`, where everything is uploaded as a plain
+   * environment variable readable by anyone with Viewer on the project.
    */
   it('binds ANTHROPIC_API_KEY as a secret', () => {
     expect(endpointOf(deployed.generate).secretEnvironmentVariables).toContainEqual({
@@ -78,10 +66,8 @@ describe('the generate function’s deployment surface', () => {
   })
 
   /*
-   * D29. Slice 0 pinned 60 seconds deliberately while the endpoint was
-   * unauthenticated, saying the long timeout would arrive "together with the
-   * ID-token check that makes it safe to grant". Both halves are now here, and
-   * this is the assertion that catches one being reverted without the other.
+   * Slice 0 pinned 60 seconds deliberately while the endpoint was unauthenticated, saying the
+   * long timeout would arrive "together with the ID-token check that makes it safe to grant".
    */
   it('allows a nine-minute turn', () => {
     expect(endpointOf(deployed.generate).timeoutSeconds).toBe(540)
@@ -110,20 +96,13 @@ describe('the generate function’s deployment surface', () => {
 /**
  * `api`'s two secrets, and why they are secrets rather than environment.
  *
- * Both were read straight from `process.env` until the deploy pipeline was
- * written, which meant both were carried in `functions/.env` — and everything in
- * that file is uploaded as a plain environment variable on the Cloud Run service,
- * readable by anyone holding Viewer on the project. That is the disclosure
- * property D19 rejected for the model key, and neither of these is less
- * sensitive than that one: `HL_CLIENT_SECRET` is half of the marketplace app's
- * credentials and is displayed exactly once at creation, and `OAUTH_STATE_SECRET`
- * is the key the OAuth `state` is sealed under — recover it and the uid a
- * callback carries becomes forgeable.
- *
- * Structural, and it has to be: `SecretParam.value()` reads `process.env` at
- * runtime, so under the emulator — where `functions/.env.local` supplies both —
- * a binding that was never declared behaves exactly like one that was. The
- * difference appears only in the deployed endpoint, which is what this reads.
+ * Both were read straight from `process.env` until the deploy pipeline was written, which meant
+ * both were carried in `functions/.env` — and everything in that file is uploaded as a plain
+ * environment variable on the Cloud Run service, readable by anyone holding Viewer on the
+ * project. That is the disclosure property D19 rejected for the model key, and neither of these
+ * is less sensitive than that one: `HL_CLIENT_SECRET` is half of the marketplace app's
+ * credentials and is displayed exactly once at creation, and `OAUTH_STATE_SECRET` is the key the
+ * OAuth `state` is sealed under — recover it and the uid a callback carries becomes forgeable.
  */
 describe('the api function\u2019s secret bindings', () => {
   it.each([
@@ -151,27 +130,18 @@ describe('the api function\u2019s secret bindings', () => {
 })
 
 /**
- * The four that are configuration rather than credentials, and are Secret
- * Manager values anyway.
+ * The four that are configuration rather than credentials, and are Secret Manager values anyway.
  *
- * None of them authorises anything — the credential half of the marketplace app
- * is `HL_CLIENT_SECRET`, above. They are here because the alternative is
- * `functions/.env`, and everything in that file becomes a plain environment
- * variable on the Cloud Run service: readable by anyone with Viewer on the
- * project, and printed into the deploy log by whatever writes the file. On a
- * public repository that second one is a published value.
- *
- * The cost of the move is one Secret Manager entry each. The benefit is that the
- * deploy no longer synthesises a `.env` at all, so there is no step that can leak
- * one — the values go from Secret Manager to the Cloud Run revision as
- * `secretKeyRef`s and are resolved when the instance starts.
+ * None of them authorises anything — the credential half of the marketplace app is
+ * `HL_CLIENT_SECRET`, above. They are here because the alternative is `functions/.env`, and
+ * everything in that file becomes a plain environment variable on the Cloud Run service:
+ * readable by anyone with Viewer on the project, and printed into the deploy log by whatever
+ * writes the file. On a public repository that second one is a published value.
  */
 describe('the origin allowlist reaches both functions', () => {
   /*
-   * `generate.ts` imports `originAllowlist` from `./api`, so the CORS layer on
-   * the streaming endpoint reads the same value the CRUD one does. A binding on
-   * `api` alone would leave `generate` resolving it to `''` and falling back to
-   * the localhost defaults — which, in production, rejects the real site.
+   * `generate.ts` imports `originAllowlist` from `./api`, so the CORS layer on the streaming
+   * endpoint reads the same value the CRUD one does.
    */
   it.each(['api', 'generate'] as const)('binds ALLOWED_ORIGINS on %s', (name) => {
     expect(secretsOf(deployed[name])).toContain('ALLOWED_ORIGINS')
@@ -199,14 +169,9 @@ describe('the guards on the money-spending routes', () => {
   })
 
   /*
-   * The messages router has no write any more: a prompt is stored by
-   * `/generate`, inside the request that streams the reply, so the attestation
-   * that used to guard the write lives there — asserted by the `generate.ts`
-   * case above.
-   *
-   * This checks the router did not keep a mutation quietly: a `post` here would
-   * be a second, unattested way to write a message, which is exactly the hole
-   * moving the write was meant to close.
+   * The messages router has no write any more: a prompt is stored by `/generate`, inside the
+   * request that streams the reply, so the attestation that used to guard the write lives there
+   * — asserted by the `generate.ts` case above.
    */
   it('the messages router exposes no write at all', () => {
     const source = read('messages/index.ts')
@@ -215,15 +180,7 @@ describe('the guards on the money-spending routes', () => {
     expect(source).not.toMatch(/messagesRouter\.(post|put|patch|delete)\(/)
   })
 
-  /**
-   * AC-31's structural half — which file routes are attested.
-   *
-   * The behavioural half is `tests/integration/files.spec.ts`'s 401 and 403 over
-   * the wire. Attestation itself cannot be proven there: `requireAppCheck`
-   * short-circuits under the emulator, so no emulator-backed test can observe the
-   * difference between a route that carries it and one that does not. Reading the
-   * router is the only way, and the plan says so rather than pretending otherwise.
-   */
+  /** AC-31's structural half — which file routes are attested. */
   it('attests the file PUT and neither of the file GETs', () => {
     const source = read('files/index.ts')
 
@@ -243,18 +200,7 @@ describe('the guards on the money-spending routes', () => {
     expect(guarded).toHaveLength(3)
   })
 
-  /**
-   * AC-19's structural half — which snapshot route is attested.
-   *
-   * The restore is the one that writes, and from Slice 11 it is the one that can
-   * *delete*: an unattested caller who could reach it could roll a project back
-   * to any version it holds. The list is a plain authenticated read, so it
-   * carries `withVerifiedUser` and nothing more (D28, unchanged since Slice 2).
-   *
-   * Structural for the same reason the file routes' is: `requireAppCheck`
-   * short-circuits under the emulator, so no emulator-backed test can see the
-   * difference between a route that carries it and one that does not.
-   */
+  /** AC-19's structural half — which snapshot route is attested. */
   it('does not attest the snapshot list, and guards it with withVerifiedUser', () => {
     const source = read('snapshots/index.ts')
 
@@ -266,17 +212,7 @@ describe('the guards on the money-spending routes', () => {
     expect(source).not.toMatch(/snapshotsRouter\.get\([^)]*attested/)
   })
 
-  /**
-   * AC-19's structural half for the write route.
-   *
-   * The restore is the one route here that writes, and the only route in this
-   * codebase that *deletes* a user's files — so an unattested caller who could
-   * reach it could roll a project back to any version it holds.
-   *
-   * Structural for the same reason the file routes' is: `requireAppCheck`
-   * short-circuits under the emulator, so no emulator-backed test can see the
-   * difference between a route that carries it and one that does not.
-   */
+  /** AC-19's structural half for the write route. */
   it('attests the snapshot restore', () => {
     const source = read('snapshots/index.ts')
 

@@ -12,16 +12,10 @@ import {
 /**
  * Deciding *whether* to refresh.
  *
- * Kept separate from performing the refresh, which is a Firestore transaction
- * and is covered at L4 in `tests/integration/hl-refresh.spec.ts`. What is worth
- * testing here is the arithmetic, because the interesting case is not "expired"
- * — it is "close enough to expiry that a request in flight would outlive the
- * token".
- *
- * HighLevel rotates refresh tokens on use: every refresh invalidates the
- * previous refresh token. Refreshing five minutes early is what keeps the
- * number of callers who arrive at an expired token — and therefore all try to
- * rotate at once — as close to zero as possible.
+ * Kept separate from performing the refresh, which is a Firestore transaction and is covered at
+ * L4 in `tests/integration/hl-refresh.spec.ts`. What is worth testing here is the arithmetic,
+ * because the interesting case is not "expired" — it is "close enough to expiry that a request
+ * in flight would outlive the token".
  */
 
 const UID = 'user-1'
@@ -100,11 +94,9 @@ describe('resolveConnection', () => {
   })
 
   /*
-   * AC-29. Slice 2's review named this as travelling with the transaction:
-   * harmless when nothing called the proxy, wasteful now that a preview can fire
-   * several calls at once at a connection that is already known to be dead. The
-   * assertion that matters is `refresh` never being reached — a refused
-   * connection must cost no HighLevel round trip at all.
+   * Slice 2's review named this as travelling with the transaction: harmless when nothing called
+   * the proxy, wasteful now that a preview can fire several calls at once at a connection that
+   * is already known to be dead.
    */
   it('refuses a connection already marked needsReconnect, without refreshing', async () => {
     const d = deps({
@@ -151,10 +143,9 @@ describe('resolveConnection', () => {
   })
 
   /*
-   * Rejecting rather than returning undefined is the point: a caller that
-   * received undefined would send `Authorization: Bearer undefined` and get a
-   * 401 back from HighLevel, which reads as "your connection expired" when the
-   * truth is that no connection was ever made.
+   * Rejecting rather than returning undefined is the point: a caller that received undefined
+   * would send `Authorization: Bearer undefined` and get a 401 back from HighLevel, which reads
+   * as "your connection expired" when the truth is that no connection was ever made.
    */
   it('rejects when the user has no connection at all', async () => {
     const d = deps({ read: vi.fn().mockResolvedValue(undefined) })

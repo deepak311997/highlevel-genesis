@@ -23,11 +23,10 @@ import type { CollectResult } from '../llm/fileops'
 /**
  * The write path's document shape, and the two fail-closed reads around it.
  *
- * `getDb` is mocked rather than an emulator started, because what is worth
- * asserting here is the *document* — decided before any I/O happens — and the
- * create-versus-update split, which is what preserves `createdAt` when a second
- * generation rewrites a file. The write reaching Firestore at all is T11's L4
- * case, and so is the batch being atomic.
+ * `getDb` is mocked rather than an emulator started, because what is worth asserting here is the
+ * *document* — decided before any I/O happens — and the create-versus-update split, which is
+ * what preserves `createdAt` when a second generation rewrites a file. The write reaching
+ * Firestore at all is T11's L4 case, and so is the batch being atomic.
  */
 
 /** A batch that records what was staged on it, and the refs it was handed. */
@@ -184,15 +183,7 @@ describe('parseStoredFile', () => {
     expect(parseStoredFile(snapshot('index.html', true, STORED))?.content).toBe('<h1>x</h1>\n')
   })
 
-  /**
-   * D13's invariant, asserted on parse rather than assumed.
-   *
-   * `id === path` is what makes the by-id read and the list agree about which
-   * file is which. A document where they disagree is unreadable — omitted from
-   * the list, 404 by id — and logged, which is the only warning anybody gets,
-   * because from outside it is indistinguishable from a file that was never
-   * generated.
-   */
+  /** D13's invariant, asserted on parse rather than assumed. */
   it('refuses and logs a document whose path disagrees with its id', () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
 
@@ -218,9 +209,8 @@ describe('parseStoredFile', () => {
   })
 
   /*
-   * No field of the document reaches the log line. A file is the user's own
-   * application, and a log sink is a disclosure channel like any other —
-   * `parseStored`'s rule, unchanged.
+   * No field of the document reaches the log line. A file is the user's own application, and a
+   * log sink is a disclosure channel like any other — `parseStored`'s rule, unchanged.
    */
   it('puts no field of the document in the log line', () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
@@ -249,10 +239,8 @@ describe('requireFilePath', () => {
   })
 
   /*
-   * Called as the **first statement** of every handler that takes one, so a
-   * refused path costs no Firestore call at all — `requireProjectId`'s rule.
-   * Express percent-decodes `:path`, so `%2e%2e%2fsecrets.js` arrives here as
-   * `../secrets.js` and is refused as the filename it is not.
+   * Called as the **first statement** of every handler that takes one, so a refused path costs
+   * no Firestore call at all — `requireProjectId`'s rule.
    */
   it.each(['../secrets.js', 'a/b.js', 'A.html', 'app.ts', '..', '', undefined, 42])(
     'refuses %s with 400 invalid_path',
@@ -270,14 +258,13 @@ describe('requireFilePath', () => {
 })
 
 /**
- * A Firestore whose one collection answers a `orderBy → limit → get` chain,
- * recording the links so the query's shape is asserted rather than assumed.
+ * A Firestore whose one collection answers a `orderBy → limit → get` chain, recording the links
+ * so the query's shape is asserted rather than assumed.
  *
- * The chain is what changed in Slice 11 (D14): the read used to be `limit →
- * select()`, which returns ≤20 refs and no field data. It now returns the
- * documents, because one read has to answer three questions — is the union
- * within `FILE_LIMIT`, which of the turn's writes are rewrites, and what is the
- * project's file set for the snapshot to copy.
+ * The chain is what changed in Slice 11: the read used to be `limit → select()`, which returns
+ * ≤20 refs and no field data. It now returns the documents, because one read has to answer three
+ * questions — is the union within `FILE_LIMIT`, which of the turn's writes are rewrites, and
+ * what is the project's file set for the snapshot to copy.
  */
 function fakeQuery(docs: { id: string; data: unknown }[]): {
   calls: { collection: string; orderBy: unknown[]; limit: number | null }
@@ -355,14 +342,8 @@ describe('readStoredFiles', () => {
   })
 
   /*
-   * P2. `readFilePaths` counted an unreadable document, because it counted refs
-   * and never looked inside one. This reads the document, so a corrupt one is
-   * *known* to be corrupt and is omitted — which the PRD argues for directly: a
-   * copy of a document nothing can read would be a copy of nothing.
-   *
-   * Two consequences, both improvements and both deliberate: the `FILE_LIMIT`
-   * union check counts one fewer, and a rewrite of a corrupt path is staged with
-   * `exists: false`, so it is written whole and **repaired**.
+   * `readFilePaths` counted an unreadable document, because it counted refs and never looked
+   * inside one.
    */
   it('omits a document that cannot be read, and logs it once', async () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
@@ -434,10 +415,8 @@ describe('planFileWrites', () => {
   })
 
   /*
-   * D2, AC-1's third clause. A prose-only turn reads nothing at all — no cap to
-   * check, nothing to write, and therefore no snapshot to plan. The read never
-   * happening is the assertion: `getDb` is left un-stubbed, so a call would
-   * throw rather than quietly return a fake.
+   * D2, AC-1's third clause. A prose-only turn reads nothing at all — no cap to check, nothing
+   * to write, and therefore no snapshot to plan.
    */
   it('issues no read and resolves to an empty resulting set for a prose-only turn', async () => {
     getDb.mockImplementation(() => {
@@ -464,10 +443,8 @@ describe('planFileWrites', () => {
   })
 
   /*
-   * A refusal decided *after* the read — the set is validated against what the
-   * project already holds — so this one cannot assert the absence of a call. What
-   * it asserts is the thing a caller acts on: nothing is written, so there is no
-   * resulting set to snapshot.
+   * A refusal decided *after* the read — the set is validated against what the project already
+   * holds — so this one cannot assert the absence of a call.
    */
   it('resolves to an empty resulting set for a refused op set', async () => {
     fakeQuery([stored('index.html', '<p>one</p>')])
@@ -538,14 +515,13 @@ function storedFile(path: string, content: string): Record<string, unknown> {
 }
 
 /**
- * The second reader — the one that carries `content` (D26, AC-14, AC-27).
+ * The second reader — the one that carries `content`.
  *
- * `readFileList` is a projection on purpose, so widening it would ship 20 × 100 KB
- * of code to every workspace that merely opens a file tree. This is a separate
- * read answering a separate question: what the model is shown as the project's
- * current state. What it must share with the list is the ordering, the cap and
- * the fail-closed handling of a document that cannot describe a file — asserted
- * here, because the two drifting apart would mean the tree and the prompt
+ * `readFileList` is a projection on purpose, so widening it would ship 20 × 100 KB of code to
+ * every workspace that merely opens a file tree. This is a separate read answering a separate
+ * question: what the model is shown as the project's current state. What it must share with the
+ * list is the ordering, the cap and the fail-closed handling of a document that cannot describe
+ * a file — asserted here, because the two drifting apart would mean the tree and the prompt
  * disagreeing about which files a project holds.
  */
 describe('readProjectFiles', () => {
@@ -578,12 +554,9 @@ describe('readProjectFiles', () => {
   })
 
   /*
-   * D13, fail closed. Two ways a document stops describing a file: it does not
-   * parse, or its id and its `path` disagree — the second is this collection's
-   * own invariant, since the id *is* the path. Either way the document is known
-   * to be unusable, so it is omitted and logged once, and the rest of the project
-   * still reaches the model. The alternative — refusing the whole read — would
-   * let one corrupt document take a project's generations down with it.
+   * D13, fail closed. Two ways a document stops describing a file: it does not parse, or its id
+   * and its `path` disagree — the second is this collection's own invariant, since the id *is*
+   * the path.
    */
   it('skips and logs an unparseable document and an id/path mismatch, returning the rest', async () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)

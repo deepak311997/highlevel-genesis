@@ -35,11 +35,8 @@ describe('passwordProblem', () => {
   })
 
   /**
-   * These bounds mirror an Identity Platform policy configured in the Firebase
-   * console, which no test in this repo can read. If someone changes the
-   * console without changing this file, a user is refused a password the form
-   * told them was fine — so the two numbers are asserted explicitly, to make
-   * that coupling visible at the point it would break.
+   * These bounds mirror an Identity Platform policy configured in the Firebase console, which no
+   * test in this repo can read.
    */
   it('matches the console policy it mirrors', () => {
     expect(PASSWORD_MIN).toBe(8)

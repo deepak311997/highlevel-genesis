@@ -21,15 +21,11 @@ const EditorTabs = (await import('./EditorTabs.vue')).default
 /**
  * AC-13 and AC-16 — the tab strip.
  *
- * **Hand-rolled rather than the vendored `Tabs`** (D13), for two structural
- * reasons. A closable tab cannot be a single `TabsTrigger` without nesting a
- * `<button>` inside a `<button>`, which is invalid HTML and unreachable by
- * keyboard; and all tabs share **one** Monaco instance, so there is no per-tab
- * `TabsContent` for reka-ui's `Tabs` to switch between — the root would be
+ * **Hand-rolled rather than the vendored `Tabs`**, for two structural reasons. A closable tab
+ * cannot be a single `TabsTrigger` without nesting a `<button>` inside a `<button>`, which is
+ * invalid HTML and unreachable by keyboard; and all tabs share **one** Monaco instance, so there
+ * is no per-tab `TabsContent` for reka-ui's `Tabs` to switch between — the root would be
  * managing panels that do not exist.
- *
- * So the close control is a **sibling** of the tab, not a child of it, and that
- * is what the last case here is really about.
  */
 
 beforeEach(() => {
@@ -76,20 +72,7 @@ describe('EditorTabs', () => {
     ])
   })
 
-  /**
-   * The dirty mark is **text**, and the dot sits in the close control.
-   *
-   * `aria-label` on a bare `<span>` names nothing: ARIA forbids an accessible
-   * name on a generic element, so the attribute was dropped and the mark reached
-   * a screen reader as the bullet character or as nothing at all — for the one
-   * thing a tab you are *not* looking at has to be able to say. Real text, hidden
-   * from sight rather than from the accessibility tree, with the dot decorative.
-   *
-   * The dot moved into the close control because the two share one slot (VS
-   * Code's arrangement): the dot while the pointer is elsewhere, the ✕ on hover
-   * or focus. Two permanent controls per tab is what made the strip unreadable
-   * at four open files.
-   */
+  /** The dirty mark is **text**, and the dot sits in the close control. */
   it('announces a dirty tab in text rather than by the dot alone', () => {
     openThree()
     store.dirtyPaths = ['app.js']
@@ -113,14 +96,7 @@ describe('EditorTabs', () => {
     ).toBe(false)
   })
 
-  /**
-   * The swap is **CSS**, not a `v-if` on hover state.
-   *
-   * A keyboard user never hovers. Rendering the ✕ only while the pointer is over
-   * the tab would take the close control out of the DOM — and out of the focus
-   * order — for everyone who does not use a mouse, which is the population the
-   * sibling-button decision (D13) was made for in the first place.
-   */
+  /** The swap is **CSS**, not a `v-if` on hover state. */
   it('keeps the close control focusable while the dirty dot is showing', () => {
     openThree()
     store.dirtyPaths = ['app.js']
@@ -167,13 +143,7 @@ describe('EditorTabs', () => {
     expect(tabs(wrapper)[0]?.find('button').exists()).toBe(false)
   })
 
-  /**
-   * Middle-click closes, because every editor this one resembles does.
-   *
-   * `.prevent`, since the browser's own middle-click default on a wide strip is
-   * to start autoscroll — a scroll gesture the user did not ask for, on top of
-   * the close they did.
-   */
+  /** Middle-click closes, because every editor this one resembles does. */
   it('closes a tab on middle click', async () => {
     openThree()
     const wrapper = mount(EditorTabs)
@@ -193,12 +163,7 @@ describe('EditorTabs', () => {
     expect(tabs(wrapper)[1]?.find('svg').classes()).toContain('lucide-palette')
   })
 
-  /**
-   * The label truncates at `max-w-44`, so the full path has to be somewhere.
-   *
-   * A filename may run to 64 characters (`PATH_MAX`), and in a panel this narrow
-   * the visible half of two long names can be identical.
-   */
+  /** The label truncates at `max-w-44`, so the full path has to be somewhere. */
   it('carries the whole path as the tab’s title', () => {
     openThree()
     const wrapper = mount(EditorTabs)
@@ -206,14 +171,7 @@ describe('EditorTabs', () => {
     expect(tabs(wrapper)[0]?.attributes('title')).toBe('index.html')
   })
 
-  /**
-   * The tab that just became active is scrolled into view.
-   *
-   * `selectFile` is reachable from the tree as well as from the strip, so with
-   * several files open the tab that becomes active is routinely off the right
-   * edge — and the strip would then be marking a tab nobody can see. `block:
-   * 'nearest'` so a tab already on screen does not drag the panel around it.
-   */
+  /** The tab that just became active is scrolled into view. */
   it('scrolls the newly active tab into view', async () => {
     const scrollIntoView = vi.fn()
     Element.prototype.scrollIntoView = scrollIntoView

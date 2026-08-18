@@ -9,14 +9,9 @@ const { listMessages, MESSAGE_LIMIT } = await import('./messagesApi')
 /**
  * The typed client for the two message routes.
  *
- * `request` is mocked here rather than `fetch`: header assembly has its own suite
- * in `apiClient.spec.ts`, and what is worth asserting at this level is the
- * contract — which path, which verb, which body.
- *
- * The body assertion is the one with a reason beyond symmetry. `POST` sends
- * `{ content }` and **exactly** that: `role` is the server's to assign, and a
- * client that helpfully sent one would get a 400 rather than a message. Pinning
- * the body here is what stops a later edit adding a field the API refuses.
+ * `request` is mocked here rather than `fetch`: header assembly has its own suite in
+ * `apiClient.spec.ts`, and what is worth asserting at this level is the contract — which path,
+ * which verb, which body.
  */
 
 const USER = {
@@ -67,10 +62,9 @@ describe('listMessages', () => {
 })
 
 /*
- * An id is a server-generated string that reaches us over the wire, so it is
- * encoded rather than trusted to be path-safe — the server refuses anything
- * outside `[A-Za-z0-9_-]`, and this makes the two agree instead of relying on the
- * refusal.
+ * An id is a server-generated string that reaches us over the wire, so it is encoded rather than
+ * trusted to be path-safe — the server refuses anything outside `[A-Za-z0-9_-]`, and this makes
+ * the two agree instead of relying on the refusal.
  */
 describe('path encoding', () => {
   it.each([['listMessages', () => listMessages('a/b')]])(
@@ -85,10 +79,9 @@ describe('path encoding', () => {
 
 describe('MESSAGE_LIMIT', () => {
   /*
-   * Mirrors the server's cap. The functions package is not importable from
-   * `frontend/`, so the number is duplicated — the same way `projectsApi.ts`
-   * mirrors the wire shape — and this pins the copy, since the composer's
-   * at-limit state is derived from it.
+   * Mirrors the server's cap. The functions package is not importable from `frontend/`, so the
+   * number is duplicated — the same way `projectsApi.ts` mirrors the wire shape — and this pins
+   * the copy, since the composer's at-limit state is derived from it.
    */
   it('matches the cap the server enforces', () => {
     expect(MESSAGE_LIMIT).toBe(200)

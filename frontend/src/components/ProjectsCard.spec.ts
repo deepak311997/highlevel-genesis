@@ -34,14 +34,13 @@ vi.mock('@/stores/projects', () => ({ useProjectsStore: () => reactive(store) })
 import ProjectsCard from './ProjectsCard.vue'
 
 /**
- * The projects card's four states, all of them shipped: loading, rows, empty,
- * and error-with-retry.
+ * The projects card's four states, all of them shipped: loading, rows, empty, and error-with-
+ * retry.
  *
- * The error one is not theoretical — the card's only source of truth is an
- * endpoint, so "we could not ask" is a state it has to be able to say out loud —
- * and it comes **first**, as `AccountCard` orders its branches: a failed first
- * request leaves `loaded` false, so anything testing for "no answer yet" placed
- * ahead of it would swallow the error entirely.
+ * The error one is not theoretical — the card's only source of truth is an endpoint, so "we
+ * could not ask" is a state it has to be able to say out loud — and it comes **first**, as
+ * `AccountCard` orders its branches: a failed first request leaves `loaded` false, so anything
+ * testing for "no answer yet" placed ahead of it would swallow the error entirely.
  */
 
 const PROJECT: Project = {
@@ -90,15 +89,10 @@ beforeEach(() => {
 /*
  * Pagination.
  *
- * The server already caps a list at LIST_LIMIT (100), so this is a reading
- * problem rather than a fetching one: a hundred rows in a card is a scroll, not
- * a list you can find anything in. The window is client-side over what is
- * already loaded, which also means paging costs no request and cannot fail.
- *
- * The case that matters is the last one: delete the only project on the last
- * page and the page you are standing on stops existing. Without a clamp the
- * card renders an empty list with rows behind it, which reads as "your projects
- * are gone".
+ * The server already caps a list at LIST_LIMIT (100), so this is a reading problem rather than a
+ * fetching one: a hundred rows in a card is a scroll, not a list you can find anything in. The
+ * window is client-side over what is already loaded, which also means paging costs no request
+ * and cannot fail.
  */
 function projectsNamed(count: number): unknown[] {
   return Array.from({ length: count }, (_, index) => ({
@@ -183,12 +177,9 @@ describe('ProjectsCard', () => {
   })
 
   /*
-   * **Deliberately inverted in Slice 4** (D23). Slice 3's D12 asserted that a row was
-   * not navigable at all, because the workspace it would point at did not exist —
-   * and said "the moment one becomes a link, Slice 4 has started". It has, so the
-   * claim narrows rather than disappears: the *row* is still not a link, and the name
-   * inside it now is. Kept as an assertion because it is what stops a later change
-   * wrapping the whole rectangle, with Delete inside it.
+   * **Deliberately inverted in Slice 4**. Slice 3's D12 asserted that a row was not navigable at
+   * all, because the workspace it would point at did not exist — and said "the moment one
+   * becomes a link, Slice 4 has started".
    */
   it('does not make the row itself a link', () => {
     store.projects = [PROJECT]
@@ -229,9 +220,8 @@ describe('ProjectsCard', () => {
   })
 
   /*
-   * Error first. A failed first request leaves `loaded` false, so a loading
-   * branch placed ahead of it would render a skeleton forever and never show the
-   * failure. Same ordering `AccountCard` uses.
+   * Error first. A failed first request leaves `loaded` false, so a loading branch placed ahead
+   * of it would render a skeleton forever and never show the failure.
    */
   it('shows the error rather than the loading state when both could apply', () => {
     store.error = 'Sign in and try again.'
@@ -254,15 +244,7 @@ describe('ProjectsCard', () => {
     expect(wrapper.findAll('[data-testid="project-row"]')).toHaveLength(0)
   })
 
-  /*
-   * The row's two actions are icons, not words.
-   *
-   * Two text buttons per row put "Rename" and "Delete" beside every project
-   * name at the same weight as the name itself — the list read as a column of
-   * buttons with names attached. An icon needs an accessible name of its own,
-   * which is the second half of this test and the part that would otherwise be
-   * lost in the swap.
-   */
+  /* The row's two actions are icons, not words. */
   it('gives the row actions icons and an accessible name each', () => {
     store.projects = [PROJECT]
     store.loaded = true
@@ -317,12 +299,7 @@ describe('ProjectsCard', () => {
     })
   })
 
-  /*
-   * AC-19, D23. Slice 3's D12 said "the moment one becomes a link, Slice 4 has
-   * started" — it has. **The name is the link and the row is not**, so a mis-aimed
-   * tap on a row cannot reach Rename or Delete; those two stay buttons, which is the
-   * second assertion here and the one that would catch a whole-row link added later.
-   */
+  /* Slice 3's D12 said "the moment one becomes a link, Slice 4 has started" — it has. */
   it('makes the project name a link to its workspace, leaving the actions as buttons', () => {
     store.loaded = true
     store.projects = [PROJECT, SECOND]
@@ -421,18 +398,7 @@ describe('ProjectsCard', () => {
     })
   })
 
-  /*
-   * Search.
-   *
-   * Client-side over the same loaded list the pager windows, for the same
-   * reason: the server already caps a list at 100, so filtering costs no
-   * request and cannot fail. Name and description both, because the row shows
-   * both and a user searching for words they can see would not accept "only the
-   * name counts".
-   *
-   * The state that needs saying out loud is "matched nothing" — an empty list
-   * under a filled-in box otherwise reads as "your projects are gone".
-   */
+  /* Search. */
   describe('search', () => {
     beforeEach(() => {
       store.loaded = true
@@ -440,9 +406,8 @@ describe('ProjectsCard', () => {
     })
 
     /*
-     * In the header, beside New project — not floating between the title and the
-     * first row, where it read as a row of the list rather than as a control
-     * over it.
+     * In the header, beside New project — not floating between the title and the first row,
+     * where it read as a row of the list rather than as a control over it.
      */
     it('puts the search field in the card header', () => {
       store.projects = [PROJECT]

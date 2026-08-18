@@ -16,10 +16,9 @@ import { requireAppCheck } from './appCheck'
 /**
  * App Check on the one public, unauthenticated, account-creating endpoint.
  *
- * Every case here is a *rejection* case bar one, deliberately. An allow-only
- * test passes against a middleware that calls `next()` unconditionally, which
- * is precisely the bug worth catching: App Check that does not reject is
- * indistinguishable from no App Check at all.
+ * Every case here is a *rejection* case bar one, deliberately. An allow-only test passes against
+ * a middleware that calls `next()` unconditionally, which is precisely the bug worth catching:
+ * App Check that does not reject is indistinguishable from no App Check at all.
  */
 describe('requireAppCheck', () => {
   let req: Request
@@ -80,12 +79,8 @@ describe('requireAppCheck', () => {
   })
 
   /**
-   * There is no App Check emulator, so a deployed-style check cannot be
-   * satisfied locally and would turn the whole e2e suite red. The bypass is
-   * keyed on FUNCTIONS_EMULATOR alone — the same signal as the test-only
-   * cleanup route, and the one thing a deploy cannot switch on by mistake
-   * (D21). A config flag here would be a remotely-settable way to disable a
-   * security control.
+   * There is no App Check emulator, so a deployed-style check cannot be satisfied locally and
+   * would turn the whole e2e suite red.
    */
   it('bypasses verification under the emulator, and only there', async () => {
     process.env['FUNCTIONS_EMULATOR'] = 'true'

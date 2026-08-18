@@ -4,14 +4,10 @@ import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type { ProbeResult, ProbeState, SurfaceProbe } from '@/stores/hl'
 
 /*
- * Plain values, not refs. A Pinia store auto-unwraps its refs on the store
- * object, so a component reads `hl.loading` as a boolean — mocking it as
- * `{ value: false }` makes every check truthy and every branch collapse to the
- * first one. The mock has to have the shape the component actually sees.
- *
- * Annotated rather than asserted field by field, so `probe` keeps the whole
- * union and a typo'd state in a test is a compile error rather than a branch
- * that silently renders nothing.
+ * Plain values, not refs. A Pinia store auto-unwraps its refs on the store object, so a
+ * component reads `hl.loading` as a boolean — mocking it as `{ value: false }` makes every check
+ * truthy and every branch collapse to the first one. The mock has to have the shape the
+ * component actually sees.
  */
 interface StoreMock {
   status: null
@@ -138,11 +134,7 @@ describe('ConnectionPanel', () => {
     expect(wrapper.find('[data-testid="connection-connect"]').exists()).toBe(false)
   })
 
-  /*
-   * The `locations.readonly` scope is not guaranteed, and the name lookup is
-   * best effort. A connection that works with a worse label is not a failure,
-   * so the panel shows the id rather than an empty space or an error.
-   */
+  /* The `locations.readonly` scope is not guaranteed, and the name lookup is best effort. */
   it('falls back to the location id when there is no name', () => {
     store.isConnected = true
     store.label = 'lUanVn0CtZJTlymH8ySo'
@@ -241,10 +233,9 @@ describe('ConnectionPanel', () => {
 /**
  * The Data access section.
  *
- * It lives inside the connected branch, so "not connected" needs no guard of its
- * own — and the probe is on demand, never on mount, because three HighLevel
- * calls per dashboard visit spend a rate-limit budget to answer a question
- * nobody asked (D30).
+ * It lives inside the connected branch, so "not connected" needs no guard of its own — and the
+ * probe is on demand, never on mount, because three HighLevel calls per dashboard visit spend a
+ * rate-limit budget to answer a question nobody asked.
  */
 describe('ConnectionPanel — data access', () => {
   it('offers Check data access when connected, and issues nothing on mount', async () => {
@@ -315,9 +306,8 @@ describe('ConnectionPanel — data access', () => {
   })
 
   /*
-   * Zero is falsy, and a `v-if="row.count"` would render the "we could not read
-   * a number" branch for a location that genuinely has no contacts yet. That
-   * mistake is the whole reason this case exists.
+   * Zero is falsy, and a `v-if="row.count"` would render the "we could not read a number" branch
+   * for a location that genuinely has no contacts yet.
    */
   it('renders an empty state for a surface that answered zero', () => {
     store.isConnected = true
@@ -416,9 +406,8 @@ describe('ConnectionPanel — data access', () => {
   })
 
   /*
-   * AC-18, E14. The live region has to exist *before* the counts land — a
-   * wrapper that only appears once there is a result was never being observed,
-   * so nothing is ever announced.
+   * AC-18, E14. The live region has to exist *before* the counts land — a wrapper that only
+   * appears once there is a result was never being observed, so nothing is ever announced.
    */
   it.each([
     ['idle', 'idle', null],
@@ -484,13 +473,9 @@ describe('ConnectionPanel — data access', () => {
 /**
  * The header's state chip.
  *
- * Green when the link works, red when it does not — the panel already said all
- * of this in sentences, and a sentence is what you read *after* you have
- * already looked. The colour is the answer at a glance; the copy under it is
- * still what tells you what to do about it.
- *
- * Tinted rather than filled: Instrument keeps one solid blue and it means "the
- * primary action", so a state the product reports takes a semantic tint instead.
+ * Green when the link works, red when it does not — the panel already said all of this in
+ * sentences, and a sentence is what you read *after* you have already looked. The colour is the
+ * answer at a glance; the copy under it is still what tells you what to do about it.
  */
 describe('ConnectionPanel — the status chip', () => {
   it('is green when connected', () => {

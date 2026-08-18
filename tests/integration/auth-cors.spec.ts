@@ -3,15 +3,14 @@ import { describe, expect, it } from 'vitest'
 import { API_BASE } from './helpers'
 
 /**
- * Covers the criterion proposed as AC-56 in the technical plan's coverage gaps
- * — the PRD mandates an origin allowlist in its contracts section but never
- * turned it into a numbered criterion.
+ * Covers the criterion proposed as AC-56 in the technical plan's coverage gaps — the PRD
+ * mandates an origin allowlist in its contracts section but never turned it into a numbered
+ * criterion.
  *
- * These endpoints are same-origin in production, reached through a Hosting
- * rewrite, so this is defence in depth rather than the primary control. It
- * still matters: `cors({ origin: true })` reflects whatever Origin it is given,
- * which turns every browser on the internet into a permitted caller and makes
- * the reflected value useless as a signal.
+ * These endpoints are same-origin in production, reached through a Hosting rewrite, so this is
+ * defence in depth rather than the primary control. It still matters: `cors({ origin: true })`
+ * reflects whatever Origin it is given, which turns every browser on the internet into a
+ * permitted caller and makes the reflected value useless as a signal.
  */
 async function preflight(origin: string): Promise<Response> {
   return fetch(`${API_BASE}/auth/register`, {

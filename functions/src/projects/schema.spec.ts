@@ -14,22 +14,11 @@ import {
 } from './schema'
 
 /**
- * The four schemas around `users/{uid}/projects/{projectId}`, from both
- * directions.
+ * The four schemas around `users/{uid}/projects/{projectId}`, from both directions.
  *
- * The two body schemas guard what a caller may send, and `.strict()` is the
- * load-bearing call on each: `ownerUid`, `id`, `locationId`, `createdAt` and
- * `deletedAt` are all fields the *server* owns, so a body carrying one is a
- * refusal rather than a key we happened not to read.
- *
- * `projectIdSchema` guards the one thing this slice's routes accept that the
- * profile route could not — a document id in the path. `getDb().doc()` composes
- * a path by string concatenation, so an id containing `/` changes the *depth* of
- * the path rather than the document it names.
- *
- * `storedProjectSchema` guards what Firestore hands back, for the same reason
- * `storedProfileSchema` does: `snapshot.data() as T` is a lie the compiler
- * believes.
+ * The two body schemas guard what a caller may send, and `.strict()` is the load-bearing call on
+ * each: `ownerUid`, `id`, `locationId`, `createdAt` and `deletedAt` are all fields the *server*
+ * owns, so a body carrying one is a refusal rather than a key we happened not to read.
  */
 
 const complete = {
@@ -83,17 +72,7 @@ describe('createProjectBodySchema — what a caller may send', () => {
     ).toEqual({ name: 'Contacts', description: 'Notes' })
   })
 
-  /*
-   * "No description" has exactly one representation, and it is `null`.
-   *
-   * A field left empty and a field left as spaces are the same statement, and
-   * `null` is the one the rest of the stack reads: the card's `v-if` hides a
-   * falsy description, and the rename dialog decides what changed by comparing
-   * its trimmed field — `null` — against the stored value. A stored `''` is
-   * therefore invisible on screen and yet unequal in the data, which is how a
-   * dialog comes to report an unchanged project as changed and to offer a Save
-   * that alters nothing.
-   */
+  /* "No description" has exactly one representation, and it is `null`. */
   it.each([
     ['an empty string', ''],
     ['whitespace only', '   '],
@@ -105,11 +84,9 @@ describe('createProjectBodySchema — what a caller may send', () => {
   })
 
   /*
-   * AC-14. Every one of these is a field the server owns — the id is generated,
-   * `locationId` comes from `hlConnections/{uid}`, the timestamps come from the
-   * server clock, and there is no `ownerUid` at all because the path is the
-   * ownership. A dropped unknown key would make that true only until somebody
-   * adds a read.
+   * Every one of these is a field the server owns — the id is generated, `locationId` comes from
+   * `hlConnections/{uid}`, the timestamps come from the server clock, and there is no `ownerUid`
+   * at all because the path is the ownership.
    */
   it.each(['ownerUid', 'id', 'locationId', 'createdAt', 'deletedAt'])(
     'rejects a body carrying %s',
@@ -144,11 +121,8 @@ describe('createProjectBodySchema — what a caller may send', () => {
 
 describe('patchProjectBodySchema — what a caller may change', () => {
   /*
-   * AC-16, D18. An accepted no-op would still advance `updatedAt`, which
-   * reorders a list sorted by it for a request that changed nothing. The message
-   * is asserted because `parseBody` surfaces `issues[0].message` verbatim — this
-   * string is the 400's body, so it has to read as copy rather than as a Zod
-   * internal.
+   * An accepted no-op would still advance `updatedAt`, which reorders a list sorted by it for a
+   * request that changed nothing.
    */
   it('rejects an empty body with a message naming what is required', () => {
     const parsed = patchProjectBodySchema.safeParse({})
@@ -204,11 +178,8 @@ describe('projectIdSchema — what may appear in a path', () => {
   })
 
   /*
-   * AC-17. `..` and `.` are ids Firestore refuses outright, and `a/b` changes
-   * the depth of the composed path rather than the document it names. Express's
-   * single-segment `:param` already stops the slash case at the routing layer;
-   * this makes it a property of the id rather than a dependency on how a router
-   * happens to behave.
+   * `..` and `.` are ids Firestore refuses outright, and `a/b` changes the depth of the composed
+   * path rather than the document it names.
    */
   it.each(['', '..', '.', 'a/b', 'a b', 'a.b', 'a!b', 'a'.repeat(65)])('rejects %s', (id) => {
     expect(projectIdSchema.safeParse(id).success).toBe(false)
@@ -228,10 +199,8 @@ describe('storedProjectSchema — what Firestore hands back', () => {
   })
 
   /*
-   * AC-20. A name and two timestamps are what a row is made of, so a document
-   * missing one of them cannot be rendered and fails closed. `description` and
-   * `locationId` degrade instead, which is `storedProfileSchema`'s split applied
-   * to this document.
+   * A name and two timestamps are what a row is made of, so a document missing one of them
+   * cannot be rendered and fails closed.
    */
   it.each(['name', 'createdAt', 'updatedAt'] as const)('rejects a document with no %s', (field) => {
     expect(storedProjectSchema.safeParse(without(field)).success).toBe(false)

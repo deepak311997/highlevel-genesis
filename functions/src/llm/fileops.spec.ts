@@ -14,13 +14,12 @@ import {
 import { PATH_MAX } from '../files/schema'
 
 /**
- * The splitter and the collector — the pure boundary this slice is built on
- * (AC-1 to AC-10, D3, D4, D16).
+ * The splitter and the collector — the pure boundary this slice is built on (AC-1 to AC-10, D3,
+ * D4, D16).
  *
- * Everything here runs with no emulator, no network and no Firestore, which is
- * deliberate: the grammar, the hold-back and both normalisers are where an
- * off-by-one hides, and they are all pure. What is left for the handler is
- * framing and persistence.
+ * Everything here runs with no emulator, no network and no Firestore, which is deliberate: the
+ * grammar, the hold-back and both normalisers are where an off-by-one hides, and they are all
+ * pure. What is left for the handler is framing and persistence.
  */
 
 /** Drive a whole text through a collector and gather every frame it produced. */
@@ -66,10 +65,9 @@ describe('a reply with no delimiters at all (AC-1)', () => {
   })
 
   /*
-   * D16's chat repairs, applied **in the emitted stream** rather than afterwards
-   * (D7): the client's accumulated text and the server's stored copy have to be
-   * the same string, so a `.trim()` before the write would break the invariant
-   * invisibly, in whitespace.
+   * D16's chat repairs, applied **in the emitted stream** rather than afterwards: the client's
+   * accumulated text and the server's stored copy have to be the same string, so a `.trim()`
+   * before the write would break the invariant invisibly, in whitespace.
    */
   it('trims both ends and collapses runs of three or more newlines to two', () => {
     const { frames, result } = collect('\n\n  Here it is.\n\n\n\nAnd that is all.\n\n')
@@ -105,10 +103,8 @@ describe('prose, one block, prose (AC-2)', () => {
     const { frames } = collect(TEXT)
 
     /*
-     * The marker's own trailing newline is held back with the whitespace that
-     * follows it (P2), so what is asserted is the **order** and the
-     * **concatenation** rather than one frame's bytes. Every other clause of
-     * AC-2 is asserted literally below.
+     * The marker's own trailing newline is held back with the whitespace that follows it, so
+     * what is asserted is the **order** and the **concatenation** rather than one frame's bytes.
      */
     expect(shape(frames)).toEqual([
       'token',
@@ -238,13 +234,12 @@ describe('three blocks separated by prose (AC-3)', () => {
 })
 
 /**
- * Near-delimiters, tags inside content, and the line-start rule (AC-5, AC-6, P1,
- * P4).
+ * Near-delimiters, tags inside content, and the line-start rule.
  *
- * The splitter is exercised directly here rather than through the collector,
- * because what is being asserted is the **grammar**: which lines are delimiters
- * and which are text. Going through the collector would put both normalisers
- * between the assertion and the thing it is about.
+ * The splitter is exercised directly here rather than through the collector, because what is
+ * being asserted is the **grammar**: which lines are delimiters and which are text. Going
+ * through the collector would put both normalisers between the assertion and the thing it is
+ * about.
  */
 
 function split(text: string): SplitEvent[] {
@@ -371,14 +366,8 @@ describe('the line-start rule (AC-6)', () => {
   )
 
   /*
-   * **Length is the one path rule the grammar keeps**, and it is not validation —
-   * it is the same bound the hold-back is built on. `couldBeDelimiter` stops
-   * holding a path once it passes `PATH_MAX`, because holding an unbounded one is
-   * how a reply makes the splitter buffer without limit. A line grammar that
-   * accepted what the hold-back had already given up on would open the block when
-   * the tag arrived in one delta and not when it arrived in two, which is the
-   * chunking dependence D4 forbids — and the visible failure is the whole
-   * application landing in the chat bubble as prose.
+   * **Length is the one path rule the grammar keeps**, and it is not validation — it is the same
+   * bound the hold-back is built on.
    */
   it.each([
     [PATH_MAX, true],
@@ -425,11 +414,10 @@ describe('the hold-back bound', () => {
 })
 
 /**
- * A block that never closes, and the repairs (AC-7, AC-8, D16).
+ * A block that never closes, and the repairs.
  *
- * The unterminated case is the one F8.1 is mostly about: a cut-off turn's last
- * block is unterminated by construction, and what must not happen is half a file
- * reaching the collection.
+ * The unterminated case is the one F8.1 is mostly about: a cut-off turn's last block is
+ * unterminated by construction, and what must not happen is half a file reaching the collection.
  */
 
 describe('a block that is never closed (AC-7)', () => {
@@ -459,9 +447,8 @@ describe('a block that is never closed (AC-7)', () => {
   })
 
   /*
-   * The marker token *was* emitted, and that is correct: the message says a file
-   * was attempted, and the tree says by omission that none was stored (D7's
-   * rejected alternative).
+   * The marker token *was* emitted, and that is correct: the message says a file was attempted,
+   * and the tree says by omission that none was stored (D7's rejected alternative).
    */
   it('keeps the marker it already emitted', () => {
     expect(collect(TEXT).result.messageText).toBe('Here it is.\n\n[file: index.html]')
@@ -601,13 +588,8 @@ const FIXTURES: [name: string, text: string][] = [
   ],
   ['a delimiter-shaped line past the bound', `${OPEN_HEAD}${'a'.repeat(MAX_LINE)}\nafter\n`],
   /*
-   * A **well-formed** tag whose path is longer than a name may be — the corner
-   * the corpus above never reached, and the one where the hold-back's bound and
-   * the line grammar could disagree. `couldBeDelimiter` stops holding a path once
-   * it passes `PATH_MAX`, so a split there emits the partial as prose; the line
-   * regex has to refuse the same line for the same reason, or the block opens
-   * when the tag arrives whole and does not when it arrives in two deltas — and
-   * the difference is the whole app landing in the chat bubble.
+   * A **well-formed** tag whose path is longer than a name may be — the corner the corpus above
+   * never reached, and the one where the hold-back's bound and the line grammar could disagree.
    */
   ['a path longer than a name may be', block(`${'a'.repeat(PATH_MAX)}.js`, 'const secret = 1\n')],
   ['no trailing newline anywhere', 'Prose with no newline at the end'],
@@ -615,11 +597,8 @@ const FIXTURES: [name: string, text: string][] = [
 
 describe('the message invariant (AC-9, D7, R5)', () => {
   /*
-   * The one thing that makes Slice 5's placeholder swap safe: whatever the client
-   * accumulated from `token` frames, the server's persisted copy is the same
-   * string. Stated as an invariant rather than a habit, so a later slice adding a
-   * `.trim()` before the write fails a test instead of shipping — the drift would
-   * be in whitespace, which nobody notices until the bubble twitches.
+   * The one thing that makes Slice 5's placeholder swap safe: whatever the client accumulated
+   * from `token` frames, the server's persisted copy is the same string.
    */
   it.each(FIXTURES)('holds for %s', (_name, fixture) => {
     const { frames, result } = collect(fixture)
@@ -649,9 +628,8 @@ describe('the message invariant (AC-9, D7, R5)', () => {
 
 describe('a reply that is one block and nothing else (AC-10)', () => {
   /*
-   * `storedMessageSchema` requires non-empty content, so a turn whose whole reply
-   * was a file would be unwritable if the marker did not exist. This is the case
-   * that makes D6's substitution load-bearing rather than cosmetic.
+   * `storedMessageSchema` requires non-empty content, so a turn whose whole reply was a file
+   * would be unwritable if the marker did not exist.
    */
   it('has the marker as its whole message', () => {
     const { result } = collect(block('index.html', '<!doctype html>\n'))
@@ -670,15 +648,14 @@ describe('a reply that is one block and nothing else (AC-10)', () => {
 })
 
 /**
- * Chunking invariance (AC-4, D4, R1) — **the slice's one real hazard**.
+ * Chunking invariance — **the slice's one real hazard**.
  *
- * `<genesis:` is nine characters and a text delta is whatever the SDK felt like
- * sending, so `<genesis:fi` + `le path="a.js">` is an ordinary pair of deltas. A
- * naive per-delta scan misses the tag, leaks it into the chat bubble as prose,
- * and never opens the file — **and it passes every hand-written test above**,
- * because a hand-written test chunks on whole tags. Only a property driven at
- * every offset catches it, which is the same technique `frontend/src/lib/sse.ts`
- * already uses for the frame parser one layer down.
+ * `<genesis:` is nine characters and a text delta is whatever the SDK felt like sending, so
+ * `<genesis:fi` + `le path="a.js">` is an ordinary pair of deltas. A naive per-delta scan misses
+ * the tag, leaks it into the chat bubble as prose, and never opens the file — **and it passes
+ * every hand-written test above**, because a hand-written test chunks on whole tags. Only a
+ * property driven at every offset catches it, which is the same technique
+ * `frontend/src/lib/sse.ts` already uses for the frame parser one layer down.
  */
 
 /**

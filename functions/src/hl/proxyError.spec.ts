@@ -15,12 +15,11 @@ import { HlNotConnectedError, HlReconnectRequiredError, HlRefreshUnavailableErro
 /**
  * Turning a HighLevel condition into one of ours.
  *
- * Pure, and separate from the handler, because the mapping table is the part of
- * F8.3 that a reader has to be able to check against the PRD line by line — and
- * because the one regression that matters here is invisible in a handler test:
- * **the proxy must never answer 401**. `apiClient` reads a 401 as "your session
- * died" and signs the user out of Genesis, so mirroring HighLevel's 401 would
- * turn an expired *CRM* token into an expired *Genesis* session (D20).
+ * Pure, and separate from the handler, because the mapping table is the part of F8.3 that a
+ * reader has to be able to check against the PRD line by line — and because the one regression
+ * that matters here is invisible in a handler test: **the proxy must never answer 401**.
+ * `apiClient` reads a 401 as "your session died" and signs the user out of Genesis, so mirroring
+ * HighLevel's 401 would turn an expired *CRM* token into an expired *Genesis* session.
  */
 
 /** What actually goes on the wire, which is what AC-34 is about. */
@@ -83,10 +82,9 @@ describe('mapUpstreamStatus', () => {
   })
 
   /*
-   * AC-34. Built from a body that carries everything a leak would need, for
-   * every status, and asserted against the *rendered envelope* rather than the
-   * error object — a field that never reaches the wire cannot leak, and a field
-   * that does is what this is looking for.
+   * Built from a body that carries everything a leak would need, for every status, and asserted
+   * against the *rendered envelope* rather than the error object — a field that never reaches
+   * the wire cannot leak, and a field that does is what this is looking for.
    */
   it('puts no token and no uid in any mapped error', () => {
     const raw = JSON.stringify({
@@ -136,15 +134,7 @@ describe('detailFrom', () => {
     expect(detailFrom(raw)).toBeUndefined()
   })
 
-  /*
-   * The failure path must not be the expensive one.
-   *
-   * `mapUpstreamStatus` hands this whatever came back, and the proxy's cap
-   * allows that to be 5 MiB — so an unguarded `JSON.parse` here would parse
-   * megabytes to read at most two hundred characters, on the one path whose
-   * size is chosen by upstream rather than by us. A real HighLevel error body
-   * is under a hundred bytes: `location-401-missing-scope.json` is 84.
-   */
+  /* The failure path must not be the expensive one. */
   it('does not parse an error body far larger than any message it could hold', () => {
     const huge = JSON.stringify({ message: 'Invalid JWT', padding: 'x'.repeat(200_000) })
 
@@ -171,9 +161,8 @@ describe('mapTokenError', () => {
   })
 
   /*
-   * Rethrown rather than flattened to a 500 here: an error this function does
-   * not recognise is not a *token* condition, and swallowing it would give the
-   * terminal handler nothing to log.
+   * Rethrown rather than flattened to a 500 here: an error this function does not recognise is
+   * not a *token* condition, and swallowing it would give the terminal handler nothing to log.
    */
   it('rethrows anything that is not a token condition', () => {
     const other = new Error('something else entirely')
@@ -214,16 +203,11 @@ describe('isDefinitiveRefreshFailure', () => {
 /**
  * The code set, exported as **data** — Slice 9's one addition here.
  *
- * The cheat-sheet in the system prompt has to name every code a rejected `hl()`
- * call can carry (Slice 9 D5, AC-7), and the only honest way to assert that is to
- * read the set rather than restate it. A hand-written list in the prompt would
- * drift on the first code added, and the failure mode is the bad one: generated
- * code branching on a `code` string that no longer exists, silently never running
- * that branch.
- *
- * `MESSAGES` itself stays private — its values are user-facing copy, not a
- * contract — so the array is the export and every member of it is checked to
- * build a real failure with real copy.
+ * The cheat-sheet in the system prompt has to name every code a rejected `hl()` call can carry,
+ * and the only honest way to assert that is to read the set rather than restate it. A hand-
+ * written list in the prompt would drift on the first code added, and the failure mode is the
+ * bad one: generated code branching on a `code` string that no longer exists, silently never
+ * running that branch.
  */
 describe('PROXY_ERROR_CODES', () => {
   /** The twelve names the PRD's `hl()` contract lists, and no thirteenth. */
@@ -247,9 +231,8 @@ describe('PROXY_ERROR_CODES', () => {
   })
 
   /*
-   * The array cannot disagree with the copy table, because every member of it is
-   * used to look one up. A code in the array with no message would answer an
-   * empty string to a user; a message with no code would be unreachable copy.
+   * The array cannot disagree with the copy table, because every member of it is used to look
+   * one up.
    */
   it('carries a non-empty user-facing message for every member', () => {
     for (const code of PROXY_ERROR_CODES) {

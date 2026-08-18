@@ -17,15 +17,11 @@ import {
 /**
  * Snapshots and restore, over the wire — AC-6 to AC-8 and AC-10 to AC-19.
  *
- * The whole slice's claim is about **documents that exist and documents that do
- * not**, so every case here reads Firestore back rather than reading a return
- * value. That is Slice 6's rule (F8.1) applied to a collection whose failure mode
- * is quieter: a snapshot nobody wrote is invisible until someone tries to restore
- * a version that is not in the list, and a snapshot written for a refused turn is
- * a version that restores an app which never existed.
- *
- * The LLM is the emulator-only fake, driven by markers in the prompt. No
- * automated test in this project ever calls Anthropic.
+ * The whole slice's claim is about **documents that exist and documents that do not**, so every
+ * case here reads Firestore back rather than reading a return value. That is Slice 6's rule
+ * applied to a collection whose failure mode is quieter: a snapshot nobody wrote is invisible
+ * until someone tries to restore a version that is not in the list, and a snapshot written for a
+ * refused turn is a version that restores an app which never existed.
  */
 
 const PASSWORD = 'Correct-Horse-9'
@@ -169,9 +165,8 @@ describe('a generation that stores files (AC-6)', () => {
   })
 
   /*
-   * The copy is byte-identical to the live document, because a restore writes
-   * these bytes straight back. A copy that differed by so much as a trailing
-   * newline would be a restore that silently rewrote the user's app.
+   * The copy is byte-identical to the live document, because a restore writes these bytes
+   * straight back.
    */
   it('copies every file byte for byte, at an id equal to its path', async () => {
     await seedProject(aliceUid, 'first')
@@ -203,10 +198,9 @@ describe('a generation that stores files (AC-6)', () => {
 /**
  * AC-7, and R1 stated over the wire.
  *
- * `__alt_files` rewrites `index.html` and adds `about.html`, leaving `app.js`
- * and `styles.css` alone. The untouched files being in version 2 is the whole
- * difference between a snapshot and a changelog — without them, restoring
- * version 2 would produce an app of two files.
+ * `__alt_files` rewrites `index.html` and adds `about.html`, leaving `app.js` and `styles.css`
+ * alone. The untouched files being in version 2 is the whole difference between a snapshot and a
+ * changelog — without them, restoring version 2 would produce an app of two files.
  */
 describe('a second generation that rewrites one file and adds another (AC-7)', () => {
   it('numbers the new version 2 and counts four files in it', async () => {
@@ -255,12 +249,11 @@ describe('a second generation that rewrites one file and adds another (AC-7)', (
 })
 
 /**
- * AC-8 — six ways for a turn not to store files, and none of them writes a
- * version.
+ * AC-8 — six ways for a turn not to store files, and none of them writes a version.
  *
- * A snapshot of a refused turn would be a version of an app that never existed,
- * restorable into a project that never held it. The assertion is the count
- * before and after, so a snapshot written and then deleted would still fail.
+ * A snapshot of a refused turn would be a version of an app that never existed, restorable into
+ * a project that never held it. The assertion is the count before and after, so a snapshot
+ * written and then deleted would still fail.
  */
 describe('a turn that stores no files (AC-8)', () => {
   it.each([
@@ -357,19 +350,8 @@ describe('a project already holding the cap (AC-10)', () => {
   })
 
   /**
-   * R4 reached from the direction `PrunedSnapshot` does not cover, and the one
-   * case only the emulator can prove.
-   *
-   * A snapshot document with **no `seq` field at all** is omitted by any query
-   * that orders on `seq` — Firestore's rule, not ours. While the head read
-   * carried `orderBy('seq')` such a document was invisible to it, so it was never
-   * counted toward the prune's excess, never selected, never listed by the route,
-   * and it and its file documents were paid for forever. No unit fake can show
-   * that: the exclusion happens inside Firestore.
-   *
-   * The count is read with `listDocuments()` rather than `storedSnapshots`,
-   * because that helper orders by `seq` too and would hide the very document
-   * under test.
+   * R4 reached from the direction `PrunedSnapshot` does not cover, and the one case only the
+   * emulator can prove.
    */
   it('prunes a version whose seq is gone, which no ordered read can see', async () => {
     await seedProject(aliceUid, 'orphaned')
@@ -499,10 +481,8 @@ describe('GET /api/projects/:projectId/snapshots (AC-11)', () => {
   })
 
   /*
-   * The cap matches `SNAPSHOT_LIMIT`, so "you are seeing every version" is a
-   * guarantee rather than a hope — an unpaginated list is only honest if it
-   * cannot truncate. A collection over the cap is reachable only by a prune that
-   * did not run, and the list still refuses to grow past it.
+   * The cap matches `SNAPSHOT_LIMIT`, so "you are seeing every version" is a guarantee rather
+   * than a hope — an unpaginated list is only honest if it cannot truncate.
    */
   it('returns at most the cap, even when the collection holds more', async () => {
     await seedProject(aliceUid, 'over')
@@ -586,10 +566,9 @@ describe('GET /api/projects/:projectId/snapshots (AC-11)', () => {
 /**
  * The restore route, with **no body at all**.
  *
- * `postJson` always sends a `Content-Type` and a serialised body, which is
- * exactly the shape the route refuses — so the ordinary call needs a bare
- * `fetch`. The refusal itself is asserted with `postJson`, which is the closest
- * thing to a real caller getting it wrong.
+ * `postJson` always sends a `Content-Type` and a serialised body, which is exactly the shape the
+ * route refuses — so the ordinary call needs a bare `fetch`. The refusal itself is asserted with
+ * `postJson`, which is the closest thing to a real caller getting it wrong.
  */
 async function restore(
   projectId: string,
@@ -628,11 +607,10 @@ async function twoVersions(projectId: string): Promise<StoredSnapshotDoc[]> {
 /**
  * AC-12 — a restore makes the file set **equal** to the version's.
  *
- * The negative is the case R3 is about: a restore that writes but does not
- * delete leaves version 1's `index.html` beside version 2's `about.html` — a
- * hybrid of two versions that looks fine in the tree and breaks in the preview.
- * `about.html` being gone is therefore asserted directly, not inferred from a
- * count.
+ * The negative is the case R3 is about: a restore that writes but does not delete leaves version
+ * 1's `index.html` beside version 2's `about.html` — a hybrid of two versions that looks fine in
+ * the tree and breaks in the preview. `about.html` being gone is therefore asserted directly,
+ * not inferred from a count.
  */
 describe('restoring an earlier version (AC-12)', () => {
   it('writes back every file byte for byte and deletes what the version does not hold', async () => {
@@ -678,10 +656,9 @@ describe('restoring an earlier version (AC-12)', () => {
 /**
  * AC-13 — the safety snapshot, which is D9's whole argument.
  *
- * A confirmation modal asks the user to be certain; a snapshot of what was there
- * makes being wrong survivable. The test that matters is the second half:
- * restoring the safety snapshot returns the project to where it started, so the
- * undo has an undo.
+ * A confirmation modal asks the user to be certain; a snapshot of what was there makes being
+ * wrong survivable. The test that matters is the second half: restoring the safety snapshot
+ * returns the project to where it started, so the undo has an undo.
  */
 describe('the safety snapshot (AC-13)', () => {
   it('records what was there, marked a restore, at the highest seq', async () => {
@@ -717,10 +694,8 @@ describe('the safety snapshot (AC-13)', () => {
       'styles.css',
     ])
     /*
-     * The paths alone are the weaker half: a round trip that put the files back
-     * under the right names with the wrong bytes would satisfy them. The undo of
-     * the undo has to be byte-identical to what the first restore replaced, or
-     * the safety snapshot is not a way back.
+     * The paths alone are the weaker half: a round trip that put the files back under the right
+     * names with the wrong bytes would satisfy them.
      */
     expect(live.map((file) => [file.path, file.content])).toEqual(
       before.map((file) => [file.path, file.content]),
@@ -731,10 +706,9 @@ describe('the safety snapshot (AC-13)', () => {
 /**
  * AC-14 — restoring the version a project already is writes **nothing**.
  *
- * Not an optimisation. Writing would advance every file's `updatedAt` and mint a
- * safety snapshot of a state nothing changed — so the history would fill with
- * versions recording that nothing happened, and the prune would push real ones
- * out to make room for them.
+ * Not an optimisation. Writing would advance every file's `updatedAt` and mint a safety snapshot
+ * of a state nothing changed — so the history would fill with versions recording that nothing
+ * happened, and the prune would push real ones out to make room for them.
  */
 describe('restoring the version the project already is (AC-14)', () => {
   it('writes no snapshot, touches no file, and answers changed: false', async () => {
@@ -790,10 +764,9 @@ describe('restoring into a project with no files (AC-15)', () => {
 /**
  * AC-16 — a version that is there and cannot be trusted.
  *
- * All-or-nothing on the **read** side as well as the write side: a version one
- * document short would restore an app missing a file, and a version with one
- * corrupt document would restore an app with a hole in it. Both are worse than
- * refusing, because both look like they worked.
+ * All-or-nothing on the **read** side as well as the write side: a version one document short
+ * would restore an app missing a file, and a version with one corrupt document would restore an
+ * app with a hole in it. Both are worse than refusing, because both look like they worked.
  */
 describe('a version that cannot be read whole (AC-16)', () => {
   it('answers 409 and writes nothing when a copied file is missing', async () => {

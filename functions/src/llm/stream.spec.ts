@@ -4,19 +4,13 @@ import { describe, expect, it, vi } from 'vitest'
 import { mapStream, MAX_OUTPUT_BYTES, type LlmEvent, type LlmStream } from './stream'
 
 /**
- * The SDK's events, mapped to the three this slice emits — and **exactly one
- * terminal event, always.**
+ * The SDK's events, mapped to the three this slice emits — and **exactly one terminal event,
+ * always.**
  *
- * The mapper owns accumulation, the byte cap and the thinking-delta filter, so
- * every one of them is driven from a hand-written event array with no emulator
- * and no network. That placement is the point: those three are precisely where
- * an R4-class bug hides, and if the handler owned them they would only be
- * reachable through an emulator-backed test.
- *
- * "Exactly one terminal, and it is last" is asserted on *every* case rather than
- * once, because the consumer writes a frame and persists a document on it. Two
- * terminals would write two assistant messages for one turn; none would leave a
- * stream that never ends.
+ * The mapper owns accumulation, the byte cap and the thinking-delta filter, so every one of them
+ * is driven from a hand-written event array with no emulator and no network. That placement is
+ * the point: those three are precisely where an R4-class bug hides, and if the handler owned
+ * them they would only be reachable through an emulator-backed test.
  */
 
 /** A `content_block_delta` carrying text. */
@@ -199,9 +193,8 @@ describe('mapStream — the happy path', () => {
 
 describe('mapStream — the model stopped for a reason', () => {
   /*
-   * AC-15, D23. `max_tokens` is a real, useful, incomplete answer — calling it an
-   * error would offer a Retry for something that did not fail and would hide the
-   * text that did arrive.
+   * `max_tokens` is a real, useful, incomplete answer — calling it an error would offer a Retry
+   * for something that did not fail and would hide the text that did arrive.
    */
   it('ends with truncated true on max_tokens, not an error', async () => {
     const events = await collect(
@@ -216,9 +209,8 @@ describe('mapStream — the model stopped for a reason', () => {
   })
 
   /*
-   * D18. A refusal is HTTP 200 with `stop_reason: 'refusal'` and no content, so
-   * reading `content[0]` unconditionally would break on it — the stop reason is
-   * read first, always.
+   * A refusal is HTTP 200 with `stop_reason: 'refusal'` and no content, so reading `content[0]`
+   * unconditionally would break on it — the stop reason is read first, always.
    */
   it('reports a refusal as an error with no text', async () => {
     const events = await collect(
@@ -277,11 +269,8 @@ describe('mapStream — the iterator throws', () => {
 
 describe('mapStream — the byte cap', () => {
   /*
-   * D22, AC-16. A Firestore document caps at 1,048,576 bytes and `max_tokens:
-   * 64000` can in principle produce more text than fits. Without the cap the
-   * failure mode is the worst one available: a generation that succeeded
-   * completely, streamed perfectly, and then failed at the write — losing
-   * everything the user just watched arrive.
+   * A Firestore document caps at 1,048,576 bytes and `max_tokens: 64000` can in principle
+   * produce more text than fits.
    */
   it('stops consuming, aborts the stream once, and ends truncated', async () => {
     const chunk = 'a'.repeat(100_000)
@@ -312,10 +301,9 @@ describe('mapStream — the byte cap', () => {
   })
 
   /*
-   * **The cap is enforced whole-delta**, and this is why. Slicing by bytes would
-   * split a multi-byte character and store a replacement character; dropping the
-   * whole delta keeps the text valid UTF-8 and byte-identical to what the client
-   * received.
+   * **The cap is enforced whole-delta**, and this is why. Slicing by bytes would split a multi-
+   * byte character and store a replacement character; dropping the whole delta keeps the text
+   * valid UTF-8 and byte-identical to what the client received.
    */
   it('drops a multi-byte delta whole rather than splitting a character', async () => {
     // Three bytes per character, so a byte-slice at the boundary lands mid-character.
@@ -353,9 +341,8 @@ describe('mapStream — the byte cap', () => {
 
 describe('mapStream — the invariant', () => {
   /*
-   * Restated as its own case over every shape, because it is what the consumer
-   * depends on: it writes one frame and persists at most one document per
-   * terminal. Two terminals is two assistant messages for one turn.
+   * Restated as its own case over every shape, because it is what the consumer depends on: it
+   * writes one frame and persists at most one document per terminal.
    */
   it.each([
     [

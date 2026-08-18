@@ -64,10 +64,9 @@ describe('saveFile', () => {
   })
 
   /*
-   * **Exactly `{ content }`.** `path` comes from the URL and `size` and both
-   * timestamps are the server's; the body schema is `.strict()`, so anything else
-   * is a 400 rather than a field quietly ignored. This is the shape the function
-   * exists to keep.
+   * **Exactly `{ content }`.** `path` comes from the URL and `size` and both timestamps are the
+   * server's; the body schema is `.strict()`, so anything else is a 400 rather than a field
+   * quietly ignored.
    */
   it('sends exactly { content }', async () => {
     await saveFile('proj-1', 'index.html', 'saved\n')
@@ -89,10 +88,9 @@ describe('saveFile', () => {
 /**
  * Both segments are percent-encoded.
  *
- * The project id and the filename are both server-generated strings that reached
- * us over the wire, so neither is trusted to be path-safe. The server refuses
- * anything outside its own two schemas; this makes the two agree rather than
- * relying on the refusal.
+ * The project id and the filename are both server-generated strings that reached us over the
+ * wire, so neither is trusted to be path-safe. The server refuses anything outside its own two
+ * schemas; this makes the two agree rather than relying on the refusal.
  */
 describe('path encoding', () => {
   it.each([
@@ -115,13 +113,8 @@ describe('path encoding', () => {
 
 describe('the mirrored cap', () => {
   /*
-   * Duplicated rather than imported — the functions package is not reachable from
-   * `frontend/`, which is `MESSAGE_LIMIT`'s precedent. It exists on this side so
-   * the editor can disable **Save** before a request the server would refuse, and
-   * this pins it to the server's number.
-   *
-   * The file cap is not mirrored: the client cannot create a file (D19), so it
-   * has no path to the twentieth one and nothing to withhold when it gets there.
+   * Duplicated rather than imported — the functions package is not reachable from `frontend/`,
+   * which is `MESSAGE_LIMIT`'s precedent.
    */
   it('matches the server', () => {
     expect(FILE_BYTES_MAX).toBe(100_000)

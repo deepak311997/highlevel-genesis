@@ -147,9 +147,8 @@ describe('VerifyEmailView', () => {
   })
 
   /**
-   * Registration sends nothing — it runs through the Admin SDK, which only
-   * generates links, and Firebase's sender needs a signed-in currentUser. So
-   * this screen is where the first verification email actually goes out.
+   * Registration sends nothing — it runs through the Admin SDK, which only generates links, and
+   * Firebase's sender needs a signed-in currentUser.
    */
   it('sends the verification email when the gate is first reached', async () => {
     mount(VerifyEmailView)

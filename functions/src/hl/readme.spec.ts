@@ -8,18 +8,13 @@ import { HL_ROUTES, type HlRoute } from './routes'
 /**
  * The README's allowlist table, checked against `HL_ROUTES` (AC-9, PRD D6).
  *
- * `routes.ts` opens by saying the table has **three** consumers: the proxy
- * matches against it, Slice 9 renders it into the system prompt's cheat-sheet,
- * and Slice 13's README renders it once more for a human reader. Two of those
- * three are code and cannot drift. The third is a hand-rendered markdown table,
- * and without this file it is not a third consumer at all — it is a copy, true
- * on the day it was typed and quietly wrong after the first allowlist change.
- * This spec is what makes it real: add a route, change a `Version`, widen a
- * scope, or drop the send row's flag, and `functions`' unit suite goes red until
- * the README says the same thing.
- *
- * The comparison is a **set keyed on `METHOD path`** with equal row counts
- * asserted, so a row the README invents fails just as loudly as one it forgets.
+ * `routes.ts` opens by saying the table has **three** consumers: the proxy matches against it,
+ * Slice 9 renders it into the system prompt's cheat-sheet, and Slice 13's README renders it once
+ * more for a human reader. Two of those three are code and cannot drift. The third is a hand-
+ * rendered markdown table, and without this file it is not a third consumer at all — it is a
+ * copy, true on the day it was typed and quietly wrong after the first allowlist change. This
+ * spec is what makes it real: add a route, change a `Version`, widen a scope, or drop the send
+ * row's flag, and `functions`' unit suite goes red until the README says the same thing.
  */
 
 const README = join(__dirname, '../../../README.md')
@@ -36,9 +31,8 @@ interface ReadmeRow {
 }
 
 /**
- * A discriminated union rather than `ReadmeRow[] | null`: a README this cannot
- * parse is a failure with a reason, not an empty table that silently agrees
- * with an empty `HL_ROUTES`.
+ * A discriminated union rather than `ReadmeRow[] | null`: a README this cannot parse is a
+ * failure with a reason, not an empty table that silently agrees with an empty `HL_ROUTES`.
  */
 type TableParse = { kind: 'parsed'; rows: ReadmeRow[] } | { kind: 'failed'; reason: string }
 
@@ -200,10 +194,9 @@ export function compareAllowlist(readmeText: string, table: readonly HlRoute[]):
 }
 
 /**
- * A local copy of the table with one route added — the drift AC-9 names
- * explicitly ("adding a route without touching the README fails it"). Mutating
- * a copy rather than `HL_ROUTES` is the point: the real table stays the thing
- * the README is measured against.
+ * A local copy of the table with one route added — the drift AC-9 names explicitly ("adding a
+ * route without touching the README fails it"). Mutating a copy rather than `HL_ROUTES` is the
+ * point: the real table stays the thing the README is measured against.
  */
 function withExtraRoute(table: readonly HlRoute[]): HlRoute[] {
   return [
@@ -368,13 +361,7 @@ describe('compareAllowlist', () => {
     expect(differences).toContainEqual(expect.stringContaining('README has 14 rows'))
   })
 
-  /*
-   * The sentence above the table is prose, so `compareAllowlist` cannot see it.
-   * Add a fourteenth route and the table is forced to grow — but "forwards only
-   * these thirteen routes" stays, and the Loom's ninth beat says "thirteen"
-   * out loud. The count is a claim about `HL_ROUTES`, so it is checked against
-   * `HL_ROUTES`.
-   */
+  /* The sentence above the table is prose, so `compareAllowlist` cannot see it. */
   it('agrees with the prose count above the table, and with the Loom script', () => {
     const words = [
       'zero',

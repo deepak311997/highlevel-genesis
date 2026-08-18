@@ -10,18 +10,11 @@ import { buildFakeStream } from './fake'
 /**
  * The fake model, and the one thing about it that must never regress.
  *
- * It replaces the model with a script. Deployed, that is not a test double — it
- * is an endpoint that charges nothing and answers nothing, and a user would
- * never know. So the gate is not a config flag or an env var of our own but
- * `FUNCTIONS_EMULATOR`, the one signal an operator cannot set by mistake and a
- * deploy cannot carry — `buildFakeHlRouter`'s exact argument, one slice on (D20).
- *
- * The gate is checked **inside** `buildFakeStream`, not only at the call site, so
- * a stray import cannot reach around it.
- *
- * Behaviour is selected by a marker in the last user message rather than by a
- * control API, which keeps the intent on the page in the test that uses it —
- * `prompt('__fail_midstream')` — and needs no second endpoint to configure.
+ * It replaces the model with a script. Deployed, that is not a test double — it is an endpoint
+ * that charges nothing and answers nothing, and a user would never know. So the gate is not a
+ * config flag or an env var of our own but `FUNCTIONS_EMULATOR`, the one signal an operator
+ * cannot set by mistake and a deploy cannot carry — `buildFakeHlRouter`'s exact argument, one
+ * slice on.
  */
 
 const REAL = process.env['FUNCTIONS_EMULATOR']
@@ -80,9 +73,8 @@ afterEach(() => {
 
 describe('the gate', () => {
   /*
-   * `hl/fake.spec.ts`'s case, one slice on. The reasoning is identical and the
-   * consequence is worse: the HighLevel fake mints tokens, this one replaces the
-   * product.
+   * `hl/fake.spec.ts`'s case, one slice on. The reasoning is identical and the consequence is
+   * worse: the HighLevel fake mints tokens, this one replaces the product.
    */
   it('refuses to build a stream outside the emulator', async () => {
     delete process.env['FUNCTIONS_EMULATOR']
@@ -247,17 +239,13 @@ describe('the default fixture keeps its prose and grows files', () => {
 })
 
 /**
- * `__alt_files` is Slice 11's second turn (D24).
+ * `__alt_files` is Slice 11's second turn.
  *
- * A restore is only observable if two turns leave the project in *different*
- * states, and a fake that replayed `reply.json` every time would make a restore
- * that did nothing indistinguishable from one that worked. So the alternate
- * fixture rewrites `index.html`, adds `about.html`, and — just as deliberately —
- * leaves `styles.css` and `app.js` alone, so the snapshot the second turn takes
- * holds four files of which two were carried over untouched.
- *
- * None of this touches `reply.json` (D26): five suites assert against its exact
- * bytes, so the second turn is a second fixture rather than an edit to the first.
+ * A restore is only observable if two turns leave the project in *different* states, and a fake
+ * that replayed `reply.json` every time would make a restore that did nothing indistinguishable
+ * from one that worked. So the alternate fixture rewrites `index.html`, adds `about.html`, and —
+ * just as deliberately — leaves `styles.css` and `app.js` alone, so the snapshot the second turn
+ * takes holds four files of which two were carried over untouched.
  */
 describe('the alternate file set', () => {
   /* That the marker is recognised at all — i.e. that it is in `MARKERS` and that
@@ -299,12 +287,7 @@ describe('the alternate file set', () => {
 })
 
 describe('where the marker is read', () => {
-  /*
-   * The **last user message**, because that is the prompt the user just sent.
-   * Reading the whole conversation would make one `__refuse` poison every
-   * subsequent turn of that project, which is precisely the shape a Retry test
-   * needs not to happen.
-   */
+  /* The **last user message**, because that is the prompt the user just sent. */
   it('ignores a marker in an earlier turn', async () => {
     const messages: MessageParam[] = [
       { role: 'user', content: '__refuse an old prompt' },
@@ -351,18 +334,13 @@ describe('abort', () => {
 })
 
 /**
- * `__context` — how an integration test sees **what was actually sent** (D25).
+ * `__context` — how an integration test sees **what was actually sent**.
  *
- * Without it, budget trimming is provable only at L1 and the wiring between
- * `handleGenerate`, the file read and `buildParams` is proven by nothing at all:
- * the three could be connected to each other in any order, or not at all, and
- * every existing test would still pass. So the fake reports the shape of its own
- * input back down the stream, and an L4 test reads it out of a real SSE response.
- *
- * The paths are recovered from the assembled block with `PROJECT_FILE_OPEN`, the
- * builder's own exported delimiter, so the reader and the writer cannot drift —
- * a second copy of `'===== FILE '` here would be a second definition of the
- * format, and the first one to change would go unnoticed.
+ * Without it, budget trimming is provable only at L1 and the wiring between `handleGenerate`,
+ * the file read and `buildParams` is proven by nothing at all: the three could be connected to
+ * each other in any order, or not at all, and every existing test would still pass. So the fake
+ * reports the shape of its own input back down the stream, and an L4 test reads it out of a real
+ * SSE response.
  */
 describe('the __context marker', () => {
   const FILES: readonly ProjectFile[] = [

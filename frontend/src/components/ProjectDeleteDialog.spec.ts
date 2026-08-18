@@ -21,12 +21,11 @@ import type { Project } from '@/lib/projectsApi'
 /**
  * The delete confirmation.
  *
- * It **names the project**, which is the whole reason it exists: a generic "are
- * you sure?" beside a list of rows is a dialog the user has to trust they
- * clicked the right thing to reach.
+ * It **names the project**, which is the whole reason it exists: a generic "are you sure?"
+ * beside a list of rows is a dialog the user has to trust they clicked the right thing to reach.
  *
- * Content is teleported to `document.body` by Reka UI's portal, so this queries
- * the document rather than the wrapper — same as `ProjectFormDialog.spec.ts`.
+ * Content is teleported to `document.body` by Reka UI's portal, so this queries the document
+ * rather than the wrapper — same as `ProjectFormDialog.spec.ts`.
  */
 
 const PROJECT = {
@@ -121,9 +120,8 @@ describe('ProjectDeleteDialog', () => {
   })
 
   /*
-   * The parent nulls its selection as the dialog closes, so this component sees
-   * `project: null` for at least one render. It must not throw, and it must not
-   * offer to delete nothing.
+   * The parent nulls its selection as the dialog closes, so this component sees `project: null`
+   * for at least one render.
    */
   it('renders nothing to confirm when there is no project', async () => {
     await open(null)

@@ -24,14 +24,13 @@ import { RESTORE_FAILED, SNAPSHOT_LIMIT } from './schema'
 import type { FileWrite } from '../files/schema'
 
 /**
- * AC-9 and AC-5's `id === path` half — the staging shape, the prune, and the one
- * read that plans them.
+ * AC-9 and AC-5's `id === path` half — the staging shape, the prune, and the one read that plans
+ * them.
  *
- * `getDb` is mocked rather than an emulator started, because what is worth
- * asserting here is the *documents* — decided before any I/O happens — and the
- * prune's two deletes, which is the part R4 says is easy to get wrong: deleting
- * a snapshot leaves its `files` subcollection behind, unreachable and paid for.
- * The write reaching Firestore at all is T8's L4 case.
+ * `getDb` is mocked rather than an emulator started, because what is worth asserting here is the
+ * *documents* — decided before any I/O happens — and the prune's two deletes, which is the part
+ * R4 says is easy to get wrong: deleting a snapshot leaves its `files` subcollection behind,
+ * unreachable and paid for. The write reaching Firestore at all is T8's L4 case.
  */
 
 /** A ref that knows its own path and can reach its subcollection, like a real one. */
@@ -149,11 +148,9 @@ afterEach(() => {
 
 describe('planSnapshot', () => {
   /*
-   * P3. The head read carries **no `limit()`**, deliberately: `planSnapshotPrune`
-   * has to be able to see an already-broken invariant (22 heads prune three), and
-   * a capped read would hide exactly the rows it needs. The collection is bounded
-   * to ~20 by the prune itself, and `select('seq')` asks for refs and one number
-   * rather than twenty documents.
+   * The head read carries **no `limit()`**, deliberately: `planSnapshotPrune` has to be able to
+   * see an already-broken invariant (22 heads prune three), and a capped read would hide exactly
+   * the rows it needs.
    */
   it('reads the heads once, projected to seq alone, unordered and uncapped', async () => {
     const { calls } = fakeDb(heads(3))
@@ -161,12 +158,10 @@ describe('planSnapshot', () => {
     await planSnapshot('alice', 'proj-1', [file('index.html', '<p>hi</p>')], 'generation')
 
     /*
-     * **No `orderBy`.** Firestore omits a document that does not carry the
-     * ordered field, so ordering by `seq` here would hide the one head the
-     * prune most needs to see — a snapshot whose `seq` is gone, which would
-     * otherwise be invisible to this read and to the list, never counted toward
-     * the excess and never pruned. Neither consumer needs the order:
-     * `planSnapshotSeq` takes a maximum, `planSnapshotPrune` sorts its input.
+     * **No `orderBy`.** Firestore omits a document that does not carry the ordered field, so
+     * ordering by `seq` here would hide the one head the prune most needs to see — a snapshot
+     * whose `seq` is gone, which would otherwise be invisible to this read and to the list,
+     * never counted toward the excess and never pruned.
      */
     expect(calls.orderBy).toEqual([])
     expect(calls.select).toEqual([['seq']])
@@ -174,11 +169,9 @@ describe('planSnapshot', () => {
   })
 
   /*
-   * The other half of the same rule, and the reason the `orderBy` had to go: a
-   * head with no `seq` at all is read as `0`, so it sorts to the front of the
-   * prune and is the first version taken. A version nothing can name is a
-   * version nothing can restore; leaving it in place would leak it and its file
-   * documents forever (R4).
+   * The other half of the same rule, and the reason the `orderBy` had to go: a head with no
+   * `seq` at all is read as `0`, so it sorts to the front of the prune and is the first version
+   * taken.
    */
   it('reads a head with no seq as 0, and prunes it first', async () => {
     fakeDb([{ id: 'orphan' }, ...heads(SNAPSHOT_LIMIT - 1)], ['app.js'])
@@ -223,10 +216,9 @@ describe('planSnapshot', () => {
   })
 
   /*
-   * R4. The file refs are gathered here rather than derived at staging time,
-   * because deleting a document in Firestore does **not** delete its
-   * subcollections — a prune that removed only the parent would leave up to
-   * twenty orphaned documents per pruned version.
+   * The file refs are gathered here rather than derived at staging time, because deleting a
+   * document in Firestore does **not** delete its subcollections — a prune that removed only the
+   * parent would leave up to twenty orphaned documents per pruned version.
    */
   it('carries the lowest snapshot’s ref and every one of its file refs at the cap', async () => {
     fakeDb(heads(SNAPSHOT_LIMIT), ['app.js', 'index.html'])
@@ -301,9 +293,8 @@ describe('stageSnapshot', () => {
   })
 
   /*
-   * No timestamps: the snapshot's own `createdAt` is the one time that means
-   * anything about a copy, so a per-file one would be twenty repetitions of one
-   * fact.
+   * No timestamps: the snapshot's own `createdAt` is the one time that means anything about a
+   * copy, so a per-file one would be twenty repetitions of one fact.
    */
   it('writes a copied file as path, content and size, and nothing else', () => {
     const { batch, staged } = recordingBatch()
@@ -384,11 +375,10 @@ describe('parseSnapshotFile', () => {
   })
 
   /**
-   * AC-5's second half. `id === path` is what makes a copy addressable by the
-   * name it is filed under; a document where they disagree cannot be written back
-   * to the right file, so it is *known* to be unusable — and a restore that met
-   * one refuses the whole version rather than restoring a file under the wrong
-   * name.
+   * AC-5's second half. `id === path` is what makes a copy addressable by the name it is filed
+   * under; a document where they disagree cannot be written back to the right file, so it is
+   * *known* to be unusable — and a restore that met one refuses the whole version rather than
+   * restoring a file under the wrong name.
    */
   it('refuses and logs a document whose path disagrees with its id', () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
@@ -433,17 +423,12 @@ describe('parseSnapshotFile', () => {
 /**
  * The restore's batch — AC-18's unasserted clause, and R5 one collection over.
  *
- * `handleRestoreSnapshot` stages the safety snapshot, the version's file writes
- * and the deletes of everything the version does not hold, then commits **once**.
- * Nothing tested that. AC-9's recording batch covers the *generation* path only,
- * and the L4 case for AC-18 sees the end state alone — so splitting the restore
- * into a write commit and a delete commit, which is exactly the shortcut R5 names,
- * would leave the whole suite green while a full project passed transiently
- * through 40 files and a crash between the two commits left it there.
- *
- * A fake rather than the emulator, for AC-9's reason: what is worth asserting is
- * that there is **one** batch and **one** commit, and a recording batch is the
- * only thing that can say so.
+ * `handleRestoreSnapshot` stages the safety snapshot, the version's file writes and the deletes
+ * of everything the version does not hold, then commits **once**. Nothing tested that. AC-9's
+ * recording batch covers the *generation* path only, and the L4 case for AC-18 sees the end
+ * state alone — so splitting the restore into a write commit and a delete commit, which is
+ * exactly the shortcut R5 names, would leave the whole suite green while a full project passed
+ * transiently through 40 files and a crash between the two commits left it there.
  */
 describe('handleRestoreSnapshot', () => {
   const TS = Timestamp.fromMillis(1_700_000_000_000)
@@ -467,12 +452,8 @@ describe('handleRestoreSnapshot', () => {
   })
 
   /**
-   * A Firestore that answers every read the restore makes, routed by path, and
-   * hands out one recording batch.
-   *
-   * `batches` counts `getDb().batch()` calls and `commits` counts `commit()`s —
-   * the two numbers the test is actually about. Everything else exists only so
-   * the handler reaches the batch at all.
+   * A Firestore that answers every read the restore makes, routed by path, and hands out one
+   * recording batch.
    */
   function restoreDb(options: {
     live: [string, string][]
@@ -602,12 +583,8 @@ describe('handleRestoreSnapshot', () => {
   })
 
   /*
-   * The PRD's copy table names a sentence for "the batch failed" — *That version
-   * could not be restored. Try again.* — and `RESTORE_FAILED` was written to hold
-   * it, then never wired to anything. An uncaught rejection reaches
-   * `errorHandler` as a generic `Internal error`, which tells a user nothing
-   * about what to do next and does not say the thing that matters most about an
-   * all-or-nothing batch: nothing was written, so trying again is safe.
+   * The PRD's copy table names a sentence for "the batch failed" — *That version could not be
+   * restored.
    */
   it('answers the restore’s own copy when the batch fails, rather than a generic 500', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
@@ -637,10 +614,8 @@ describe('handleRestoreSnapshot', () => {
   })
 
   /*
-   * D15's rule for ids, asserted where it is cheapest: a malformed id costs no
-   * Firestore call at all. AC-17 says so in words and its L4 case is even named
-   * for it, but asserts only the status — so `getDb` is left throwing here, and a
-   * read of any kind is a red test.
+   * D15's rule for ids, asserted where it is cheapest: a malformed id costs no Firestore call at
+   * all.
    */
   it.each([
     ['project', { projectId: 'not an id', snapshotId: 'snap-1' }],

@@ -4,18 +4,11 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { adminDb, deleteJson, getJson, idTokenFor, resetEmulators, seedUser } from './helpers'
 
 /**
- * `GET` and `DELETE /api/hl/connection` — the only window the browser has onto
- * a connection.
+ * `GET` and `DELETE /api/hl/connection` — the only window the browser has onto a connection.
  *
- * `hlConnections/{uid}` holds a live OAuth access token and a refresh token,
- * and Firestore rules deny it to every client including its owner. So the
- * dashboard cannot read it; it asks this endpoint, which returns a deliberately
- * narrow projection.
- *
- * The assertion that matters most is a negative one: no token material in the
- * response body. It is checked against the **raw text** rather than the parsed
- * object, because a leak nested one level down survives a check on top-level
- * keys.
+ * `hlConnections/{uid}` holds a live OAuth access token and a refresh token, and Firestore rules
+ * deny it to every client including its owner. So the dashboard cannot read it; it asks this
+ * endpoint, which returns a deliberately narrow projection.
  */
 
 const PASSWORD = 'Correct-Horse-9'
@@ -106,15 +99,14 @@ describe('GET /api/hl/connection', () => {
     expect(res.raw).not.toContain('expiresAt')
   })
 
-/*
-   * A stored document that cannot describe a connection is treated as no
-   * connection, not as a connection with blanks in it.
+  /*
+   * A stored document that cannot describe a connection is treated as no connection, not as a
+   * connection with blanks in it.
    *
-   * The earlier version filled the gaps with `?? ''` and reported
-   * `connected: true`, which rendered as "Connected to " with nothing after it
-   * — a broken screen that offers no way out, because the panel only shows
-   * Connect when it believes you are disconnected. Failing closed puts the
-   * recovery back in reach: reconnecting overwrites the document.
+   * The earlier version filled the gaps with `?? ''` and reported `connected: true`, which
+   * rendered as "Connected to " with nothing after it — a broken screen that offers no way out,
+   * because the panel only shows Connect when it believes you are disconnected. Failing closed
+   * puts the recovery back in reach: reconnecting overwrites the document.
    */
   it('reports not connected when the stored document is unusable', async () => {
     await adminDb().doc(`hlConnections/${aliceUid}`).set({ accessToken: 'orphaned' })
@@ -185,10 +177,8 @@ describe('DELETE /api/hl/connection', () => {
   })
 
   /*
-   * Idempotent because the UI cannot know for certain whether it is connected —
-   * a stale panel, a double click, a retry after a timeout. Answering 404 to any
-   * of those would put an error on screen for a user who already has exactly
-   * what they asked for.
+   * Idempotent because the UI cannot know for certain whether it is connected — a stale panel, a
+   * double click, a retry after a timeout.
    */
   it('succeeds when there was nothing to disconnect', async () => {
     const res = await deleteJson('/api/hl/connection', auth(aliceToken))

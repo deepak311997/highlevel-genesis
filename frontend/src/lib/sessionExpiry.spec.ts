@@ -105,11 +105,8 @@ describe('createSessionExpiredHook', () => {
   })
 
   /*
-   * The caller is `noteApiError`, inside a `catch` in a fetch wrapper, and it
-   * has nothing to await — so a hook that returned a promise would be one
-   * nobody handles. `() => void` would not catch that on its own: a `void`
-   * return type accepts a function returning anything at all. Widened to
-   * `unknown` here so the returned value is a value the assertion can read.
+   * The caller is `noteApiError`, inside a `catch` in a fetch wrapper, and it has nothing to
+   * await — so a hook that returned a promise would be one nobody handles.
    */
   it('returns nothing, so no caller has a promise to drop', () => {
     const { deps } = stubs()

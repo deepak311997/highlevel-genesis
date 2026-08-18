@@ -6,26 +6,9 @@ import { assertEmulatorBuild, editorText, openNewProject, signUpAndVerify } from
 /**
  * AC-32 — the slice's demo line, walked in a browser.
  *
- * Real account, real ID token, real Cloud Function routes, real Firestore
- * documents in two collections, a real SSE stream through the Vite dev proxy.
- * Only the model is stubbed, by the emulator-only fake.
- *
- * **Three claims live only here.** The first is that a version list read through
- * `GET …/snapshots` renders rows a user can act on — every level below this
- * either stubs the store or stubs the route. The second is that pressing
- * **Restore** reaches real documents: the file the second turn added is *gone
- * from the tree*, which is R3's failure made visible, and the editor shows
- * version 1's bytes rather than version 2's. The third is that all of it
- * **survives a reload**, which is the only assertion that separates "the store
- * was updated" from "the server was".
- *
- * Two versions are only distinguishable because `__alt_files` exists (D24). With
- * one fixture both generations would write identical bytes, a restore would be a
- * no-op, and this test would pass without proving anything at all.
- *
- * Its own spec rather than a movement inside `files.spec.ts`, as Slice 6's D32
- * asks: that one stays the signal for "file operations broke" and this one for
- * "restore broke", so a red run still names the culprit.
+ * Real account, real ID token, real Cloud Function routes, real Firestore documents in two
+ * collections, a real SSE stream through the Vite dev proxy. Only the model is stubbed, by the
+ * emulator-only fake.
  */
 
 /**
@@ -81,10 +64,7 @@ test.describe('Slice 11 — snapshots and restore', () => {
     expect(await treePaths(page)).toEqual(VERSION_TWO.map((path) => expect.stringContaining(path)))
 
     /*
-     * The open tab was rewritten by the second turn, so the editor now holds
-     * version 2's bytes. Asserted, because the restore's own assertion below is
-     * that this changes back — and a test that never saw it change would prove
-     * nothing by seeing it not change.
+     * The open tab was rewritten by the second turn, so the editor now holds version 2's bytes.
      */
     await expect.poll(() => editorText(page)).not.toBe(versionOneHtml)
 

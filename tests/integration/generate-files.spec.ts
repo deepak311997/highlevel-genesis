@@ -14,13 +14,9 @@ import {
 /**
  * `POST /generate` — the **file** half, over the wire (AC-16 to AC-25).
  *
- * The all-or-nothing rule (D9) is only provable end to end. An L1 test of
- * `planFileWrites` asserts *intent*; what F8.1 needs is the assertion that **no
- * document exists** — which is why every refusal case below reads the collection
- * back rather than reading a return value.
- *
- * The LLM is the emulator-only fake, driven by markers in the prompt. No
- * automated test in this project ever calls Anthropic.
+ * The all-or-nothing rule is only provable end to end. An L1 test of `planFileWrites` asserts
+ * *intent*; what F8.1 needs is the assertion that **no document exists** — which is why every
+ * refusal case below reads the collection back rather than reading a return value.
  */
 
 const PASSWORD = 'Correct-Horse-9'
@@ -259,9 +255,8 @@ describe('a generation whose files are refused', () => {
   })
 
   /*
-   * The one that matters most: `index.html` was a perfectly good op in that same
-   * turn, and it is refused with the rest. Writing two of three would produce an
-   * app broken in a way the user cannot see until the preview fails.
+   * The one that matters most: `index.html` was a perfectly good op in that same turn, and it is
+   * refused with the rest.
    */
   it('refuses the good ops in the same turn as the bad one', async () => {
     await generate('badpath', '__bad_path build a contact dashboard')
@@ -332,10 +327,8 @@ describe('a generation that did not complete', () => {
   })
 
   /**
-   * P6. A truncated turn that contained no file block at all reports **no**
-   * error: a prose-only reply is a legitimate turn, and a truncated prose-only
-   * reply is still one. Firing the cut-short copy here would make F8.1's error
-   * appear on the model's good behaviour.
+   * A truncated turn that contained no file block at all reports **no** error: a prose-only
+   * reply is a legitimate turn, and a truncated prose-only reply is still one.
    */
   it('reports no fileError for a truncated turn that attempted no file', async () => {
     const res = await generate('longone', '__long write me everything')

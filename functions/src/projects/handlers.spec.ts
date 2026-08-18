@@ -7,16 +7,9 @@ import { parseStored } from './handlers'
 /**
  * The parse-or-log-and-drop step, on its own.
  *
- * Every route that reads a project goes through this, and the three outcomes it
- * has to keep apart are easy to conflate: an absent document is *not*
- * corruption, a document that fails to parse is, and a usable one is neither.
- *
- * The log line is the part worth a test of its own. AC-20 asks for a
- * `project.unreadable` event, and a corrupt project is otherwise **silent** by
- * design — it is omitted from the list and 404 by id, which from the outside is
- * indistinguishable from one that was deleted. The log line is the only thing
- * that says a document is broken rather than gone, so it is the only warning
- * anybody will ever get.
+ * Every route that reads a project goes through this, and the three outcomes it has to keep
+ * apart are easy to conflate: an absent document is *not* corruption, a document that fails to
+ * parse is, and a usable one is neither.
  */
 
 const complete = {
@@ -57,9 +50,8 @@ describe('parseStored', () => {
   })
 
   /*
-   * No field of the document reaches the log line. The names are the user's
-   * words and the description may be anything they typed; a log sink is a
-   * disclosure channel like any other.
+   * No field of the document reaches the log line. The names are the user's words and the
+   * description may be anything they typed; a log sink is a disclosure channel like any other.
    */
   it('puts no field of the document in the log line', () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)

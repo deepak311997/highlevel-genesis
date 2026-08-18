@@ -21,16 +21,11 @@ import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest'
 /**
  * The backstop, and nothing but the backstop.
  *
- * Data access is API-only: every read and write goes through a Cloud Function
- * route that verifies the ID token, parses the payload with Zod, and scopes the
- * query by the uid **from the token**. `firestore.rules` is what makes a mistake
- * in one of those routes a bug rather than a breach — so after Slice 2b every
- * match block in the file is a denial, and **every case in this suite is an
- * `assertFails`**.
- *
- * That is why there is no `assertSucceeds` import. A suite with allow-cases in
- * it would be describing an enforcement boundary that no longer exists here, and
- * the next reader would have to work out which of the two files was in charge.
+ * Data access is API-only: every read and write goes through a Cloud Function route that
+ * verifies the ID token, parses the payload with Zod, and scopes the query by the uid **from the
+ * token**. `firestore.rules` is what makes a mistake in one of those routes a bug rather than a
+ * breach — so after Slice 2b every match block in the file is a denial, and **every case in this
+ * suite is an `assertFails`**.
  */
 
 let env: RulesTestEnvironment
@@ -38,12 +33,11 @@ let env: RulesTestEnvironment
 /**
  * The suite's own emulator, not the development one.
  *
- * `npm run test:rules` starts Firestore on firebase.test.json's port; this has
- * to follow it there. The default is that same test port rather than the dev
- * default of 8080, because the failure mode is asymmetric: pointed at a dev
- * emulator this file loads its rules over that session's and then calls
- * `clearFirestore()` on it, wiping the data. Refusing to connect is a far
- * better outcome, and that is what the wrong port now gets you.
+ * `npm run test:rules` starts Firestore on firebase.test.json's port; this has to follow it
+ * there. The default is that same test port rather than the dev default of 8080, because the
+ * failure mode is asymmetric: pointed at a dev emulator this file loads its rules over that
+ * session's and then calls `clearFirestore()` on it, wiping the data. Refusing to connect is a
+ * far better outcome, and that is what the wrong port now gets you.
  */
 const FIRESTORE_PORT = Number(process.env['FIRESTORE_EMULATOR_PORT_CLIENT'] ?? '8180')
 
@@ -118,15 +112,7 @@ describe('users/{uid} — denied to its own owner', () => {
     await assertFails(getDoc(doc(verified('alice'), 'users/alice')))
   })
 
-  /*
-   * AC-13. Creating, changing and removing all belong to the API now.
-   *
-   * These two send exactly the payload the *old* owner-scoped rules accepted —
-   * a create stamped `serverTimestamp()`, and an update touching only
-   * `displayName` and `updatedAt`. Written any other way they would pass against
-   * the old rules too, for reasons that have nothing to do with this change, and
-   * would prove nothing about the deny-all that replaced them.
-   */
+  /* Creating, changing and removing all belong to the API now. */
   it('denies a verified owner creating their own profile', async () => {
     await assertFails(
       setDoc(doc(verified('alice'), 'users/alice'), {
@@ -206,15 +192,9 @@ async function seedProject(uid = 'alice', id = 'proj-1'): Promise<void> {
 
 describe('users/{uid}/projects/{projectId}', () => {
   /*
-   * AC-21. The owner is the most privileged client there is, and every one of
-   * their four operations is denied — the browser has `lib/projectsApi.ts` and
-   * nothing else, and this is what makes a mistake in one of those routes a bug
-   * rather than a breach.
-   *
-   * Rules do **not** cascade into subcollections, so `match /users/{uid}` above
-   * says nothing at all about this path. The block being tested here is required
-   * rather than decorative, and these cases are what would catch a later rule
-   * that granted the parent recursively.
+   * The owner is the most privileged client there is, and every one of their four operations is
+   * denied — the browser has `lib/projectsApi.ts` and nothing else, and this is what makes a
+   * mistake in one of those routes a bug rather than a breach.
    */
   it('denies a verified owner reading their own project', async () => {
     await seedProject()
@@ -274,14 +254,13 @@ describe('users/{uid}/projects/{projectId}', () => {
 })
 
 /**
- * Exactly what the two writers put in the collection, so the denial is on the
- * rule and not on the shape.
+ * Exactly what the two writers put in the collection, so the denial is on the rule and not on
+ * the shape.
  *
- * There are two writers now: `POST /api/projects/:projectId/messages` writes the
- * user turn, and `/generate` writes the assistant turn at the stream's terminal
- * event. Both carry `truncated`, which is the field this slice adds — and
- * `truncated: true` gets its own variant below, because a rule that denied a
- * document could in principle have been written to allow one shape of it.
+ * There are two writers now: `POST /api/projects/:projectId/messages` writes the user turn, and
+ * `/generate` writes the assistant turn at the stream's terminal event. Both carry `truncated`,
+ * which is the field this slice adds — and `truncated: true` gets its own variant below, because
+ * a rule that denied a document could in principle have been written to allow one shape of it.
  */
 function message(role: 'user' | 'assistant' = 'user', truncated = false) {
   return {
@@ -304,21 +283,8 @@ async function seedMessage(uid = 'alice', projectId = 'proj-1', id = 'msg-1'): P
 
 describe('users/{uid}/projects/{projectId}/messages/{messageId}', () => {
   /*
-   * AC-16. The owner is the most privileged client there is, and every one of
-   * their five operations is denied — the browser has `lib/messagesApi.ts` and
-   * nothing else.
-   *
-   * The write cases are the ones that matter most here, and for a reason that is
-   * about Slice 5 rather than this one: `role` is server-assigned, so a client
-   * that could write this collection could author an assistant turn — and from
-   * Slice 5 on the transcript *is* the LLM's context, which makes that
-   * self-service prompt injection into a prompt carrying HighLevel API knowledge
-   * and the user's own files.
-   *
-   * Rules do **not** cascade into subcollections, so neither `match /users/{uid}`
-   * nor `match /users/{uid}/projects/{projectId}` says anything about this path.
-   * The block being tested is required rather than decorative, and these cases are
-   * what would catch a later rule granting a parent recursively.
+   * The owner is the most privileged client there is, and every one of their five operations is
+   * denied — the browser has `lib/messagesApi.ts` and nothing else.
    */
   it('denies a verified owner reading one of their own messages', async () => {
     await seedMessage()
@@ -347,17 +313,8 @@ describe('users/{uid}/projects/{projectId}/messages/{messageId}', () => {
   })
 
   /*
-   * AC-26's new clause. Slice 5 gives the collection a `truncated` field, and the
-   * definition of done requires the denial re-proven in the commit that changes
-   * a collection's shape. **No rules change was needed** (D35): a Firestore rule
-   * that denies a document denies it whatever fields it has, so this is a
-   * re-proof rather than a new guarantee — and re-proving it is cheaper than
-   * assuming it, because "rules say nothing about fields" is exactly the kind of
-   * thing that is true until someone writes a field-level condition.
-   *
-   * The interrupted shape gets its own case because it is the one a client would
-   * most want to forge: an assistant turn the server never generated, marked as
-   * though a real generation had produced it.
+   * AC-26's new clause. Slice 5 gives the collection a `truncated` field, and the definition of
+   * done requires the denial re-proven in the commit that changes a collection's shape.
    */
   it('denies a verified owner creating a truncated assistant message', async () => {
     await assertFails(
@@ -429,13 +386,12 @@ describe('users/{uid}/projects/{projectId}/messages/{messageId}', () => {
 })
 
 /**
- * Exactly what `stageFileWrites` and `PUT .../files/:path` put in the collection,
- * so the denial is on the rule and not on the shape.
+ * Exactly what `stageFileWrites` and `PUT .../files/:path` put in the collection, so the denial
+ * is on the rule and not on the shape.
  *
- * The document id **is** the filename (D13), which is why every case below
- * addresses `.../files/index.html` rather than an opaque id: a rule written
- * against a path segment is a rule that could behave differently for a
- * filename-shaped id than for an auto-id one.
+ * The document id **is** the filename, which is why every case below addresses
+ * `.../files/index.html` rather than an opaque id: a rule written against a path segment is a
+ * rule that could behave differently for a filename-shaped id than for an auto-id one.
  */
 function file() {
   return {
@@ -461,13 +417,12 @@ async function seedFile(uid = 'alice', projectId = 'proj-1', id = 'index.html'):
 }
 
 /**
- * A connection exactly as the two server writers leave it — the OAuth callback
- * and, from Slice 8, the transactional refresh and the upstream-401 marker.
+ * A connection exactly as the two server writers leave it — the OAuth callback and, from Slice
+ * 8, the transactional refresh and the upstream-401 marker.
  *
- * Seeded past the rules so the update below is denied on a document that is
- * really there. A denied update against a document that does not exist proves
- * less, and `needsReconnect: true` is the state a client would most want to
- * change.
+ * Seeded past the rules so the update below is denied on a document that is really there. A
+ * denied update against a document that does not exist proves less, and `needsReconnect: true`
+ * is the state a client would most want to change.
  */
 async function seedConnection(uid = 'alice'): Promise<void> {
   await env.withSecurityRulesDisabled(async (ctx) => {
@@ -484,18 +439,8 @@ async function seedConnection(uid = 'alice'): Promise<void> {
 
 describe('users/{uid}/projects/{projectId}/files/{fileId}', () => {
   /*
-   * AC-32. The owner is the most privileged client there is, and every one of
-   * their five operations is denied — the browser has `lib/filesApi.ts` and
-   * nothing else.
-   *
-   * Rules do **not** cascade into subcollections, so neither `match /users/{uid}`
-   * nor `match /users/{uid}/projects/{projectId}` says anything about this path.
-   * The block being tested is required rather than decorative, and these cases
-   * are what would catch a later rule granting a parent recursively.
-   *
-   * The write cases matter most, and for a reason specific to this slice: the
-   * files *are* the generated application. A client that could write here could
-   * put its own JavaScript into a project and have Slice 10's preview run it.
+   * The owner is the most privileged client there is, and every one of their five operations is
+   * denied — the browser has `lib/filesApi.ts` and nothing else.
    */
   it('denies a verified owner reading one of their own files', async () => {
     await seedFile()
@@ -567,17 +512,12 @@ describe('users/{uid}/projects/{projectId}/files/{fileId}', () => {
 })
 
 /**
- * Exactly what `stageSnapshot` puts in the collection, so the denial is on the
- * rule and not on the shape.
+ * Exactly what `stageSnapshot` puts in the collection, so the denial is on the rule and not on
+ * the shape.
  *
- * `seq` is server-assigned and monotonic per project, `origin` records which of
- * the two writers made the version — `/generate`'s batch or the restore route —
- * and `fileCount`/`totalBytes` are the summary the list renders without reading
- * a single file document.
- *
- * `origin` is a parameter because the update case below flips it: a client that
- * could set `'generation'` on a version it forged would have it read, in the
- * history, as one the LLM had actually produced.
+ * `seq` is server-assigned and monotonic per project, `origin` records which of the two writers
+ * made the version — `/generate`'s batch or the restore route — and `fileCount`/`totalBytes` are
+ * the summary the list renders without reading a single file document.
  */
 function snapshot(origin: 'generation' | 'restore' = 'generation') {
   return {
@@ -590,14 +530,12 @@ function snapshot(origin: 'generation' | 'restore' = 'generation') {
 }
 
 /**
- * A snapshot's copy of a project file — the same three fields the stored file
- * carries minus its timestamps, because a copy is not a new authorship and
- * `stageSnapshot` writes none.
+ * A snapshot's copy of a project file — the same three fields the stored file carries minus its
+ * timestamps, because a copy is not a new authorship and `stageSnapshot` writes none.
  *
- * The document id **is** the path here too, which is why every case below
- * addresses `.../files/index.html` rather than an opaque id: a rule written
- * against a path segment could behave differently for a filename-shaped id than
- * for an auto-id one.
+ * The document id **is** the path here too, which is why every case below addresses
+ * `.../files/index.html` rather than an opaque id: a rule written against a path segment could
+ * behave differently for a filename-shaped id than for an auto-id one.
  */
 function snapshotFile() {
   return {
@@ -610,11 +548,10 @@ function snapshotFile() {
 /**
  * The payload this whole block exists for.
  *
- * A snapshot's files are the generated application one version back, so a client
- * that could write here could plant its own JavaScript and have a later restore
- * copy it into the project — where Slice 10's preview runs it. That is the
- * attack the create cases send, rather than a benign copy that would prove the
- * denial without naming what it is worth.
+ * A snapshot's files are the generated application one version back, so a client that could
+ * write here could plant its own JavaScript and have a later restore copy it into the project —
+ * where Slice 10's preview runs it. That is the attack the create cases send, rather than a
+ * benign copy that would prove the denial without naming what it is worth.
  */
 function plantedScript() {
   return {
@@ -625,10 +562,9 @@ function plantedScript() {
 }
 
 /**
- * Seeded past the rules with a real `Date` where the writer uses
- * `serverTimestamp()`, as `seedFile` already does — a sentinel only resolves
- * inside a write the rules let through, and these writes are the ones that must
- * not be.
+ * Seeded past the rules with a real `Date` where the writer uses `serverTimestamp()`, as
+ * `seedFile` already does — a sentinel only resolves inside a write the rules let through, and
+ * these writes are the ones that must not be.
  *
  * `origin: 'restore'` so the update case has something to actually change.
  */
@@ -661,14 +597,8 @@ async function seedSnapshotFile(
 
 describe('users/{uid}/projects/{projectId}/snapshots/{snapshotId}', () => {
   /*
-   * AC-20. The owner is the most privileged client there is, and every one of
-   * their five operations is denied — the browser has `lib/snapshotsApi.ts` and
-   * nothing else.
-   *
-   * Rules do **not** cascade into subcollections, so neither `match /users/{uid}`
-   * nor `match /users/{uid}/projects/{projectId}` says anything about this path.
-   * The block being tested is required rather than decorative, and these cases
-   * are what would catch a later rule granting a parent recursively.
+   * The owner is the most privileged client there is, and every one of their five operations is
+   * denied — the browser has `lib/snapshotsApi.ts` and nothing else.
    */
   it('denies a verified owner reading one of their own snapshots', async () => {
     await seedSnapshot()
@@ -750,19 +680,7 @@ describe('users/{uid}/projects/{projectId}/snapshots/{snapshotId}', () => {
 })
 
 describe('users/{uid}/projects/{projectId}/snapshots/{snapshotId}/files/{fileId}', () => {
-  /*
-   * AC-20's second half, and the block a reader is most likely to assume is
-   * already covered. It is not: rules do not cascade, so neither the projects
-   * block, nor the project's own files block, nor the snapshot document's block
-   * directly above says anything at all about this path. A nested subcollection
-   * is the easy miss, and these cases are what would catch it going missing —
-   * or a later rule granting one of those parents recursively.
-   *
-   * The create case is the one that matters. These documents are the generated
-   * application one version back, so a client that could write here could plant
-   * its own JavaScript and have a later restore put it into the project, where
-   * Slice 10's preview runs it.
-   */
+  /* AC-20's second half, and the block a reader is most likely to assume is already covered. */
   it('denies a verified owner reading a file inside one of their own snapshots', async () => {
     await seedSnapshotFile()
 
@@ -873,16 +791,8 @@ describe('users/{uid}/projects/{projectId}/snapshots/{snapshotId}/files/{fileId}
 
 describe('the rules file changed, so every prior denial is re-asserted', () => {
   /*
-   * AC-33, and Slice 11's AC-21. Each of these has its own cases above; this one
-   * walks them together in a single pass, and exists because **the rules file was
-   * edited this slice**. A rewrite is exactly the moment a collection quietly
-   * loses its denial along with a helper it shared with something else, and a
-   * single failing `it` naming the whole surface is easier to read in a report
-   * than one of thirty.
-   *
-   * The two snapshot paths join the walk for the same reason they exist: the file
-   * gained two blocks this slice, and an edit is when the ones already there are
-   * worth re-proving rather than assuming.
+   * AC-33, and Slice 11's AC-21. Each of these has its own cases above; this one walks them
+   * together in a single pass, and exists because **the rules file was edited this slice**.
    */
   it('denies a verified owner one operation on every collection', async () => {
     await seedProfile()
@@ -908,21 +818,9 @@ describe('the rules file changed, so every prior denial is re-asserted', () => {
 
 describe('server-only collections', () => {
   /*
-   * AC-15 — re-asserted because the rules file was rewritten. These two were
-   * never client-reachable, and a rewrite is exactly the moment a collection
-   * quietly loses its denial along with the helper it shared with something
-   * else.
-   *
-   * The owner case is the one that matters and the one people skip. It is
-   * tempting to let a user read their own connection — but a token readable by
-   * the browser is a token readable by anyone who opens devtools.
-   *
-   * Slice 8's AC-36 completes the set with the two operations nobody had asked
-   * for yet — `list` and `update` — because this is the slice that gives
-   * `hlConnections/{uid}` a second writer. **No rules change was needed** (D33):
-   * a rule that denies a document denies it whatever fields it holds. Re-proving
-   * it is still cheaper than assuming it, because "rules say nothing about
-   * fields" holds right up until someone writes a field-level condition.
+   * AC-15 — re-asserted because the rules file was rewritten. These two were never client-
+   * reachable, and a rewrite is exactly the moment a collection quietly loses its denial along
+   * with the helper it shared with something else.
    */
   it('denies even a verified owner reading their own HighLevel tokens', async () => {
     await assertFails(getDoc(doc(verified('alice'), 'hlConnections/alice')))
@@ -974,9 +872,8 @@ describe('server-only collections', () => {
   })
 
   /*
-   * Readable by a client, these would answer "has anyone tried to register this
-   * address?" — the enumeration question the uniform registration response
-   * exists to refuse.
+   * Readable by a client, these would answer "has anyone tried to register this address?" — the
+   * enumeration question the uniform registration response exists to refuse.
    */
   it('denies every client the throttle counters', async () => {
     const alice = verified('alice')

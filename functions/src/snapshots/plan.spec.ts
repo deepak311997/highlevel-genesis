@@ -12,15 +12,13 @@ import {
 } from './plan'
 
 /**
- * AC-1 – AC-4 — the whole of the slice's arithmetic, with no Firestore anywhere
- * near it.
+ * AC-1 – AC-4 — the whole of the slice's arithmetic, with no Firestore anywhere near it.
  *
- * These four functions are where the slice's two most expensive mistakes live
- * (R1 and the prune's off-by-one), and both of them are invisible in a route:
- * snapshotting the turn's *writes* instead of the project's resulting set passes
- * every test that generates exactly once, and a prune that is one out leaves the
- * collection at 21 forever. So they are pure, and they are asserted here before
- * anything reads a document.
+ * These four functions are where the slice's two most expensive mistakes live (R1 and the
+ * prune's off-by-one), and both of them are invisible in a route: snapshotting the turn's
+ * *writes* instead of the project's resulting set passes every test that generates exactly once,
+ * and a prune that is one out leaves the collection at 21 forever. So they are pure, and they
+ * are asserted here before anything reads a document.
  */
 
 const file = (path: string, content: string): { path: string; content: string; size: number } => ({
@@ -30,14 +28,12 @@ const file = (path: string, content: string): { path: string; content: string; s
 })
 
 /**
- * The same file as a **stored document**, which is what the merge's first
- * argument really is.
+ * The same file as a **stored document**, which is what the merge's first argument really is.
  *
- * The two timestamps are the point of the helper existing beside `file`: the
- * merge never reads them, and the copy it produces deliberately does not carry
- * them (the snapshot's own `createdAt` is the one time that means anything about
- * a copy). Passing the real input type is what proves that rather than assuming
- * it.
+ * The two timestamps are the point of the helper existing beside `file`: the merge never reads
+ * them, and the copy it produces deliberately does not carry them (the snapshot's own
+ * `createdAt` is the one time that means anything about a copy). Passing the real input type is
+ * what proves that rather than assuming it.
  */
 const storedFile = (path: string, content: string): StoredFile => ({
   ...file(path, content),
@@ -134,9 +130,8 @@ describe('planSnapshotPrune', () => {
   })
 
   /*
-   * The `+ 1` is the whole function. At exactly the cap the collection is not
-   * over it — it is one write away from being over it, and that write is the
-   * one this plan is for.
+   * The `+ 1` is the whole function. At exactly the cap the collection is not over it — it is
+   * one write away from being over it, and that write is the one this plan is for.
    */
   it('prunes the single lowest at exactly the cap, so the write lands at the cap', () => {
     const pruned = planSnapshotPrune(heads(...range(1, SNAPSHOT_LIMIT)))

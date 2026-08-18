@@ -3,21 +3,15 @@ import { describe, expect, it } from 'vitest'
 import { parseInline, parseMarkdown } from './markdown'
 
 /**
- * The markdown the model actually writes, parsed into a tree the template
- * renders with ordinary elements.
+ * The markdown the model actually writes, parsed into a tree the template renders with ordinary
+ * elements.
  *
- * **The security property is the shape of the output, not a sanitiser.**
- * `parseMarkdown` returns data, never HTML, so `MessageBody.vue` renders it
- * through Vue interpolation and `v-html` never appears. That is the same
- * objection `messageParts.ts` recorded when it refused a renderer — "a second
- * parser over content the model controls, with an injection surface" — answered
- * by removing the surface rather than by trusting a scrubber. The link case
- * below is the one place a value reaches an attribute, and it is the one place
- * with a scheme allowlist.
- *
- * The parser is also driven **on every token while streaming**, so half-written
- * markup has to degrade to literal text rather than swallow the rest of the
- * reply. Those cases are asserted explicitly at the bottom.
+ * **The security property is the shape of the output, not a sanitiser.** `parseMarkdown` returns
+ * data, never HTML, so `MessageBody.vue` renders it through Vue interpolation and `v-html` never
+ * appears. That is the same objection `messageParts.ts` recorded when it refused a renderer — "a
+ * second parser over content the model controls, with an injection surface" — answered by
+ * removing the surface rather than by trusting a scrubber. The link case below is the one place
+ * a value reaches an attribute, and it is the one place with a scheme allowlist.
  */
 
 describe('parseInline', () => {
@@ -66,11 +60,7 @@ describe('parseInline', () => {
     ])
   })
 
-  /*
-   * The injection case, and the reason `href` is the only attribute this parser
-   * ever produces. `javascript:` and `data:` are left as literal text, so the
-   * worst outcome is an ugly line rather than a script.
-   */
+  /* The injection case, and the reason `href` is the only attribute this parser ever produces. */
   it.each(['javascript:alert(1)', 'data:text/html,<script>', 'vbscript:x', '/etc/passwd'])(
     'refuses %o as a link and leaves it literal',
     (href) => {
@@ -201,7 +191,10 @@ describe('parseMarkdown', () => {
       const two = parseMarkdown('- first\n- second')
 
       expect(one[0]).toMatchObject({ kind: 'list', items: [[{ text: 'first' }]] })
-      expect(two[0]).toMatchObject({ kind: 'list', items: [[{ text: 'first' }], [{ text: 'second' }]] })
+      expect(two[0]).toMatchObject({
+        kind: 'list',
+        items: [[{ text: 'first' }], [{ text: 'second' }]],
+      })
     })
   })
 })

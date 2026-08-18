@@ -21,12 +21,7 @@ import {
  */
 
 describe('filePathSchema', () => {
-  /**
-   * AC-11's refusals.
-   *
-   * Each entry names *why* it is here, because a bare list of strings is a list a
-   * later reader deletes an entry from without noticing what it covered.
-   */
+  /** AC-11's refusals. */
   it.each([
     ['parent traversal', '../secrets.js'],
     ['an absolute path', '/etc/passwd'],
@@ -75,9 +70,8 @@ describe('filePathSchema', () => {
 
 describe('the constants the whole slice is built from', () => {
   /*
-   * Pinned because three other files interpolate them: the system prompt (D25),
-   * the frontend's mirrored caps, and the copy table. A change here that is not a
-   * deliberate product decision fails in one obvious place.
+   * Pinned because three other files interpolate them: the system prompt, the frontend's
+   * mirrored caps, and the copy table.
    */
   it('caps a project at 20 files and a file at 100,000 UTF-8 bytes', () => {
     expect(FILE_LIMIT).toBe(20)
@@ -101,10 +95,9 @@ describe('the constants the whole slice is built from', () => {
 
 describe('displayPath', () => {
   /*
-   * A path reaches the copy table straight from the model's output, so it is a
-   * hostile string until this function has been over it: control characters could
-   * smuggle a second line into an error notice, and an arbitrarily long one would
-   * blow up the panel.
+   * A path reaches the copy table straight from the model's output, so it is a hostile string
+   * until this function has been over it: control characters could smuggle a second line into an
+   * error notice, and an arbitrarily long one would blow up the panel.
    */
   it('strips control characters', () => {
     expect(displayPath('app\u001b[31m.js\nrm -rf')).toBe('app[31m.jsrm -rf')

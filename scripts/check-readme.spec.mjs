@@ -28,20 +28,12 @@ import {
 /**
  * AC-3 … AC-8 and AC-10 — the README, held true by a test.
  *
- * The README is the one artefact this assignment is graded on directly, and it
- * is the one artefact nothing else in the repository reads. That is how the file
- * on `main` came to name two scripts that do not exist, a root `npm run` script
- * that does not exist, live URLs that were "not deployed yet" months after they
- * answered `200`, and an architecture decision the project had already reversed.
- * Every one of those is a mechanical claim, and a mechanical claim can be
+ * The README is the one artefact this assignment is graded on directly, and it is the one
+ * artefact nothing else in the repository reads. That is how the file on `main` came to name two
+ * scripts that do not exist, a root `npm run` script that does not exist, live URLs that were
+ * "not deployed yet" months after they answered `200`, and an architecture decision the project
+ * had already reversed. Every one of those is a mechanical claim, and a mechanical claim can be
  * checked.
- *
- * Each check is asserted **twice** — once over a fixture that proves the check
- * can fail, and once over the real committed README that proves it passes today.
- * That is the PRD's own rule for this slice (test matrix, final paragraph): the
- * fixture alone proves the regex works, and the real file alone proves nothing
- * about what happens when someone edits it. Where a fixture stands in for a line
- * the README used to carry, it carries that line verbatim.
  */
 
 const readme = readFileSync(README, 'utf8')
@@ -90,11 +82,7 @@ describe('topLevelItemCount', () => {
     expect(topLevelItemCount(body)).toBe(2)
   })
 
-  /*
-   * The brief's caps are on *items*, not on a markdown syntax. Counting `1. `
-   * alone meant a list rewritten with dashes counted zero, so both caps passed
-   * on a section with any number of entries in it — including none.
-   */
+  /* The brief's caps are on *items*, not on a markdown syntax. Counting `1. */
   it('counts dashed and starred items the same way', () => {
     const body = ['- One', '* Two', '  - Nested', 'prose - not an item'].join('\n')
 
@@ -236,16 +224,9 @@ describe('path existence — AC-4', () => {
   })
 
   /*
-   * A file that is gitignored *by design* still deserves to be named in the
-   * README — `functions/.secret.local` is where a local Anthropic key goes, and
-   * a setup guide that cannot say so is not a setup guide. It never exists in a
-   * fresh clone, which is exactly the state this check runs in on CI.
-   *
-   * The exemption is the repository's own convention rather than a list: a
-   * committed `<path>.example` sitting beside it is what marks a path as
-   * "created by the developer, not by git". A typo'd path has no example next to
-   * it and is still reported, which is the property that keeps the check worth
-   * having.
+   * A file that is gitignored *by design* still deserves to be named in the README —
+   * `functions/.secret.local` is where a local Anthropic key goes, and a setup guide that cannot
+   * say so is not a setup guide.
    */
   it('accepts a gitignored path whose committed .example exists', () => {
     const exists = (path) => path === 'functions/.secret.local.example'

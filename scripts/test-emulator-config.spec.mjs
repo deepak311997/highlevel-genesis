@@ -15,12 +15,11 @@ import {
 } from './test-emulator-config.mjs'
 
 /*
- * Every test below states the band it is talking about, and none reads the one
- * the process happens to be configured with. The alternative bit us within the
- * hour: the second checkout exports EMULATOR_PORT_OFFSET, so its suite imported
- * an OFFSET of 300 and every assertion written as a bare 9199 failed — a red
- * gate caused by the environment the test ran in rather than by the code under
- * test, which is the one thing a test may never do.
+ * Every test below states the band it is talking about, and none reads the one the process
+ * happens to be configured with. The alternative bit us within the hour: the second checkout
+ * exports EMULATOR_PORT_OFFSET, so its suite imported an OFFSET of 300 and every assertion
+ * written as a bare 9199 failed — a red gate caused by the environment the test ran in rather
+ * than by the code under test, which is the one thing a test may never do.
  */
 const DEFAULT_BAND = {
   offset: 100,
@@ -38,10 +37,9 @@ const SECOND_BAND = {
 }
 
 /**
- * The generated config's whole job is to be reachable while a `npm run dev`
- * session holds the default ports. A port the generator forgets is a port the
- * suite shares with that session — which surfaces as an emulator dying at
- * startup, a long way from the omission that caused it.
+ * The generated config's whole job is to be reachable while a `npm run dev` session holds the
+ * default ports. A port the generator forgets is a port the suite shares with that session —
+ * which surfaces as an emulator dying at startup, a long way from the omission that caused it.
  */
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -130,16 +128,11 @@ describe('shiftPorts', () => {
 })
 
 /**
- * A second checkout of this repo runs its own suite on the same machine — two
- * autopilot tracks, one slice each. Ports are the only thing two clones
- * genuinely share, and they shared them by construction: the offset was a
- * constant, so every checkout computed the identical set and the second run to
- * start died with "Could not start emulator hub, port taken". That reads as a
- * red suite and says nothing about the code.
- *
- * The band is therefore selectable per checkout. Hub and logging are settings
- * rather than arithmetic: their defaults were picked to clear a `npm run dev`
- * session, and a tidy-looking formula would walk one band onto another's.
+ * A second checkout of this repo runs its own suite on the same machine — two autopilot tracks,
+ * one slice each. Ports are the only thing two clones genuinely share, and they shared them by
+ * construction: the offset was a constant, so every checkout computed the identical set and the
+ * second run to start died with "Could not start emulator hub, port taken". That reads as a red
+ * suite and says nothing about the code.
  */
 describe('a second checkout gets its own band', () => {
   it('shifts every declared port by the offset it is given', () => {
@@ -160,16 +153,9 @@ describe('a second checkout gets its own band', () => {
   })
 
   /*
-   * Eventarc and Cloud Tasks are started alongside `functions` whether or not
-   * firebase.json mentions them, exactly as the hub and the logging emulator
-   * are — and they were the two this generator still forgot. Two checkouts on
-   * different bands therefore both took the CLI's defaults, 9299 and 9499, and
-   * the second run to start died with `EADDRINUSE` before a single test ran.
-   *
-   * They are settings rather than arithmetic for the same reason hub and
-   * logging are, and here the reason is sharper: those CLI defaults sit *inside*
-   * the shifted auth band, so `9299 + offset` would put one checkout's eventarc
-   * squarely on another's auth port.
+   * Eventarc and Cloud Tasks are started alongside `functions` whether or not firebase.json
+   * mentions them, exactly as the hub and the logging emulator are — and they were the two this
+   * generator still forgot.
    */
   it('takes eventarc and tasks as their own settings', () => {
     const { emulators } = shiftPorts(firebaseJson(), { eventarcPort: 4960, tasksPort: 4970 })

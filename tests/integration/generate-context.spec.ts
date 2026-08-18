@@ -6,24 +6,11 @@ import { adminDb, framesOf, idTokenFor, postGenerate, resetEmulators, seedUser }
 /**
  * What the model was actually **shown** — AC-27, over the wire.
  *
- * This is the only level at which the slice's central wiring is observable at
- * all. `handleGenerate` reads the project's files, `buildParams` turns them into
- * a system block, and the block goes out after the `cache_control` breakpoint;
- * each of those three is unit-tested on its own, and all three could be correct
- * while the handler never called any of them. Every other test in this repository
- * would still pass.
- *
- * So the emulator-only fake answers the `__context` marker with a report of its
- * own input — how many system blocks it received, how many messages, and which
- * paths it was shown (D25). The report travels back as an ordinary `token` frame
- * through a real SSE response, so what is asserted here is the request that a
- * real generation would have sent.
- *
- * **The block count is written out rather than imported.** These tests run
- * against the *built* functions bundle and deliberately share no module with it;
- * the relationship between the counts is `params.spec.ts`'s business, and what
- * this file owns is the number that actually went over the wire. If the stable
- * prefix ever gains a block, this file should be edited deliberately.
+ * This is the only level at which the slice's central wiring is observable at all.
+ * `handleGenerate` reads the project's files, `buildParams` turns them into a system block, and
+ * the block goes out after the `cache_control` breakpoint; each of those three is unit-tested on
+ * its own, and all three could be correct while the handler never called any of them. Every
+ * other test in this repository would still pass.
  */
 
 /** The stable prefix: identity, file format, HighLevel cheat-sheet. */
@@ -53,11 +40,10 @@ async function seedProject(uid: string, id: string): Promise<void> {
 /**
  * Write a prompt past the routes, so a generation has a transcript to read.
  *
- * Written directly rather than sent as `content`, because these cases are about
- * what the model is *shown*: the transcript has to be exactly what this file
- * seeded, and a turn that carried its own prompt would append a second document
- * to it. The request is a `retry` for the same reason — it re-runs what is
- * stored and writes nothing.
+ * Written directly rather than sent as `content`, because these cases are about what the model
+ * is *shown*: the transcript has to be exactly what this file seeded, and a turn that carried
+ * its own prompt would append a second document to it. The request is a `retry` for the same
+ * reason — it re-runs what is stored and writes nothing.
  */
 async function seedPrompt(uid: string, projectId: string, content: string): Promise<void> {
   await adminDb()
@@ -74,9 +60,8 @@ async function seedPrompt(uid: string, projectId: string, content: string): Prom
 /**
  * A file document, written directly so a **corrupt** one can be written too.
  *
- * `id` and `path` are separate parameters for exactly that reason: the routes
- * cannot produce a document where they disagree, and that is the shape the last
- * case here needs.
+ * `id` and `path` are separate parameters for exactly that reason: the routes cannot produce a
+ * document where they disagree, and that is the shape the last case here needs.
  */
 async function seedFile(
   uid: string,
@@ -158,16 +143,8 @@ describe('the project’s files reach the request (AC-27)', () => {
   })
 
   /*
-   * The neighbouring real behaviour the plan moved AC-28's L4 slot to: **a
-   * corrupt file document does not break a generation.**
-   *
-   * A document whose id and `path` disagree cannot be shown in the right row of a
-   * tree or answered for the right `GET`, so it is known to be unusable (Slice 6
-   * D13) — and the question that matters here is what a *generation* does with
-   * one. It is skipped and logged, the turn completes, and the other two files
-   * still reach the model. The alternative, which is what an unguarded parse
-   * would give, is a project that can never generate again because of one bad
-   * document.
+   * The neighbouring real behaviour the plan moved AC-28's L4 slot to: **a corrupt file document
+   * does not break a generation.**
    */
   it('completes the generation and omits a file document whose id and path disagree', async () => {
     await seedProject(aliceUid, 'corrupt')

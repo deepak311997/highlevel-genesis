@@ -67,15 +67,9 @@ describe('AccountCard', () => {
   })
 
   /*
-   * AC-18, narrowed on purpose. The card used to lead with a display name and
-   * fall back to the address — which meant an account that never set one, and
-   * nothing in this product ever does, rendered the same address twice: once
-   * as the heading and once beneath it. Harmless while the card was full-width
-   * and obvious the moment it moved into the dashboard's rail.
-   *
-   * The address is the identity here, so it is shown once and there is no
-   * second line to disagree with it. The API still carries `displayName`; the
-   * card simply does not read it.
+   * AC-18, narrowed on purpose. The card used to lead with a display name and fall back to the
+   * address — which meant an account that never set one, and nothing in this product ever does,
+   * rendered the same address twice: once as the heading and once beneath it.
    */
   it('shows the address as the identity, once', () => {
     const wrapper = mountWith({ profile: PROFILE, loaded: true })
@@ -117,15 +111,7 @@ describe('AccountCard', () => {
     expect(wrapper.find('[data-testid="account-error"]').exists()).toBe(false)
   })
 
-  /*
-   * AC-19's other half, and what makes the case above load-bearing.
-   *
-   * "We asked and there is nothing yet" and "we have not asked" both have a null
-   * profile, and only `loaded` tells them apart. A card that branches on the
-   * profile alone shows "Setting up your profile…" to anyone rendering it before
-   * a request has started — which is every mount, for the tick between this
-   * component's own `onMounted` and its parent's.
-   */
+  /* AC-19's other half, and what makes the case above load-bearing. */
   it('shows the loading state, not the empty one, before anything has been fetched', () => {
     const wrapper = mountWith({ profile: null, loaded: false })
 
@@ -159,5 +145,4 @@ describe('AccountCard', () => {
     expect(wrapper.find('[data-testid="account-error"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="dashboard-email"]').exists()).toBe(false)
   })
-
 })

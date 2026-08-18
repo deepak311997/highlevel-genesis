@@ -7,13 +7,12 @@ import type { PreviewFile } from './previewDocument'
 /**
  * The assembled preview document (AC-1 … AC-8).
  *
- * Everything here is a **string** property of the document, never a behaviour of
- * it. jsdom in this repo does not execute a script inserted into a document, so
- * the loader calls the assembler emits cannot be run at this level; that they
- * really install the file they name is proven at L5, in a real browser. What is
- * provable here is the whole of the contract that matters to the browser: what
- * is injected, in what order, what is rewritten, what is left byte-identical,
- * and that no file's content ever reaches the markup.
+ * Everything here is a **string** property of the document, never a behaviour of it. jsdom in
+ * this repo does not execute a script inserted into a document, so the loader calls the
+ * assembler emits cannot be run at this level; that they really install the file they name is
+ * proven at L5, in a real browser. What is provable here is the whole of the contract that
+ * matters to the browser: what is injected, in what order, what is rewritten, what is left byte-
+ * identical, and that no file's content ever reaches the markup.
  */
 
 /**
@@ -32,9 +31,8 @@ function index(content: string): PreviewFile {
 /**
  * `assemblePreview` narrowed to its success branch.
  *
- * A failed assembly carries no `html` at all — that is the point of the union —
- * so a test that means to read the document says so once, here, rather than
- * casting at every call site.
+ * A failed assembly carries no `html` at all — that is the point of the union — so a test that
+ * means to read the document says so once, here, rather than casting at every call site.
  */
 function assemble(
   files: readonly PreviewFile[],
@@ -266,14 +264,7 @@ describe('assemblePreview — rewriting references to stored files', () => {
     expect(assetsOf(html)).toEqual([])
   })
 
-  /**
-   * One sentence per missing file, not one per reference to it.
-   *
-   * The panel renders these in a `v-for` keyed on the sentence, so a repeat is a
-   * duplicate key — Vue's Priority A rule — as well as the same complaint twice.
-   * A page that loads a stylesheet in `<head>` and again on a media query, or one
-   * that names the same missing script twice, is ordinary generated markup.
-   */
+  /** One sentence per missing file, not one per reference to it. */
   it('names a missing file once however many times it is referenced', () => {
     const { warnings } = assemble([
       index(
@@ -305,11 +296,10 @@ describe('assemblePreview — rewriting references to stored files', () => {
 
   it('resolves a reference written with one leading ./ against the same stored file', () => {
     /*
-     * Beyond the acceptance criteria, deliberately. `./styles.css` is a
-     * reference the browser would resolve against the *parent's* base URL and
-     * silently answer with the SPA's index.html; stripping the one leading `./`
-     * can only turn that silent breakage into either a working stylesheet or a
-     * warning naming the file. There is no case it makes worse.
+     * Beyond the acceptance criteria, deliberately. `./styles.css` is a reference the browser
+     * would resolve against the *parent's* base URL and silently answer with the SPA's
+     * index.html; stripping the one leading `./` can only turn that silent breakage into either
+     * a working stylesheet or a warning naming the file.
      */
     const { html, warnings } = assemble([
       index('<html><head><link rel="stylesheet" href="./styles.css"></head><body></body></html>'),

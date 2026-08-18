@@ -16,27 +16,10 @@ import {
 /**
  * `POST /generate` — the streaming endpoint, over the wire.
  *
- * **Two failure channels, and the boundary between them is `flushHeaders()`**
- * (D9, R6). Everything decided before the flush — auth, App Check, the body
- * parse, the project lookup, an empty context — is an ordinary JSON error with a
- * real status. Everything after it is an `error` event on a 200 stream, because
- * once the headers are gone the status line is spent.
- *
- * So every refusal case here asserts the `content-type` **is not** an event
- * stream, as well as the status. That is the half a status-code assertion cannot
- * see: a handler that opened the stream before deciding would answer `200
- * text/event-stream` carrying an `error` frame, and `expect(status).toBe(404)`
- * would be the only thing that noticed — on a test that had already been
- * rewritten to match.
- *
- * The LLM is the emulator-only fake (D20), driven by markers in the prompt. No
- * automated test in this project ever calls Anthropic.
- *
- * **From Slice 6 `reply.json` also streams three file blocks** (D26, R8). Its
- * prose is byte-identical, and every assertion below is about that prose or about
- * the frame protocol, so none of them changed — but the cases here now exercise
- * the file path too, which is the point. What the files themselves do is
- * `generate-files.spec.ts`.
+ * **Two failure channels, and the boundary between them is `flushHeaders()`**. Everything
+ * decided before the flush — auth, App Check, the body parse, the project lookup, an empty
+ * context — is an ordinary JSON error with a real status. Everything after it is an `error`
+ * event on a 200 stream, because once the headers are gone the status line is spent.
  */
 
 const PASSWORD = 'Correct-Horse-9'
@@ -168,12 +151,7 @@ describe('POST /generate — the boundary, before a byte is streamed', () => {
     expect(await countMessages(aliceUid, 'proj-1')).toBe(1)
   })
 
-  /*
-   * AC-22. The 404 alone would be satisfied by a handler that read bob's
-   * transcript and then refused. The unchanged-documents assertion is what proves
-   * it was never reachable: alice's request names
-   * `users/{alice}/projects/bob-1/messages`, which does not exist.
-   */
+  /* The 404 alone would be satisfied by a handler that read bob's transcript and then refused. */
   it("answers 404 for bob's project and leaves his transcript byte-identical", async () => {
     await seedProject(bobUid, 'bob-1')
     await seedMessage(bobUid, 'bob-1', 'msg-a', { content: "Bob's prompt" })
@@ -217,16 +195,8 @@ describe('POST /generate — the boundary, before a byte is streamed', () => {
   })
 
   /*
-   * AC-24. Every one of these is refused **before any Firestore read**, which is
-   * why the body parse is the first statement of the handler.
-   *
-   * `content` is a real field now — a turn is one request, and the prompt
-   * travels in it — so what the table guards has moved rather than gone. The
-   * load-bearing pair is the first two: a body carrying **both** `content` and
-   * `retry` is a caller that has not decided what it wants, and a body carrying
-   * **neither** would silently generate a second reply to whatever the
-   * transcript happens to end with. The refine says exactly one; this is the
-   * proof it is enforced at the boundary rather than in the handler.
+   * Every one of these is refused **before any Firestore read**, which is why the body parse is
+   * the first statement of the handler.
    */
   it.each([
     ['both content and retry', { projectId: 'proj-1', content: 'a prompt', retry: true }],
@@ -250,10 +220,8 @@ describe('POST /generate — the boundary, before a byte is streamed', () => {
   })
 
   /*
-   * AC-10, D6, D7. Both shapes are reachable: a project whose only messages are
-   * Slice 4 echoes, and a Retry on one. Dropping the trailing assistant leaves
-   * nothing to send, and an empty `messages` array is a 400 from the API anyway —
-   * answering it ourselves costs nothing and names the real cause.
+   * Both shapes are reachable: a project whose only messages are Slice 4 echoes, and a Retry on
+   * one.
    */
   it('answers 400 empty_context for a transcript of assistant turns only', async () => {
     await seedProject(aliceUid, 'echoes')
@@ -272,21 +240,7 @@ describe('POST /generate — the boundary, before a byte is streamed', () => {
     expect(await countMessages(aliceUid, 'echoes')).toBe(1)
   })
 
-  /*
-   * The 200-message cap, on the endpoint that also writes into the collection.
-   *
-   * `POST /api/projects/:projectId/messages` refuses at 199 so the reply it is
-   * about to trigger has room — but `/generate` writes an assistant message
-   * without going through that route, and **Retry re-opens it with no new user
-   * message at all** (D26). Unchecked, a transcript at the cap grows past it once
-   * per Retry, and `transcriptQuery`'s own `limit(200)` then hides every document
-   * beyond the two-hundredth: the reply arrives on screen and is gone on the next
-   * load. D34 leans on this cap to bound a project's spend absolutely, which only
-   * holds if the endpoint that spends the money honours it.
-   *
-   * Asserted through `expectJsonRefusal` like every other pre-flush refusal: a
-   * status alone would not notice a handler that opened the stream first.
-   */
+  /* The 200-message cap, on the endpoint that also writes into the collection. */
   it('answers 409 message_limit for a transcript at the cap, writing nothing', async () => {
     await seedProject(aliceUid, 'full')
     const batch = adminDb().batch()
@@ -424,10 +378,8 @@ describe('POST /generate — a turn that streams', () => {
   })
 
   /*
-   * AC-19, D28. The `__slow` fake pauses 600 ms before its first token, and the
-   * suite runs with `GENERATE_TEST_KEEPALIVE_MS=250` — so a keep-alive comment
-   * has to arrive first. Without it an intermediary that closes an idle
-   * connection would kill the request during the model's most productive moment.
+   * The `__slow` fake pauses 600 ms before its first token, and the suite runs with
+   * `GENERATE_TEST_KEEPALIVE_MS=250` — so a keep-alive comment has to arrive first.
    */
   it('writes a comment frame before the first token on a slow generation', async () => {
     await seedProject(aliceUid, 'slow')
@@ -443,17 +395,7 @@ describe('POST /generate — a turn that streams', () => {
     expect(comments.length).toBeGreaterThan(1)
   })
 
-  /*
-   * Two whole turns, and the second one carries its own prompt — which is now
-   * all a turn is. The prompt used to go through `POST /api/projects/:id/
-   * messages` before a second request opened the stream; that route is gone,
-   * and with it the window where a client could die between the two.
-   *
-   * It is also R1 end to end: the second `/generate` reads a transcript that
-   * ends `user → assistant` and appends its own prompt to it, so what reaches
-   * the model ends `user`. A trailing assistant would be a prefill and a 400;
-   * neither call is.
-   */
+  /* Two whole turns, and the second one carries its own prompt — which is now all a turn is. */
   it('answers a second turn, so the transcript grows rather than being replaced', async () => {
     await postGenerate({ projectId: 'proj-1', retry: true }, auth(aliceToken))
 
@@ -489,11 +431,8 @@ async function assistantMessages(
 
 describe('POST /generate — failure, mid-stream', () => {
   /*
-   * AC-12. The partial is the whole point (F8.2): a user who watched two
-   * sentences arrive must come back to those two sentences, not to a prompt with
-   * no answer. And the `error` frame carries the persisted document, so success
-   * and interruption are **one** client code path (D9) — whatever arrives, the
-   * placeholder is replaced by what the server actually stored.
+   * The partial is the whole point: a user who watched two sentences arrive must come back to
+   * those two sentences, not to a prompt with no answer.
    */
   it('answers tokens then one upstream error, persisting the partial as truncated', async () => {
     await seedMessage(aliceUid, 'proj-1', 'msg-a', {
@@ -519,16 +458,7 @@ describe('POST /generate — failure, mid-stream', () => {
     expect(payload.message?.['truncated']).toBe(true)
   })
 
-  /**
-   * AC-13, **rewritten by "a failure survives a refresh"**.
-   *
-   * It used to say that a generation producing no prose wrote nothing at all —
-   * and that was the bug: the only trace of the failure was an in-memory flag,
-   * so a reload showed a transcript that had silently swallowed the turn. A
-   * failed turn now stores an assistant document with no prose and the reason
-   * there is none, and the `error` frame carries that document so the client
-   * replaces its placeholder with what was actually written.
-   */
+  /** AC-13, **rewritten by "a failure survives a refresh"**. */
   it('persists the failure itself when the generation fails upfront', async () => {
     await seedMessage(aliceUid, 'proj-1', 'msg-a', { content: '__fail_upfront build a dashboard' })
 
@@ -549,9 +479,8 @@ describe('POST /generate — failure, mid-stream', () => {
   })
 
   /*
-   * AC-14, D18. A refusal is HTTP 200 with `stop_reason: 'refusal'` and no
-   * content, so a handler reading `content[0]` would break on exactly the case it
-   * exists to report. Nothing is persisted, because there is nothing to persist.
+   * A refusal is HTTP 200 with `stop_reason: 'refusal'` and no content, so a handler reading
+   * `content[0]` would break on exactly the case it exists to report.
    */
   it('answers one refused error and writes nothing when the model declines', async () => {
     await seedMessage(aliceUid, 'proj-1', 'msg-a', { content: '__refuse do something dubious' })
@@ -587,9 +516,8 @@ describe('POST /generate — failure, mid-stream', () => {
   })
 
   /*
-   * AC-16, D22. The cap converts the worst available failure — a generation that
-   * succeeded, streamed perfectly, and then failed at the Firestore write — into
-   * a truncated-but-saved reply.
+   * The cap converts the worst available failure — a generation that succeeded, streamed
+   * perfectly, and then failed at the Firestore write — into a truncated-but-saved reply.
    */
   it('caps a runaway generation, ending in done with a stored reply under the limit', async () => {
     await seedMessage(aliceUid, 'proj-1', 'msg-a', { content: '__long write me everything' })
@@ -611,33 +539,21 @@ describe('POST /generate — failure, mid-stream', () => {
 /*
  * **AC-17 and AC-18 are not here, and that is a finding rather than a gap.**
  *
- * The client disconnect cannot be observed through the functions emulator. This
- * was measured, not assumed: instrumenting `req.on('close')`, `req.on('aborted')`,
- * `res.on('aborted')` and `res.on('close')`, then aborting a real `fetch` two
- * tokens into a `__slow` stream, produces no `req` event at all, no `aborted`
- * event at all, the generation running to completion (`stopReason: 'end_turn'`,
- * `durationMs: 1213`), and `res close` arriving only afterwards with
- * `writableEnded: true`. The emulator terminates the client connection at its own
- * proxy and never propagates it to the function runtime.
- *
- * So the half we own — given the signal, abort the stream, persist the partial
- * marked `truncated`, and write nothing to the dead socket — is driven at L1 in
- * `functions/src/generate.spec.ts`, where the signal can be delivered. The half
- * the platform owns is a Slice 13 hand-check against the deploy, beside R2's.
- *
- * A test that cannot fail for the right reason is worse than no test, because
- * `it('persists the partial')` reads as proof either way.
+ * The client disconnect cannot be observed through the functions emulator. This was measured,
+ * not assumed: instrumenting `req.on('close')`, `req.on('aborted')`, `res.on('aborted')` and
+ * `res.on('close')`, then aborting a real `fetch` two tokens into a `__slow` stream, produces no
+ * `req` event at all, no `aborted` event at all, the generation running to completion
+ * (`stopReason: 'end_turn'`, `durationMs: 1213`), and `res close` arriving only afterwards with
+ * `writableEnded: true`. The emulator terminates the client connection at its own proxy and
+ * never propagates it to the function runtime.
  */
 
 describe('POST /generate — a transcript ending in an assistant turn', () => {
   /*
-   * **R1, end to end.** A trailing assistant message is an assistant prefill, and
-   * prefill is a 400 on `claude-opus-5` — so untreated, this is the shape that
-   * breaks Retry after an interruption, every single time, on the one path that
-   * is supposed to work when something has already gone wrong.
-   *
-   * The transcript is seeded past the routes into exactly the shape an
-   * interrupted turn leaves behind, and then generated from.
+   * **R1, end to end.** A trailing assistant message is an assistant prefill, and prefill is a
+   * 400 on `claude-opus-5` — so untreated, this is the shape that breaks Retry after an
+   * interruption, every single time, on the one path that is supposed to work when something has
+   * already gone wrong.
    */
   it('drops the trailing assistant turn and streams normally', async () => {
     await seedMessage(aliceUid, 'proj-1', 'bot-a', {
@@ -690,17 +606,11 @@ function userMessage(res: GenerateResponse): Record<string, unknown> {
 /**
  * The prompt travels with the turn — one request, and this is what it buys.
  *
- * A turn used to take two requests: `POST /api/projects/:id/messages` wrote the
- * prompt, then `POST /generate` streamed the reply. The property that split was
- * protecting is that the prompt is durable before the expensive half starts, and
- * it is preserved here by *ordering inside the handler* rather than by a round
- * trip — so the guarantees the message route used to carry are asserted against
- * `/generate` now, because that is where they live.
- *
- * The window the old shape had is what is really being closed: a client that
- * died between the two requests left a transcript ending on a prompt no reply
- * was ever coming for, with nothing on screen to say so. There is no "between"
- * any more.
+ * A turn used to take two requests: `POST /api/projects/:id/messages` wrote the prompt, then
+ * `POST /generate` streamed the reply. The property that split was protecting is that the prompt
+ * is durable before the expensive half starts, and it is preserved here by *ordering inside the
+ * handler* rather than by a round trip — so the guarantees the message route used to carry are
+ * asserted against `/generate` now, because that is where they live.
  */
 describe('POST /generate — the prompt travels with the turn', () => {
   /* The project seeded by `beforeEach` already holds one message, so these cases
@@ -757,13 +667,8 @@ describe('POST /generate — the prompt travels with the turn', () => {
   })
 
   /**
-   * The ordering, asserted where it matters: **the prompt survives a generation
-   * that never produced a byte.**
-   *
-   * This is the case the two-request shape existed for. Written after the
-   * upstream call instead, a failed generation would lose the prompt as well as
-   * the reply, and the user would be looking at a transcript that had silently
-   * dropped what they typed.
+   * The ordering, asserted where it matters: **the prompt survives a generation that never
+   * produced a byte.**
    */
   it('keeps the prompt when the generation fails before its first token', async () => {
     await seedProject(aliceUid, 'doomed')
@@ -783,15 +688,7 @@ describe('POST /generate — the prompt travels with the turn', () => {
     expect(stored[1]?.['error']).toBe('upstream')
   })
 
-  /**
-   * The cap, and **a new turn needs room for two documents where a retry needs
-   * one**.
-   *
-   * Refusing a new turn at 199 is what stops a transcript ending on a prompt
-   * with nowhere to put its answer. Refusing a retry only at 200 is the other
-   * half: a retry writes no prompt, so a transcript with one slot left has room
-   * for exactly the reply it is asking for.
-   */
+  /** The cap, and **a new turn needs room for two documents where a retry needs one**. */
   async function seedTranscript(projectId: string, count: number): Promise<void> {
     await seedProject(aliceUid, projectId)
     const batch = adminDb().batch()

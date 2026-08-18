@@ -21,22 +21,13 @@ vi.mock('@/lib/appCheck', () => ({
 const { useWorkspaceStore } = await import('./workspace')
 
 /**
- * One project, its transcript, and the draft — one store, because they share one
- * lifecycle (D24). Same `projectId`, loaded together, reset together; two stores
- * that must be reset in lockstep is a bug with a countdown on it.
+ * One project, its transcript, and the draft — one store, because they share one lifecycle. Same
+ * `projectId`, loaded together, reset together; two stores that must be reset in lockstep is a
+ * bug with a countdown on it.
  *
- * Deliberately **not** mocked at the client boundary: `fetch` is what is stubbed,
- * so AC-36 — "every request carries an Authorization and an App Check header" —
- * is asserted against the request that would actually go on the wire.
- * `projects.spec.ts`'s pattern.
- *
- * Two properties here are decisions rather than mechanics, and each has its own
- * case. **The load is sequential** (D25): a 404 on the project issues no
- * transcript request at all, so the view has one answer to render rather than two
- * competing ones. **A send appends** (D12) and issues no `GET`: a transcript only
- * ever appends, so the pair the server returned is by construction its two newest
- * members — appending *is* the server's order, not an approximation of it, which
- * is what separates this from the splice D14 rejected for the projects list.
+ * Deliberately **not** mocked at the client boundary: `fetch` is what is stubbed, so AC-36 —
+ * "every request carries an Authorization and an App Check header" — is asserted against the
+ * request that would actually go on the wire. `projects.spec.ts`'s pattern.
  */
 
 const PROJECT = {
@@ -177,12 +168,7 @@ describe('open', () => {
     await pending
   })
 
-  /*
-   * AC-21's store half, and the reason D25 chose sequence over parallelism. The
-   * second assertion is the one that matters: fetched in parallel a deleted
-   * project produces two 404s and the view has to decide which one it is
-   * rendering, and a transcript that cannot exist is requested anyway.
-   */
+  /* AC-21's store half, and the reason D25 chose sequence over parallelism. */
   it('records a 404 as missing and issues no transcript request', async () => {
     fetchMock.mockResolvedValue(response({ error: 'That project no longer exists.' }, 404))
     const store = useWorkspaceStore()
@@ -195,9 +181,8 @@ describe('open', () => {
   })
 
   /*
-   * `projectMissing` and `projectError` are kept apart because the two screens
-   * differ: one offers a Back link, the other a Retry. A 500 is not a deleted
-   * project and must not read as one.
+   * `projectMissing` and `projectError` are kept apart because the two screens differ: one
+   * offers a Back link, the other a Retry.
    */
   it('records any other failure as an error, leaving missing false', async () => {
     fetchMock.mockResolvedValue(response({ error: 'Something went wrong.' }, 500))
@@ -244,16 +229,12 @@ describe('open', () => {
 })
 
 /**
- * Every request here is issued for one project and lands after an `await`, by which
- * time the route may have moved on — the dashboard is two clicks away and the store
- * is a singleton, so "open A, go back, open B" leaves A's requests in flight against
- * B's screen. A response that arrives for a project that is no longer open is not
- * merely stale, it is *wrong*: it would put A's name over B's transcript, blank the
- * screen by clearing a loading flag that belongs to B, or append A's messages to B's
- * conversation.
- *
- * The rule is one line — a write only lands while `projectId` is still the id the
- * call was made for — and these are the four ways it is otherwise broken.
+ * Every request here is issued for one project and lands after an `await`, by which time the
+ * route may have moved on — the dashboard is two clicks away and the store is a singleton, so
+ * "open A, go back, open B" leaves A's requests in flight against B's screen. A response that
+ * arrives for a project that is no longer open is not merely stale, it is *wrong*: it would put
+ * A's name over B's transcript, blank the screen by clearing a loading flag that belongs to B,
+ * or append A's messages to B's conversation.
  */
 describe('a response that arrives for a project that is no longer open', () => {
   it('does not overwrite the project that is on screen', async () => {
@@ -447,14 +428,7 @@ describe('loadMessages', () => {
 })
 
 describe('send', () => {
-  /**
-   * One `POST`, the **one** returned message appended, the draft cleared — and
-   * no `GET` (D3, D4).
-   *
-   * The reply is not part of this request any more: `POST /generate` writes it,
-   * which is what makes a generation that dies before its first byte still leave
-   * a transcript the user recognises and a Retry that works (F8.2).
-   */
+  /** One `POST`, the **one** returned message appended, the draft cleared — and no `GET`. */
   it('posts the draft, appends the returned user message, and issues no GET', async () => {
     respondOpenOk()
     const store = useWorkspaceStore()
@@ -480,10 +454,9 @@ describe('send', () => {
   })
 
   /*
-   * The bubble is on screen before the server has answered — waiting on a round
-   * trip to see your own words is a lag the user did not cause — and the
-   * placeholder carries an id no Firestore document can have, so the `user`
-   * frame can replace exactly it and nothing else.
+   * The bubble is on screen before the server has answered — waiting on a round trip to see your
+   * own words is a lag the user did not cause — and the placeholder carries an id no Firestore
+   * document can have, so the `user` frame can replace exactly it and nothing else.
    */
   it('shows the prompt immediately, then replaces it with what was stored', async () => {
     const store = await opened()
@@ -565,12 +538,8 @@ describe('send', () => {
    * re-submitting has to be able to send the same text again.
    */
   /*
-   * A turn refused before the stream opened — the cap, a malformed body, a
-   * connection that never landed. The server writes the prompt before it
-   * flushes headers, so a refusal here means nothing was stored: the bubble
-   * comes back out, the words go back in the composer, and the reason appears
-   * beside the composer rather than as a Retry, because retrying at the cap
-   * would only fail again.
+   * A turn refused before the stream opened — the cap, a malformed body, a connection that never
+   * landed.
    */
   it('takes the bubble back and returns the draft when the turn is refused', async () => {
     const store = await opened()
@@ -648,11 +617,9 @@ describe('send', () => {
 
 describe('the draft', () => {
   /*
-   * AC-25, D17, R8. The draft is store state, not component state, because the
-   * `lg` breakpoint swaps one component tree for another — a draft held in a
-   * composer is eaten by a window resize, which is invisible in review and
-   * infuriating in use. Store state survives any component lifecycle by
-   * construction, which is what this asserts.
+   * The draft is store state, not component state, because the `lg` breakpoint swaps one
+   * component tree for another — a draft held in a composer is eaten by a window resize, which
+   * is invisible in review and infuriating in use.
    */
   it('survives a component lifecycle, because it lives here', () => {
     useWorkspaceStore().draft = 'half a sentence'
@@ -710,10 +677,9 @@ describe('canSend and atLimit', () => {
 
 describe('reset', () => {
   /*
-   * A transcript belongs to one account, and signing out is a route change rather
-   * than a page load — so without this the next person to sign in on the same
-   * browser could see the last one's conversation. The draft goes too: it is the
-   * previous user's words.
+   * A transcript belongs to one account, and signing out is a route change rather than a page
+   * load — so without this the next person to sign in on the same browser could see the last
+   * one's conversation.
    */
   it('empties everything', async () => {
     fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
@@ -771,14 +737,9 @@ function pushableStream(): {
   let controller!: ReadableStreamDefaultController<Uint8Array>
   const encoder = new TextEncoder()
   /*
-   * `released` is the client having *cancelled* the body, which
-   * `streamGeneration` now does on every exit — including the one where the
-   * store walks away from a stream belonging to a project the user has left.
-   *
-   * `push` and `close` go quiet once that has happened, because that is what
-   * the server sees: it goes on writing into a socket the client closed, and
-   * its writes land nowhere. Modelling it as a throw would make this double
-   * fail where the real thing merely stops mattering.
+   * `released` is the client having *cancelled* the body, which `streamGeneration` now does on
+   * every exit — including the one where the store walks away from a stream belonging to a
+   * project the user has left.
    */
   let released = false
   const body = new ReadableStream<Uint8Array>({
@@ -807,12 +768,11 @@ const frame = (event: string, data: unknown): string =>
 
 /** A whole stream, delivered as one canned body. */
 /**
- * A `Response` whose stream delivers its frames and then **drops** — a
- * connection lost after the headers flushed (AC-8, AC-9).
+ * A `Response` whose stream delivers its frames and then **drops** — a connection lost after the
+ * headers flushed.
  *
- * Distinct from `cannedStream` closing cleanly and from `fetchMock` rejecting:
- * this is the case where the request succeeded, tokens arrived, and the
- * transport died underneath the reader.
+ * Distinct from `cannedStream` closing cleanly and from `fetchMock` rejecting: this is the case
+ * where the request succeeded, tokens arrived, and the transport died underneath the reader.
  */
 function droppingStream(...frames: string[]): Response {
   const encoder = new TextEncoder()
@@ -822,11 +782,8 @@ function droppingStream(...frames: string[]): Response {
     status: 200,
     body: new ReadableStream<Uint8Array>({
       /*
-       * Pull-based on purpose: the frames are handed over on the first read and
-       * the socket dies on the second, which is what a mid-stream drop is. An
-       * `error()` raised in `start` races the enqueued chunk and the reader
-       * usually loses — that models a connection that never delivered anything,
-       * which is a different case with different consequences for the prompt.
+       * Pull-based on purpose: the frames are handed over on the first read and the socket dies
+       * on the second, which is what a mid-stream drop is.
        */
       pull(controller) {
         if (!delivered) {
@@ -869,13 +826,9 @@ async function opened(): Promise<ReturnType<typeof useWorkspaceStore>> {
 
 describe('send — the one request of a turn', () => {
   /*
-   * AC-32. **One request, and no `GET`.** The prompt travels with the call that
-   * streams the reply, so the turn cannot half-happen — there is no window
-   * between "stored" and "asked for an answer" for a dead tab to fall into. The
-   * durability F8.2 wants is still there, bought by ordering inside the handler
-   * rather than by a second round trip: the server writes the prompt before it
-   * opens the stream. A refetch would re-read the entire history to learn what
-   * the stream just said.
+   * **One request, and no `GET`.** The prompt travels with the call that streams the reply, so
+   * the turn cannot half-happen — there is no window between "stored" and "asked for an answer"
+   * for a dead tab to fall into.
    */
   it('opens one stream carrying the prompt, and issues no GET', async () => {
     const store = await opened()
@@ -914,18 +867,7 @@ describe('send — the one request of a turn', () => {
     expect(store.generating).toBe(false)
   })
 
-  /*
-   * D27, and the store keeping the promise its own comment makes.
-   *
-   * `canSend` names three reasons not to send — an empty draft, a send already
-   * in flight, and a stream already open — and the composer disables itself on
-   * all three. The store re-checks them because "a keyboard shortcut reaches
-   * this function without going through the button", and the third one is the
-   * expensive reason: a second `send()` during a stream posts a message and
-   * opens a **second paid generation**, and the first stream's abort then lands
-   * on the second one's state, clearing `generating` and raising an error for a
-   * request that is still running.
-   */
+  /* D27, and the store keeping the promise its own comment makes. */
   it('sends nothing while a stream is already open', async () => {
     const store = await opened()
     const stream = pushableStream()
@@ -957,10 +899,9 @@ describe('send — the one request of a turn', () => {
 
 describe('the stream', () => {
   /*
-   * AC-34. The tokens accumulate into `streamingText` and **`messages` is
-   * untouched** until the terminal event — D31's shape: the tokens become a
-   * `Message` exactly once, at the end, rather than an array pushed to
-   * thousands of times.
+   * The tokens accumulate into `streamingText` and **`messages` is untouched** until the
+   * terminal event — D31's shape: the tokens become a `Message` exactly once, at the end, rather
+   * than an array pushed to thousands of times.
    */
   it('accumulates tokens without touching the transcript, then appends on done', async () => {
     const store = await opened()
@@ -1001,9 +942,8 @@ describe('the stream', () => {
   })
 
   /*
-   * AC-35. An `error` carrying a message appends it — the partial the server
-   * actually stored, not the client's own copy of it (D9). Whatever arrives, the
-   * placeholder is replaced by the server's record.
+   * An `error` carrying a message appends it — the partial the server actually stored, not the
+   * client's own copy of it.
    */
   it('appends the persisted partial and sets the error', async () => {
     const store = await opened()
@@ -1056,10 +996,9 @@ describe('the stream', () => {
    * `/generate` would leave the composer disabled with nothing on screen.
    */
   /*
-   * A refusal on a **retry** is a generation error rather than a send error, and
-   * the difference is whether anything is pending: a retry carries no prompt, so
-   * there is nothing to take back off the screen and Retry is still the right
-   * thing to offer.
+   * A refusal on a **retry** is a generation error rather than a send error, and the difference
+   * is whether anything is pending: a retry carries no prompt, so there is nothing to take back
+   * off the screen and Retry is still the right thing to offer.
    */
   it('records a refused retry as a generation error, rolling nothing back', async () => {
     const store = await opened()
@@ -1129,10 +1068,8 @@ describe('retryGeneration', () => {
 
 describe('a stream that outlives the screen it was opened for', () => {
   /*
-   * AC-37, and the reason the controller lives in the store rather than in a
-   * component (D31, Slice 4's D17). The `lg` breakpoint swaps one component tree
-   * for another, so a controller held in the chat panel is dropped by a window
-   * resize — and the stream it was meant to cancel keeps writing.
+   * AC-37, and the reason the controller lives in the store rather than in a component (D31,
+   * Slice 4's D17).
    */
   it('aborts the request on reset, and a later frame mutates nothing', async () => {
     const store = await opened()
@@ -1172,11 +1109,8 @@ describe('a stream that outlives the screen it was opened for', () => {
     await store.open('proj-2')
 
     /*
-     * The body was released the moment the store walked away, so the `done`
-     * below reaches nobody — which is the point, and is why `generate` is not
-     * still billing for proj-1's reply. The state assertions that follow held
-     * before that was true and still hold; this line is what makes them cheap
-     * rather than a race the counter has to win.
+     * The body was released the moment the store walked away, so the `done` below reaches nobody
+     * — which is the point, and is why `generate` is not still billing for proj-1's reply.
      */
     expect(stream.released()).toBe(true)
 
@@ -1348,22 +1282,10 @@ describe('the file list', () => {
 /**
  * Tabs, and the per-path buffers under them (AC-13 – AC-17, D10 – D14).
  *
- * Slice 6 had **one** buffer, so clicking a second file threw away unsaved edits
- * to the first with no warning. The map keyed by path is what fixes that, and
- * `openTabs` is what makes it visible; `selectedPath` keeps its name and now
- * means the active tab (D14), which is deliberate diff hygiene — `FileTree.vue`
- * does not change at all.
- *
- * Each buffer is `{ content, saved, loading, error, replaced }`. `content` is
- * what the user has and `saved` is what the server last said; dirty is the two
- * disagreeing, derived rather than maintained, because a boolean has to be set on
- * every edit path and cleared on every load path and the first one anybody
- * forgets either enables Save for an unchanged file or leaves it disabled over an
- * edit.
- *
- * **The buffer survives a tab close** (D12), which is what removes the confirm
- * dialog from this slice entirely: closing a tab cannot lose work, so there is
- * nothing to warn about.
+ * Slice 6 had **one** buffer, so clicking a second file threw away unsaved edits to the first
+ * with no warning. The map keyed by path is what fixes that, and `openTabs` is what makes it
+ * visible; `selectedPath` keeps its name and now means the active tab, which is deliberate diff
+ * hygiene — `FileTree.vue` does not change at all.
  */
 describe('tabs and their buffers', () => {
   const stored = { ...INDEX_FILE, content: '<h1>Contacts</h1>\n' }
@@ -1437,10 +1359,8 @@ describe('tabs and their buffers', () => {
   })
 
   /**
-   * AC-13's failure half. The tab is **kept** — a tab that vanishes when its read
-   * fails leaves the user nothing to retry from — and `reloadFile()` is the Try
-   * again. The second tab is untouched throughout, which is the whole point of
-   * one buffer per path.
+   * AC-13's failure half. The tab is **kept** — a tab that vanishes when its read fails leaves
+   * the user nothing to retry from — and `reloadFile()` is the Try again.
    */
   it('keeps a failed read’s tab and re-reads it on demand', async () => {
     const store = await openedWithFiles()
@@ -1471,9 +1391,8 @@ describe('tabs and their buffers', () => {
   })
 
   /**
-   * AC-14. Re-activating is not re-opening: no second tab, and **no request** —
-   * refetching here would silently discard the buffer, which is the exact bug
-   * tabs exist to fix.
+   * Re-activating is not re-opening: no second tab, and **no request** — refetching here would
+   * silently discard the buffer, which is the exact bug tabs exist to fix.
    */
   it('activates an open tab without a second tab and without a request', async () => {
     const store = await openedOnTwo()
@@ -1663,20 +1582,10 @@ describe('tabs and their buffers', () => {
 /**
  * Saving an edit, **scoped to the active tab** (AC-19 – AC-21, D26).
  *
- * The response replaces the buffer rather than the buffer being trusted. The
- * server owns `size` and both timestamps and is free to store something other
- * than exactly what was sent; taking its answer is the same liveness rule the
- * rest of the app follows, and it is what stops the editor from showing a
- * document that disagrees with the server until a reload.
- *
- * What Slice 7 adds is the scope. With one buffer, "the buffer" was unambiguous;
- * with a map, a save that reached past the active tab would store one file's
- * bytes under another's name, or clear a dirty mark on a tab nobody saved. So
- * every case here that could touch a second tab asserts that it did not.
- *
- * `saving` and `saveError` stay top-level rather than joining the buffer: the
- * save is single-flight across the whole panel, and the PRD's data-model table
- * leaves them out deliberately.
+ * The response replaces the buffer rather than the buffer being trusted. The server owns `size`
+ * and both timestamps and is free to store something other than exactly what was sent; taking
+ * its answer is the same liveness rule the rest of the app follows, and it is what stops the
+ * editor from showing a document that disagrees with the server until a reload.
  */
 describe('saveFile', () => {
   const stored = { ...INDEX_FILE, content: '<h1>Contacts</h1>\n' }
@@ -1695,11 +1604,8 @@ describe('saveFile', () => {
   }
 
   /**
-   * AC-19. Two tabs, the **inactive** one dirty: the save takes the server's
-   * answer into the active buffer and leaves the other byte-identical.
-   *
-   * With one buffer this case could not be written at all, which is why it is the
-   * first one here.
+   * Two tabs, the **inactive** one dirty: the save takes the server's answer into the active
+   * buffer and leaves the other byte-identical.
    */
   it('PUTs the active buffer and takes the server’s answer back into that tab only', async () => {
     const store = await openedOnIndex()
@@ -1790,9 +1696,8 @@ describe('saveFile', () => {
   })
 
   /*
-   * A failed save keeps the user's work. Clearing the buffer, or marking it clean,
-   * would throw away an edit *because* it could not be stored — the one outcome a
-   * save must never have.
+   * A failed save keeps the user's work. Clearing the buffer, or marking it clean, would throw
+   * away an edit *because* it could not be stored — the one outcome a save must never have.
    */
   it('keeps the buffer dirty and records the error when the save fails', async () => {
     const store = await openedOnIndex()
@@ -1831,21 +1736,7 @@ describe('saveFile', () => {
     expect(requests()).toEqual([])
   })
 
-  /**
-   * A file the session has never read can never be saved over — end to end.
-   *
-   * `file_start` opens a tab and creates no buffer (P1), and a stream that ends
-   * in an `error` rather than a `done` never reaches `applyGenerationFiles`. That
-   * used to leave the tab open over a file whose bytes were never fetched, and a
-   * save from it would have `PUT` an empty string over whatever the server holds.
-   * The tab is now handed back when the stream ends whichever way it ended, so
-   * this walks the whole route rather than the guard alone: the tab goes, and
-   * there is nothing left to save from.
-   *
-   * `saveFile`'s own `buffer === undefined` guard stays as defence in depth —
-   * the two claims are "no path reaches this state" and "the state would be
-   * refused anyway", and only the first one can regress silently.
-   */
+  /** A file the session has never read can never be saved over — end to end. */
   it('cannot save a file the session never read, after an interrupted stream', async () => {
     const store = await openedOnIndex()
     store.closeTab('index.html')
@@ -1906,18 +1797,7 @@ describe('saveFile', () => {
     expect(store.saveError).toBeNull()
   })
 
-  /**
-   * AC-24, D12. A save moves `filesRevision` and **only** `filesRevision`.
-   *
-   * The two counters answer two different questions, which is the whole reason
-   * there are two of them. `generationsApplied` is what rebuilds the preview
-   * unasked; a save deliberately leaves it alone, because saves are frequent and
-   * every rebuild re-runs the generated app's HighLevel calls against a
-   * 100-request/10-second account budget — rebuilding on each keystroke-batch a
-   * developer commits would spend their CRM allowance on it. `filesRevision`
-   * moving is what the panel renders as a **Files changed — Refresh** hint: never
-   * silently stale, never spending the budget uninvited.
-   */
+  /** A save moves `filesRevision` and **only** `filesRevision`. */
   it('moves filesRevision and not generationsApplied on a successful save', async () => {
     const store = await openedOnIndex()
     store.editContent('<h1>People</h1>\n')
@@ -1945,16 +1825,11 @@ describe('saveFile', () => {
 })
 
 /**
- * The generation fans out into the files as well as the transcript (D24).
+ * The generation fans out into the files as well as the transcript.
  *
- * This is the reason the two live in one store. A `file_chunk` and a `token` come
- * from the same stream, are guarded by the same generation counter and are dropped
- * by the same `reset` — split across two stores they would need two of each, kept
- * in lockstep by hand.
- *
- * The streamed bytes are **watched, not stored** (D20). The server repairs content
- * and computes `size` and the timestamps, so what the browser saw arrive is not
- * necessarily what was written; `done` is what makes the client go and ask.
+ * This is the reason the two live in one store. A `file_chunk` and a `token` come from the same
+ * stream, are guarded by the same generation counter and are dropped by the same `reset` — split
+ * across two stores they would need two of each, kept in lockstep by hand.
  */
 describe('the stream — files', () => {
   const listed = { files: [INDEX_FILE, APP_FILE] }
@@ -2010,17 +1885,7 @@ describe('the stream — files', () => {
     await running
   })
 
-  /**
-   * AC-18, P1. The first streamed file **opens a tab and creates no buffer**.
-   *
-   * That is what makes AC-24 literally true — an empty `files` touches `buffers`
-   * not at all — while still discharging the hazard Slice 6's own tests name:
-   * `file_start` does not fetch, so a buffer created here would have an empty
-   * `saved` behind a real filename, and the first keystroke would make it dirty
-   * enough for **Save** to offer to replace that file with what was typed.
-   * `editorContent` already prefers `streamingFiles`, so the arriving bytes
-   * render with no buffer entry to speak of.
-   */
+  /** The first streamed file **opens a tab and creates no buffer**. */
   it('opens a tab for the first streamed file without creating a buffer', async () => {
     const store = await openedWithFiles()
     const stream = pushableStream()
@@ -2162,9 +2027,8 @@ describe('the stream — files', () => {
   })
 
   /*
-   * AC-40's second half. An empty `files` means nothing was stored — a prose-only
-   * reply, or a refused op set — and a refetch would be a request whose answer
-   * cannot have changed.
+   * AC-40's second half. An empty `files` means nothing was stored — a prose-only reply, or a
+   * refused op set — and a refetch would be a request whose answer cannot have changed.
    */
   it('issues no file request on a done that wrote nothing, and still clears the buffers', async () => {
     const store = await openedWithFiles()
@@ -2213,10 +2077,8 @@ describe('the stream — files', () => {
   })
 
   /**
-   * AC-41, D22. The window is narrow — the panel is read-only while a stream is
-   * open (D21) — so this is an edit typed *before* the send. The server's content
-   * wins, and the discard is **announced**: silence is the one thing that is not
-   * acceptable, and a merge UI is a slice of its own.
+   * The window is narrow — the panel is read-only while a stream is open — so this is an edit
+   * typed *before* the send.
    */
   it('replaces a dirty buffer the generation rewrote and says so', async () => {
     const store = await openedWithFiles()
@@ -2263,17 +2125,8 @@ describe('the stream — files', () => {
   })
 
   /**
-   * AC-22 — **every open tab** the generation rewrote is re-read, not just the
-   * active one, and the notice is per tab.
-   *
-   * With one buffer this rule had nowhere to be wrong. With a map it does: a
-   * generation that rewrites three files while two of them are open has to
-   * refresh both, or the tab the user is not looking at holds bytes the server
-   * has since replaced — and **Save** from it would put them back.
-   *
-   * D16's trigger also moves here. Slice 6 cleared the notice on selecting
-   * another file; with tabs, "another file" no longer implies leaving this buffer
-   * behind, so the trigger is the next edit *in that tab* (or closing it).
+   * AC-22 — **every open tab** the generation rewrote is re-read, not just the active one, and
+   * the notice is per tab.
    */
   it('re-reads every open tab the generation rewrote, clean and dirty alike', async () => {
     const store = await openedWithFiles()
@@ -2354,10 +2207,9 @@ describe('the stream — files', () => {
   })
 
   /**
-   * AC-23. A file that is **buffered but closed** has its entry dropped rather
-   * than re-read: re-reading every buffer ever opened would make the request
-   * count grow with the session, and dropping it keeps the answer correct — the
-   * next open fetches the server's copy.
+   * A file that is **buffered but closed** has its entry dropped rather than re-read: re-reading
+   * every buffer ever opened would make the request count grow with the session, and dropping it
+   * keeps the answer correct — the next open fetches the server's copy.
    */
   it('drops a buffered but closed file the generation rewrote', async () => {
     const store = await openedWithFiles()
@@ -2389,14 +2241,9 @@ describe('the stream — files', () => {
   })
 
   /**
-   * AC-24, literally. An empty `files` touches **`buffers` not at all** — not a
-   * re-read, not a drop, not a cleared flag — because nothing was stored, so
-   * there is no answer that could have changed.
-   *
-   * Asserted as a deep equality against a snapshot taken before the turn, rather
-   * than field by field: the claim is about the whole map, and a per-field check
-   * would pass over a buffer that was rebuilt with the same values but a lost
-   * `replaced`.
+   * AC-24, literally. An empty `files` touches **`buffers` not at all** — not a re-read, not a
+   * drop, not a cleared flag — because nothing was stored, so there is no answer that could have
+   * changed.
    */
   it('issues no file request and changes no buffer on a done that wrote nothing', async () => {
     const store = await openedWithFiles()
@@ -2424,12 +2271,7 @@ describe('the stream — files', () => {
     expect(store.openTabs).toEqual(['index.html', 'app.js'])
   })
 
-  /*
-   * A file that streamed and was then refused leaves a tab pointing at nothing.
-   * Closed, so the editor shows its empty state rather than a filename with no
-   * file behind it — and the tab list goes back to what it was before the
-   * generation borrowed it.
-   */
+  /* A file that streamed and was then refused leaves a tab pointing at nothing. */
   it('closes a tab the generation opened for a file that was never stored', async () => {
     const store = await openedWithFiles()
     const stream = pushableStream()
@@ -2458,15 +2300,8 @@ describe('the stream — files', () => {
   })
 
   /*
-   * The same rule, for the case that bites harder: the stream opened a tab for a
-   * file the project **already holds**, and then the set was refused. That tab
-   * has no buffer — `file_start` opens, it does not fetch — so leaving it open
-   * shows an empty editor for a file with content behind it, and the first
-   * keystroke would make it dirty enough for **Save** to offer to replace the
-   * real file with whatever was typed.
-   *
-   * The tab was the generation's, not the user's, and nothing was written, so it
-   * goes back to where it was: no tab, and no request issued (AC-24).
+   * The same rule, for the case that bites harder: the stream opened a tab for a file the
+   * project **already holds**, and then the set was refused.
    */
   it('closes a tab the generation opened for a stored file the turn did not write', async () => {
     const store = await openedWithFiles()
@@ -2554,9 +2389,8 @@ describe('the stream — files', () => {
   })
 
   /**
-   * AC-43, D21, R4. The one collision that actually happens is a generation's
-   * batch against the editor's PUT, and this closes the window at its source
-   * rather than detecting it afterwards.
+   * The one collision that actually happens is a generation's batch against the editor's PUT,
+   * and this closes the window at its source rather than detecting it afterwards.
    */
   it('issues no save while a stream is open', async () => {
     const store = await openedWithFiles()
@@ -2609,17 +2443,7 @@ describe('the stream — files', () => {
     expect(store.generateError).toBe('The reply was interrupted.')
   })
 
-  /**
-   * The same rule the `done` path already applies (P1), for the turn that never
-   * reaches `done`.
-   *
-   * `file_start` opens a tab and creates **no buffer**, and only `done` runs
-   * `applyGenerationFiles`. So a stream interrupted after its first file left a
-   * tab over a file this session has never read: an empty editor above a file
-   * with content, whose keystrokes go nowhere — `editContent` has no buffer to
-   * write to — while the byte count reads 0 and **Save** stays dead. Closing it
-   * puts the panel back where the generation borrowed it from.
-   */
+  /** The same rule the `done` path already applies, for the turn that never reaches `done`. */
   it('closes a tab the generation opened when the stream ends in an error', async () => {
     const store = await openedWithFiles()
     const stream = pushableStream()
@@ -2651,11 +2475,7 @@ describe('the stream — files', () => {
     expect(requests()).toEqual([])
   })
 
-  /**
-   * And the tab the **user** opened survives the same failure, dirty included.
-   * Closing that one would discard an edit for a reason they cannot see, on a
-   * turn that changed nothing about the file.
-   */
+  /** And the tab the **user** opened survives the same failure, dirty included. */
   it('keeps the user’s own tab through a stream that ends in an error', async () => {
     const store = await openedWithFiles()
     fetchMock.mockResolvedValueOnce(response({ file: { ...APP_FILE, content: 'const a = 1\n' } }))
@@ -2761,18 +2581,7 @@ describe('the stream — files', () => {
     expect(store.streamingFiles).toEqual({})
   })
 
-  /**
-   * AC-23, D12. The rebuild signal moves **after** the refetch, never before.
-   *
-   * The ordering is the assertion, and it is load-bearing rather than pedantic:
-   * `generationsApplied` is what makes the preview rebuild unasked, and the
-   * preview assembles its document out of `files`. Bumped before the list
-   * settled, the one screen whose entire job is to show what the generation just
-   * wrote would build the *previous* turn's file set.
-   *
-   * `filesRevision` moves on the same event, so the panel that has just rebuilt
-   * by itself does not then also claim its files have changed.
-   */
+  /** The rebuild signal moves **after** the refetch, never before. */
   it('increments both counters after the file list has settled, and not before', async () => {
     const store = await openedWithFiles()
     const stream = pushableStream()
@@ -2862,10 +2671,8 @@ describe('the stream — files', () => {
   })
 
   /**
-   * And the narrow window the guard exists for: the project is left **while the
-   * refetch is in flight**, so the increment is the first thing to run after the
-   * `await` returns. A counter bumped there would make the project now on screen
-   * rebuild its preview for a generation that belonged to another one.
+   * And the narrow window the guard exists for: the project is left **while the refetch is in
+   * flight**, so the increment is the first thing to run after the `await` returns.
    */
   it('does not move the counters for a generation whose project was left mid-refetch', async () => {
     const store = await openedWithFiles()
@@ -2963,14 +2770,13 @@ const SNAPSHOT_NEW = {
 }
 
 /**
- * The version history (AC-23, AC-27, AC-28, D21).
+ * The version history.
  *
- * The list is **asked for**, never pushed: `done`'s SSE payload is unchanged, so
- * the only way the browser learns a version exists is a request. Which request,
- * and when, is the whole of this block — the sheet fetches on every open (P5),
- * and a finished generation refetches **only if** the sheet has been opened this
- * session, because a refetch for a list nobody has looked at is a request whose
- * answer is never rendered.
+ * The list is **asked for**, never pushed: `done`'s SSE payload is unchanged, so the only way
+ * the browser learns a version exists is a request. Which request, and when, is the whole of
+ * this block — the sheet fetches on every open, and a finished generation refetches **only if**
+ * the sheet has been opened this session, because a refetch for a list nobody has looked at is a
+ * request whose answer is never rendered.
  */
 describe('the snapshot list', () => {
   it('fills the list and marks it loaded', async () => {
@@ -3046,10 +2852,8 @@ describe('the snapshot list', () => {
   })
 
   /**
-   * AC-27, D21. A turn that stored files recorded a version, so an **open** sheet
-   * would otherwise go stale while the user watches the generation finish behind
-   * it. The refetch rides after the file list's, which is where the answer it
-   * depends on has just landed.
+   * A turn that stored files recorded a version, so an **open** sheet would otherwise go stale
+   * while the user watches the generation finish behind it.
    */
   it('refetches the list on a done that wrote files, once it has been loaded', async () => {
     const store = await opened()
@@ -3179,19 +2983,12 @@ describe('the snapshot list', () => {
 const ABOUT_FILE = { ...INDEX_FILE, path: 'about.html', size: 12 }
 
 /**
- * Restore, and what it does to the tabs (AC-24, AC-25, AC-26, D12, D22, P6).
+ * Restore, and what it does to the tabs.
  *
- * The response **is** the refetch (D12): the server has just written the
- * documents and answers from what it stored, so `files` is applied directly and
- * no follow-up `GET …/files` is issued. The snapshot *list* is refetched
- * separately, because the safety snapshot (D9) means it genuinely changed.
- *
- * The tab reconciliation is the part with teeth. A restore can rewrite every
- * open file and can **delete** files a generation never could, so a tab left
- * pointing at a path the project no longer holds shows bytes the server has
- * disowned — and **Save** from it would put a deleted file back. Every discarded
- * dirty buffer is announced (D22), origin-neutral: the notice does not care
- * whether it was a generation or a restore that replaced it.
+ * The response **is** the refetch: the server has just written the documents and answers from
+ * what it stored, so `files` is applied directly and no follow-up `GET …/files` is issued. The
+ * snapshot *list* is refetched separately, because the safety snapshot means it genuinely
+ * changed.
  */
 describe('restoreSnapshot', () => {
   const storedIndex = { ...INDEX_FILE, content: '<h1>Contacts</h1>\n' }
@@ -3227,17 +3024,7 @@ describe('restoreSnapshot', () => {
     expect(store.restoreError).toBeNull()
   })
 
-  /*
-   * The tree's three flags move together, or the tree does not move.
-   *
-   * D12 makes the restore's response *be* the refetch, so it writes `files`
-   * directly — but `loadFiles` is the only other writer and it sets `filesLoaded`
-   * and clears `filesError` too, which is what `FileTree.vue` renders on. A
-   * project whose first `GET /files` failed therefore keeps showing "Try again"
-   * over a tree that has just been rewritten by a successful restore: the user
-   * pressed Restore, every file changed on the server, and the panel says the
-   * files could not be loaded.
-   */
+  /* The tree's three flags move together, or the tree does not move. */
   it('clears the tree’s error state, because the response is the refetch', async () => {
     fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
     fetchMock.mockResolvedValueOnce(response({ messages: [] }))
@@ -3258,17 +3045,7 @@ describe('restoreSnapshot', () => {
     expect(store.filesLoaded).toBe(true)
   })
 
-  /*
-   * D18's interlock, in the direction it was not written for.
-   *
-   * `restoreSnapshot` refuses to start while a generation is open, because the
-   * two are writers for one set of documents. Nothing stopped the reverse: with
-   * a restore in flight the composer stays live, and a generation that commits
-   * *after* the restore's read leaves the restore holding a file list that is
-   * now a version behind. Applying it drops the file the generation just wrote
-   * out of the tree and closes the tab opened for it, while the file sits on the
-   * server — the workspace disagreeing with Firestore until something refetches.
-   */
+  /* D18's interlock, in the direction it was not written for. */
   it('refuses to send while a restore is in flight', async () => {
     const store = await openedWithHistory()
     const slow = deferred()
@@ -3312,10 +3089,8 @@ describe('restoreSnapshot', () => {
   })
 
   /*
-   * AC-24's second half. A restore that failed wrote nothing — the server's
-   * batch is all-or-nothing — so the workspace must look exactly as it did
-   * before, unsaved edits included. Discarding a buffer *because* the restore
-   * failed would lose work for a change that never happened.
+   * AC-24's second half. A restore that failed wrote nothing — the server's batch is all-or-
+   * nothing — so the workspace must look exactly as it did before, unsaved edits included.
    */
   it('records a failure and leaves the files, the tabs and every buffer alone', async () => {
     const store = await openedWithHistory()
@@ -3351,14 +3126,7 @@ describe('restoreSnapshot', () => {
     expect(store.restoreError).toBeNull()
   })
 
-  /**
-   * AC-25, whole. Two tabs, a restored set holding one of them:
-   *
-   * - `index.html` is **re-read**, because the bytes behind it have changed;
-   * - `about.html`'s tab is **closed** and its buffer dropped, because the path
-   *   is gone and a tab over a deleted file would offer to Save it back;
-   * - the dirty buffer's discard is **announced** (D22).
-   */
+  /** AC-25, whole. Two tabs, a restored set holding one of them: */
   it('re-reads a surviving tab, closes a deleted one, and announces the discard', async () => {
     const store = await openedWithHistory()
     fetchMock.mockResolvedValueOnce(response({ file: storedIndex }))
@@ -3408,11 +3176,9 @@ describe('restoreSnapshot', () => {
   })
 
   /**
-   * P6. `applyGenerationFiles` drops the closed buffers a generation *rewrote*;
-   * a restore potentially rewrites or deletes everything, so the equivalent set
-   * is **all of them** — the response carries no per-path record of what moved.
-   * The next open fetches the server's copy, which is the same guarantee reached
-   * the same way, and no request is issued for a tab nobody has open.
+   * `applyGenerationFiles` drops the closed buffers a generation *rewrote*; a restore
+   * potentially rewrites or deletes everything, so the equivalent set is **all of them** — the
+   * response carries no per-path record of what moved.
    */
   it('drops every closed-but-buffered file, and the next open re-fetches it', async () => {
     const store = await openedWithHistory()
@@ -3444,10 +3210,9 @@ describe('restoreSnapshot', () => {
   })
 
   /*
-   * D10 from the client's side. `changed: false` is the project already being
-   * this version: nothing was written, so nothing on screen is stale — and
-   * re-reading the tabs would discard an unsaved edit for a change that did not
-   * happen. The list is still applied, because it is the server's own word.
+   * D10 from the client's side. `changed: false` is the project already being this version:
+   * nothing was written, so nothing on screen is stale — and re-reading the tabs would discard
+   * an unsaved edit for a change that did not happen.
    */
   it('leaves every tab and buffer alone when nothing changed', async () => {
     const store = await openedWithHistory()
@@ -3471,10 +3236,9 @@ describe('restoreSnapshot', () => {
   })
 
   /**
-   * AC-26. A restore and a generation are two writers for one set of documents,
-   * and the sheet is reachable while a stream is open — so the store re-checks
-   * the rule the sheet renders, because nothing guarantees the click came from
-   * the button.
+   * A restore and a generation are two writers for one set of documents, and the sheet is
+   * reachable while a stream is open — so the store re-checks the rule the sheet renders,
+   * because nothing guarantees the click came from the button.
    */
   it('issues no request while a generation is open', async () => {
     const store = await openedWithHistory()
@@ -3553,22 +3317,15 @@ describe('restoreSnapshot', () => {
 })
 
 /**
- * What a restore owes the preview — found at ship time, when Slice 10 rebased
- * onto a `main` that had already taken Slice 11.
+ * What a restore owes the preview — found at ship time, when Slice 10 rebased onto a `main` that
+ * had already taken Slice 11.
  *
- * The two slices never touched the same lines: Slice 11 wrote `restoreSnapshot`,
- * Slice 10 wrote the two counters, and the rebase produced one trivial conflict in
- * the store's exported interface. The result was still wrong. A restore rewrites
- * the **whole** stored file set — Slice 10's `filesRevision` counts exactly that,
- * and moved for a one-file save while sitting still for a twenty-file rollback.
- * The preview kept rendering the version the user had just replaced, with no hint
- * that it was stale and no way to know except pressing Refresh on spec.
- *
- * `generationsApplied` deliberately does **not** move (Slice 10, D12). It is the
- * unasked rebuild, and every rebuild re-runs the generated app's HighLevel calls
- * against a 100-request/10-second account budget; a restore is a deliberate act
- * whose result the user may want to read before spending that. The hint is the
- * honest middle, and it is the same answer a save gets for the same reason.
+ * The two slices never touched the same lines: Slice 11 wrote `restoreSnapshot`, Slice 10 wrote
+ * the two counters, and the rebase produced one trivial conflict in the store's exported
+ * interface. The result was still wrong. A restore rewrites the **whole** stored file set —
+ * Slice 10's `filesRevision` counts exactly that, and moved for a one-file save while sitting
+ * still for a twenty-file rollback. The preview kept rendering the version the user had just
+ * replaced, with no hint that it was stale and no way to know except pressing Refresh on spec.
  */
 describe('restoreSnapshot — the preview’s signals', () => {
   async function openedWithHistory(): Promise<ReturnType<typeof useWorkspaceStore>> {
@@ -3594,11 +3351,7 @@ describe('restoreSnapshot — the preview’s signals', () => {
     expect(store.generationsApplied).toBe(0)
   })
 
-  /*
-   * Slice 11's D10: `changed: false` is the project already *being* that version.
-   * Nothing was written, so the document on screen is the document the files
-   * describe — offering a Refresh would spend a rebuild to render it again.
-   */
+  /* Slice 11's D10: `changed: false` is the project already *being* that version. */
   it('moves neither counter when the restore changed nothing', async () => {
     const store = await openedWithHistory()
     fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE, ABOUT_FILE], changed: false }))
@@ -3624,19 +3377,13 @@ describe('restoreSnapshot — the preview’s signals', () => {
 })
 
 /**
- * What a restore **reports** (AC-5) — the return value the sheet branches on.
+ * What a restore **reports** — the return value the sheet branches on.
  *
- * Slice 11 left `restoreSnapshot` returning `void`, which made the no-op restore
- * silent: the request went out, the server answered `changed: false`, and the
- * sheet had no way to tell that from a restore that rewrote every file. Nothing
- * on screen moved either way, so the only honest report is a transient one — and
- * a transient report needs the outcome as a value, not as a flag the caller has
- * to go looking for afterwards.
- *
- * Four outcomes, and the caller decides what each is worth: `'restored'` and
- * `'unchanged'` are the two the user is told about, `'skipped'` and `'failed'`
- * are the two they are not. A failure already renders in `restoreError` and must
- * stay there (D4), and a refusal is a button the sheet had already disabled.
+ * Slice 11 left `restoreSnapshot` returning `void`, which made the no-op restore silent: the
+ * request went out, the server answered `changed: false`, and the sheet had no way to tell that
+ * from a restore that rewrote every file. Nothing on screen moved either way, so the only honest
+ * report is a transient one — and a transient report needs the outcome as a value, not as a flag
+ * the caller has to go looking for afterwards.
  */
 describe('restoreSnapshot — what it reports', () => {
   async function openedWithHistory(): Promise<ReturnType<typeof useWorkspaceStore>> {
@@ -3660,11 +3407,9 @@ describe('restoreSnapshot — what it reports', () => {
   })
 
   /*
-   * AC-5's other half, as far as the client can observe it: `changed: false` is
-   * the project already *being* that version, so no new version was written and
-   * `filesRevision` — the count of changes to the stored file set — does not
-   * move. The outcome is the only thing that differs from the case above, which
-   * is exactly why it has to be reported.
+   * AC-5's other half, as far as the client can observe it: `changed: false` is the project
+   * already *being* that version, so no new version was written and `filesRevision` — the count
+   * of changes to the stored file set — does not move.
    */
   it('reports a restore that changed nothing', async () => {
     const store = await openedWithHistory()
@@ -3678,9 +3423,8 @@ describe('restoreSnapshot — what it reports', () => {
   })
 
   /*
-   * A refusal is not an outcome the user is told about: the sheet had already
-   * disabled the button, and the guard exists because nothing guarantees the
-   * call came from it. No request goes out, so there is nothing to report on.
+   * A refusal is not an outcome the user is told about: the sheet had already disabled the
+   * button, and the guard exists because nothing guarantees the call came from it.
    */
   it('reports a refused restore', async () => {
     const store = await openedWithHistory()
@@ -3714,13 +3458,12 @@ describe('restoreSnapshot — what it reports', () => {
 })
 
 /**
- * AC-9. What survives a connection dropping mid-reply.
+ * What survives a connection dropping mid-reply.
  *
- * F8.2 asks that the user can retry, and a retry is only worth offering if the
- * prompt it would resend is still there. The store commits the user's message
- * before the stream opens, so this is the assertion that a *client-side* drop
- * does not undo that — and that the sentence the user reads is the app's own,
- * not whatever the browser called the failure.
+ * F8.2 asks that the user can retry, and a retry is only worth offering if the prompt it would
+ * resend is still there. The store commits the user's message before the stream opens, so this
+ * is the assertion that a *client-side* drop does not undo that — and that the sentence the user
+ * reads is the app's own, not whatever the browser called the failure.
  */
 describe('a connection that drops mid-reply', () => {
   it('keeps the prompt and reopens the stream after a mid-stream drop', async () => {

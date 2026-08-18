@@ -27,14 +27,7 @@ const meta = (path: string): FileMeta => ({
 })
 
 describe('compareFilePaths', () => {
-  /**
-   * `index.html` first, and everything else alphabetical.
-   *
-   * The entry point is the file a user opens to understand the app (D1), so it is
-   * the row the eye should land on. Alphabetical after it, because any other
-   * order — creation time, size — makes a list that reorders itself between
-   * generations for reasons nobody can see.
-   */
+  /** `index.html` first, and everything else alphabetical. */
   it('puts index.html first whatever the alphabet says', () => {
     expect(['styles.css', 'index.html', 'app.js'].sort(compareFilePaths)).toEqual([
       'index.html',
@@ -62,13 +55,7 @@ describe('compareFilePaths', () => {
 })
 
 describe('mergeFileTree', () => {
-  /**
-   * The union of what is stored and what is streaming, streaming ones marked.
-   *
-   * A path that is streaming *and* stored appears once (D8's visible consequence
-   * runs the other way: an invalid path shows while it streams and is gone at the
-   * refetch, and this is what stops a rewrite from showing twice in between).
-   */
+  /** The union of what is stored and what is streaming, streaming ones marked. */
   it('returns the union, in the comparator’s order', () => {
     const rows = mergeFileTree([meta('styles.css'), meta('index.html')], ['app.js'])
 
@@ -112,10 +99,8 @@ describe('mergeFileTree', () => {
 
 describe('utf8Bytes', () => {
   /*
-   * The cap is bytes, because a Firestore document limit is bytes — so a byte
-   * count is what the editor has to show and what **Save** has to key off. A
-   * `.length` here would let a file of 60,000 three-byte characters look like it
-   * fitted and be refused by the server at 180,000.
+   * The cap is bytes, because a Firestore document limit is bytes — so a byte count is what the
+   * editor has to show and what **Save** has to key off.
    */
   it('counts bytes and not characters', () => {
     expect(utf8Bytes('abc')).toBe(3)
@@ -135,14 +120,7 @@ describe('utf8Bytes', () => {
 })
 
 describe('formatBytes', () => {
-  /**
-   * Decimal KB, because that is already this codebase's unit (P7).
-   *
-   * `fileErrorCopy` on the server renders the cap as `FILE_BYTES_MAX / 1000` —
-   * "100 KB" for 100,000 bytes. A binary KiB here would make a file the editor
-   * calls "98 KB" be refused by a server that calls the same limit "100 KB",
-   * and the user would have no way to tell which of the two numbers was lying.
-   */
+  /** Decimal KB, because that is already this codebase's unit. */
   it('counts bytes below a kilobyte in bytes', () => {
     expect(formatBytes(0)).toBe('0 bytes')
     expect(formatBytes(512)).toBe('512 bytes')
@@ -156,12 +134,8 @@ describe('formatBytes', () => {
   })
 
   /**
-   * The rounding floor. `Math.round(1400 / 1000)` is 1, but
-   * `Math.round(1499 / 1000)` is also 1 and `Math.round(1000 / 1000)` is 1 —
-   * the trap is the half that rounds *down* past it. A file over a kilobyte
-   * must never be described as "0 KB", which is what a bare `Math.round` says
-   * for anything under 500 bytes and what a naive `< 1024` boundary would say
-   * for 1000–1023.
+   * The rounding floor. `Math.round(1400 / 1000)` is 1, but `Math.round(1499 / 1000)` is also 1
+   * and `Math.round(1000 / 1000)` is 1 — the trap is the half that rounds *down* past it.
    */
   it('never rounds a file that exceeds a kilobyte down to zero', () => {
     expect(formatBytes(1000)).toBe('1 KB')
@@ -176,16 +150,7 @@ describe('formatBytes', () => {
 })
 
 describe('fileKind', () => {
-  /**
-   * The extension is the only thing a flat filename can be sorted *by*.
-   *
-   * The server refuses slashes outright (`filePathSchema`), so a generated
-   * project has no directories to draw and the panel's only real grouping is
-   * what a file *is*. Mapping that here rather than in the template is the same
-   * decision `editorLanguage` made about tokenizers: one table, tested against
-   * the server's allowlist, instead of a `v-if` chain per surface that renders
-   * a filename.
-   */
+  /** The extension is the only thing a flat filename can be sorted *by*. */
   it('names the kind of every extension the server allows', () => {
     expect(fileKind('index.html')).toBe('markup')
     expect(fileKind('styles.css')).toBe('style')
@@ -208,13 +173,7 @@ describe('fileKind', () => {
 describe('groupFileTree', () => {
   const row = (path: string): FileRow => ({ path, writing: false })
 
-  /**
-   * The groups come out in a fixed order and the rows keep the tree's.
-   *
-   * Markup first for `compareFilePaths`' reason: `index.html` is where a reader
-   * starts, and a grouping that buried it under an alphabetised kind would undo
-   * the one ordering decision this module already made.
-   */
+  /** The groups come out in a fixed order and the rows keep the tree's. */
   it('groups by kind in a fixed order, preserving the row order inside each', () => {
     const groups = groupFileTree([
       row('readme.md'),

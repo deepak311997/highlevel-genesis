@@ -108,10 +108,9 @@ describe('patchProject', () => {
   })
 
   /*
-   * Only the keys it was given. An empty `PATCH` is a 400 by design, and a
-   * client that helpfully filled in the unchanged fields would turn every rename
-   * into a full overwrite — including one that resends a description the user
-   * never touched.
+   * Only the keys it was given. An empty `PATCH` is a 400 by design, and a client that helpfully
+   * filled in the unchanged fields would turn every rename into a full overwrite — including one
+   * that resends a description the user never touched.
    */
   it('sends only the keys it was handed', async () => {
     await patchProject('proj-1', { description: null })
@@ -133,10 +132,9 @@ describe('deleteProject', () => {
 })
 
 /*
- * An id is a server-generated string that reaches us over the wire, so it is
- * encoded rather than trusted to be path-safe — the server refuses anything
- * outside `[A-Za-z0-9_-]`, and this makes the two agree instead of relying on
- * the refusal.
+ * An id is a server-generated string that reaches us over the wire, so it is encoded rather than
+ * trusted to be path-safe — the server refuses anything outside `[A-Za-z0-9_-]`, and this makes
+ * the two agree instead of relying on the refusal.
  */
 describe('path encoding', () => {
   it.each([

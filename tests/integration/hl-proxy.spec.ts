@@ -14,23 +14,9 @@ import {
 /**
  * `/api/hl/proxy/**` — the boundary, over the wire.
  *
- * The unit tests prove the matcher refuses what it should. This file proves the
- * *refusals reach a caller*, in the right order, with nothing touched on the way
- * — which is a different claim and the one R1 and R3 actually rest on.
- *
- * ## Ordering is the assertion, not a detail of it
- *
- * Several cases here look like they only check a status code. They check an
- * **order**: a caller with no connection document who asks for a route that is
- * not on the allowlist gets `403 route_not_allowed` and not `409
- * hl_not_connected`. The second status is what a proxy that read Firestore
- * before consulting the table would answer. So the status *is* the evidence that
- * the read never happened — there is no other way to observe a read that did not
- * occur.
- *
- * The upstream call is observed directly instead, through the fake's own counter
- * (`GET /__fake-hl/__calls`), because a call that was never made is otherwise
- * indistinguishable from one that failed.
+ * The unit tests prove the matcher refuses what it should. This file proves the *refusals reach
+ * a caller*, in the right order, with nothing touched on the way — which is a different claim
+ * and the one R1 and R3 actually rest on.
  */
 
 const PASSWORD = 'Correct-Horse-9'
@@ -54,9 +40,8 @@ let unverifiedToken: string
 /**
  * A connection an hour from expiry, so nothing here refreshes by accident.
  *
- * `tests/integration/hl-token-refresh.spec.ts` owns the skew; a case in this
- * file that rotated a token would be testing that file's subject with this
- * file's fixtures.
+ * `tests/integration/hl-token-refresh.spec.ts` owns the skew; a case in this file that rotated a
+ * token would be testing that file's subject with this file's fixtures.
  */
 async function seedConnection(uid: string, overrides: Record<string, unknown> = {}): Promise<void> {
   await adminDb()
@@ -143,10 +128,9 @@ describe('the proxy boundary', () => {
   })
 
   /*
-   * The ordering proof described at the top of this file. Bob has no connection
-   * document at all: a proxy that resolved a token before consulting the table
-   * would answer `409 hl_not_connected` here, and that is the only way the
-   * difference is observable from outside.
+   * The ordering proof described at the top of this file. Bob has no connection document at all:
+   * a proxy that resolved a token before consulting the table would answer `409
+   * hl_not_connected` here, and that is the only way the difference is observable from outside.
    */
   it('consults the allowlist before it reads a connection', async () => {
     const res = await deleteJson('/api/hl/proxy/contacts/abc123', auth(bobToken))
@@ -253,19 +237,11 @@ describe('the proxy boundary', () => {
 /**
  * What actually crosses the boundary, in both directions.
  *
- * The upstream half is observed through the stub rather than argued about: it
- * refuses any surface request that arrives without `Authorization` and
- * `Version`, so reaching a 200 at all is the assertion that we attach them; and
- * it filters its fixtures by the `locationId` it was given, so a proxy that
- * forgot to inject ours returns **the wrong records** rather than failing a
- * claim about an argument. That is what makes AC-11 a result and not a mock
- * expectation.
- *
- * `__echo` is a marker id on an ordinary parameterised row — it matches the
- * grammar like any other — and the stub answers it with the request headers it
- * received. It lives on a marker rather than on every surface's body so the
- * three fixtures keep answering unchanged, which is what AC-15's byte-identity
- * assertion is measured against.
+ * The upstream half is observed through the stub rather than argued about: it refuses any
+ * surface request that arrives without `Authorization` and `Version`, so reaching a 200 at all
+ * is the assertion that we attach them; and it filters its fixtures by the `locationId` it was
+ * given, so a proxy that forgot to inject ours returns **the wrong records** rather than failing
+ * a claim about an argument. That is what makes AC-11 a result and not a mock expectation.
  */
 interface EchoedRequest {
   headers: Record<string, string>
@@ -321,9 +297,8 @@ describe('the upstream call', () => {
   })
 
   /*
-   * Per row, not per prefix (D13). The two surfaces genuinely disagree about
-   * which date they want, and a version taken from anywhere but the table is a
-   * version a caller could choose.
+   * Per row, not per prefix. The two surfaces genuinely disagree about which date they want, and
+   * a version taken from anywhere but the table is a version a caller could choose.
    */
   it("sends the row's own Version on each surface", async () => {
     const contacts = await getJson('/api/hl/proxy/contacts/__echo', auth(aliceToken))
@@ -334,11 +309,9 @@ describe('the upstream call', () => {
   })
 
   /*
-   * AC-13. A forwarded header is an input we did not decide to accept, and two
-   * of these are worse than untidy: a caller-supplied `Authorization` would be
-   * credential substitution, and a caller-supplied `Version` a way to reach
-   * undocumented behaviour. Asserting on the *values* rather than on the header
-   * names is what makes this hold however the runtime spells a header.
+   * A forwarded header is an input we did not decide to accept, and two of these are worse than
+   * untidy: a caller-supplied `Authorization` would be credential substitution, and a caller-
+   * supplied `Version` a way to reach undocumented behaviour.
    */
   it('forwards no header the caller sent', async () => {
     const res = await getJson('/api/hl/proxy/contacts/__echo', {
@@ -361,10 +334,8 @@ describe('the upstream call', () => {
   })
 
   /*
-   * R1, made observable. Bob names alice's location in his own body; the proxy
-   * writes his over it, and the stub — which filters by the value it actually
-   * received — answers with nothing. A proxy that forgot to inject would return
-   * alice's five contacts here, which is the leak this slice exists to prevent.
+   * R1, made observable. Bob names alice's location in his own body; the proxy writes his over
+   * it, and the stub — which filters by the value it actually received — answers with nothing.
    */
   it('gives each user only their own location’s records', async () => {
     await seedConnection(bobUid, { locationId: BOB_LOCATION })
@@ -389,15 +360,10 @@ describe('the upstream call', () => {
 /**
  * Every way HighLevel can fail us, over the wire.
  *
- * The pure mapping is proved row by row in `functions/src/hl/proxyError.spec.ts`.
- * What this adds is the two halves that file cannot see: that the mapped status
- * is what a caller actually receives, and that the **side effects** happen — a
- * 401 marks the connection, an abort is a real abort rather than a request still
- * running behind a returned error.
- *
- * The failures are selected by a marker id on an ordinary parameterised row,
- * which is the stub's existing idiom: the input says what should happen, so a
- * case reads as the condition it is testing.
+ * The pure mapping is proved row by row in `functions/src/hl/proxyError.spec.ts`. What this adds
+ * is the two halves that file cannot see: that the mapped status is what a caller actually
+ * receives, and that the **side effects** happen — a 401 marks the connection, an abort is a
+ * real abort rather than a request still running behind a returned error.
  */
 describe('upstream failures', () => {
   beforeEach(async () => {
@@ -409,10 +375,8 @@ describe('upstream failures', () => {
   }
 
   /*
-   * Never 401, and the reason is not cosmetic: `apiClient` reads a 401 as "your
-   * session died" and signs the user out of Genesis. Mirroring HighLevel's
-   * would end a perfectly good Genesis session because a *CRM* token was
-   * revoked (D20).
+   * Never 401, and the reason is not cosmetic: `apiClient` reads a 401 as "your session died"
+   * and signs the user out of Genesis.
    */
   it('turns an upstream 401 into a 409 and marks the connection', async () => {
     const res = await getJson('/api/hl/proxy/contacts/__401', auth(aliceToken))
@@ -429,11 +393,7 @@ describe('upstream failures', () => {
     expect((res.body as { detail?: string }).detail).toBe('Invalid JWT')
   })
 
-  /*
-   * The headers are the whole value of a 429: they turn "try again later" into
-   * a number. Copying them before the status is decided is what makes that
-   * true on the failure path as well as the success one.
-   */
+  /* The headers are the whole value of a 429: they turn "try again later" into a number. */
   it('maps a 429 with the rate-limit headers still attached', async () => {
     const res = await getJson('/api/hl/proxy/contacts/__429', auth(aliceToken))
 
@@ -452,11 +412,8 @@ describe('upstream failures', () => {
   })
 
   /*
-   * The `api` function's own budget is 60 s, so an unbounded upstream call
-   * would spend the whole request and answer nothing (D27). Twenty seconds in
-   * production; the suite overrides it to two, and the twenty is asserted at L1
-   * in `functions/src/hl/config.spec.ts` — a twenty-second case in a suite that
-   * runs on every push is a case people delete.
+   * The `api` function's own budget is 60 s, so an unbounded upstream call would spend the whole
+   * request and answer nothing.
    */
   it('aborts an upstream that will not answer', async () => {
     const res = await getJson('/api/hl/proxy/contacts/__slow', auth(aliceToken))
@@ -473,11 +430,9 @@ describe('upstream failures', () => {
   })
 
   /*
-   * The same cap, reached the other way. A chunked response declares no
-   * `Content-Length`, so the short-circuit cannot see it and the running byte
-   * count is the only thing standing between a pathological `pageLimit` and an
-   * out-of-memory. Both branches get a case, because an untested branch in a
-   * size cap is precisely the branch that fails.
+   * The same cap, reached the other way. A chunked response declares no `Content-Length`, so the
+   * short-circuit cannot see it and the running byte count is the only thing standing between a
+   * pathological `pageLimit` and an out-of-memory.
    */
   it('refuses an upstream body over the cap when it arrives chunked', async () => {
     const res = await getJson('/api/hl/proxy/contacts/__hugestream', auth(aliceToken))

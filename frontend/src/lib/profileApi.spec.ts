@@ -39,10 +39,8 @@ describe('getProfile', () => {
   })
 
   /*
-   * D4: an account between verifying and its first ensure has no profile, and
-   * that is an ordinary state — the card's empty one. Surfacing it as a value
-   * keeps it out of the error path, where the first caller to forget would show
-   * an error screen to a perfectly healthy account.
+   * an account between verifying and its first ensure has no profile, and that is an ordinary
+   * state — the card's empty one.
    */
   it('returns null as a value when the server says there is no profile', async () => {
     request.mockResolvedValue({ profile: null })

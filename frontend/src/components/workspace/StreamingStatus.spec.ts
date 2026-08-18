@@ -5,16 +5,11 @@ import { reactive } from 'vue'
 /**
  * What the panel says while the model is working.
  *
- * The old placeholder said `Generating…` and nothing else, for the whole turn.
- * That is wrong at both ends of a generation: for the first several seconds
- * there is genuinely nothing on screen — `params.ts` leaves adaptive thinking on,
- * and `stream.ts` drops every thinking delta, so the client receives keep-alives
- * and no text — and once code starts flowing the interesting fact is *which file
- * is being written*, which the store already knows and the panel was throwing
- * away.
- *
- * So this component reads the same two pieces of state the bubble does and says
- * which of three things is true: thinking, writing prose, or writing a file.
+ * The old placeholder said `Generating…` and nothing else, for the whole turn. That is wrong at
+ * both ends of a generation: for the first several seconds there is genuinely nothing on screen
+ * — `params.ts` leaves adaptive thinking on, and `stream.ts` drops every thinking delta, so the
+ * client receives keep-alives and no text — and once code starts flowing the interesting fact is
+ * *which file is being written*, which the store already knows and the panel was throwing away.
  */
 
 const store = reactive<{ streamingText: string; streamingFiles: Record<string, string> }>({

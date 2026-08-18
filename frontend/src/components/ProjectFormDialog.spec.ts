@@ -2,10 +2,9 @@ import { DOMWrapper, flushPromises, mount, type VueWrapper } from '@vue/test-uti
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /*
- * Plain values, not refs. A Pinia store auto-unwraps its refs on the store
- * object, so a component reads `projects.busy` as a boolean — mocking it as
- * `{ value: false }` makes every check truthy. Same shape `ConnectionPanel.spec`
- * uses.
+ * Plain values, not refs. A Pinia store auto-unwraps its refs on the store object, so a
+ * component reads `projects.busy` as a boolean — mocking it as `{ value: false }` makes every
+ * check truthy. Same shape `ConnectionPanel.spec` uses.
  */
 const store = vi.hoisted(() => ({
   projects: [] as unknown[],
@@ -24,15 +23,11 @@ vi.mock('@/stores/projects', () => ({ useProjectsStore: () => store }))
 import ProjectFormDialog from './ProjectFormDialog.vue'
 
 /**
- * One dialog for create and for rename (D25).
+ * One dialog for create and for rename.
  *
- * The two differ only in their title, their submit label and whether the fields
- * start populated. Two components would be one component and a copy of it, and
- * the copy is where the changed-fields-only rule stops holding on one of the two
- * paths.
- *
- * The dialog's content is teleported to `document.body` by Reka UI's portal, so
- * everything below queries the document rather than the wrapper.
+ * The two differ only in their title, their submit label and whether the fields start populated.
+ * Two components would be one component and a copy of it, and the copy is where the changed-
+ * fields-only rule stops holding on one of the two paths.
  */
 
 const PROJECT = {
@@ -220,9 +215,8 @@ describe('renaming', () => {
   })
 
   /*
-   * With nothing changed the payload would be `{}`, which the server refuses
-   * with 400 `invalid_body`. Disabling submit means the UI never issues that
-   * request — the refusal is the boundary's job, not the user's problem.
+   * With nothing changed the payload would be `{}`, which the server refuses with 400
+   * `invalid_body`.
    */
   it('disables submit when nothing has changed', async () => {
     await open({ project: PROJECT })

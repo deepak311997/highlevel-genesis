@@ -63,10 +63,9 @@ describe('SignInView', () => {
   })
 
   /*
-   * `/hl/callback` rather than an auth-flow page: only a route a user could
-   * actually be *returned to* is a legal target, and Slice 2 made this one
-   * `protected` precisely so a session that lapsed at HighLevel round-trips
-   * through here and comes back to its outcome.
+   * `/hl/callback` rather than an auth-flow page: only a route a user could actually be
+   * *returned to* is a legal target, and Slice 2 made this one `protected` precisely so a
+   * session that lapsed at HighLevel round-trips through here and comes back to its outcome.
    */
   it('honours a safe redirect target', async () => {
     query.value = { redirect: '/hl/callback' }
@@ -90,12 +89,7 @@ describe('SignInView', () => {
     expect(push).toHaveBeenCalledWith('/dashboard')
   })
 
-  /**
-   * AC-22. A wrong password and an unregistered address must be
-   * indistinguishable. Firebase collapses them into `invalid-credential` when
-   * enumeration protection is on, but that is a console setting this repo
-   * cannot enforce — so the mapping does not rely on it.
-   */
+  /** A wrong password and an unregistered address must be indistinguishable. */
   it.each([
     'auth/invalid-credential',
     'auth/user-not-found',
@@ -143,13 +137,12 @@ describe('SignInView', () => {
 })
 
 /**
- * AC-11. Why the sign-in page is showing, when the user did not ask for it.
+ * Why the sign-in page is showing, when the user did not ask for it.
  *
- * Landing on a sign-in form mid-task with no explanation reads as a bug or a
- * lost session's worth of work. The reason comes off the query string, but
- * nothing from the query string is ever *rendered*: the value selects a message
- * from a fixed map, so an attacker-supplied `?reason=` can only pick one of the
- * strings this file already contains, or nothing.
+ * Landing on a sign-in form mid-task with no explanation reads as a bug or a lost session's
+ * worth of work. The reason comes off the query string, but nothing from the query string is
+ * ever *rendered*: the value selects a message from a fixed map, so an attacker-supplied
+ * `?reason=` can only pick one of the strings this file already contains, or nothing.
  */
 describe('SignInView — the reason notice', () => {
   it('shows the expiry notice for reason=session_expired', () => {
@@ -189,14 +182,12 @@ describe('SignInView — the reason notice', () => {
 })
 
 /**
- * A `?redirect=` is attacker-controllable, and the victim reaches it having
- * *just* typed their password — which is what makes the one guard-exempt route
- * worth refusing by name.
+ * A `?redirect=` is attacker-controllable, and the victim reaches it having *just* typed their
+ * password — which is what makes the one guard-exempt route worth refusing by name.
  *
- * `/auth/action?mode=resetPassword&oobCode=…` renders a "choose a new password"
- * form bound to whatever code the link carried. Handed the attacker's own reset
- * code, a user who types the password they typed thirty seconds ago has just
- * set the attacker's account to it.
+ * `/auth/action?mode=resetPassword&oobCode=…` renders a "choose a new password" form bound to
+ * whatever code the link carried. Handed the attacker's own reset code, a user who types the
+ * password they typed thirty seconds ago has just set the attacker's account to it.
  */
 describe('where a successful sign-in may be sent', () => {
   it('refuses the action handler as a destination', async () => {

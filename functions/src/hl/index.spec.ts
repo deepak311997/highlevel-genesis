@@ -6,34 +6,21 @@ import type { AddressInfo } from 'node:net'
 import type { Request, Response } from 'express'
 
 /**
- * What the router actually attaches to each route — the half of AC-19 that no
- * emulator-backed test can reach.
+ * What the router actually attaches to each route — the half of AC-19 that no emulator-backed
+ * test can reach.
  *
- * `requireAppCheck` short-circuits under `FUNCTIONS_EMULATOR` and there is no
- * App Check emulator to stand in for it, so the integration suite cannot
- * observe attestation at all. `auth/appCheck.spec.ts` proves the middleware
- * refuses an unattested caller; nothing proved it was **on this route**, and
- * deleting the word `attested` from the proxy's mount line broke no test in the
- * repo. That is the wrong thing to leave to a reading, on the one endpoint
- * where an unattested caller spends a finite third-party budget and can write
- * to somebody's CRM (D15).
- *
- * So the middleware is replaced with one that behaves the way the deployed one
- * does — it refuses — and the router is driven over a real socket. A route that
- * answers `403 forwarded` reached its handler; one that answers `401
- * app_check_failed` did not.
- *
- * The router is mounted at **both** `/` and `/api`, exactly as `createApiApp`
- * does, because that double mount is why the middleware is attached per route
- * rather than with a pathless `router.use` — a pathless one would run twice for
- * a single request, and the call counts below are what say it does not.
+ * `requireAppCheck` short-circuits under `FUNCTIONS_EMULATOR` and there is no App Check emulator
+ * to stand in for it, so the integration suite cannot observe attestation at all.
+ * `auth/appCheck.spec.ts` proves the middleware refuses an unattested caller; nothing proved it
+ * was **on this route**, and deleting the word `attested` from the proxy's mount line broke no
+ * test in the repo. That is the wrong thing to leave to a reading, on the one endpoint where an
+ * unattested caller spends a finite third-party budget and can write to somebody's CRM.
  */
 
 /*
- * The router is built **at import**, so `withVerifiedUser` has to be wrapping
- * things by then — its implementation is baked into the hoisted factory rather
- * than set in a hook, and its call record is the record of what the router
- * wrapped, made once and never reset.
+ * The router is built **at import**, so `withVerifiedUser` has to be wrapping things by then —
+ * its implementation is baked into the hoisted factory rather than set in a hook, and its call
+ * record is the record of what the router wrapped, made once and never reset.
  */
 const requireAppCheck = vi.hoisted(() => vi.fn())
 const handleProxy = vi.hoisted(() => vi.fn())
@@ -189,11 +176,10 @@ describe('the proxy mount', () => {
 })
 
 /**
- * The rest of the router's attestation policy, stated rather than left to the
- * comments above each line — including the two routes that are deliberately
- * *not* attested, since a test that only checked the positives would pass
- * against a router that attested everything and would not notice the day
- * reading a status started costing an attestation.
+ * The rest of the router's attestation policy, stated rather than left to the comments above
+ * each line — including the two routes that are deliberately *not* attested, since a test that
+ * only checked the positives would pass against a router that attested everything and would not
+ * notice the day reading a status started costing an attestation.
  */
 describe('the connection routes', () => {
   it.each([
@@ -216,10 +202,8 @@ describe('the connection routes', () => {
   })
 
   /*
-   * HighLevel redirects a browser here and there is no session on the request,
-   * so there is nothing to attest and nothing to verify — the encrypted state
-   * is the authorisation. Asserted because "unauthenticated" is the one
-   * property here that must never be quietly acquired.
+   * HighLevel redirects a browser here and there is no session on the request, so there is
+   * nothing to attest and nothing to verify — the encrypted state is the authorisation.
    */
   it('leaves the OAuth callback unattested and unverified', async () => {
     refuseAttestation()

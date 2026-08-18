@@ -17,17 +17,12 @@ import App from './App.vue'
 import { Toaster } from '@/components/ui/sonner'
 
 /**
- * The app shell's one decision: how much room `main` gives the route (D22).
+ * The app shell's one decision: how much room `main` gives the route.
  *
- * Every screen before this slice wanted the centred, padded container. The workspace
- * wants the whole window — the three panels need a *bounded* height to scroll inside,
- * and a flex column gives them one without a `calc()` that hard-codes the header's
- * height and breaks the first time the header gains a line.
- *
- * Declared per route in `meta.layout` rather than decided inside the view, because
- * breaking out of the container from inside a view means negative margins: a lie
- * about who owns the layout, which also leaves the container's padding in the scroll
- * height.
+ * Every screen before this slice wanted the centred, padded container. The workspace wants the
+ * whole window — the three panels need a *bounded* height to scroll inside, and a flex column
+ * gives them one without a `calc()` that hard-codes the header's height and breaks the first
+ * time the header gains a line.
  */
 
 const Blank = defineComponent({ render: () => h('p', 'route') })
@@ -92,13 +87,8 @@ describe('App shell', () => {
 
   /* The header is outside the switch and keeps its own container on both. */
   /*
-   * The two scroll models. A contained route is a document and the window
-   * scrolls it; a full route is an application window, exactly the viewport,
-   * with the scrolling inside the panels.
-   *
-   * `min-h-screen` on a full route is the bug this pins: a long transcript
-   * would push the shell taller than the window, so the page would scroll and
-   * the editor's own scrollbar would end up below the fold.
+   * The two scroll models. A contained route is a document and the window scrolls it; a full
+   * route is an application window, exactly the viewport, with the scrolling inside the panels.
    */
   it('scrolls the window on a contained route and not on a full one', async () => {
     const contained = (await mountAt('/contained')).find('div').classes()
@@ -111,15 +101,7 @@ describe('App shell', () => {
     expect(full).not.toContain('min-h-screen')
   })
 
-  /*
-   * The wordmark is the only way back, and where back *is* depends on the
-   * session. A separate "Dashboard" link a step away from a logo that led to
-   * the same place was one more thing to read for no more reach.
-   *
-   * The signed-out case is the one worth asserting: sending a visitor with no
-   * session to /dashboard would bounce them off the route guard, which reads
-   * as a broken logo rather than a redirect.
-   */
+  /* The wordmark is the only way back, and where back *is* depends on the session. */
   it('points the wordmark at the dashboard only once there is a verified session', async () => {
     auth.isSignedIn = true
     auth.isVerified = true
@@ -151,9 +133,8 @@ describe('App shell', () => {
   })
 
   /*
-   * The guard awaits the same signal before resolving any route, so until Firebase
-   * answers there is nothing to show — and saying so beats an empty page on a slow
-   * connection.
+   * The guard awaits the same signal before resolving any route, so until Firebase answers there
+   * is nothing to show — and saying so beats an empty page on a slow connection.
    */
   it('says it is loading until Firebase has answered', async () => {
     auth.initialised = false
@@ -165,10 +146,7 @@ describe('App shell', () => {
 
   /*
    * One toast region for the whole app, and it lives outside `<main>` — outside the
-   * `contained`/`full` switch and outside the routed area. A `Toaster` mounted inside
-   * the route unmounts on navigation, which drops a toast mid-fade; two of them
-   * render every toast twice. Asserted at both layouts because the layout switch is
-   * precisely what must not reach it.
+   * `contained`/`full` switch and outside the routed area.
    */
   it('mounts exactly one Toaster', async () => {
     for (const path of ['/contained', '/full']) {

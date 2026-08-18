@@ -14,22 +14,13 @@ import {
 /**
  * The one module that reads `process.env`.
  *
- * Before it existed the same three shapes were hand-rolled across four files:
- * `required()` appeared verbatim in both `hl/config.ts` and `lib/firebase.ts`,
- * the emulator-only override appeared in `hl/config.ts` and again in
- * `generate.ts` — whose comment said outright that it was "`hl/config.ts`'s
- * `emulatorOverride` pattern exactly" — and `api/index.ts` parsed a
- * comma-separated list its own way. Four copies is four places for the trim to
- * be forgotten, and the empty-string case is the one that gets forgotten: an
- * unset variable and one set to `''` are the same absence, and only one of them
- * is falsy in the way people expect.
- *
- * The secret *declarations* stay beside their readers — `defineSecret` in
- * `llm/client.ts`, `hl/config.ts` and `hl/state.ts`. That is not an oversight and
- * not an inconsistency with this module: `client.ts` records the reason, which is
- * that a binding declared a file away from the code that reads it is a binding a
- * refactor of the wrong file silently drops. What belongs here is the *mechanics*
- * of reading a value, not the decision about where a value lives.
+ * Before it existed the same three shapes were hand-rolled across four files: `required()`
+ * appeared verbatim in both `hl/config.ts` and `lib/firebase.ts`, the emulator-only override
+ * appeared in `hl/config.ts` and again in `generate.ts` — whose comment said outright that it
+ * was "`hl/config.ts`'s `emulatorOverride` pattern exactly" — and `api/index.ts` parsed a comma-
+ * separated list its own way. Four copies is four places for the trim to be forgotten, and the
+ * empty-string case is the one that gets forgotten: an unset variable and one set to `''` are
+ * the same absence, and only one of them is falsy in the way people expect.
  */
 
 afterEach(() => {
@@ -87,11 +78,8 @@ describe('requiredSecret', () => {
   })
 
   /*
-   * `SecretParam.value()` answers `''` for a secret the function was never
-   * granted, and only `warn`s about it. That is the whole reason this exists
-   * rather than a bare `.value()` at each call site: unchecked, the failure
-   * surfaces a long way downstream — as an upstream `invalid_client`, or worse,
-   * as a cipher that works under a key derived from the empty string.
+   * `SecretParam.value()` answers `''` for a secret the function was never granted, and only
+   * `warn`s about it.
    */
   it('throws for the empty string an ungranted secret answers with', () => {
     expect(() => requiredSecret({ value: () => '' }, 'GENESIS_TEST_SECRET')).toThrow(
@@ -122,10 +110,8 @@ describe('baseUrl', () => {
   })
 
   /*
-   * Stripped so every caller can join with a leading slash and none of them has
-   * to think about it. `//locations/x` is a different path from `/locations/x`
-   * to a strict router, and the difference is one invisible character in a
-   * config file.
+   * Stripped so every caller can join with a leading slash and none of them has to think about
+   * it.
    */
   it.each([
     ['https://api.example/', 'https://api.example'],
@@ -156,9 +142,8 @@ describe('list', () => {
   })
 
   /*
-   * A trailing comma is a configured list, not an empty entry — and an empty
-   * entry in an origin allowlist would be an entry that matches an empty Origin
-   * header.
+   * A trailing comma is a configured list, not an empty entry — and an empty entry in an origin
+   * allowlist would be an entry that matches an empty Origin header.
    */
   it('drops empty entries a stray comma leaves behind', () => {
     vi.stubEnv('GENESIS_TEST_LIST', 'https://a.example,,  ,')
@@ -226,11 +211,8 @@ describe('emulatorNumber', () => {
 
 describe('emulatorFlag', () => {
   /*
-   * The switch that lets a *human* dev session reach the real model while every
-   * automated suite keeps the fake. It is built on `emulatorOverride` for that
-   * primitive's reason: the name appears in no `.env` file, so a shell value
-   * survives the emulator's own precedence, and no deploy can reach it however
-   * its environment is set.
+   * The switch that lets a *human* dev session reach the real model while every automated suite
+   * keeps the fake.
    */
   it.each(['1', 'true', 'TRUE', 'True'])('is true for %o under the emulator', (value) => {
     vi.stubEnv('FUNCTIONS_EMULATOR', 'true')
@@ -239,9 +221,8 @@ describe('emulatorFlag', () => {
   })
 
   /*
-   * `0` and `no` are the shapes somebody writes when they mean *off*, and a
-   * presence check would read every one of them as on. That is the whole reason
-   * this is not `emulatorOverride(name) !== undefined` at the call site.
+   * `0` and `no` are the shapes somebody writes when they mean *off*, and a presence check would
+   * read every one of them as on.
    */
   it.each([undefined, '', '   ', '0', 'no', 'false', 'yes'])(
     'is false for %o under the emulator',

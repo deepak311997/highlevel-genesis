@@ -6,48 +6,36 @@ import { describe, expect, it } from 'vitest'
 /**
  * AC-24 — the architectural guarantee, as a test rather than a convention.
  *
- * The frontend never talks to Firestore: every read and write goes through a
- * Cloud Function route that verifies the ID token and scopes the query by the
- * uid inside it. `frontend/eslint.config.js` is the mechanism that enforces
- * that; this is the assertion that survives someone editing the ESLint config,
- * disabling the rule for a line, or adding an allowlist entry "just for now".
- *
- * A convention that lives only in CLAUDE.md is a convention until the first
- * hurried commit. This slice gives it three layers — the lint rule, this scan,
- * and `scripts/check-no-firestore.mjs` over the built bundle.
+ * The frontend never talks to Firestore: every read and write goes through a Cloud Function
+ * route that verifies the ID token and scopes the query by the uid inside it.
+ * `frontend/eslint.config.js` is the mechanism that enforces that; this is the assertion that
+ * survives someone editing the ESLint config, disabling the rule for a line, or adding an
+ * allowlist entry "just for now".
  */
 
 /**
- * From the working directory, not from `import.meta.url`: this suite runs under
- * jsdom, where `import.meta.url` is an http URL and `fileURLToPath` refuses it.
- * Vitest's cwd is `frontend/`, which is what `npm --prefix frontend run test`
- * and the root `test:unit` both give it.
+ * From the working directory, not from `import.meta.url`: this suite runs under jsdom, where
+ * `import.meta.url` is an http URL and `fileURLToPath` refuses it. Vitest's cwd is `frontend/`,
+ * which is what `npm --prefix frontend run test` and the root `test:unit` both give it.
  */
 const SRC = join(process.cwd(), 'src')
 
 /**
  * Built by concatenation, and this file skips itself below.
  *
- * Both halves are needed for a scanner that does not trip on its own source —
- * otherwise the only way to write this test is to write it somewhere it cannot
- * see, which is worse.
+ * Both halves are needed for a scanner that does not trip on its own source — otherwise the only
+ * way to write this test is to write it somewhere it cannot see, which is worse.
  */
 const NEEDLE = 'firebase' + '/firestore'
 
 /**
  * Anchored on the quote that opens a module specifier, not on `from`.
  *
- * `from` only covers static imports and re-exports. A side-effect import, a
- * dynamic `import()` and a `require()` all name the module with no `from` in
- * sight, and each one puts the SDK in the bundle just as effectively — as do
- * the `/lite` subpath and `@firebase/firestore`, the implementation package
- * that `firebase/firestore` re-exports and that ESLint's pattern does not
+ * `from` only covers static imports and re-exports. A side-effect import, a dynamic `import()`
+ * and a `require()` all name the module with no `from` in sight, and each one puts the SDK in
+ * the bundle just as effectively — as do the `/lite` subpath and `@firebase/firestore`, the
+ * implementation package that `firebase/firestore` re-exports and that ESLint's pattern does not
  * match. The quote is what every one of them has in common.
- *
- * The optional `@` is what admits the scoped package without also admitting
- * `@/lib/firebase`, our own wrapper, which is the import every module here is
- * supposed to use. A bare mention in prose has no quote and does not match.
- * `FORMS` and `INNOCENT` below are that sentence as tests.
  */
 const IMPORT = new RegExp(`['"]@?${NEEDLE.replace('/', '\\/')}`)
 
@@ -86,15 +74,7 @@ function sourceFiles(dir: string): string[] {
 }
 
 describe('the scan itself', () => {
-  /*
-   * The scanner is tested before it is trusted.
-   *
-   * This layer exists to outlive the ESLint rule — someone editing the config,
-   * disabling the rule for a line, adding an allowlist entry "just for now". A
-   * scanner that catches less than the rule it is meant to outlive is worse
-   * than no scanner, because `offenders).toEqual([])` reads as proof either
-   * way. These cases are what "no import" has to mean for that to be true.
-   */
+  /* The scanner is tested before it is trusted. */
   it.each(FORMS)('catches %s', (_label, source) => {
     expect(IMPORT.test(source)).toBe(true)
   })

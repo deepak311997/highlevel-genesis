@@ -86,15 +86,9 @@ const { ResizablePanel } = await import('@/components/ui/resizable')
 /**
  * The workspace route — its three states, and the layout switch.
  *
- * `window.matchMedia` is stubbed for every test, because **jsdom does not implement
- * it at all**: left alone, `useMediaQuery` reports the query unsupported and the
- * tabbed tree renders in every case, so AC-23 and AC-24 would both be asserting the
- * same thing.
- *
- * The switch is a `v-if` rather than Tailwind's `hidden lg:*` on purpose, and these
- * tests are why it has to be: CSS-only visibility leaves *both* trees mounted, so
- * "all three panels are present" and "one panel is shown" would each be trivially
- * true of the same DOM.
+ * `window.matchMedia` is stubbed for every test, because **jsdom does not implement it at all**:
+ * left alone, `useMediaQuery` reports the query unsupported and the tabbed tree renders in every
+ * case, so AC-23 and AC-24 would both be asserting the same thing.
  */
 
 const PROJECT: Project = {
@@ -107,25 +101,20 @@ const PROJECT: Project = {
 }
 
 /**
- * `CodeEditor: true` is not a convenience (D23).
+ * `CodeEditor: true` is not a convenience.
  *
- * Unstubbed, this suite mounts the real `VueMonacoEditor`, whose `onMounted`
- * calls `loader.init()` — and with nothing having called `loader.config({ monaco
- * })` first, that appends a **CDN `<script>` tag** into jsdom. The editor's own
- * behaviour is `CodeEditor.spec.ts`'s subject; what belongs here is the layout
- * switch.
+ * Unstubbed, this suite mounts the real `VueMonacoEditor`, whose `onMounted` calls
+ * `loader.init()` — and with nothing having called `loader.config({ monaco })` first, that
+ * appends a **CDN `<script>` tag** into jsdom. The editor's own behaviour is
+ * `CodeEditor.spec.ts`'s subject; what belongs here is the layout switch.
  */
 /**
  * **A real Pinia, because `PreviewPanel` has a real store since Slice 10.**
  *
- * The panel is deliberately *not* stubbed: two of the cases below are about the
- * layout switch putting three panels on screen at once and one behind a tab, so
- * the third panel has to be the third panel. Its store settles to the empty state
- * with no request — this suite's workspace fake reports a loaded, empty file list
- * — so mounting it costs nothing but the plugin.
- *
- * Fresh per mount rather than shared: a store cached across cases would carry one
- * test's build into the next.
+ * The panel is deliberately *not* stubbed: two of the cases below are about the layout switch
+ * putting three panels on screen at once and one behind a tab, so the third panel has to be the
+ * third panel. Its store settles to the empty state with no request — this suite's workspace
+ * fake reports a loaded, empty file list — so mounting it costs nothing but the plugin.
  */
 const MOUNT = {
   global: {
@@ -139,10 +128,9 @@ const SRC = join(import.meta.dirname, '..')
 /**
  * Every `.vue` under `src`, so the scan below can look at what is **rendered**.
  *
- * Templates only, not whole files: `sse.ts` and `generateApi.spec.ts` name Slice 6
- * in doc comments, correctly and permanently, and a scan that could not tell those
- * from a placeholder would either fail forever or have to be weakened until it
- * proved nothing.
+ * Templates only, not whole files: `sse.ts` and `generateApi.spec.ts` name Slice 6 in doc
+ * comments, correctly and permanently, and a scan that could not tell those from a placeholder
+ * would either fail forever or have to be weakened until it proved nothing.
  */
 function componentFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -263,9 +251,8 @@ describe('WorkspaceView', () => {
   })
 
   /*
-   * AC-2. The placeholders are the shared `Skeleton`, not hand-rolled pulsing
-   * divs — the testid still resolves to the same element, and what it holds
-   * carries the primitive's slot attribute.
+   * The placeholders are the shared `Skeleton`, not hand-rolled pulsing divs — the testid still
+   * resolves to the same element, and what it holds carries the primitive's slot attribute.
    */
   it('renders Skeleton placeholders while loading', () => {
     store.projectLoading = true
@@ -277,18 +264,7 @@ describe('WorkspaceView', () => {
     expect(loading.findAll('[data-slot="skeleton"]').length).toBeGreaterThan(1)
   })
 
-  /*
-   * **The skeleton stands in for the layout it is replacing.**
-   *
-   * It used to be a single 224px bar in a centred `max-w-5xl` column, which is
-   * the shape of *no screen in this app*: the workspace is full-bleed, has a
-   * header rail and three panels, and every one of those appeared out of
-   * nowhere when the request landed. A placeholder whose geometry does not
-   * match what follows it is a layout shift with an animation on it.
-   *
-   * AC-20 is untouched and still asserted above — **no panels** means the three
-   * components are not mounted, not that their space may not be drawn.
-   */
+  /* **The skeleton stands in for the layout it is replacing.** */
   it('lays the loading state out like the three-panel workspace', () => {
     store.projectLoading = true
 
@@ -307,9 +283,8 @@ describe('WorkspaceView', () => {
   })
 
   /*
-   * Narrow shows one panel at a time, so its skeleton draws one panel and the
-   * tab strip above it. Drawing three columns here would promise a layout the
-   * next paint does not deliver — the same mismatch, in the other direction.
+   * Narrow shows one panel at a time, so its skeleton draws one panel and the tab strip above
+   * it.
    */
   it('draws one panel and a tab strip while loading on a narrow viewport', () => {
     narrow()
@@ -389,11 +364,9 @@ describe('WorkspaceView', () => {
     expect(wrapper.find(`${EDITOR} [data-testid="file-tree"]`).exists()).toBe(true)
     expect(wrapper.find(`${EDITOR} [data-testid="file-editor"]`).exists()).toBe(true)
     /*
-     * The preview is a screen rather than a placeholder since Slice 10, so what
-     * is asserted here is one of its own states — this suite's workspace fake
-     * reports a loaded, empty file list, which is the empty one. Its four states
-     * and its iframe belong to `PreviewPanel.spec.ts`; what belongs here is that
-     * the third panel is really the third panel.
+     * The preview is a screen rather than a placeholder since Slice 10, so what is asserted here
+     * is one of its own states — this suite's workspace fake reports a loaded, empty file list,
+     * which is the empty one.
      */
     expect(wrapper.find(`${PREVIEW} [data-testid="preview-empty"]`).exists()).toBe(true)
     // The tabbed tree is not merely hidden — it is not mounted (see the header).
@@ -424,10 +397,9 @@ describe('WorkspaceView', () => {
   })
 
   /**
-   * AC-47's other half. The two layouts are two component trees, not one tree with
-   * CSS on it, so "the code panel is a screen" has to be asserted on both — a
-   * placeholder left behind in the tabbed tree is invisible to a test that only
-   * ever looks at the wide one.
+   * AC-47's other half. The two layouts are two component trees, not one tree with CSS on it, so
+   * "the code panel is a screen" has to be asserted on both — a placeholder left behind in the
+   * tabbed tree is invisible to a test that only ever looks at the wide one.
    */
   it('renders the tree and the editor in the Code tab below 1024px', async () => {
     store.project = PROJECT
@@ -444,9 +416,8 @@ describe('WorkspaceView', () => {
   })
 
   /**
-   * AC-47's negative half: the placeholder is gone from **the app**, not just from
-   * the two trees above. `ChatPanel.spec.ts`'s scan, for its reason — a needle
-   * built by concatenation so the scanner cannot find it in its own source.
+   * AC-47's negative half: the placeholder is gone from **the app**, not just from the two trees
+   * above.
    */
   it('renders no “arrives in Slice 6” text anywhere in the app', () => {
     const needle = 'Slice ' + '6'
@@ -458,15 +429,8 @@ describe('WorkspaceView', () => {
   })
 
   /*
-   * **Reversed from Slice 4's AC-26**, which read this badge off the project's
-   * stored `locationId`.
-   *
-   * That field is snapshotted at create time, so a project created before the
-   * account was connected said "Not connected" for ever while the dashboard,
-   * two clicks away, said the opposite — one account, one connection, two
-   * answers. The badge asks the connection itself, which is the only thing that
-   * can answer the question the words on it pose. `locationId` keeps its real
-   * job: which location this project targets.
+   * **Reversed from Slice 4's AC-26**, which read this badge off the project's stored
+   * `locationId`.
    */
   it.each([
     ['HighLevel connected', true],
@@ -526,24 +490,7 @@ describe('WorkspaceView', () => {
     expect(hl.refresh).toHaveBeenCalled()
   })
 
-  /*
-   * The wide layout's split, which is a product decision rather than a
-   * cosmetic one.
-   *
-   * It opened at 20 / 30 / 50 while the code panel was a single column of
-   * editor. It is not one any more: the file explorer moved to a rail *beside*
-   * the editor, which spends width the panel did not have, and the chat at a
-   * fifth of the viewport was wrapping every second message. The ten points come
-   * off the preview, which is the panel that degrades most gracefully — it
-   * renders one surface at whatever width it is given, where the other two are
-   * columns of text with a floor below which they stop working. Fifteen points
-   * in the end, and the code panel takes the larger share of them because it is
-   * the one now carrying two columns of its own.
-   *
-   * The min-sizes matter as much as the defaults — reka clamps a default that
-   * falls below its own minimum, so a chat min-size above 25 would silently
-   * undo this.
-   */
+  /* The wide layout's split, which is a product decision rather than a cosmetic one. */
   it('opens wide at 25 / 40 / 35, chat to preview', async () => {
     // The three-panel layout is behind a media query, and jsdom reports no
     // matchMedia at all — so without this the wide branch never renders and the
@@ -599,12 +546,7 @@ describe('WorkspaceView', () => {
     expect(wrapper.find('[data-testid="workspace-connection"]').exists()).toBe(true)
   })
 
-  /*
-   * Instrument keeps one blue, and it means link, focus, or the primary action.
-   * "Connected" is none of those — it is a state the product reports, so it
-   * takes the semantic `good` colour. Asserted because the default Badge
-   * variant is the primary fill, which is the easy thing to leave in place.
-   */
+  /* Instrument keeps one blue, and it means link, focus, or the primary action. */
   it('marks a connected location with the semantic colour, not the action colour', async () => {
     hl.isConnected = true
     store.project = { ...PROJECT, locationId: 'loc_123' }

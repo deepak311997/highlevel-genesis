@@ -3,18 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { logProxy, RATE_LIMIT_HEADERS } from './proxy'
 
 /**
- * The one line per proxied call (D28), and the negative that matters.
+ * The one line per proxied call, and the negative that matters.
  *
- * The interesting assertion here is not that the line carries four fields — it
- * is that there is **nowhere to put a fifth**. `ProxyLogContext` has no field
- * for a request body, a response body, a token or a contact id, so "we do not
- * log payloads" is a property of the type rather than of whoever remembered.
- * `AuthLogContext` and `GenerationLogContext` are narrow for the same reason and
- * say so in as many words.
- *
- * The *pattern* rather than the concrete path, because a pattern aggregates in
- * Cloud Logging and a concrete path carries a contact id into a sink that
- * outlives the request, for no operational gain.
+ * The interesting assertion here is not that the line carries four fields — it is that there is
+ * **nowhere to put a fifth**. `ProxyLogContext` has no field for a request body, a response
+ * body, a token or a contact id, so "we do not log payloads" is a property of the type rather
+ * than of whoever remembered. `AuthLogContext` and `GenerationLogContext` are narrow for the
+ * same reason and say so in as many words.
  */
 
 let info: ReturnType<typeof vi.fn>

@@ -8,17 +8,11 @@ import { HL_CALL_LIMIT } from '@/lib/previewShim'
 /**
  * The preview's lifecycle, and the half of the broker that holds a credential.
  *
- * Two things are deliberately **not** mocked, because two of the criteria here
- * are claims about what does and does not go on the wire. `fetch` is what is
- * stubbed rather than `hlProxy`, so AC-20 — "a path outside the grammar makes no
- * network request" — is asserted against the request that would actually have
- * been issued; and `handlePreviewMessage` is the real bridge, so the acceptance
- * gate the store depends on is the one that runs.
- *
- * The workspace store *is* mocked, as a `reactive` fake. It is a thousand lines
- * with a stream, a transcript and twenty files behind it, and everything this
- * store reads from it is four fields — the project id, the file list, and the two
- * counters Slice 10 added to it (D12).
+ * Two things are deliberately **not** mocked, because two of the criteria here are claims about
+ * what does and does not go on the wire. `fetch` is what is stubbed rather than `hlProxy`, so
+ * AC-20 — "a path outside the grammar makes no network request" — is asserted against the
+ * request that would actually have been issued; and `handlePreviewMessage` is the real bridge,
+ * so the acceptance gate the store depends on is the one that runs.
  */
 
 const getIdToken = vi.hoisted(() => vi.fn())
@@ -86,10 +80,9 @@ function storeFiles(files: Record<string, string>): void {
 }
 
 /*
- * Typed to its real signature rather than left as the default `vi.fn()`, whose
- * procedure type returns `void` — a `mockImplementation` that hands back a
- * pending promise (the in-flight case below) is then an error rather than the
- * point.
+ * Typed to its real signature rather than left as the default `vi.fn()`, whose procedure type
+ * returns `void` — a `mockImplementation` that hands back a pending promise (the in-flight case
+ * below) is then an error rather than the point.
  */
 let fetchMock: ReturnType<typeof vi.fn<(...args: unknown[]) => Promise<Response>>>
 
@@ -104,10 +97,9 @@ function response(body: unknown, status = 200): Response {
 /**
  * A frame the host will accept messages from.
  *
- * `event.source` identity is the first half of the acceptance gate, so the same
- * object has to be both the `source` of the event and the `frame` handed to
- * `handleMessage`. A `postMessage` spy is the whole of what the store needs from
- * a `Window`.
+ * `event.source` identity is the first half of the acceptance gate, so the same object has to be
+ * both the `source` of the event and the `frame` handed to `handleMessage`. A `postMessage` spy
+ * is the whole of what the store needs from a `Window`.
  */
 function fakeFrame(): { postMessage: ReturnType<typeof vi.fn> } {
   return { postMessage: vi.fn() }
@@ -149,9 +141,8 @@ describe('preview store — the build lifecycle', () => {
   })
 
   /**
-   * Files with no entry point is a *different* empty state from no files at all,
-   * and the panel says something different for each. Answered before any read,
-   * because the paths alone settle it.
+   * Files with no entry point is a *different* empty state from no files at all, and the panel
+   * says something different for each.
    */
   it('reports files with no entry point without reading any of them', async () => {
     storeFiles({ 'app.js': 'console.log(1)' })
@@ -234,15 +225,8 @@ describe('preview store — the build lifecycle', () => {
   })
 
   /**
-   * AC-37, at the store: a rebuild starts from a clean slate — and *starts*
-   * is the word under test.
-   *
-   * The banners belong to the document that raised them, so they have to be gone
-   * before the next one appears, not merely by the time it has finished loading.
-   * Asserting only after `build()` settles would pass just as happily against an
-   * implementation that cleared them at the end, which would leave the previous
-   * app's failure sitting over the new one for the whole length of the reads. So
-   * the reads are held open and the assertion is made *inside* that window.
+   * AC-37, at the store: a rebuild starts from a clean slate — and *starts* is the word under
+   * test.
    */
   it('clears the warnings, the failure and the runtime error before it starts', async () => {
     storeFiles({ 'index.html': INDEX })
@@ -328,17 +312,7 @@ describe('preview store — the build lifecycle', () => {
     expect(preview.stale).toBe(true)
   })
 
-  /**
-   * A file list that never arrived is an error, not an empty project.
-   *
-   * `workspace.loadFiles` deliberately leaves the previous list alone when it
-   * fails, so a first load that fails leaves `files` empty and `filesLoaded`
-   * false — and `filesLoaded` is the only signal that used to reach this store.
-   * The panel therefore sat on its loading skeleton for good, and a Refresh
-   * pressed out of impatience read the empty list at face value and announced
-   * that the project has no app yet. It is a claim the store has no evidence
-   * for, about a project that may well have twenty files.
-   */
+  /** A file list that never arrived is an error, not an empty project. */
   it('reports a failed file list as an error rather than an empty project', async () => {
     const preview = usePreviewStore()
     workspace.filesError = 'Could not load these files.'
@@ -372,15 +346,8 @@ describe('preview store — the build lifecycle', () => {
   })
 
   /**
-   * The auto-rebuild is not stale the moment it lands — whichever order the
-   * workspace happens to move its two counters in.
-   *
-   * `applyGenerationFiles` moves both, and this store used to watch
-   * `generationsApplied` synchronously, which put its rebuild *between* the two
-   * increments. That worked only because `filesRevision` happened to be written
-   * first: a rebuild reading the revision before it moved would stamp the old one
-   * and come up stale immediately. Both orders are asserted here so the coupling
-   * cannot come back unnoticed.
+   * The auto-rebuild is not stale the moment it lands — whichever order the workspace happens to
+   * move its two counters in.
    */
   it.each([
     ['revision first', ['filesRevision', 'generationsApplied']],
@@ -407,20 +374,7 @@ describe('preview store — the build lifecycle', () => {
     expect(preview.stale).toBe(false)
   })
 
-  /**
-   * Re-opening the *same* project must not strand the panel on its empty state.
-   *
-   * `WorkspaceView` watches the route param with `immediate: true`, so walking
-   * to the dashboard and back calls `workspace.open` on a project id that has
-   * not changed. `open` throws the whole file state away — the list, the loaded
-   * flag and both counters — and refetches it. The project id never moves, so
-   * nothing resets this store; what it sees is `generationsApplied` dropping to
-   * zero while `files` is momentarily empty, and then the list arriving again.
-   *
-   * Two things have to hold across that. A counter going *down* is a reset and
-   * not a generation, so it may not trigger a rebuild; and a file list that has
-   * been discarded and refetched has to leave this store able to build from it.
-   */
+  /** Re-opening the *same* project must not strand the panel on its empty state. */
   it('rebuilds after the same project is re-opened and its file list is refetched', async () => {
     const preview = usePreviewStore()
     storeFiles({ 'index.html': INDEX })
@@ -457,13 +411,7 @@ describe('preview store — the build lifecycle', () => {
     expect(preview.stale).toBe(true)
   })
 
-  /**
-   * The counter reset above, on its own: a drop is not a generation.
-   *
-   * Worth its own case because the rebuild it would otherwise trigger costs the
-   * user's CRM rate-limit budget (D12, R5) — the whole reason a save gets a hint
-   * rather than a rebuild.
-   */
+  /** The counter reset above, on its own: a drop is not a generation. */
   it('does not rebuild when the generation counter is reset rather than advanced', async () => {
     storeFiles({ 'index.html': INDEX })
     const preview = usePreviewStore()
@@ -586,18 +534,7 @@ describe('preview store — the broker', () => {
     expect(preview.reconnectable).toBe(true)
   })
 
-  /**
-   * D15's ceiling, enforced where it cannot be walked around.
-   *
-   * The shim counts calls too, and under an honest generation that counter is
-   * the one that fires. But the shim runs inside the document it is meant to
-   * restrain: its source is an inline `<script>`, so the nonce is readable, and
-   * any code in the frame can post straight past `hl()` to the parent. A budget
-   * that only exists on that side of the boundary bounds nothing — and what it
-   * is guarding is the user's own CRM account being throttled, and their
-   * function invocations being spent, which is not a cost the frame should get
-   * to choose. So the host keeps its own count of what it has actually brokered.
-   */
+  /** D15's ceiling, enforced where it cannot be walked around. */
   it('stops brokering past the call limit even when the shim is bypassed', async () => {
     const { preview, frame, nonce } = await built()
 

@@ -4,34 +4,26 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 /**
- * AC-25's second half — **nothing is fetched from a CDN at runtime** (D2).
+ * AC-25's second half — **nothing is fetched from a CDN at runtime**.
  *
- * `@guolao/vue-monaco-editor`'s default is `@monaco-editor/loader` pulling monaco
- * off jsDelivr over AMD. That would make `npm run dev` on the emulators require
- * the internet from a fresh clone — which the brief names explicitly as a
- * deliverable — put a third party in the e2e suite's critical path, and force a
- * CSP allowlist entry in Slice 13. `monacoSetup.ts` hands the loader our own
- * imported instance instead, and its sibling spec asserts that call.
- *
- * This is the other half: the assertion that nobody reintroduces the CDN by hand
- * — a `paths: { vs: … }` config, a `<script src>`, a bare URL in a string. In
- * `no-firestore.spec.ts`'s exact shape, for its reasons: needles built by
- * concatenation, a self-skip, and the scanner tested before it is trusted.
+ * `@guolao/vue-monaco-editor`'s default is `@monaco-editor/loader` pulling monaco off jsDelivr
+ * over AMD. That would make `npm run dev` on the emulators require the internet from a fresh
+ * clone — which the brief names explicitly as a deliverable — put a third party in the e2e
+ * suite's critical path, and force a CSP allowlist entry in Slice 13. `monacoSetup.ts` hands the
+ * loader our own imported instance instead, and its sibling spec asserts that call.
  */
 
 /**
- * From the working directory, not from `import.meta.url`: this suite runs under
- * jsdom, where `import.meta.url` is an http URL and `fileURLToPath` refuses it.
- * Vitest's cwd is `frontend/`.
+ * From the working directory, not from `import.meta.url`: this suite runs under jsdom, where
+ * `import.meta.url` is an http URL and `fileURLToPath` refuses it. Vitest's cwd is `frontend/`.
  */
 const SRC = join(process.cwd(), 'src')
 
 /**
  * Built by concatenation, and this file skips itself below.
  *
- * Both halves are needed for a scanner that does not trip on its own source —
- * otherwise the only way to write this test is to write it somewhere it cannot
- * see, which is worse.
+ * Both halves are needed for a scanner that does not trip on its own source — otherwise the only
+ * way to write this test is to write it somewhere it cannot see, which is worse.
  */
 const HOSTS = ['cdn.' + 'jsdelivr.net', 'unpkg' + '.com', 'cdnjs.' + 'cloudflare.com']
 
@@ -73,12 +65,7 @@ function hits(source: string): string[] {
 }
 
 describe('the scan itself', () => {
-  /*
-   * The scanner is tested before it is trusted, `no-firestore.spec.ts`'s rule.
-   * `offenders).toEqual([])` reads as proof whether the scanner catches
-   * everything or nothing, so these cases are what "no CDN" has to mean for that
-   * line to be worth anything.
-   */
+  /* The scanner is tested before it is trusted, `no-firestore.spec.ts`'s rule. */
   it.each(FORMS)('catches %s', (_label, source) => {
     expect(hits(source)).not.toEqual([])
   })

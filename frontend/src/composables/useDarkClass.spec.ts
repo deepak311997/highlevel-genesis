@@ -6,12 +6,11 @@ import { useDarkClass } from './useDarkClass'
 /**
  * P2 — reading the resolved theme, rather than resolving it a second time.
  *
- * `useTheme()` builds fresh state per call, deliberately (its own spec depends on
- * that), so a second call inside `CodeEditor` would hold a different `preference`
- * ref and never hear `ThemeToggle`'s change — no storage event fires in the tab
- * that wrote it. The `dark` class is already the single source of truth: both
- * `applyTheme()` and the pre-paint script in `index.html` write it. So this reads
- * the answer instead of recomputing it.
+ * `useTheme()` builds fresh state per call, deliberately (its own spec depends on that), so a
+ * second call inside `CodeEditor` would hold a different `preference` ref and never hear
+ * `ThemeToggle`'s change — no storage event fires in the tab that wrote it. The `dark` class is
+ * already the single source of truth: both `applyTheme()` and the pre-paint script in
+ * `index.html` write it. So this reads the answer instead of recomputing it.
  */
 
 afterEach(() => {

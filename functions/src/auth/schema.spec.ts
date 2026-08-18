@@ -55,12 +55,7 @@ describe('registerSchema', () => {
     expect(registerSchema.safeParse({ ...VALID, password }).success).toBe(false)
   })
 
-  /**
-   * Composition rules, mirroring the Identity Platform policy on the project.
-   *
-   * Each case is long enough to clear the minimum and misses exactly one rule,
-   * so a failure here names the rule that broke rather than "something".
-   */
+  /** Composition rules, mirroring the Identity Platform policy on the project. */
   it.each([
     ['no uppercase', 'correct-horse-9'],
     ['no lowercase', 'CORRECT-HORSE-9'],

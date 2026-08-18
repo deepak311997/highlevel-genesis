@@ -14,10 +14,9 @@ const getDb = vi.hoisted(() => vi.fn())
 const userWrites: unknown[] = []
 
 /*
- * The originals are spread back in, because these modules are also reached
- * transitively: `./api` mounts both routers, so a mock that returned only the
- * three functions under test would break every route the app registers at
- * import time — a long way from anything this file is about.
+ * The originals are spread back in, because these modules are also reached transitively: `./api`
+ * mounts both routers, so a mock that returned only the three functions under test would break
+ * every route the app registers at import time — a long way from anything this file is about.
  */
 vi.mock('./projects/handlers', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -47,12 +46,11 @@ import type { AssistantTurn } from './messages/handlers'
 import { MESSAGE_LIMIT } from './messages/schema'
 
 /**
- * The `AssistantTurn` of the nth `appendAssistantMessage` call (R10).
+ * The `AssistantTurn` of the nth `appendAssistantMessage` call.
  *
- * The three parts of a turn used to be positional, and these assertions read
- * `call[2]` / `call[3]` / `call[4]` — three index literals whose meaning lived
- * in the signature rather than on the page. Named through this helper, an
- * assertion says which part of the turn it is about.
+ * The three parts of a turn used to be positional, and these assertions read `call[2]` /
+ * `call[3]` / `call[4]` — three index literals whose meaning lived in the signature rather than
+ * on the page. Named through this helper, an assertion says which part of the turn it is about.
  */
 function turnOf(index: number): AssistantTurn {
   return appendAssistantMessage.mock.calls[index]?.[2] as AssistantTurn
@@ -61,17 +59,11 @@ function turnOf(index: number): AssistantTurn {
 /**
  * The two pieces of `/generate` that are pure enough to test without an emulator.
  *
- * `logGeneration` is the whole of F3.4 for this slice (D25) and the one place a
- * message could leak into a log sink, so its contents are asserted rather than
- * trusted — including the negative, which is the assertion that matters: **the
- * reply's text appears nowhere in the line.** A message is the user's own prose
- * and, from here on, the model's; a log sink is a disclosure channel like any
- * other.
- *
- * `keepAliveMs` is `hl/config.ts`'s `emulatorOverride` pattern, and it has a test
- * for the same reason that one does: the override must be honoured **only** under
- * the emulator, or a deployed function's keep-alive interval becomes settable by
- * whoever can set an environment variable.
+ * `logGeneration` is the whole of F3.4 for this slice and the one place a message could leak
+ * into a log sink, so its contents are asserted rather than trusted — including the negative,
+ * which is the assertion that matters: **the reply's text appears nowhere in the line.** A
+ * message is the user's own prose and, from here on, the model's; a log sink is a disclosure
+ * channel like any other.
  */
 
 /**
@@ -195,26 +187,10 @@ function storedFile(path: string, content: string): { id: string; data: () => un
 }
 
 /**
- * A Firestore stand-in answering **both** reads a turn makes of the files
- * collection. As of Slice 11 (D14) they share one call shape —
- * `.orderBy('path').limit(n).get()`, whole documents — because the cap check
- * stopped being a `select()` of ids when one read had to also answer which of
- * the turn's writes are rewrites and what the snapshot must copy:
- *
- * - `readProjectFiles` — the context read, before the model is called (Slice 9 T9);
- * - `readStoredFiles` — the write-path read, inside `planFileWrites`.
- *
- * It also serves the two calls `planSnapshot` makes of the *snapshots*
- * collection — the heads projection and the `doc()` that mints the new version's
- * id — because a turn that writes files now writes a snapshot on the same batch.
- * They answer an empty list, which is the state every case here starts from.
- *
- * `rejectProjectFiles` therefore fails whichever of the two runs, and what makes
- * it still prove AC-28 is the *order*: the context read happens before the LLM
- * call, so a rejection there is the one the handler is waiting on and the
- * write-path read is never reached. The assertion — an ordinary pre-flush 500,
- * no SSE frame — is what pins that down, since a failure at the write-path read
- * would arrive after the stream had already flushed.
+ * A Firestore stand-in answering **both** reads a turn makes of the files collection. As of
+ * Slice 11 they share one call shape — `.orderBy('path').limit(n).get()`, whole documents —
+ * because the cap check stopped being a `select()` of ids when one read had to also answer which
+ * of the turn's writes are rewrites and what the snapshot must copy:
  */
 function fakeFilesDb(
   options: {
@@ -239,11 +215,8 @@ function fakeFilesDb(
       // and after `orderBy` both, so neither shape can silently stop matching.
       select: () => noHeads,
       /*
-       * `planSnapshot` mints the new version's id from the collection, and
-       * `appendUserMessage` mints the prompt's — the same call, so the stub
-       * serves both. `set` records what was written so a test can assert the
-       * prompt was stored *before* the stream opened, which is the property the
-       * single-request shape rests on.
+       * `planSnapshot` mints the new version's id from the collection, and `appendUserMessage`
+       * mints the prompt's — the same call, so the stub serves both.
        */
       doc: () => ({
         id: 'snap-new',
@@ -334,11 +307,8 @@ describe('logGeneration', () => {
     ['cacheCreationInputTokens', 0],
     ['cacheReadInputTokens', 11],
     /*
-     * Slice 9, D19, AC-24. The one metric that says whether F3.2 landed: how
-     * many `hl()` calls the turn generated that reach an allowlisted route, and
-     * how many do not. Two integers, which is why they are allowed to join a
-     * context that deliberately has no free-form body — a count cannot carry a
-     * contact, a path or a sentence somebody wrote.
+     * Slice 9, D19, AC-24. The one metric that says whether F3.2 landed: how many `hl()` calls
+     * the turn generated that reach an allowlisted route, and how many do not.
      */
     ['hlCallsKnown', 2],
     ['hlCallsUnknown', 1],
@@ -357,15 +327,9 @@ describe('logGeneration', () => {
   })
 
   /*
-   * **The assertion that matters.** The reply is the user's prompt answered, and
-   * the transcript is the LLM's context, so putting either in Cloud Logging
-   * would make the log sink a copy of every conversation on the platform.
-   *
-   * The context is built from an `LlmEvent`, which *carries* the reply's `text` —
-   * one `...event` spread at the call site is all it would take. So the field
-   * list is projected rather than passed through, and this case forces an extra
-   * key in at runtime to prove the projection is real rather than relying on the
-   * type alone.
+   * **The assertion that matters.** The reply is the user's prompt answered, and the transcript
+   * is the LLM's context, so putting either in Cloud Logging would make the log sink a copy of
+   * every conversation on the platform.
    */
   it('puts no part of the reply in the line, even when handed one', () => {
     const secret = 'the reply text nobody should ever find in a log'
@@ -390,17 +354,13 @@ describe('logGeneration', () => {
 })
 
 /**
- * AC-24 from the other end — **the counters are computed from the turn's file
- * blocks, not from its chat text** (D19).
+ * AC-24 from the other end — **the counters are computed from the turn's file blocks, not from
+ * its chat text**.
  *
- * Asserting the projection alone would leave the interesting half untested: a
- * wiring that counted the reply's prose would emit two perfectly plausible
- * integers and be wrong about what they mean. The metric is about *generated
- * code*, so the source has to be the collected file ops.
- *
- * The stream below writes one file holding an allowlisted call and one the proxy
- * would refuse, and mentions a third call in the prose that must not be counted
- * — which is what tells the two possible wirings apart.
+ * Asserting the projection alone would leave the interesting half untested: a wiring that
+ * counted the reply's prose would emit two perfectly plausible integers and be wrong about what
+ * they mean. The metric is about *generated code*, so the source has to be the collected file
+ * ops.
  */
 describe('handleGenerate — the hl() counters', () => {
   function loggedLine(info: ReturnType<typeof vi.fn>): Record<string, unknown> {
@@ -506,22 +466,15 @@ describe('keepAliveMs', () => {
 })
 
 /**
- * The client disconnect (D21, AC-17, AC-18) — **driven at L1, because the
- * functions emulator cannot deliver the signal.**
+ * The client disconnect — **driven at L1, because the functions emulator cannot deliver the
+ * signal.**
  *
- * This was verified rather than assumed. Instrumenting `req.on('close')`,
- * `req.on('aborted')`, `res.on('aborted')` and `res.on('close')` and then
- * aborting a real `fetch` two tokens into a `__slow` stream produces: no `req`
- * event at all, no `aborted` event at all, the generation running to completion
- * (`stopReason: 'end_turn'`, `durationMs: 1213`), and `res close` firing only
- * afterwards with `writableEnded: true`. The emulator terminates the client
- * connection at its own proxy and never propagates it to the function runtime.
- *
- * On Cloud Run the response *does* emit `close` on a premature client close,
- * which is what the handler listens for. What can be proven here is the half we
- * own: given the signal, the stream is aborted, the partial is persisted marked
- * `truncated`, and **nothing is written to the dead socket**. The other half —
- * that the platform delivers it — is a Slice 13 hand-check, alongside R2's.
+ * This was verified rather than assumed. Instrumenting `req.on('close')`, `req.on('aborted')`,
+ * `res.on('aborted')` and `res.on('close')` and then aborting a real `fetch` two tokens into a
+ * `__slow` stream produces: no `req` event at all, no `aborted` event at all, the generation
+ * running to completion (`stopReason: 'end_turn'`, `durationMs: 1213`), and `res close` firing
+ * only afterwards with `writableEnded: true`. The emulator terminates the client connection at
+ * its own proxy and never propagates it to the function runtime.
  */
 describe('handleGenerate — the client goes away', () => {
   beforeEach(() => {
@@ -556,10 +509,8 @@ describe('handleGenerate — the client goes away', () => {
   })
 
   /*
-   * AC-17. The partial is the whole point (F8.2): a user who closed the tab
-   * mid-reply comes back to what had been written, not to a prompt with no
-   * answer. Aborting rather than letting it run is the other half — an orphaned
-   * generation still bills.
+   * The partial is the whole point: a user who closed the tab mid-reply comes back to what had
+   * been written, not to a prompt with no answer.
    */
   it('aborts the stream, persists the partial as truncated, and writes no frame', async () => {
     const stream = scriptedStream(['one ', 'two ', 'three ', 'four '])
@@ -574,10 +525,8 @@ describe('handleGenerate — the client goes away', () => {
     expect(stream.aborted).toBe(true)
     expect(appendAssistantMessage).toHaveBeenCalledTimes(1)
     /*
-     * `'one two'` and not `'one two '`: from Slice 6 the collector is the single
-     * producer of the chat text, and D16 trims it at both ends **in the emitted
-     * stream**. The persisted content is still byte-identical to the token frames
-     * the client received, which is the invariant that actually matters (D7).
+     * `'one two'` and not `'one two '`: from Slice 6 the collector is the single producer of the
+     * chat text, and D16 trims it at both ends **in the emitted stream**.
      */
     expect(turnOf(0).content).toBe('one two')
     expect(turnOf(0).truncated).toBe(true)
@@ -599,17 +548,7 @@ describe('handleGenerate — the client goes away', () => {
     expect(appendAssistantMessage).not.toHaveBeenCalled()
   })
 
-  /**
-   * D10, and the one case where the message's flag and the file decision differ.
-   *
-   * The client left, so the message is marked `truncated`. But the stream itself
-   * ended cleanly — the fake stops producing when aborted rather than throwing —
-   * so the model's completed blocks are a complete app, and **the files are still
-   * written**. They belong to the project, not to the connection.
-   *
-   * This is only assertable at L1: the functions emulator never propagates a
-   * client disconnect to the function runtime (see the note above).
-   */
+  /** D10, and the one case where the message's flag and the file decision differ. */
   it('still writes the files of a turn whose blocks closed before the client left', async () => {
     const stream = scriptedStream([
       'Here it is.\n\n<genesis:file path="app.js">\nconst a = 1\n</genesis:file>\n',
@@ -633,10 +572,9 @@ describe('handleGenerate — the client goes away', () => {
   })
 
   /*
-   * The guard that makes the other two mean anything. Node emits `close` on a
-   * response that finished normally too, so without `writableEnded` every
-   * successful turn would be recorded as an abandonment — and every reply in the
-   * product would carry an "interrupted" marker.
+   * The guard that makes the other two mean anything. Node emits `close` on a response that
+   * finished normally too, so without `writableEnded` every successful turn would be recorded as
+   * an abandonment — and every reply in the product would carry an "interrupted" marker.
    */
   it('does not treat a completed turn as an abandonment', async () => {
     openStream.mockResolvedValue(scriptedStream(['one ', 'two ']))
@@ -655,14 +593,13 @@ describe('handleGenerate — the client goes away', () => {
 /**
  * The 200-message cap, on the endpoint that also writes into the collection.
  *
- * `POST /api/projects/:projectId/messages` refuses at 199 so the reply it is
- * about to trigger has room — but **`/generate` writes an assistant message
- * without going through that route**, and Retry re-opens it with no new user
- * message at all (D26). A transcript already at the cap therefore grows past it,
- * once per Retry, and `transcriptQuery`'s own `limit(200)` then hides every
- * document written after the two-hundredth: the reply arrives on screen, and is
- * gone on the next load. D34 leans on this cap to bound a project's spend
- * absolutely, so the endpoint that spends has to honour it too.
+ * `POST /api/projects/:projectId/messages` refuses at 199 so the reply it is about to trigger
+ * has room — but **`/generate` writes an assistant message without going through that route**,
+ * and Retry re-opens it with no new user message at all. A transcript already at the cap
+ * therefore grows past it, once per Retry, and `transcriptQuery`'s own `limit(200)` then hides
+ * every document written after the two-hundredth: the reply arrives on screen, and is gone on
+ * the next load. D34 leans on this cap to bound a project's spend absolutely, so the endpoint
+ * that spends has to honour it too.
  */
 describe('handleGenerate — the message cap', () => {
   function transcriptOf(count: number): unknown[] {
@@ -723,13 +660,8 @@ describe('handleGenerate — the message cap', () => {
 
   /* The boundary: one short of the cap is exactly the turn the cap leaves room for. */
   /*
-   * A retry needs room for one document, a new turn for two — so the boundary
-   * is different for each, and each is checked.
-   *
-   * At 199 a retry still runs: it adds only the reply. A new turn is refused,
-   * because storing its prompt would leave the transcript ending on a prompt
-   * with nowhere to put the answer — the rule the message route used to carry,
-   * now enforced by the handler that writes both halves.
+   * A retry needs room for one document, a new turn for two — so the boundary is different for
+   * each, and each is checked.
    */
   it('retries from a transcript one message short of the cap', async () => {
     readTranscript.mockResolvedValue(transcriptOf(MESSAGE_LIMIT - 1))
@@ -762,22 +694,16 @@ describe('handleGenerate — the message cap', () => {
 })
 
 /**
- * The project's own files reach the request — T12, and **AC-28 at L1 rather than
- * L4**, which is a deviation the plan records rather than absorbs.
+ * The project's own files reach the request — T12, and **AC-28 at L1 rather than L4**, which is
+ * a deviation the plan records rather than absorbs.
  *
- * There is no honest way to make an Admin SDK read fail against the Firestore
- * emulator. A corrupt document is *parsed and skipped*, not a read failure, and
- * forcing a genuine one would mean adding a fault-injection path to production
- * code — a backdoor whose only purpose is to prove an error message. Here `getDb`
- * is already mocked and `res.headersSent` is directly observable, so the property
- * that actually matters is assertable: **the read happens before the flush**, so
- * its failure is an ordinary JSON 500 with a real status line rather than an
- * `error` frame on a 200 that has already gone out (D9, R8).
- *
- * The neighbouring *real* behaviour — a corrupt file document does not break a
- * generation — is asserted at L4 in `tests/integration/generate-context.spec.ts`,
- * on the same file. Together they are a stronger assertion on the property and a
- * weaker one on the wiring, and the wiring is covered by AC-27 next door.
+ * There is no honest way to make an Admin SDK read fail against the Firestore emulator. A
+ * corrupt document is *parsed and skipped*, not a read failure, and forcing a genuine one would
+ * mean adding a fault-injection path to production code — a backdoor whose only purpose is to
+ * prove an error message. Here `getDb` is already mocked and `res.headersSent` is directly
+ * observable, so the property that actually matters is assertable: **the read happens before the
+ * flush**, so its failure is an ordinary JSON 500 with a real status line rather than an `error`
+ * frame on a 200 that has already gone out.
  */
 describe('handleGenerate — the project’s files', () => {
   beforeEach(() => {
@@ -831,10 +757,9 @@ describe('handleGenerate — the project’s files', () => {
   })
 
   /*
-   * AC-28. The three assertions are one claim seen three ways: it rejects, so the
-   * terminal handler renders the ordinary JSON envelope; `headersSent` is false,
-   * so the status line is still spendable; and `openStream` was never reached, so
-   * the failure cost nothing at Anthropic.
+   * The three assertions are one claim seen three ways: it rejects, so the terminal handler
+   * renders the ordinary JSON envelope; `headersSent` is false, so the status line is still
+   * spendable; and `openStream` was never reached, so the failure cost nothing at Anthropic.
    */
   it('answers a pre-flush error when the file read fails, and never opens a stream', async () => {
     getDb.mockReturnValue(fakeFilesDb({ rejectProjectFiles: true }))

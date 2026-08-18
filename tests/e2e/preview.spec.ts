@@ -6,34 +6,10 @@ import { assertEmulatorBuild, connectHighLevel, openNewProject, signUpAndVerify 
 /**
  * AC-39 — the money shot, walked in a browser.
  *
- * Everything on this path is the real thing except the model and HighLevel
- * itself: a real account with a verified email, a real OAuth handshake against
- * the emulator-only fake, real Cloud Function routes, real Firestore documents,
- * a real SSE stream, and a real sandboxed iframe running code that was written
- * seconds earlier and has never touched a token.
- *
- * The claim this test exists to make is one no lower level can make. L1 proves
- * the shim posts a request and the bridge answers it; L2 proves the panel
- * rebuilds when the counter moves. Only this can prove that an **opaque-origin
- * document**, with no `allow-same-origin`, no credential and no network, reaches
- * the CRM through a `postMessage` the parent brokers — and renders the answer.
- *
- * Two independent pieces of evidence are asserted, deliberately. The
- * `frameLocator` read is the user-visible one: a contact's name, on screen,
- * inside the sandbox. The `waitForResponse` is the host-visible one: a 2xx on
- * `/api/hl/proxy/contacts/search`, which means the ID token was verified, the
- * connection was read and the location was injected — none of which the browser
- * can see directly. Either alone would leave the other half unproven.
- *
- * **R1's named fallback**, decided at plan time rather than under pressure: if
- * Playwright genuinely cannot read inside an opaque-origin frame, drop *only* the
- * `frameLocator` assertion, keep the response and no-banner assertions, and
- * record the substitution in the build log and the PR body. Nothing else is
- * weakened, and the assertion is never made conditional at runtime.
- *
- * Slice 6's `files.spec.ts` stays the signal for "file operations broke" and
- * Slice 7's `editor.spec.ts` for "the editor broke". This one is "the preview
- * broke", so a red run still names the culprit.
+ * Everything on this path is the real thing except the model and HighLevel itself: a real
+ * account with a verified email, a real OAuth handshake against the emulator-only fake, real
+ * Cloud Function routes, real Firestore documents, a real SSE stream, and a real sandboxed
+ * iframe running code that was written seconds earlier and has never touched a token.
  */
 
 /** Plain, not `__slow`: nothing here is asserted mid-stream. */
@@ -69,10 +45,9 @@ test.describe('Slice 10 — live preview', () => {
     await expect(page.getByTestId('preview-frame')).toHaveCount(0)
 
     /*
-     * Armed *before* the prompt is sent, because the brokered call happens on
-     * its own schedule — the generation finishes, the store bumps its counter,
-     * the panel rebuilds and the document's own `load()` runs. Waiting for it
-     * afterwards would be a race against a response that may already be past.
+     * Armed *before* the prompt is sent, because the brokered call happens on its own schedule —
+     * the generation finishes, the store bumps its counter, the panel rebuilds and the
+     * document's own `load()` runs.
      */
     const proxied = page.waitForResponse(
       (response) =>

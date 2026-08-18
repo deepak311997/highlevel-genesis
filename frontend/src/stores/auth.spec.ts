@@ -115,15 +115,8 @@ describe('session state', () => {
   })
 
   /*
-   * Signing out is a route change, not a page load: Pinia survives it, and so
-   * does everything the previous session fetched. Without this, the next person
-   * to sign in on the same browser gets the dashboard rendered from the last
-   * one's data — their address in the account card, their location in the
-   * connection panel — until each refetch lands, which on a cold function is
-   * seconds of one user's details on another user's screen.
-   *
-   * Cleared here rather than in each view, because the session ends in exactly
-   * one place and a sign-out button added later must not have to remember.
+   * Signing out is a route change, not a page load: Pinia survives it, and so does everything
+   * the previous session fetched.
    */
   it('empties the stores holding the previous session’s data', async () => {
     const store = useAuthStore()

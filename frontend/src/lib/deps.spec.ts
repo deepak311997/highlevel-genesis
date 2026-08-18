@@ -8,22 +8,12 @@ import { describe, expect, it } from 'vitest'
  *
  * Two claims, and neither is decorative.
  *
- * **`monaco-editor` is pinned exactly** (D1). 0.55 added an `exports` map and 0.56
- * restructured the ESM tree, so the deep path the mandated wrapper's own `.d.ts`
- * imports — `monaco-editor/esm/vs/editor/editor.api` — stops resolving. Under this
- * project's `strict` typecheck that is a build failure inside a package the brief
- * requires, caused by a peer we chose. A caret would let `npm update` reintroduce it
- * silently; this fails first, and names the version it wanted.
- *
- * **The dependency set is asserted whole.** The point is not the two additions on
- * their own — it is that a third one has to be a deliberate edit to this list, which
- * is what makes "these are the only added dependencies" a claim with a test behind it
- * rather than a sentence in a PRD.
- *
- * Read from the working directory rather than from `import.meta.url`, which is
- * `no-firestore.spec.ts`'s rule and for its reason: this suite runs under jsdom,
- * where `import.meta.url` is an http URL that `fileURLToPath` refuses. Vitest's cwd
- * is `frontend/`.
+ * **`monaco-editor` is pinned exactly**. 0.55 added an `exports` map and 0.56 restructured the
+ * ESM tree, so the deep path the mandated wrapper's own `.d.ts` imports — `monaco-
+ * editor/esm/vs/editor/editor.api` — stops resolving. Under this project's `strict` typecheck
+ * that is a build failure inside a package the brief requires, caused by a peer we chose. A
+ * caret would let `npm update` reintroduce it silently; this fails first, and names the version
+ * it wanted.
  */
 
 interface PackageJson {

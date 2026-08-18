@@ -6,13 +6,9 @@ import { HL_SCOPES } from './config'
 /**
  * The URL the Connect button sends the user to.
  *
- * Composed here rather than in the browser so `client_id` and the scope list
- * never ship in the bundle, and so the uid bound into the state is one the
- * server established rather than one a client asserted (PRD D2).
- *
- * The assertions that matter are the two that fail silently in production:
- * `redirect_uri` must match the marketplace app byte for byte, and the scope
- * separator must be `%20` rather than the `+` that `URLSearchParams` emits.
+ * Composed here rather than in the browser so `client_id` and the scope list never ship in the
+ * bundle, and so the uid bound into the state is one the server established rather than one a
+ * client asserted (PRD D2).
  */
 
 const REDIRECT = 'https://hl-genesis-app.web.app/api/oauth/callback'
@@ -44,13 +40,10 @@ afterEach(() => {
 
 describe('buildAuthorizeUrl', () => {
   /*
-   * The **v2** path, and this is not cosmetic. HIGHLEVEL_PLATFORM.md §2 Step 4
-   * documented `/oauth/chooselocation`, which is what this file originally
-   * asserted — and against a live app that path answers
-   * `No integration found with the id: …`, naming the app id it could not
-   * resolve. The developer portal's own generated install link uses
-   * `/v2/oauth/chooselocation` with a `version_id`. The doc is stale; the
-   * portal is authoritative, and this test is the record of that.
+   * The **v2** path, and this is not cosmetic. HIGHLEVEL_PLATFORM.md §2 Step 4 documented
+   * `/oauth/chooselocation`, which is what this file originally asserted — and against a live
+   * app that path answers `No integration found with the id: …`, naming the app id it could not
+   * resolve.
    */
   it('targets the v2 chooselocation endpoint', () => {
     expect(buildAuthorizeUrl(STATE)).toMatch(
@@ -75,10 +68,8 @@ describe('buildAuthorizeUrl', () => {
   })
 
   /*
-   * `version_id` identifies the app version whose scope list and redirect URL
-   * the consent screen should honour. Without it the v2 endpoint cannot resolve
-   * the app at all — this is the parameter whose absence produced the
-   * "No integration found" failure.
+   * `version_id` identifies the app version whose scope list and redirect URL the consent screen
+   * should honour.
    */
   it('identifies the app version, without which v2 cannot resolve the app', () => {
     expect(new URL(buildAuthorizeUrl(STATE)).searchParams.get('version_id')).toBe(VERSION_ID)
@@ -99,10 +90,8 @@ describe('buildAuthorizeUrl', () => {
   })
 
   /*
-   * URLSearchParams encodes a space as `+`, which is correct for form bodies
-   * and wrong here: the scope parameter is documented as space separated and
-   * URL encoded, meaning %20. Getting this wrong yields an authorization page
-   * that silently grants a subset of the scopes asked for.
+   * URLSearchParams encodes a space as `+`, which is correct for form bodies and wrong here: the
+   * scope parameter is documented as space separated and URL encoded, meaning %20.
    */
   it('encodes scope separators as %20, not +', () => {
     const raw = buildAuthorizeUrl(STATE)
@@ -120,10 +109,8 @@ describe('buildAuthorizeUrl', () => {
 
 describe('HL_SCOPES', () => {
   /*
-   * Adding a scope later forces every existing install to re-authorise, so the
-   * list is taken in full up front (PRD D18). This test is the tripwire: it
-   * fails if someone edits the constant, which is the moment to also update the
-   * marketplace app — the other half of a contract this repo cannot see.
+   * Adding a scope later forces every existing install to re-authorise, so the list is taken in
+   * full up front (PRD D18).
    */
   it('is the list the marketplace app actually grants', () => {
     expect([...HL_SCOPES]).toEqual([
@@ -141,17 +128,8 @@ describe('HL_SCOPES', () => {
 
   /*
    * Five scopes were dropped after the app rejected them with `invalid_scope`:
-   * conversations.write, users.readonly, opportunities.readonly,
-   * locations/customFields.readonly and locations/tags.readonly.
-   *
-   * None is required by the spec. F7.1 asks for Contacts, Conversations and
-   * Calendars, and every one of those surfaces is covered above —
-   * conversations.write governs conversation *records*, while F7.1's "send" is
-   * conversations/message.write, which is present. The rest were the
-   * "worth adding cheaply" extras from HIGHLEVEL_PLATFORM.md §4.
-   *
-   * This test names them so a future reader knows they were considered and
-   * excluded, rather than forgotten.
+   * conversations.write, users.readonly, opportunities.readonly, locations/customFields.readonly
+   * and locations/tags.readonly.
    */
   it('excludes the scopes the app refused, none of which the spec needs', () => {
     for (const refused of [

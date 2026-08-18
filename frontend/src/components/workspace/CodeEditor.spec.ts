@@ -5,18 +5,11 @@ import { defineComponent, h, reactive } from 'vue'
 /**
  * AC-10 – AC-12 and AC-26 – AC-28 — the one component that touches the editor.
  *
- * **Monaco itself never runs here** (D23). jsdom has no layout, no canvas metrics
- * and no `ResizeObserver` worth the name, so a test that mounted the real editor
- * would prove the mock works and nothing else. What is asserted instead is the
- * *contract*: which props the component passes, which model it writes to, and
- * which method it uses to write — against a stub wrapper and a fake monaco. The
- * real editor is exercised once, at L5.
- *
- * The negative in AC-10 is the reason this file matters. `setValue` per chunk
- * passes every test this repo can run below L5 while snapping the viewport to
- * line 1 on each chunk in the running app, so the fake model records a
- * `setValue` that is asserted **never** to have been called — for anything, ever,
- * rather than "not for this file during this window".
+ * **Monaco itself never runs here**. jsdom has no layout, no canvas metrics and no
+ * `ResizeObserver` worth the name, so a test that mounted the real editor would prove the mock
+ * works and nothing else. What is asserted instead is the *contract*: which props the component
+ * passes, which model it writes to, and which method it uses to write — against a stub wrapper
+ * and a fake monaco. The real editor is exercised once, at L5.
  */
 
 /* ── the fake monaco, and the module the component dynamically imports ────── */
@@ -41,9 +34,8 @@ const state = vi.hoisted<SetupState>(() => ({ fail: false, monaco: null }))
 
 vi.mock('@/lib/monacoSetup', () => ({
   /*
-   * A getter rather than a value: a failed chunk is what AC-26 is about, and
-   * throwing on access is the closest a mocked module can get to the browser
-   * rejecting an `import()`.
+   * A getter rather than a value: a failed chunk is what AC-26 is about, and throwing on access
+   * is the closest a mocked module can get to the browser rejecting an `import()`.
    */
   get monaco() {
     if (state.fail) throw new Error('Failed to fetch dynamically imported module')
@@ -52,14 +44,13 @@ vi.mock('@/lib/monacoSetup', () => ({
 }))
 
 /**
- * A model that behaves like a document under `applyEdits`, and records what was
- * done to it.
+ * A model that behaves like a document under `applyEdits`, and records what was done to it.
  *
- * It understands the only two edits this component produces: a zero-width range
- * at the end (append) and the full model range (replace). Modelling them rather
- * than just recording them is what makes a *sequence* of appends meaningful —
- * with a static `getValue`, the second chunk's edit would be computed from the
- * first chunk's document and the test would pass over a broken accumulator.
+ * It understands the only two edits this component produces: a zero-width range at the end
+ * (append) and the full model range (replace). Modelling them rather than just recording them is
+ * what makes a *sequence* of appends meaningful — with a static `getValue`, the second chunk's
+ * edit would be computed from the first chunk's document and the test would pass over a broken
+ * accumulator.
  */
 function fakeModel(value: string) {
   const model = {
@@ -67,21 +58,15 @@ function fakeModel(value: string) {
     edits: [] as FakeEdit[],
     disposed: false,
     /**
-     * The wrapper's `onDidChangeModelContent` listener, which monaco fires
-     * **synchronously** inside `applyEdits`.
-     *
-     * Wired by the one case that cares, and the synchrony is the point: it is
-     * what makes `applying` load-bearing rather than decorative. An echo
-     * delivered a tick later would find the guard already down and the test would
-     * pass over a component that has no guard at all.
+     * The wrapper's `onDidChangeModelContent` listener, which monaco fires **synchronously**
+     * inside `applyEdits`.
      */
     onChange: null as null | (() => void),
     setValue: vi.fn(),
     /**
-     * The registry pins every model it hands out to LF, because monaco guesses a
-     * new model's line ending from the text it was created with — and a tab's
-     * model is created before its bytes arrive. `editorModels.spec.ts` is where
-     * that is asserted; here it only has to exist.
+     * The registry pins every model it hands out to LF, because monaco guesses a new model's
+     * line ending from the text it was created with — and a tab's model is created before its
+     * bytes arrive.
      */
     setEOL: vi.fn(),
     dispose: vi.fn(() => {
@@ -205,11 +190,8 @@ const store: StoreFake = reactive({
   contents: {},
   editContent: vi.fn(),
   /*
-   * Through `store` rather than `this`: a getter's `this` is inferred from the
-   * literal, not from the annotation, so `this.selectedPath` would be typed
-   * `null`. The reference resolves after initialisation — nothing reads this
-   * before `reactive()` has returned — and going through the proxy is also what
-   * makes the component's watcher track it.
+   * Through `store` rather than `this`: a getter's `this` is inferred from the literal, not from
+   * the annotation, so `this.selectedPath` would be typed `null`.
    */
   get editorContent(): string {
     const path = store.selectedPath
@@ -279,10 +261,9 @@ describe('CodeEditor', () => {
   })
 
   /*
-   * AC-2. The three lines of the skeleton are the shared `Skeleton`, not
-   * hand-rolled pulsing divs — the testid still resolves to the same
-   * element, and what it holds carries the primitive's slot attribute. The
-   * sizing utilities come across unchanged, so the cover keeps its height (R2).
+   * The three lines of the skeleton are the shared `Skeleton`, not hand-rolled pulsing divs —
+   * the testid still resolves to the same element, and what it holds carries the primitive's
+   * slot attribute.
    */
   it('renders Skeleton placeholders while loading', () => {
     const wrapper = mount(CodeEditor)
@@ -323,14 +304,7 @@ describe('CodeEditor', () => {
     expect(wrapper.find('[data-testid="monaco-stub"]').exists()).toBe(true)
   })
 
-  /**
-   * AC-28, D6 — **the instance is not made reactive**, asserted rather than
-   * commented.
-   *
-   * `ref()` over a Monaco editor makes Vue walk a very large third-party object
-   * graph on every property access. A deep reactive proxy is not `===` the object
-   * it wraps, so identity is the whole test.
-   */
+  /** AC-28, D6 — **the instance is not made reactive**, asserted rather than commented. */
   it('holds the editor instance identically', async () => {
     const sentinel = fakeEditor(fakeModel(''))
     const { wrapper } = await mounted(sentinel)
@@ -368,13 +342,7 @@ describe('CodeEditor', () => {
     })
   })
 
-  /**
-   * AC-27, D17. A theme change is a prop change, not a remount.
-   *
-   * The names are Instrument's own rather than monaco's stock `vs` / `vs-dark`:
-   * stock `vs` is pure white, which sits a shade brighter than this app's
-   * ground and shows a seam where the editor meets the panel beside it.
-   */
+  /** A theme change is a prop change, not a remount. */
   it('passes the Instrument themes for dark and light, without remounting', async () => {
     store.selectedPath = 'index.html'
     store.contents = { 'index.html': '<h1>Contacts</h1>' }
@@ -402,12 +370,8 @@ describe('CodeEditor', () => {
   })
 
   /**
-   * AC-10, D8, P4 — **the slice's one real hazard**, at the level where the
-   * component's part of it can be seen.
-   *
-   * Three claims in one case, because they are one behaviour: each chunk is an
-   * append carrying only the suffix, the view follows the last line, and no
-   * `setValue` is issued by anything at any point.
+   * AC-10, D8, P4 — **the slice's one real hazard**, at the level where the component's part of
+   * it can be seen.
    */
   it('appends the tail of a streamed chunk, follows it, and never calls setValue', async () => {
     store.selectedPath = 'index.html'
@@ -482,14 +446,9 @@ describe('CodeEditor', () => {
   })
 
   /**
-   * The round trip terminates by itself, which is why `applying` can be a plain
-   * boolean rather than a queue: our own write makes `editorContent` equal to the
-   * model, so the next `editorEdit` returns `null`.
-   *
-   * Without the guard, the wrapper's `update:value` — which fires on *every*
-   * content change, including ours, because its handler compares against a
-   * `props.value` that is `undefined` and so never equal — would push every
-   * streamed byte back into the store and mark every generated file dirty.
+   * The round trip terminates by itself, which is why `applying` can be a plain boolean rather
+   * than a queue: our own write makes `editorContent` equal to the model, so the next
+   * `editorEdit` returns `null`.
    */
   it('does not write a streamed append back into the store', async () => {
     store.selectedPath = 'index.html'
@@ -555,10 +514,9 @@ describe('CodeEditor', () => {
   })
 
   /**
-   * The wrapper's own `onUnmounted` disposes `editorRef.value.getModel()`, and
-   * the `lg` breakpoint unmounts this component on a window resize — so the
-   * detach has to happen first, or the registry hands out a disposed model
-   * afterwards.
+   * The wrapper's own `onUnmounted` disposes `editorRef.value.getModel()`, and the `lg`
+   * breakpoint unmounts this component on a window resize — so the detach has to happen first,
+   * or the registry hands out a disposed model afterwards.
    */
   it('detaches the editor before unmounting', async () => {
     store.selectedPath = 'index.html'

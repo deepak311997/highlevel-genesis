@@ -16,16 +16,11 @@ import { HttpError } from '../lib/errors'
 /**
  * The gate, for callers that are not a browser.
  *
- * Slice 1 put an unverified user behind a router guard and behind Firestore
- * rules. A router guard stops a browser and stops nobody holding a valid ID
- * token, and Firestore rules do not cover a Cloud Function's own surface — so
- * every authenticated endpoint has to check `email_verified` on the decoded
- * token itself. That is Slice 1's D26, and this slice's endpoints are the first
- * to need it.
- *
- * Every case below is a rejection bar one. A wrapper that only ever calls the
- * handler is indistinguishable from no check at all, which is the bug worth
- * catching.
+ * Slice 1 put an unverified user behind a router guard and behind Firestore rules. A router
+ * guard stops a browser and stops nobody holding a valid ID token, and Firestore rules do not
+ * cover a Cloud Function's own surface — so every authenticated endpoint has to check
+ * `email_verified` on the decoded token itself. That is Slice 1's D26, and this slice's
+ * endpoints are the first to need it.
  */
 describe('withVerifiedUser', () => {
   let res: Response

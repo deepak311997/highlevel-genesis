@@ -5,17 +5,12 @@ import { editorEdit, type EditorEdit } from './editorContent'
 /**
  * AC-2 – AC-5, D8, R1 — **the slice's one real hazard**, proven where it is cheap.
  *
- * The alternative this module exists to refuse is `model.setValue(next)` on every
- * chunk. That version passes every automated test this repo can run below L5 —
- * jsdom computes no layout and runs no Monaco — and in the running app it snaps
- * the viewport back to line 1 on each chunk, so a user watching a 300-line file
- * stream in stares at its first ten lines for the whole generation, resets the
- * undo stack per chunk, and re-tokenizes the whole document each time: O(n²) over
- * the file.
- *
- * So the decision is a pure function with its own module, reviewable before any
- * `.vue` file changes. AC-3's assertion that the append text is **shorter than
- * `next`** is the one that fails if someone "simplifies" this to always replace.
+ * The alternative this module exists to refuse is `model.setValue(next)` on every chunk. That
+ * version passes every automated test this repo can run below L5 — jsdom computes no layout and
+ * runs no Monaco — and in the running app it snaps the viewport back to line 1 on each chunk, so
+ * a user watching a 300-line file stream in stares at its first ten lines for the whole
+ * generation, resets the undo stack per chunk, and re-tokenizes the whole document each time:
+ * O(n²) over the file.
  */
 
 /**
