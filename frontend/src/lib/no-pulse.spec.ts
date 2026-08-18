@@ -69,9 +69,27 @@ function sourceFiles(dir: string): string[] {
   })
 }
 
+/**
+ * The needle half of the scan, on source text.
+ *
+ * Split out from {@link offends} so the cases below can exercise the predicate
+ * the tree walk actually uses. Asserting `source.includes(NEEDLE)` inline
+ * instead would be a tautology — the fixtures are built by interpolating
+ * `NEEDLE` — and a tautology proves nothing about the scanner it is standing in
+ * for. `no-cdn.spec.ts` calls its own `hits()` here for the same reason.
+ */
+function pulses(source: string): boolean {
+  return source.includes(NEEDLE)
+}
+
+/** The exemption half: the one directory the utility may appear in. */
+function exempt(path: string): boolean {
+  return path.includes(ALLOWED)
+}
+
 function offends(path: string): boolean {
-  if (path.includes(ALLOWED)) return false
-  return readFileSync(path, 'utf8').includes(NEEDLE)
+  if (exempt(path)) return false
+  return pulses(readFileSync(path, 'utf8'))
 }
 
 describe('the scan itself', () => {
@@ -82,11 +100,20 @@ describe('the scan itself', () => {
    * for that line to be worth anything.
    */
   it.each(FORMS)('catches %s', (_label, source) => {
-    expect(source.includes(NEEDLE)).toBe(true)
+    expect(pulses(source)).toBe(true)
   })
 
   it.each(INNOCENT)('does not fire on %s', (_label, source) => {
-    expect(source.includes(NEEDLE)).toBe(false)
+    expect(pulses(source)).toBe(false)
+  })
+
+  /* The exemption is the other half of `offends`, and the half that could
+   * silently widen: a mistake here excuses a whole directory rather than one
+   * file. */
+  it('exempts the primitive’s own directory and nothing else', () => {
+    expect(exempt(join(SRC, 'components', 'ui', 'skeleton', 'Skeleton.vue'))).toBe(true)
+    expect(exempt(join(SRC, 'components', 'ui', 'alert', 'Alert.vue'))).toBe(false)
+    expect(exempt(join(SRC, 'components', 'workspace', 'FileTree.vue'))).toBe(false)
   })
 })
 
@@ -94,8 +121,12 @@ describe('the frontend source tree', () => {
   it('pulses in no file outside components/ui/skeleton', () => {
     // Reported by path, so a failure names the files rather than merely
     // asserting that one exists somewhere.
-    const offenders = sourceFiles(SRC).filter(offends)
+    const scanned = sourceFiles(SRC)
 
-    expect(offenders).toEqual([])
+    // A walk that found nothing would make the assertion below pass without
+    // having read a line — the one way this scan can be green and worthless.
+    expect(scanned.length).toBeGreaterThan(50)
+
+    expect(scanned.filter(offends)).toEqual([])
   })
 })

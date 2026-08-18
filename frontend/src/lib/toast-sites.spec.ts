@@ -79,6 +79,24 @@ const INNOCENT: readonly (readonly [string, string])[] = [
 ]
 
 /**
+ * The vendored region's own import specifier, and the one file allowed to name
+ * it.
+ *
+ * A second needle because the first one cannot see this: a view that mounted
+ * its own `<Toaster />` would import `@/components/ui/sonner`, which does not
+ * contain `vue-sonner` at all — `INNOCENT` below even names that import as the
+ * thing the first scan must stay quiet about. `App.spec.ts` counts the regions
+ * it can see, but it stubs the routed views, so a `Toaster` inside
+ * `DashboardView.vue` is invisible there too. Between them that left AC-7 with
+ * no test that a second region cannot exist, and two regions render every toast
+ * twice.
+ */
+const REGION = '@/components/' + 'ui/sonner'
+
+/** The shell, and only the shell. It is mounted once, outside `<main>`. */
+const REGION_ALLOWED: readonly string[] = ['src/App.vue']
+
+/**
  * Skipped so the scanner does not trip on its own source, nor on the component
  * specs that mock the module to assert a call site behaves — a test double is
  * not a call site.
@@ -96,6 +114,24 @@ function sourceFiles(dir: string): string[] {
   })
 }
 
+/**
+ * The needle, on source text.
+ *
+ * Split out so the cases below exercise the predicate the tree walk uses.
+ * Asserting `source.includes(NEEDLE)` inline instead would be a tautology — the
+ * fixtures are built by interpolating `NEEDLE` — and a tautology proves nothing
+ * about the scanner it stands in for. `no-cdn.spec.ts` calls its own `hits()`
+ * here for the same reason.
+ */
+function names(source: string): boolean {
+  return source.includes(NEEDLE)
+}
+
+/** The same, for the vendored region's import specifier. */
+function mountsRegion(source: string): boolean {
+  return source.includes(REGION)
+}
+
 /** `/…/frontend/src/lib/x.ts` → `src/lib/x.ts`, so a failure reads as a path. */
 function shortPath(path: string): string {
   return relative(process.cwd(), path).split(sep).join('/')
@@ -109,11 +145,19 @@ describe('the scan itself', () => {
    * for that line to be worth anything.
    */
   it.each(FORMS)('catches %s', (_label, source) => {
-    expect(source.includes(NEEDLE)).toBe(true)
+    expect(names(source)).toBe(true)
   })
 
   it.each(INNOCENT)('does not fire on %s', (_label, source) => {
-    expect(source.includes(NEEDLE)).toBe(false)
+    expect(names(source)).toBe(false)
+  })
+
+  /* The skip is the other half, and the half that could silently widen: it
+   * already exempts every spec, so a looser test would exempt source too. */
+  it('skips specs and nothing else', () => {
+    expect(isSpec('SnapshotSheet.spec.ts')).toBe(true)
+    expect(isSpec('SnapshotSheet.vue')).toBe(false)
+    expect(isSpec('sessionExpiry.ts')).toBe(false)
   })
 })
 
@@ -121,11 +165,33 @@ describe('the frontend source tree', () => {
   it('raises a toast from exactly two files, and they are the two', () => {
     // Reported by path, so a third site names the file that added it rather
     // than merely asserting that one exists somewhere.
-    const sites = sourceFiles(SRC)
-      .filter((path) => readFileSync(path, 'utf8').includes(NEEDLE))
+    const scanned = sourceFiles(SRC)
+
+    // A walk that found nothing would leave `sites` empty for a reason that has
+    // nothing to do with the rule — the one way this scan reads as green and
+    // proves nothing.
+    expect(scanned.length).toBeGreaterThan(50)
+
+    const sites = scanned
+      .filter((path) => names(readFileSync(path, 'utf8')))
       .map(shortPath)
       .sort()
 
     expect(sites).toEqual(ALLOWED)
+  })
+
+  /*
+   * AC-7, and the half `App.spec.ts` cannot reach. It counts `Toaster`s in a
+   * tree whose routed views are stubs, so it would still read one with a second
+   * region sitting in `DashboardView.vue`. This is the assertion that a second
+   * one cannot be added at all.
+   */
+  it('mounts the toast region from exactly one file, and it is the shell', () => {
+    const regions = sourceFiles(SRC)
+      .filter((path) => mountsRegion(readFileSync(path, 'utf8')))
+      .map(shortPath)
+      .sort()
+
+    expect(regions).toEqual(REGION_ALLOWED)
   })
 })
