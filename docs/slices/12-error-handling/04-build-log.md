@@ -295,3 +295,193 @@ for T11.
 3. `SignInView.spec.ts`'s shared `vue-router` mock gained `{ path: '/projects/:projectId' }` in
    `getRoutes`, unavoidable for AC-12. `/nowhere` still falls back, so the existing
    `ignores a %s redirect target` cases are untouched and green.
+
+### T16 — the store reports what a restore did (AC-5, L1) · lane L-TOAST-RESTORE
+
+- **Red:** 4 failed / 138 passed, each `expected undefined to be 'restored' | 'unchanged' |
+  'blocked' | 'failed'` — the function resolved with nothing at all. The *non*-outcome assertions
+  in the same cases (`restoreError`, `filesRevision`, `requests()`) already held, which is the
+  point of the task: the behaviour was correct and only unreported.
+- **Green:** `RestoreOutcome` exported as pinned; `'blocked'` at the guard **and at all three
+  `if (!current(gen))` early exits**, `'failed'` in the `catch`, `result.changed ? 'restored' :
+  'unchanged'` on success. Argument list untouched.
+
+### T17 — two toasts, both on restore (AC-4, AC-5 L2) · lane L-TOAST-RESTORE
+
+- **Red:** 2 failed / 19 passed, both `Number of calls: 0` against a `StringContaining "Version 2"`
+  — the double was reached and simply never called, so the mock and module resolution were sound.
+- **Green:** `confirmRestore` awaits the outcome and branches to `toast.success(…)` / `toast(…)` /
+  nothing. Copy goes through the file's existing `versionLabel`, so the sheet and the toast cannot
+  drift about what a version is called. The handler stays an expression, so `no-misused-promises`
+  stays quiet.
+- **Incidental:** the spec's `beforeEach` default moved from `mockResolvedValue(undefined)` to
+  `mockResolvedValue('restored')`, `undefined` no longer being a value the store can return. No
+  existing assertion depended on it.
+
+### T18 — a failure never toasts (AC-6, D4) · lane L-TOAST-RESTORE
+
+- `lib/toast-sites.spec.ts`, in `no-cdn.spec.ts`'s shape: needle by concatenation, `FORMS`(4) and
+  `INNOCENT`(3) proving the scanner, offenders by path, and
+  `raises a toast from exactly two files, and they are the two`.
+- **Deviation, deliberate and needed:** the scan skips **all** `*.spec.ts`, not only itself.
+  `Sonner.spec.ts`, `deps.spec.ts` and both component specs name the package legitimately
+  (dependency inventory, test doubles). Self-skip is subsumed and the comment says so.
+  `style.css`'s `@import 'vue-sonner/style.css'` is outside the `.ts`/`.vue` filter, so it needed
+  no exemption.
+- **The scan was green on arrival** (T17 being correct), so the lane proved it bites by
+  temporarily adding a third import to a file it owned and reverting: the output named
+  `src/stores/workspace.ts` by path. The two "toasts nothing" cases were proved the same way — a
+  temporary `toast.error` branch made each red, then was reverted and re-verified.
+- **Plan drift, cosmetic:** the plan cites `SnapshotSheet.spec.ts:324` for the restore-by-id
+  assertion; it is at line 337. It passes untouched, and the new case pins the single-argument
+  call beside it.
+
+### T11 — a dropped connection speaks our language (AC-8, AC-9) · the join, kept by the lead
+
+The one task the plan says cannot be placed in a disjoint lane: it touches `generateApi.*`
+(L-SESSION's T10), `stores/workspace.spec.ts` (L-TOAST-RESTORE's T16) and `ChatPanel.spec.ts`.
+Run last, after both.
+
+- **Red (L1):** 2 failed / 31 passed —
+  `expected TypeError: Failed to fetch to match object { status: +0, … }` and
+  `expected [Function] to throw error not matching /Failed to fetch/`. The raw browser string was
+  reaching the caller, which is precisely the gap D6 names.
+- **Green:** only `reader.read()` is wrapped. The frame loop stays **outside** the `try`, so a bug
+  in `sse.ts` is reported as itself rather than laundered into a connection message; an abort
+  rethrows untouched, because a user who left the project did not lose their connection.
+- **Two honest notes.**
+  - The **L2 test in `ChatPanel.spec.ts` passed on first run.** The panel renders whatever
+    `generateError` holds, so at that level this is a lock, not a driver; AC-8's genuine red was at
+    L1 and at the store. It is kept rather than contrived into failing.
+  - The **store test was written after the L1 fix had landed**, so it too was green on arrival. It
+    was proved to bite by temporarily reverting the `try` in `generateApi.ts`: it failed with
+    `expected 'Failed to fetch' to be 'Something went wrong. Check your conn…'`, then the fix was
+    restored and re-verified.
+- **Copy left as three literals** (`apiClient.ts`, `generateApi.ts`'s open, `generateApi.ts`'s
+  read), exactly as the plan directs: hoisting a string to a shared constant across two modules is
+  a structural change beside a uniformity one, and each of the three has its own test asserting the
+  exact words.
+
+### T20 — the session-expiry walk (AC-20) · kept by the lead
+
+Kept out of L-SESSION for one infrastructure reason: it is the only task whose verification needs
+exclusive use of the emulator ports, and four lanes running suites concurrently would have
+contended for them.
+
+- **The plan amendment this task forced, and it is the one substantive one in the slice.**
+  The walk first asserted the URL literal the PRD's AC-10 names:
+  `/signin?redirect=%2Fprojects%2F<id>&reason=session_expired`. It failed — but on the
+  *serialisation*, not the behaviour. The app had navigated correctly; the address bar read
+  `?redirect=/projects/N8BFPxmQOjHl342bEVsh&reason=session_expired`.
+
+  `expiredSignInPath` does percent-encode the path, and `sessionExpiry.spec.ts` pins that. But
+  `router.replace()` re-serialises the query on the way into the address bar, and `/` is legal
+  unescaped in a query string, so vue-router emits it bare. The two URLs are the same URL and both
+  parse to the same `redirect` value.
+
+  **The walk now asserts the parsed parameters** — `pathname === '/signin'`,
+  `searchParams.get('redirect') === workspacePath`, `searchParams.get('reason') ===
+  'session_expired'`. That is *stronger* than the literal match, because it asserts the thing
+  AC-10 is about rather than pinning an encoding choice vue-router owns; and AC-10's literal text
+  remains pinned where it is actually a contract, in `sessionExpiry.spec.ts`.
+- The concrete path is read off the browser rather than constructed, so the walk genuinely
+  exercises a *parameterised* route — a hardcoded path would pass even if T5's fix had not landed.
+- **Green:** `1 passed (5.1s)`.
+
+## Deviations from the plan's lane split
+
+Both are build-stage coordination calls, not design changes:
+
+1. **T14 was kept by the lead** rather than run as L-TOAST's head. It is the only task that runs
+   `npm install`, and mutating `node_modules` underneath four lanes running Vitest is a race with
+   nothing to gain. L-TOAST was then split into two lanes that share no file — **L-TOAST-APP**
+   (T15) and **L-TOAST-RESTORE** (T16→T17→T18) — which also balanced the remaining weight.
+2. **T20 was kept by the lead** rather than run at the tail of L-SESSION, because it needs
+   exclusive emulator ports.
+
+Lanes were also told to run **only their own spec files**, never the full suite: with four lanes
+editing concurrently, a full-suite run inside a lane reports other lanes' in-progress edits as
+failures. The lead ran the full suite after each lane landed. This proved its worth twice — L-AC1
+and L-HL each reported a lint error in another lane's mid-flight file, and both were gone once
+that lane finished.
+
+## Final suite
+
+Run on the complete branch, in order:
+
+| Gate | Result |
+|---|---|
+| `npm run typecheck` | **green** (functions, frontend, root) |
+| `npm run lint` | **green**, `--max-warnings 0` |
+| `npm run test:unit` | **green** — functions 46 files / 1136 · frontend 73 files / **1047** · scripts 3 / 21 |
+| `npm run test:rules` | **green** — 1 file / 52 (unchanged from baseline, as D14 requires) |
+| `npm run test:integration` | **green** — 17 files / 378 (unchanged from baseline) |
+| `npm run test:e2e` | **green** — **19 passed**, including the new walk |
+
+Frontend unit tests went 962 → 1047 (**+85**). Rules and integration counts did not move, which
+is the correct outcome for a slice that adds no collection.
+
+**D14, measured rather than asserted** — the definition-of-done line:
+
+```
+$ git diff main...HEAD --stat -- functions/ firestore.rules tests/rules/ tests/integration/
+$
+```
+
+Empty. Zero files. No new Firestore collection, therefore no new rules and no new L3 test; the
+existing rules continue to deny every client outright and the existing L3 suite continues to prove
+it. `no-firestore.spec.ts` stays green and in the suite (D16) — nothing here adds a client-SDK
+call, a `:uid` path segment, or a route.
+
+**R2 (Monaco), checked:** `editor.spec.ts`'s `editor renders with a real height at both layouts`
+is green in the e2e run above. The nineteen swaps did not reintroduce the 5 px editor.
+
+**R1 (the invisible stylesheet), partially closed:** no unit test can see it, as the plan says.
+Build-time evidence was gathered instead — `npm --prefix frontend run build` produces
+`dist/assets/index-*.css` containing sonner's styles, so the `@import` genuinely reaches the
+bundle. That proves the import is wired, **not** that the toast looks right; the human visual
+check remains, below.
+
+## Acceptance criteria — every one, and the test that proves it
+
+| AC | Test | File |
+|---|---|---|
+| AC-1 | `offers Reconnect HighLevel for %s` (+ the testid assertion) | `PreviewPanel.spec.ts` |
+| AC-2 | `renders a pulsing placeholder carrying the slot attribute`; `renders Skeleton placeholders while loading` × 10 | `Skeleton.spec.ts` + the ten component specs |
+| AC-3 | `pulses in no file outside components/ui/skeleton` | `lib/no-pulse.spec.ts` |
+| AC-4 | `confirms a successful restore with a toast naming the version` | `SnapshotSheet.spec.ts` |
+| AC-5 | `says so when the restore changed nothing`; `reports a restore that changed nothing` | `SnapshotSheet.spec.ts`, `stores/workspace.spec.ts` |
+| AC-6 | `raises a toast from exactly two files, and they are the two`; `renders a failed restore inline and toasts nothing`; `reports a failed save inline and toasts nothing` | `lib/toast-sites.spec.ts`, `SnapshotSheet.spec.ts`, `FileEditor.spec.ts` |
+| AC-7 | `mounts exactly one Toaster` | `App.spec.ts` |
+| AC-8 | `maps a mid-stream read failure to a message the user can act on`; `says nothing about what the browser called it`; `renders the app's own line when the stream dies mid-reply` | `generateApi.spec.ts`, `ChatPanel.spec.ts` |
+| AC-9 | `keeps the prompt and reopens the stream after a mid-stream drop` | `stores/workspace.spec.ts` |
+| AC-10 | `invokes the session hook for a 401 unauthenticated, and still throws`; `signs out and lands on sign-in carrying the path they were on` | `apiClient.spec.ts`, `sessionExpiry.spec.ts` |
+| AC-11 | `shows the expiry notice for reason=session_expired`; `shows no notice without a reason`; `shows no notice for an unrecognised reason` | `SignInView.spec.ts` |
+| AC-12 | `returns a concrete path for a parameterised route`; `returns to the workspace it was sent from` | `redirect.spec.ts`, `SignInView.spec.ts` |
+| AC-13 | `leaves app_check_failed alone` | `apiClient.spec.ts` |
+| AC-14 | `leaves a 403 email_unverified alone` | `apiClient.spec.ts` |
+| AC-15 | `fires once for three concurrent 401s` | `apiClient.spec.ts` |
+| AC-16 | `invokes the session hook when the stream is refused with a 401 unauthenticated` | `generateApi.spec.ts` |
+| AC-17 | `composes the message and upstream's own words` (+ the three no-parentheses cases); `renders the composed failure in the row` | `stores/hl.spec.ts`, `ConnectionPanel.spec.ts` |
+| AC-18 | `titles the section with a heading`; `announces its results politely — %s` (all four states) | `ConnectionPanel.spec.ts` |
+| AC-19 | `labels the check button off the probe state — %s` (four states + disabled) | `ConnectionPanel.spec.ts` |
+| AC-20 | `an expired session lands on sign-in and comes back to the workspace` | `tests/e2e/errors.spec.ts` |
+
+**No acceptance criterion is without a named, passing test.**
+
+## Left for a human — the one definition-of-done line this stage cannot close
+
+The DoD says *"The three manual demo breaks walked once by hand: the model, the session,
+HighLevel."* **This was not done**, and cannot be: it needs a person at a browser. It is the only
+DoD line this build leaves open, and it matters most for **R1** — the toast stylesheet is the one
+change in the slice with no automated proof of its visible result. The console recipes for all
+three breaks are in `03-plan.md` § Manual verification and are ready to paste.
+
+Everything else in the definition of done is closed and measured above.
+
+## Deferred — found during the build, not fixed here
+
+| Finding | Why not here |
+|---|---|
+| `lib/api.ts`'s `apiGet` has no callers anywhere in `src/` (plan C7) | Removing it is not F8 and would put a structural diff beside a uniformity one (D13). Noted for Slice 13's README. |
+| The fifteen refactors earlier reviews handed to "Slice 12's audit" | D13 and the PRD's Out-of-scope table; each is re-homed there with its reason. |
