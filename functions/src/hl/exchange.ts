@@ -19,19 +19,29 @@ import {
 /** Contacts and locations. Calendars and conversations use 2021-04-15. */
 const VERSION_LOCATIONS = '2021-07-28'
 
+/**
+ * `endpoint` is the HighLevel path, carried so a log line can name the call that
+ * was refused. Four of the calls below can answer 4xx and three of them are on the
+ * install path, so `HighLevel responded 422` on its own does not identify which —
+ * as one production install demonstrated.
+ *
+ * Optional, with a default, because `proxyError` and `tokenStore` construct these
+ * from a response they already have the context for.
+ */
 export class HlRequestError extends Error {
   constructor(
     readonly status: number,
     readonly body: string,
+    readonly endpoint = '',
   ) {
     super(`HighLevel responded ${String(status)}`)
     this.name = 'HlRequestError'
   }
 }
 
-async function readJson(res: Response): Promise<unknown> {
+async function readJson(res: Response, endpoint = ''): Promise<unknown> {
   const text = await res.text()
-  if (!res.ok) throw new HlRequestError(res.status, text)
+  if (!res.ok) throw new HlRequestError(res.status, text, endpoint)
   return JSON.parse(text)
 }
 
@@ -65,7 +75,7 @@ async function postToken(params: Record<string, string>): Promise<TokenResponse>
     }).toString(),
   })
 
-  return tokenResponseSchema.parse(await readJson(res))
+  return tokenResponseSchema.parse(await readJson(res, '/oauth/token'))
 }
 
 export function exchangeCode(code: string): Promise<TokenResponse> {
@@ -93,7 +103,7 @@ export async function listInstalledLocations(
     },
   })
 
-  return installedLocationsSchema.parse(await readJson(res))
+  return installedLocationsSchema.parse(await readJson(res, '/oauth/installedLocations'))
 }
 
 /**
@@ -116,7 +126,7 @@ export async function exchangeForLocationToken(
     body: JSON.stringify({ companyId, locationId }),
   })
 
-  return tokenResponseSchema.parse(await readJson(res))
+  return tokenResponseSchema.parse(await readJson(res, '/oauth/locationToken'))
 }
 
 /**
@@ -136,7 +146,7 @@ export async function fetchLocationName(
         Accept: 'application/json',
       },
     })
-    return locationDetailSchema.parse(await readJson(res)).location.name
+    return locationDetailSchema.parse(await readJson(res, '/locations/:id')).location.name
   } catch {
     return null
   }

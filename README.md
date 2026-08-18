@@ -182,10 +182,11 @@ are in [`docs/HIGHLEVEL_PLATFORM.md`](docs/HIGHLEVEL_PLATFORM.md).
 
 ### HighLevel API allowlist
 
-A generated app never holds a HighLevel credential. It calls `/api/hl/proxy/**`, and the proxy
-attaches the token, injects the connection's `locationId` and forwards only these thirteen
-routes. The table is **data** — [`functions/src/hl/routes.ts`](functions/src/hl/routes.ts) —
-and the spec beside it fails `functions`' unit suite if this rendering drifts.
+A generated app never holds a HighLevel credential. It calls `/api/hl/proxy/**` with one of
+these stable Genesis CRM routes, and the proxy attaches the token, injects the connection's
+`locationId` and maps only these thirteen routes to HighLevel on the server. The table is
+**data** — [`functions/src/hl/routes.ts`](functions/src/hl/routes.ts) — and the spec beside it
+fails `functions`' unit suite if this rendering drifts.
 
 | Method | Path                                      | Version      | Scope                            | Notes                                                                                                                   |
 | ------ | ----------------------------------------- | ------------ | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
@@ -204,7 +205,8 @@ and the spec beside it fails `functions`' unit suite if this rendering drifts.
 | `GET`  | `/calendars/:calendarId/free-slots`       | `2021-04-15` | `calendars.readonly`             |                                                                                                                         |
 
 Anything else answers `403 route_not_allowed`. The upstream URL is assembled by substituting
-validated parameters into the matched row's own pattern, so no substring of a caller's raw
+validated parameters into the matched row's own `upstreamPattern`, so a HighLevel endpoint
+upgrade changes the backend map rather than generated apps, and no substring of a caller's raw
 path can reach HighLevel.
 
 ### Seeding the sandbox

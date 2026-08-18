@@ -4,11 +4,13 @@ import {
   describeError,
   logAuthEvent,
   logGenerationEvent,
+  logHlOAuthEvent,
   logProxyEvent,
   redact,
   REDACTED,
   type AuthLogContext,
   type GenerationLogContext,
+  type HlOAuthLogContext,
   type ProxyLogContext,
 } from './log'
 
@@ -340,5 +342,126 @@ describe('logProxyEvent', () => {
     const line = JSON.parse(String(info.mock.calls[0]?.[0])) as Record<string, unknown>
     expect(line['pattern']).toBe(context.pattern)
     expect(line['rateLimitRemaining']).toBe('9997')
+  })
+})
+
+/*
+ * The upstream half of `describeError`.
+ *
+ * `HighLevel responded 422` is a true statement and a useless one: it was the whole of what
+ * production had to say about an install that failed, and it names neither the call that was
+ * refused nor the reason the body gave. The response body is where HighLevel puts that, so it
+ * is logged — truncated, and through the same scrub as everything else.
+ */
+describe('describeError — an upstream HTTP failure', () => {
+  function upstream(overrides: Record<string, unknown> = {}): Error {
+    return Object.assign(new Error('HighLevel responded 422'), {
+      status: 422,
+      endpoint: '/oauth/locationToken',
+      body: '{"message":["companyId must be a string"],"error":"Unprocessable Entity"}',
+      ...overrides,
+    })
+  }
+
+  it('reports the endpoint that answered and the body it answered with', () => {
+    const described = describeError(upstream())
+
+    expect(described).toContain('/oauth/locationToken')
+    expect(described).toContain('companyId must be a string')
+  })
+
+  it('truncates a long body rather than filling the sink with one line', () => {
+    const described = describeError(upstream({ body: 'x'.repeat(5_000) }))
+
+    expect(described.length).toBeLessThan(700)
+    expect(described).toContain('…')
+  })
+
+  it('scrubs a credential the body happens to carry', () => {
+    const described = describeError(
+      upstream({ body: '{"access_token":"live-token","refresh_token":"live-refresh"}' }),
+    )
+
+    expect(described).not.toContain('live-token')
+    expect(described).not.toContain('live-refresh')
+  })
+
+  /* The existing branch must keep working: a Firebase error has no top-level body. */
+  it('leaves an ordinary Error alone', () => {
+    expect(describeError(new Error('boom'))).toBe('boom')
+  })
+})
+
+/**
+ * The OAuth install's own log family — a fourth narrow context.
+ *
+ * Separate from {@link AuthLogContext} for the reason the other two are separate: the fields
+ * that make an install diagnosable (which upstream call, which status, which install shape)
+ * are meaningless to a registration line, and a context wide enough for both is a context
+ * wide enough to carry something neither wanted.
+ *
+ * **`redirectUri` is deliberately loggable.** It is not a credential — it is in the browser's
+ * address bar for the whole flow — and it is the one value whose drift from the marketplace
+ * app's own setting produces a failure that looks like nothing else.
+ */
+describe('logHlOAuthEvent', () => {
+  let info: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    info = vi.fn()
+    vi.stubGlobal('console', { ...console, info, error: vi.fn() })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('writes one line carrying the step and its context', () => {
+    logHlOAuthEvent('hl.callback.resolve_failed', {
+      step: 'resolve',
+      outcome: 'invalid',
+      endpoint: '/oauth/locationToken',
+      status: 422,
+      userType: 'Company',
+      locationCount: 1,
+    })
+
+    expect(info).toHaveBeenCalledTimes(1)
+    const line = JSON.parse(String(info.mock.calls[0]?.[0])) as Record<string, unknown>
+    expect(line['event']).toBe('hl.callback.resolve_failed')
+    expect(line['endpoint']).toBe('/oauth/locationToken')
+    expect(line['status']).toBe(422)
+    expect(line['userType']).toBe('Company')
+  })
+
+  it('keeps the redirect URI, which is the point of the line', () => {
+    logHlOAuthEvent('hl.connect.start', {
+      step: 'connect',
+      outcome: 'ok',
+      redirectUri: 'https://app.test/api/oauth/callback',
+    })
+
+    expect(String(info.mock.calls[0]?.[0])).toContain('https://app.test/api/oauth/callback')
+  })
+
+  /* Whether a parameter arrived is diagnostic; its value is a bearer credential. */
+  it('has no field for the authorization code or the state', () => {
+    const context: HlOAuthLogContext = { step: 'callback', outcome: 'ok', hasCode: true }
+    // @ts-expect-error — the values are credentials; only their presence is loggable.
+    context.code = 'SUPERSECRETCODE'
+
+    logHlOAuthEvent('hl.callback.received', { step: 'callback', outcome: 'ok', hasCode: true })
+
+    expect(String(info.mock.calls[0]?.[0])).not.toContain('SUPERSECRETCODE')
+  })
+
+  it('redacts a secret that reaches it despite the typed context', () => {
+    logHlOAuthEvent('hl.callback.received', {
+      step: 'callback',
+      outcome: 'ok',
+      accessToken: 'live-token',
+    } as never)
+
+    expect(String(info.mock.calls[0]?.[0])).not.toContain('live-token')
   })
 })

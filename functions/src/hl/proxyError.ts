@@ -37,9 +37,9 @@ const PARSEABLE_MAX = 64 * 1024
  * message a user could act on?" is a question about the set.
  */
 const MESSAGES = {
-  route_not_allowed: 'That HighLevel route is not available through Genesis.',
-  route_disabled: 'That HighLevel route is switched off in this environment.',
-  invalid_path: 'That is not a HighLevel path Genesis can forward.',
+  route_not_allowed: 'That Genesis CRM route is not available.',
+  route_disabled: 'That Genesis CRM route is switched off in this environment.',
+  invalid_path: 'That is not a Genesis CRM route this app can call.',
   hl_reconnect_required: 'Your HighLevel connection expired.',
   hl_not_connected: 'No HighLevel account is connected.',
   hl_forbidden: 'HighLevel refused that request for this account.',

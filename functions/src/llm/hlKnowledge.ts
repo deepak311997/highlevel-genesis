@@ -7,12 +7,12 @@ import { HL_ROUTES, isRouteEnabled } from '../hl/routes'
  * prefix, behind the `cache_control` breakpoint, and the only place the model
  * learns that a CRM exists at all.
  *
- * **Rendered from the allowlist, never restated.** The route table is built at
- * module load from `HL_ROUTES`, filtered by `isRouteEnabled` — the same rows the
- * proxy matches against. A hand-written copy would drift on the first allowlist
- * change, and the failure mode is the worst available: the model confidently
- * generating a route the proxy answers `403` on, with nothing failing until a user
- * runs the app.
+ * **Rendered from the endpoint map, never restated.** The route table is built at
+ * module load from `HL_ROUTES`, filtered by `isRouteEnabled` — the same stable
+ * Genesis endpoints the proxy matches against. A hand-written copy would drift on
+ * the first map change, and the failure mode is the worst available: the model
+ * confidently generating a route the proxy answers `403` on, with nothing failing
+ * until a user runs the app.
  *
  * Rendered **once**, at load: the prefix has to be byte-identical on every request
  * or the cache read never happens. Flipping `HL_ALLOW_MESSAGE_SEND` therefore
@@ -219,6 +219,9 @@ const HARD_RULES = [
  */
 const ROUTE_TABLE = [
   'The routes you may call.',
+  '',
+  'These are Genesis CRM routes, not HighLevel URLs. They are stable even if the',
+  'server changes which HighLevel endpoint backs one of them.',
   '',
   'This is the whole list. Anything else is refused by the server before it',
   'reaches HighLevel, so an app that calls a route which is not here does not',

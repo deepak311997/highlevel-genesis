@@ -193,15 +193,15 @@ async function forwardUpstream(
 }
 
 /**
- * `<METHOD> /api/hl/proxy/<HighLevel path>`, mounted with a pathful `router.use`
- * so it catches every method — a `DELETE` has to be refused with 403 rather than
- * fall through to the app's 404 — and the bare subtree with it.
+ * `<METHOD> /api/hl/proxy/<Genesis CRM route>`, mounted with a pathful
+ * `router.use` so it catches every method — a `DELETE` has to be refused with
+ * 403 rather than fall through to the app's 404 — and the bare subtree with it.
  */
 export async function handleProxy(req: Request, res: Response, uid: string): Promise<void> {
   const started = Date.now()
 
   // Inside a `use` mount Express rewrites `req.url` to the remainder, so this is
-  // the HighLevel path and nothing else. Undecoded, deliberately.
+  // the stable Genesis CRM route and nothing else. Undecoded, deliberately.
   const match = matchRoute(req.method, req.path)
   if (match.kind === 'invalid_path') throw routeRefusal('invalid_path')
   if (match.kind === 'not_allowed') throw routeRefusal('route_not_allowed')

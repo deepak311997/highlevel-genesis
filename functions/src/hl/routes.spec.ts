@@ -50,8 +50,9 @@ describe('HL_ROUTES', () => {
     expect(HL_ROUTES).toHaveLength(13)
   })
 
-  it('names a version and a scope on every row', () => {
+  it('names a mapped upstream path, a version and a scope on every row', () => {
     for (const row of HL_ROUTES) {
+      expect(row.upstreamPattern).toMatch(/^\//)
       expect(row.version).toMatch(/^2021-(07-28|04-15)$/)
       expect(row.scope).not.toBe('')
     }
@@ -84,6 +85,7 @@ describe('matchRoute', () => {
       expect(match.kind).toBe('matched')
       if (match.kind !== 'matched') return
       expect(match.row.pattern).toBe(row.pattern)
+      expect(match.row.upstreamPattern).toBe(row.upstreamPattern)
       expect(match.row.version).toBe(row.version)
       expect(match.row.scope).toBe(row.scope)
       expect(match.row.locationIn).toBe(row.locationIn)
@@ -217,7 +219,24 @@ describe('buildUpstreamUrl', () => {
 
     expect(url.href.startsWith(hlApiBase())).toBe(true)
     expect(url.pathname).toBe(
-      row.pattern.replace(/:(\w+)/g, (_m, key: string) => encodeURIComponent(params[key] ?? '')),
+      row.upstreamPattern.replace(/:(\w+)/g, (_m, key: string) =>
+        encodeURIComponent(params[key] ?? ''),
+      ),
+    )
+  })
+
+  it('uses the mapped HighLevel path, not the public Genesis path', () => {
+    const row: HlRoute = {
+      method: 'GET',
+      pattern: '/contacts/:contactId',
+      upstreamPattern: '/v2/crm/people/:contactId',
+      version: '2021-07-28',
+      scope: 'contacts.readonly',
+      locationIn: null,
+    }
+
+    expect(buildUpstreamUrl(row, { contactId: 'JwwI60NJqfc8I4Ay2MiA' }, '', LOCATION).pathname).toBe(
+      '/v2/crm/people/JwwI60NJqfc8I4Ay2MiA',
     )
   })
 
