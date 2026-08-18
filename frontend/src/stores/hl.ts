@@ -105,11 +105,34 @@ const SURFACES = [
 /** HTTP 409 is the PRD's only "reconnect" status, with two codes behind it. */
 const RECONNECT_STATUS = 409
 
+/**
+ * The message, plus upstream's own words about the request when they add
+ * something.
+ *
+ * `ApiError.detail` is HighLevel's own text, passed through by the proxy, and
+ * this is its reader: on the one screen whose purpose is diagnosing a HighLevel
+ * call, "Could not read contacts." is a shrug and
+ * "Could not read contacts. (Invalid JWT)" is a fix.
+ *
+ * Absent, empty, or merely repeating the message earns no parentheses — the
+ * alternative renders "Could not read contacts. ()" or the same sentence twice,
+ * both of which read as a bug rather than as a diagnosis.
+ */
+export function withDetail(message: string, detail: string | undefined): string {
+  if (detail === undefined || detail === '' || detail === message) return message
+  return `${message} (${detail})`
+}
+
 function failureFor(err: unknown): SurfaceProbe {
   const status = err instanceof ApiError ? err.status : 0
   return {
     count: null,
-    error: err instanceof Error ? err.message : 'Could not reach HighLevel.',
+    error:
+      err instanceof ApiError
+        ? withDetail(err.message, err.detail)
+        : err instanceof Error
+          ? err.message
+          : 'Could not reach HighLevel.',
     reconnect: status === RECONNECT_STATUS,
   }
 }

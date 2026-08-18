@@ -23,12 +23,13 @@ export function apiUrl(path: string): string {
  * `stores/preview.ts` is what branches on it — and `detail` is upstream's own
  * text about the request, which the HighLevel proxy passes through.
  *
- * **`detail` has no reader yet**, and that is deliberate rather than forgotten:
- * the envelope carries it, so parsing it here is what keeps the boundary
- * complete, but the preview's failure banner shows `message` alone and its wire
- * shape to the frame is `{ message, status, code? }` (AC-21). Slice 12 either
- * renders it or takes it out; leaving a half-parsed envelope was the worse of
- * the two.
+ * **`detail` has a reader**: `stores/hl.ts`'s `withDetail` composes it onto the
+ * message, so the dashboard's Data access probe says "Could not read contacts.
+ * (Invalid JWT)" rather than shrugging — on the one screen whose purpose is
+ * diagnosing a HighLevel call, that is the difference between a shrug and a
+ * fix. The preview is unchanged by this: its failure banner still shows
+ * `message` alone and its wire shape to the frame stays
+ * `{ message, status, code? }` (AC-21).
  *
  * Both are declared `string | undefined` rather than optional (`?:`): under
  * `exactOptionalPropertyTypes` an optional property and one that may hold
