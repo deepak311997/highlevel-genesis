@@ -86,8 +86,8 @@ test.describe('Slice 06 — file operations', () => {
     expect(await page.getByTestId('file-row').allTextContents()).toEqual(
       GENERATED.map((path) => expect.stringContaining(path)),
     )
-    // Nothing was refused, so no notice.
-    await expect(page.getByTestId('generate-file-error')).toBeHidden()
+    // Nothing was refused, so the bubble carries no error chip.
+    await expect(page.getByTestId('message-error')).toHaveCount(0)
 
     // The persisted bubble carries the same chips and still no code.
     const reply = page.getByTestId('message-bubble').nth(1)
@@ -151,8 +151,9 @@ test.describe('Slice 06 — file operations', () => {
   })
 
   /**
-   * A reply whose files are refused: the turn still lands, nothing is written, and the panel
-   * says which file it was about.
+   * A reply whose files are refused: the turn still lands, nothing is written, and the bubble
+   * says which file it was about (D18) — in the transcript rather than in a banner beside it,
+   * so it survives the reload that used to clear it.
    */
   test('a refused file set leaves the tree untouched and names the refusal', async ({ page }) => {
     await signUpAndVerify(page, 'files-bad')
@@ -164,7 +165,7 @@ test.describe('Slice 06 — file operations', () => {
     await expect(page.getByTestId('message-bubble')).toHaveCount(2, { timeout: 20_000 })
     await expect(page.getByTestId('chat-generating')).toBeHidden()
 
-    await expect(page.getByTestId('generate-file-error')).toContainText('secrets.js')
+    await expect(page.getByTestId('message-error')).toContainText('secrets.js')
     // Nothing was stored, so the tree is back to the state it opened in.
     await expect(page.getByTestId('file-tree-empty')).toBeVisible()
     await expect(page.getByTestId('file-row')).toHaveCount(0)

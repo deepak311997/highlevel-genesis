@@ -39,7 +39,6 @@ const store = reactive({
   fileTree: [] as { path: string; writing: boolean }[],
   editorContent: '',
   fileReplaced: false,
-  generateFileError: null as string | null,
   atLimit: false,
   canSend: false,
   open: vi.fn(),
