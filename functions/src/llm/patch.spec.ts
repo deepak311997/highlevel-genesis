@@ -179,10 +179,19 @@ describe('what is refused before any matching happens', () => {
 })
 
 describe('applying a whole turn', () => {
-  it('returns one op per touched path, in path order', () => {
+  it('returns one op per touched path, in reply order', () => {
     const out = applySteps(FILES, [
       { verb: 'file', path: 'b.js', content: 'const x = 1\n' },
       { verb: 'append', path: 'a.css', text: '.z { }\n' },
+    ])
+    expect(out.ok && out.ops.map((op) => op.path)).toEqual(['b.js', 'a.css'])
+  })
+
+  it('collapses several ops on one path into one, at its first appearance', () => {
+    const out = applySteps(FILES, [
+      { verb: 'append', path: 'a.css', text: '.one { }\n' },
+      { verb: 'file', path: 'b.js', content: 'x\n' },
+      { verb: 'append', path: 'a.css', text: '.two { }\n' },
     ])
     expect(out.ok && out.ops.map((op) => op.path)).toEqual(['a.css', 'b.js'])
   })

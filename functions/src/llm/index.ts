@@ -21,7 +21,7 @@
  */
 export { ANTHROPIC_API_KEY, openStream } from './client'
 export { buildContext } from './context'
-export { createFileCollector } from './fileops'
+export { createFileCollector, writtenText } from './fileops'
 export { countHlCalls, extractHlCalls } from './hlCalls'
 export type { CollectorFrame, CollectResult, FileCollector } from './fileops'
 export { buildParams, EFFORT, MAX_TOKENS, MODEL } from './params'

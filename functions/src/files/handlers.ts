@@ -13,6 +13,7 @@ import { getDb } from '../lib/firebase'
 import { logAuthEvent } from '../lib/log'
 import { parseBody } from '../lib/parse'
 import type { CollectResult } from '../llm/fileops'
+import { applySteps, type ApplyResult } from '../llm/patch'
 import { notFound, readProject, requireProjectId } from '../projects/handlers'
 import { mergeSnapshotFiles } from '../snapshots/plan'
 import {
@@ -182,6 +183,23 @@ export interface FileWriteOutcome {
 }
 
 /**
+ * The same failure, named for *when* it happened.
+ *
+ * An anchor that never resolved is the model's mistake. One that resolved while
+ * streaming and has gone by the time the turn is written is a file that changed
+ * underneath — a different thing, and the only one the user can act on.
+ */
+function staleAware(
+  collected: CollectResult,
+  applied: Extract<ApplyResult, { ok: false }>,
+): FileRejection {
+  const { error } = applied
+  const movable = error.reason === 'edit-no-match' || error.reason === 'edit-ambiguous'
+  if (!movable || collected.placed[applied.index] !== true) return error
+  return { reason: 'edit-stale', path: error.path }
+}
+
+/**
  * Turn a finished collection into the writes a turn should commit.
  *
  * Nothing is committed here, and nothing is read unless there is something to
@@ -206,7 +224,7 @@ export async function planFileWrites(
   collected: CollectResult,
   completed: boolean,
 ): Promise<FileWriteOutcome> {
-  const attempted = collected.ops.length > 0 || collected.unterminated !== null
+  const attempted = collected.steps.length > 0 || collected.unterminated !== null
 
   if (!completed) {
     return { writes: [], resulting: [], error: attempted ? { reason: 'incomplete' } : null }
@@ -222,11 +240,22 @@ export async function planFileWrites(
 
   // A prose-only reply reads nothing at all: no cap to check, nothing to write,
   // and therefore no merge and no snapshot.
-  if (collected.ops.length === 0) return { writes: [], resulting: [], error: null }
+  if (collected.steps.length === 0) return { writes: [], resulting: [], error: null }
 
   const existing = await readStoredFiles(uid, projectId)
+
+  /*
+   * **The authoritative application.** The collector resolved these once already,
+   * against the files read before the stream — that pass exists to put a range on
+   * `edit_start` and nothing else. This one runs against what is stored *now*, so
+   * a file a second tab saved during the nine minutes the stream was open cannot
+   * be silently reverted by a patch computed from what it used to say.
+   */
+  const applied = applySteps(existing, collected.steps)
+  if (!applied.ok) return { writes: [], resulting: [], error: staleAware(collected, applied) }
+
   const existingPaths = new Set(existing.map((file) => file.path))
-  const validated = validateFileOps(collected.ops, [...existingPaths])
+  const validated = validateFileOps(applied.ops, [...existingPaths])
   if (!validated.ok) return { writes: [], resulting: [], error: validated.error }
 
   return {

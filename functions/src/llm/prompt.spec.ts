@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import { FILE_BYTES_MAX, FILE_EXTENSIONS, FILE_LIMIT } from '../files/schema'
 import { estimateTokens } from './budget'
-import { CLOSE_TAG, OPEN_HEAD, OPEN_TAIL } from './fileops'
+import {
+  closeTagFor,
+  openTagFor,
+  SEPARATOR_ADD,
+  SEPARATOR_WITH,
+  VERBS,
+} from './blocks'
 import { HL_KNOWLEDGE } from './hlKnowledge'
 import { SYSTEM_PROMPT } from './prompt'
 
@@ -103,10 +109,18 @@ describe('the file-format block', () => {
     expect(SYSTEM_PROMPT.at(-1)?.cache_control).toEqual({ type: 'ephemeral' })
   })
 
-  it('spells the tag pair exactly as the splitter reads it', () => {
-    expect(text()).toContain(OPEN_HEAD)
-    expect(text()).toContain(OPEN_TAIL)
-    expect(text()).toContain(CLOSE_TAG)
+  it.each([...VERBS])('spells the %s tag pair exactly as the splitter reads it', (verb) => {
+    expect(text()).toContain(openTagFor(verb))
+    expect(text()).toContain(closeTagFor(verb))
+  })
+
+  it('spells both separators exactly as the splitter reads them', () => {
+    expect(text()).toContain(SEPARATOR_ADD)
+    expect(text()).toContain(SEPARATOR_WITH)
+  })
+
+  it('names every verb, so none is documented only by its example', () => {
+    for (const verb of VERBS) expect(text()).toContain(`<genesis:${verb}`)
   })
 
   it.each([...FILE_EXTENSIONS])('names the .%s extension', (extension) => {

@@ -100,6 +100,47 @@ function usesCrlf(content: string): boolean {
   return content.includes('\r\n') && !content.replace(/\r\n/g, '').includes('\n')
 }
 
+/** Enough of a step to say where it lands — the payload has not arrived yet. */
+export interface Anchoring {
+  verb: LocatedStep['verb']
+  path: string
+  /** Empty for `append`, which needs none. */
+  anchor: string
+}
+
+/**
+ * Where a step will land, decided **before** its payload has streamed.
+ *
+ * The collector needs this: `edit_start` carries a range, and it goes out at the
+ * separator so the browser can show the change growing in the right place. The
+ * same function then decides the splice at `resolveStep`, so the range the client
+ * was told and the range the server writes cannot differ.
+ */
+export function locateStep(current: string | undefined, at: Anchoring): LineRange | FileRejection {
+  if (current === undefined) return { reason: 'edit-unknown-file', path: at.path }
+
+  const lines = toLines(current)
+
+  // `append` needs no anchor at all, which is why nothing here can be matched
+  // wrongly: the position is the end of the file.
+  if (at.verb === 'append') {
+    const line = lines[lines.length - 1] === '' ? lines.length : lines.length + 1
+    return { from: line, to: line }
+  }
+
+  if (at.anchor.trim() === '') return { reason: 'edit-malformed', path: at.path }
+
+  const found = findAnchor(lines, sectionLines(at.anchor))
+  if (found === 'none') return { reason: 'edit-no-match', path: at.path }
+  if (found === 'many') return { reason: 'edit-ambiguous', path: at.path }
+
+  // `after` and `before` displace nothing, which is the whole difference between
+  // adding and changing.
+  if (at.verb === 'edit') return { from: found.start + 1, to: found.end + 1 }
+  const line = (at.verb === 'after' ? found.end : found.start) + 1
+  return { from: line, to: line }
+}
+
 /**
  * Resolve one located step against the file as it currently stands.
  *
@@ -111,51 +152,32 @@ export function resolveStep(
   current: string | undefined,
   step: LocatedStep,
 ): Resolved | FileRejection {
-  if (current === undefined) return { reason: 'edit-unknown-file', path: step.path }
-
-  const anchor = anchorOf(step)
-  if (step.verb !== 'append' && anchor.trim() === '') {
-    return { reason: 'edit-malformed', path: step.path }
-  }
-  if (step.verb !== 'edit' && step.text === '') {
+  // An insert that inserts nothing is a no-op the model did not mean; an empty
+  // replacement is how a deletion is written.
+  if (step.verb !== 'edit' && step.text === '' && current !== undefined) {
     return { reason: 'edit-malformed', path: step.path }
   }
 
-  const lines = toLines(current)
-  const crlf = usesCrlf(current)
+  const range = locateStep(current, { verb: step.verb, path: step.path, anchor: anchorOf(step) })
+  if ('reason' in range) return range
+
+  const lines = toLines(current ?? '')
+  const crlf = usesCrlf(current ?? '')
   const written = sectionLines(step.text).map((line) => (crlf ? `${line}\r` : line))
 
-  // `append` needs no anchor at all, which is why nothing here can be matched
-  // wrongly: the position is the end of the file.
-  if (step.verb === 'append') {
-    const trailing = lines[lines.length - 1] === ''
-    const at = trailing ? lines.length - 1 : lines.length
-    const next = [...lines.slice(0, at), ...written, ...lines.slice(at)]
-    if (!trailing) next.push('')
-    return { path: step.path, content: next.join('\n'), range: { from: at + 1, to: at + 1 } }
-  }
+  const at = range.from - 1
+  const next = [...lines.slice(0, at), ...written, ...lines.slice(range.to - 1)]
+  // A file with no trailing newline gains one, so an append never runs the new
+  // text onto the old last line.
+  if (step.verb === 'append' && lines[lines.length - 1] !== '') next.push('')
 
-  const found = findAnchor(lines, sectionLines(anchor))
-  if (found === 'none') return { reason: 'edit-no-match', path: step.path }
-  if (found === 'many') return { reason: 'edit-ambiguous', path: step.path }
-
-  // Where the new text goes, and what it displaces: `after` and `before` displace
-  // nothing, which is the whole difference between adding and changing.
-  const cut =
-    step.verb === 'edit'
-      ? { at: found.start, remove: found.end - found.start }
-      : { at: step.verb === 'after' ? found.end : found.start, remove: 0 }
-
-  const next = [...lines.slice(0, cut.at), ...written, ...lines.slice(cut.at + cut.remove)]
-
-  return {
-    path: step.path,
-    content: next.join('\n'),
-    range: { from: cut.at + 1, to: cut.at + cut.remove + 1 },
-  }
+  return { path: step.path, content: next.join('\n'), range }
 }
 
-export type ApplyResult = { ok: true; ops: FileOp[] } | { ok: false; error: FileRejection }
+export type ApplyResult =
+  | { ok: true; ops: FileOp[] }
+  /** `index` is the step that failed, so the caller can ask what it knew about it. */
+  | { ok: false; error: FileRejection; index: number }
 
 /**
  * Every step of a turn, applied in reply order to a working copy.
@@ -170,11 +192,13 @@ export function applySteps(files: readonly ProjectFile[], steps: readonly Step[]
   const touched = new Set<string>()
   const written = new Set<string>()
 
-  for (const step of steps) {
+  for (const [index, step] of steps.entries()) {
     if (step.verb === 'file') {
       // The one op that may not repeat: two whole-file blocks for one path is a
       // reply that has not decided what the file is.
-      if (written.has(step.path)) return { ok: false, error: { reason: 'duplicate', path: step.path } }
+      if (written.has(step.path)) {
+        return { ok: false, error: { reason: 'duplicate', path: step.path }, index }
+      }
       written.add(step.path)
       working.set(step.path, step.content)
       touched.add(step.path)
@@ -182,12 +206,14 @@ export function applySteps(files: readonly ProjectFile[], steps: readonly Step[]
     }
 
     const result = resolveStep(working.get(step.path), step)
-    if ('reason' in result) return { ok: false, error: result }
+    if ('reason' in result) return { ok: false, error: result, index }
 
     working.set(step.path, result.content)
     touched.add(step.path)
   }
 
-  const ops = [...touched].sort().map((path) => ({ path, content: working.get(path) ?? '' }))
+  // Reply order, which a `Set` keeps: it is the order the client watched the
+  // frames arrive in, and the order the old whole-file path already wrote in.
+  const ops = [...touched].map((path) => ({ path, content: working.get(path) ?? '' }))
   return { ok: true, ops }
 }

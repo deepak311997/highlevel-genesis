@@ -2,9 +2,12 @@ import type { TextBlockParam } from '@anthropic-ai/sdk/resources/messages'
 import { describe, expect, it } from 'vitest'
 
 import { PROJECT_FILE_BUDGET } from './budget'
-import { CLOSE_TAG, OPEN_HEAD } from './fileops'
+import { closeTagFor, openTagFor } from './blocks'
 import { buildProjectState, PROJECT_FILE_CLOSE, PROJECT_FILE_OPEN } from './projectState'
 import type { ProjectFile } from './projectState'
+
+const CLOSE_TAG = closeTagFor('file')
+const OPEN_HEAD = openTagFor('file')
 
 /**
  * The project-state block — AC-14 to AC-17, and the hazard the slice must not ship.
