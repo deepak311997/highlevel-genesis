@@ -6,8 +6,10 @@ import {
   BULLET_CAPS,
   README,
   REQUIRED_SECTIONS,
+  missingPaths,
   npmScriptsNamed,
   orderedItemCount,
+  pathsNamed,
   scriptsOf,
   sectionBody,
   sectionProblems,
@@ -161,5 +163,67 @@ describe('npm run resolution — AC-3', () => {
     const fixture = 'Then run `npm --prefix frontend run dev:emulator` in a second terminal.\n'
 
     expect(unresolvedNpmScripts(fixture)).toEqual([])
+  })
+})
+
+describe('pathsNamed', () => {
+  it('takes markdown link targets, less the fragment, and skips URLs and anchors', () => {
+    const text = [
+      '[plan](docs/IMPLEMENTATION_PLAN.md)',
+      '[section](CLAUDE.md#conventions)',
+      '[out](https://example.com/a/b)',
+      '[mail](mailto:someone@example.com)',
+      '[anchor](#live-urls)',
+      '[route](/api/health)',
+    ].join('\n')
+
+    expect(pathsNamed(text)).toEqual(['docs/IMPLEMENTATION_PLAN.md', 'CLAUDE.md'])
+  })
+
+  it('takes bare `<root>/…` tokens, trimming backticks and trailing punctuation', () => {
+    const text = [
+      'It calls `scripts/seed-sandbox.mjs`, then reads docs/PRODUCT_SPEC.md.',
+      '<img src="brand/genesis-seed.svg" alt="">',
+      'Fixtures live in `tests/fixtures/`.',
+    ].join('\n')
+
+    expect(pathsNamed(text)).toEqual([
+      'scripts/seed-sandbox.mjs',
+      'docs/PRODUCT_SPEC.md',
+      'brand/genesis-seed.svg',
+      'tests/fixtures/',
+    ])
+  })
+
+  it('deduplicates the link target and the inline-code copy of the same path', () => {
+    expect(pathsNamed('[`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md)')).toEqual([
+      'docs/PRODUCT_SPEC.md',
+    ])
+  })
+})
+
+describe('path existence — AC-4', () => {
+  it('every path the real README names exists on disk', () => {
+    expect(missingPaths(readme)).toEqual([])
+  })
+
+  it('reports a script that no longer exists', () => {
+    const fixture = 'Run `node scripts/set-verified.mjs <email>` to skip the gate.\n'
+
+    expect(missingPaths(fixture)).toEqual(['scripts/set-verified.mjs'])
+  })
+
+  it('reports a markdown link to a document that is not there', () => {
+    expect(missingPaths('See [the notes](docs/nope.md).\n')).toEqual(['docs/nope.md'])
+  })
+
+  it('reports nothing for an external URL, an anchor, or an API route', () => {
+    const fixture = [
+      '[out](https://example.com/a/b)',
+      '[anchor](#anchor)',
+      '[health](/api/health)',
+    ].join('\n')
+
+    expect(missingPaths(fixture)).toEqual([])
   })
 })

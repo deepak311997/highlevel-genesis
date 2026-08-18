@@ -48,6 +48,9 @@ export const REQUIRED_SECTIONS = [
 /** The brief's two hard caps, by section. */
 export const BULLET_CAPS = { 'Architecture decisions': 10, 'What I would improve': 5 }
 
+/** Top-level directories a repo-relative path reference may start with. */
+export const PATH_ROOTS = ['scripts', 'docs', 'functions', 'frontend', 'tests', 'brand']
+
 /** The `## ` headings, in document order. */
 export function sectionsOf(text) {
   return [...text.matchAll(/^## (.+)$/gm)].map((match) => match[1].trim())
@@ -130,4 +133,42 @@ export function scriptsOf(prefix, root = ROOT) {
  */
 export function unresolvedNpmScripts(text, resolve = scriptsOf) {
   return npmScriptsNamed(text).filter(({ script, prefix }) => !resolve(prefix).includes(script))
+}
+
+/**
+ * Markdown link targets plus `<root>/…` tokens anywhere in the text. Deduped.
+ *
+ * Two passes, because the README names a path in two ways and both have gone
+ * stale in the past: as a link a reader clicks, and as a filename in prose or in
+ * a fenced command a reader types.
+ *
+ * Known limitation, recorded rather than papered over: a **bare root filename
+ * with no slash** is only seen when it is a markdown link target. `CLAUDE.md` is
+ * checked, because the README links it; `firestore.rules`, named in the
+ * repository-layout block as prose, is not. Widening the token pass to every
+ * `word.ext` would match version numbers, `2021-07-28`, `package.json` inside a
+ * sentence about npm, and every `.env` variable — noise that would get the check
+ * switched off. The roots are the boundary that keeps it quiet enough to keep.
+ */
+export function pathsNamed(text) {
+  const linked = [...text.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)]
+    .map((match) => match[1].split('#')[0])
+    .filter(
+      (target) => target !== '' && !target.startsWith('/') && !/^(?:https?|mailto):/.test(target),
+    )
+
+  const tokens = [
+    ...text.matchAll(
+      new RegExp(String.raw`(?<![\w/.-])(?:${PATH_ROOTS.join('|')})\/[\w./*-]*`, 'g'),
+    ),
+  ].map((match) => match[0])
+
+  const trimmed = [...linked, ...tokens].map((path) => path.replace(/[`.,;:!?*)\]}'"]+$/, ''))
+
+  return [...new Set(trimmed.filter((path) => path !== ''))]
+}
+
+/** Those `pathsNamed` returns that are not on disk. */
+export function missingPaths(text, exists = (path) => existsSync(join(ROOT, path))) {
+  return pathsNamed(text).filter((path) => !exists(path))
 }
