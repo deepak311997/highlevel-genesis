@@ -110,8 +110,25 @@ jobs:
       - name: Resolve the project from the repository
         id: project
         run: |
-          project=$(node -p "require('./.firebaserc').projects.default")
-          database=$(node -p "require('./firebase.json').firestore.database")
+          # JSON.parse rather than `require`: Node loads an unknown extension as
+          # JavaScript, and `.firebaserc` is JSON — which is not valid JS, so
+          # `require('./.firebaserc')` dies on the first colon. scripts/setup-deploy.sh
+          # already read it this way; this step did not, and that cost a deploy.
+          read_json() { node -e "process.stdout.write(String(JSON.parse(require('fs').readFileSync('$1','utf8'))$2))"; }
+
+          project=$(read_json .firebaserc .projects.default)
+          database=$(read_json firebase.json .firestore.database)
+
+          # Checked here rather than left to fail later: without this, an empty
+          # project id reaches `firebase deploy --project ""`, which reports a
+          # missing project rather than a missing value.
+          for pair in "project:$project" "database:$database"; do
+            if [ -z "${pair#*:}" ]; then
+              echo "::error::Could not read ${pair%%:*} from the repository's config files." >&2
+              exit 1
+            fi
+          done
+
           echo "project=$project" >> "$GITHUB_OUTPUT"
           echo "database=$database" >> "$GITHUB_OUTPUT"
           echo "project=$project database=$database"
