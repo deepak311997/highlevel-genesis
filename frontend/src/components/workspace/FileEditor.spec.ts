@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
+import { toast } from 'vue-sonner'
 
 import { FILE_BYTES_MAX } from '@/lib/filesApi'
 
@@ -23,6 +24,15 @@ const store = reactive({
 })
 
 vi.mock('@/stores/workspace', () => ({ useWorkspaceStore: () => store }))
+
+/**
+ * Doubled so a call can be *counted*, which here means counted at zero: this
+ * panel is one of the eighteen surfaces D4 leaves inline, and the case below is
+ * what keeps it that way.
+ */
+vi.mock('vue-sonner', () => ({
+  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
+}))
 
 /**
  * D23 — Monaco never runs below L5, so the editor is a stub here. `CodeEditor`
@@ -292,5 +302,37 @@ describe('FileEditor', () => {
 
     expect(wrapper.find('[data-testid="code-editor"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="file-editor-bytes"]').text()).toContain('11')
+  })
+  /**
+   * AC-6, D4, and D5's other half — **a save reports itself where it happened.**
+   *
+   * A failed save has a surface beside the button that caused it, and it stays
+   * there: the file is still dirty, the bytes are still in the editor, and Save
+   * is still live to try again. A toast would put the reason four seconds away
+   * from the retry it belongs to.
+   *
+   * A *successful* save is silent for the mirror-image reason (D5): the tab's
+   * dirty dot clears and the byte count settles, so the outcome is already
+   * visible where the action was taken. Toasting either one would make D4 read
+   * as decoration rather than as a rule.
+   */
+  it('reports a failed save inline and toasts nothing', async () => {
+    openFile()
+    store.fileDirty = true
+    store.saveFile.mockImplementation(() => {
+      store.saveError = 'Could not save that file.'
+      return Promise.resolve()
+    })
+    const wrapper = mount(FileEditor)
+
+    await wrapper.find('[data-testid="file-editor-save"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="file-editor-error"]').text()).toContain(
+      'Could not save that file.',
+    )
+    expect(vi.mocked(toast)).not.toHaveBeenCalled()
+    expect(vi.mocked(toast.success)).not.toHaveBeenCalled()
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled()
   })
 })
