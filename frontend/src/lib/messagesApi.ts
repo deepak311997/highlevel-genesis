@@ -60,4 +60,3 @@ export async function listMessages(projectId: string): Promise<Message[]> {
   const { messages } = await request<{ messages: Message[] }>(pathFor(projectId))
   return messages
 }
-

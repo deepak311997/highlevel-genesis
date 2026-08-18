@@ -47,6 +47,26 @@ export function projectsPath(uid: string): string {
 const name = z.string().trim().min(1).max(NAME_MAX)
 
 /**
+ * The form of a name that two projects are compared by.
+ *
+ * Names are the user's own words, so `Contact center`, `contact center` and
+ * `Contact  center` are the same project to everybody except a byte comparison —
+ * a list holding all three is a list you cannot navigate. Case-folded and with
+ * runs of whitespace collapsed, so what the check means is "looks like the same
+ * name" rather than "is the same string".
+ *
+ * **A comparison key, never a stored value.** The document keeps what the user
+ * typed, capitals and all; this exists only to decide whether a create or a
+ * rename collides. Deriving a stored `nameLower` field instead would be faster
+ * to query and wrong for every document written before it existed — a duplicate
+ * check that silently skips the projects it does not know about is worse than
+ * none.
+ */
+export function normalizeName(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+/**
  * A description, or `null` — and **`null` is the only way to say "none"**.
  *
  * The trim happens before the limit, so padding cannot be smuggled past it; the

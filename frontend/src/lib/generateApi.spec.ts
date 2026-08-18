@@ -141,7 +141,12 @@ function lastCall(): [string, RequestInit] {
 
 async function collect(signal = new AbortController().signal): Promise<unknown[]> {
   const out: unknown[] = []
-  for await (const event of streamGeneration('proj-1', { content: 'Build a contacts view' }, signal)) out.push(event)
+  for await (const event of streamGeneration(
+    'proj-1',
+    { content: 'Build a contacts view' },
+    signal,
+  ))
+    out.push(event)
   return out
 }
 

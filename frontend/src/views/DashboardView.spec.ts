@@ -112,4 +112,16 @@ describe('DashboardView', () => {
     expect(wrapper.findComponent({ name: 'AccountCard' }).exists()).toBe(true)
     expect(wrapper.findComponent({ name: 'ConnectionPanel' }).exists()).toBe(true)
   })
+
+  /*
+   * The rail is ordered by how often you look at it: who you are signed in as
+   * first, then the HighLevel connection under it. Asserted on DOM order rather
+   * than on presence, because "both are rendered" is the one thing a reordering
+   * cannot break.
+   */
+  it('puts the account above the HighLevel connection in the rail', () => {
+    const html = mount(DashboardView, MOUNT).html()
+
+    expect(html.indexOf('account-card')).toBeLessThan(html.indexOf('connection-panel'))
+  })
 })

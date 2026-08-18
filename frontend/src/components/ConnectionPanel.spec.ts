@@ -480,3 +480,63 @@ describe('ConnectionPanel — data access', () => {
     expect(wrapper.find('[data-testid="data-access"]').exists()).toBe(false)
   })
 })
+
+/**
+ * The header's state chip.
+ *
+ * Green when the link works, red when it does not — the panel already said all
+ * of this in sentences, and a sentence is what you read *after* you have
+ * already looked. The colour is the answer at a glance; the copy under it is
+ * still what tells you what to do about it.
+ *
+ * Tinted rather than filled: Instrument keeps one solid blue and it means "the
+ * primary action", so a state the product reports takes a semantic tint instead.
+ */
+describe('ConnectionPanel — the status chip', () => {
+  it('is green when connected', () => {
+    store.isConnected = true
+
+    const wrapper = mount(ConnectionPanel)
+
+    const chip = wrapper.find('[data-testid="connection-status"]')
+    expect(chip.text()).toBe('Connected')
+    expect(chip.classes().join(' ')).toContain('text-good')
+  })
+
+  it('is red when there is no connection', () => {
+    const wrapper = mount(ConnectionPanel)
+
+    const chip = wrapper.find('[data-testid="connection-status"]')
+    expect(chip.text()).toBe('Not connected')
+    expect(chip.classes().join(' ')).toContain('text-destructive')
+  })
+
+  /* An expired connection is not a working one, so it reads red rather than
+   * green — the panel's own copy already treats it as something to fix. */
+  it('is red when the connection needs reconnecting', () => {
+    store.isConnected = true
+    store.needsReconnect = true
+
+    const wrapper = mount(ConnectionPanel)
+
+    const chip = wrapper.find('[data-testid="connection-status"]')
+    expect(chip.text()).toBe('Reconnect needed')
+    expect(chip.classes().join(' ')).toContain('text-destructive')
+  })
+
+  /* Nothing has been asked yet, so nothing is claimed. A red chip over a
+   * skeleton says "not connected" to a user whose connection is fine. */
+  it('says nothing while the first request is in flight', () => {
+    store.loading = true
+
+    expect(mount(ConnectionPanel).find('[data-testid="connection-status"]').exists()).toBe(false)
+  })
+
+  /* Same reason: a failed status request is "we could not ask", not "you are
+   * not connected". */
+  it('says nothing when the status request failed', () => {
+    store.error = 'Something went wrong.'
+
+    expect(mount(ConnectionPanel).find('[data-testid="connection-status"]').exists()).toBe(false)
+  })
+})

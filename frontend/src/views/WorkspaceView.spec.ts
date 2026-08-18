@@ -55,6 +55,23 @@ const store = reactive({
 
 vi.mock('@/stores/workspace', () => ({ useWorkspaceStore: () => store }))
 
+/*
+ * The HighLevel connection, which the header badge now reads instead of the
+ * project's stored `locationId` (see the badge's own tests below). Plain values
+ * rather than refs, for the reason `ConnectionPanel.spec.ts` sets out: a Pinia
+ * store auto-unwraps its refs, so the component sees booleans.
+ */
+const hl = reactive({
+  loading: false,
+  error: null as string | null,
+  isConnected: false,
+  needsReconnect: false,
+  label: null as string | null,
+  refresh: vi.fn(),
+})
+
+vi.mock('@/stores/hl', () => ({ useHlStore: () => hl }))
+
 const route = reactive({ params: { projectId: 'proj-1' } })
 
 vi.mock('vue-router', async () => {
@@ -187,6 +204,11 @@ beforeEach(() => {
   store.messagesLoaded = true
   store.messagesError = null
   route.params = { projectId: 'proj-1' }
+  hl.loading = false
+  hl.error = null
+  hl.isConnected = false
+  hl.needsReconnect = false
+  hl.label = null
   vi.clearAllMocks()
   wide()
 })
@@ -241,9 +263,9 @@ describe('WorkspaceView', () => {
   })
 
   /*
-   * AC-2. The header placeholder is the shared `Skeleton`, not a hand-rolled
-   * pulsing div — the testid still resolves to the same element, and what
-   * it holds carries the primitive's slot attribute.
+   * AC-2. The placeholders are the shared `Skeleton`, not hand-rolled pulsing
+   * divs — the testid still resolves to the same element, and what it holds
+   * carries the primitive's slot attribute.
    */
   it('renders Skeleton placeholders while loading', () => {
     store.projectLoading = true
@@ -252,7 +274,63 @@ describe('WorkspaceView', () => {
 
     const loading = wrapper.find('[data-testid="workspace-loading"]')
     expect(loading.exists()).toBe(true)
-    expect(loading.findAll('[data-slot="skeleton"]')).toHaveLength(1)
+    expect(loading.findAll('[data-slot="skeleton"]').length).toBeGreaterThan(1)
+  })
+
+  /*
+   * **The skeleton stands in for the layout it is replacing.**
+   *
+   * It used to be a single 224px bar in a centred `max-w-5xl` column, which is
+   * the shape of *no screen in this app*: the workspace is full-bleed, has a
+   * header rail and three panels, and every one of those appeared out of
+   * nowhere when the request landed. A placeholder whose geometry does not
+   * match what follows it is a layout shift with an animation on it.
+   *
+   * AC-20 is untouched and still asserted above — **no panels** means the three
+   * components are not mounted, not that their space may not be drawn.
+   */
+  it('lays the loading state out like the three-panel workspace', () => {
+    store.projectLoading = true
+
+    const wrapper = mount(WorkspaceView, MOUNT)
+
+    const loading = wrapper.find('[data-testid="workspace-loading"]')
+    expect(loading.find('[data-testid="workspace-loading-header"]').exists()).toBe(true)
+    expect(loading.find('[data-testid="workspace-loading-chat"]').exists()).toBe(true)
+    expect(loading.find('[data-testid="workspace-loading-code"]').exists()).toBe(true)
+    expect(loading.find('[data-testid="workspace-loading-preview"]').exists()).toBe(true)
+
+    // The real panels are still not mounted — AC-20.
+    expect(wrapper.find(CHAT).exists()).toBe(false)
+    expect(wrapper.find(EDITOR).exists()).toBe(false)
+    expect(wrapper.find(PREVIEW).exists()).toBe(false)
+  })
+
+  /*
+   * Narrow shows one panel at a time, so its skeleton draws one panel and the
+   * tab strip above it. Drawing three columns here would promise a layout the
+   * next paint does not deliver — the same mismatch, in the other direction.
+   */
+  it('draws one panel and a tab strip while loading on a narrow viewport', () => {
+    narrow()
+    store.projectLoading = true
+
+    const loading = mount(WorkspaceView, MOUNT).find('[data-testid="workspace-loading"]')
+
+    expect(loading.find('[data-testid="workspace-loading-tabs"]').exists()).toBe(true)
+    expect(loading.find('[data-testid="workspace-loading-code"]').exists()).toBe(false)
+    expect(loading.find('[data-testid="workspace-loading-preview"]').exists()).toBe(false)
+  })
+
+  /* A load is a state a screen reader should be told about, not a silent gap. */
+  it('announces the load', () => {
+    store.projectLoading = true
+
+    const loading = mount(WorkspaceView, MOUNT).find('[data-testid="workspace-loading"]')
+
+    expect(loading.attributes('role')).toBe('status')
+    expect(loading.attributes('aria-busy')).toBe('true')
+    expect(loading.text()).toContain('Loading')
   })
 
   /** AC-21. And the transcript is never asked for, which is D25's whole point. */
@@ -379,12 +457,23 @@ describe('WorkspaceView', () => {
     expect(offenders).toEqual([])
   })
 
-  /** AC-26. The first thing in the product to read the `locationId` Slice 3 stores. */
+  /*
+   * **Reversed from Slice 4's AC-26**, which read this badge off the project's
+   * stored `locationId`.
+   *
+   * That field is snapshotted at create time, so a project created before the
+   * account was connected said "Not connected" for ever while the dashboard,
+   * two clicks away, said the opposite — one account, one connection, two
+   * answers. The badge asks the connection itself, which is the only thing that
+   * can answer the question the words on it pose. `locationId` keeps its real
+   * job: which location this project targets.
+   */
   it.each([
-    ['HighLevel connected', 'loc_123'],
-    ['Not connected', null],
-  ])('reads %s from the project’s locationId', async (label, locationId) => {
-    store.project = { ...PROJECT, locationId }
+    ['HighLevel connected', true],
+    ['Not connected', false],
+  ])('reads %s from the account’s HighLevel connection', async (label, connected) => {
+    store.project = { ...PROJECT, locationId: null }
+    hl.isConnected = connected
 
     const wrapper = mount(WorkspaceView, MOUNT)
     await flushPromises()
@@ -392,16 +481,70 @@ describe('WorkspaceView', () => {
     expect(wrapper.find('[data-testid="workspace-connection"]').text()).toBe(label)
   })
 
+  /* The project that has never seen a connection and the one created after it
+   * are the same account, so they read the same. This is the bug the switch
+   * above fixes, stated as a test. */
+  it('says the same thing for a project with no stored location', async () => {
+    hl.isConnected = true
+    store.project = { ...PROJECT, locationId: null }
+
+    const withoutLocation = mount(WorkspaceView, MOUNT)
+    await flushPromises()
+
+    store.project = { ...PROJECT, locationId: 'loc_123' }
+    const withLocation = mount(WorkspaceView, MOUNT)
+    await flushPromises()
+
+    expect(withoutLocation.find('[data-testid="workspace-connection"]').text()).toBe(
+      withLocation.find('[data-testid="workspace-connection"]').text(),
+    )
+  })
+
+  /* An expired connection is not a working one — same words, and the same red,
+   * as the dashboard's panel. */
+  it('reads an expired connection as one to reconnect', async () => {
+    hl.isConnected = true
+    hl.needsReconnect = true
+    store.project = PROJECT
+
+    const wrapper = mount(WorkspaceView, MOUNT)
+    await flushPromises()
+
+    const badge = wrapper.find('[data-testid="workspace-connection"]')
+    expect(badge.text()).toBe('Reconnect needed')
+    expect(badge.classes().join(' ')).toContain('text-destructive')
+  })
+
+  /* Asked once when the workspace opens: the panel that normally fetches this
+   * lives on the dashboard, and a deep link never passes it. */
+  it('asks for the connection status when it opens', async () => {
+    store.project = PROJECT
+
+    mount(WorkspaceView, MOUNT)
+    await flushPromises()
+
+    expect(hl.refresh).toHaveBeenCalled()
+  })
+
   /*
    * The wide layout's split, which is a product decision rather than a
-   * cosmetic one: the preview is the thing being demonstrated, so it gets half
-   * the width, and the chat gives up the space because a prompt is short.
+   * cosmetic one.
+   *
+   * It opened at 20 / 30 / 50 while the code panel was a single column of
+   * editor. It is not one any more: the file explorer moved to a rail *beside*
+   * the editor, which spends width the panel did not have, and the chat at a
+   * fifth of the viewport was wrapping every second message. The ten points come
+   * off the preview, which is the panel that degrades most gracefully — it
+   * renders one surface at whatever width it is given, where the other two are
+   * columns of text with a floor below which they stop working. Fifteen points
+   * in the end, and the code panel takes the larger share of them because it is
+   * the one now carrying two columns of its own.
    *
    * The min-sizes matter as much as the defaults — reka clamps a default that
-   * falls below its own minimum, so a chat min-size above 20 would silently
+   * falls below its own minimum, so a chat min-size above 25 would silently
    * undo this.
    */
-  it('opens wide at 20 / 30 / 50, chat to preview', async () => {
+  it('opens wide at 25 / 40 / 35, chat to preview', async () => {
     // The three-panel layout is behind a media query, and jsdom reports no
     // matchMedia at all — so without this the wide branch never renders and the
     // assertion below passes vacuously against an empty list.
@@ -422,11 +565,9 @@ describe('WorkspaceView', () => {
 
     const panels = wrapper.findAllComponents(ResizablePanel)
     expect(panels).toHaveLength(3)
-    expect(panels.map((panel) => panel.props('defaultSize'))).toEqual([20, 30, 50])
+    expect(panels.map((panel) => panel.props('defaultSize'))).toEqual([25, 40, 35])
     for (const panel of panels) {
-      expect(Number(panel.props('minSize'))).toBeLessThanOrEqual(
-        Number(panel.props('defaultSize')),
-      )
+      expect(Number(panel.props('minSize'))).toBeLessThanOrEqual(Number(panel.props('defaultSize')))
     }
   })
 
@@ -465,6 +606,7 @@ describe('WorkspaceView', () => {
    * variant is the primary fill, which is the easy thing to leave in place.
    */
   it('marks a connected location with the semantic colour, not the action colour', async () => {
+    hl.isConnected = true
     store.project = { ...PROJECT, locationId: 'loc_123' }
 
     const wrapper = mount(WorkspaceView, MOUNT)
@@ -472,6 +614,7 @@ describe('WorkspaceView', () => {
 
     const classes = wrapper.find('[data-testid="workspace-connection"]').classes().join(' ')
     expect(classes).toContain('text-good')
+    expect(classes).not.toContain('text-destructive')
     expect(classes).not.toContain('bg-primary')
     expect(wrapper.find(EDITOR).exists()).toBe(true)
     expect(wrapper.find(PREVIEW).exists()).toBe(true)

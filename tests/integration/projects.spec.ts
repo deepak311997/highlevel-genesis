@@ -394,6 +394,62 @@ describe('POST /api/projects', () => {
     expect(res.status).toBe(403)
     expect(codeOf(res.body)).toBe('email_unverified')
   })
+
+  /*
+   * Duplicate names.
+   *
+   * Two projects called `Contact center` are one project to every reader of the
+   * dashboard, so the collection refuses the second — 409, like the cap, because
+   * the body is fine and it is the collection's state that says no. The fold is
+   * case- and whitespace-insensitive: a shifted capital is not a different
+   * project.
+   */
+  it('refuses a second project with the same name, writing nothing', async () => {
+    await postJson('/api/projects', { name: 'Contact center' }, auth(aliceToken))
+
+    const res = await postJson('/api/projects', { name: 'Contact center' }, auth(aliceToken))
+
+    expect(res.status).toBe(409)
+    expect(codeOf(res.body)).toBe('duplicate_name')
+    expect((res.body as { error?: string }).error).toContain('Contact center')
+    expect(await countProjects(aliceUid)).toBe(1)
+  })
+
+  it.each(['contact center', 'CONTACT CENTER', '  Contact  center  '])(
+    'refuses %j as a duplicate of an existing “Contact center”',
+    async (name) => {
+      await postJson('/api/projects', { name: 'Contact center' }, auth(aliceToken))
+
+      const res = await postJson('/api/projects', { name }, auth(aliceToken))
+
+      expect(res.status).toBe(409)
+      expect(codeOf(res.body)).toBe('duplicate_name')
+      expect(await countProjects(aliceUid)).toBe(1)
+    },
+  )
+
+  /* The rule is per account, and the collection is per account — bob's names are
+   * not addressable from alice's request, let alone reserved by it. */
+  it('lets another user hold a project of the same name', async () => {
+    await seedProject(bobUid, 'bobs', { name: 'Contact center' })
+
+    const res = await postJson('/api/projects', { name: 'Contact center' }, auth(aliceToken))
+
+    expect(res.status).toBe(201)
+  })
+
+  /* A deleted project is gone as far as the user can see, so its name is theirs
+   * to use again — the check counts live projects, like the cap does. */
+  it('frees the name once the project is deleted', async () => {
+    const created = projectOf(
+      (await postJson('/api/projects', { name: 'Contact center' }, auth(aliceToken))).body,
+    )
+    await deleteJson(`/api/projects/${String(created['id'])}`, auth(aliceToken))
+
+    const res = await postJson('/api/projects', { name: 'Contact center' }, auth(aliceToken))
+
+    expect(res.status).toBe(201)
+  })
 })
 
 describe('GET /api/projects/:projectId', () => {
@@ -653,6 +709,42 @@ describe('PATCH /api/projects/:projectId', () => {
 
     expect(res.status).toBe(403)
     expect(codeOf(res.body)).toBe('email_unverified')
+  })
+
+  /* The same rule the create path applies, on the route that can also reach a
+   * taken name. */
+  it('refuses a rename onto another live project’s name', async () => {
+    await createForAlice({ name: 'Contact center' })
+    const other = await createForAlice({ name: 'Calendar sync' })
+
+    const res = await patchJson(
+      `/api/projects/${String(other['id'])}`,
+      { name: 'contact center' },
+      auth(aliceToken),
+    )
+
+    expect(res.status).toBe(409)
+    expect(codeOf(res.body)).toBe('duplicate_name')
+
+    const stored = await adminDb()
+      .doc(`users/${aliceUid}/projects/${String(other['id'])}`)
+      .get()
+    expect(stored.get('name')).toBe('Calendar sync')
+  })
+
+  /* Renaming a project to a differently-capitalised version of its own name is a
+   * rename, not a collision — the check excludes the project being renamed. */
+  it('allows a project to be recapitalised', async () => {
+    const created = await createForAlice({ name: 'contact center' })
+
+    const res = await patchJson(
+      `/api/projects/${String(created['id'])}`,
+      { name: 'Contact Center' },
+      auth(aliceToken),
+    )
+
+    expect(res.status).toBe(200)
+    expect(projectOf(res.body)['name']).toBe('Contact Center')
   })
 })
 

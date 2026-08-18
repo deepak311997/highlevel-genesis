@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useMediaQuery } from '@vueuse/core'
-import { watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 import ChatPanel from '@/components/workspace/ChatPanel.vue'
@@ -13,6 +13,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useHlStore } from '@/stores/hl'
 import { useWorkspaceStore } from '@/stores/workspace'
 
 /**
@@ -36,10 +37,27 @@ import { useWorkspaceStore } from '@/stores/workspace'
  * same event as far as this view is concerned.
  */
 const workspace = useWorkspaceStore()
+const hl = useHlStore()
 const route = useRoute()
 
 /** Tailwind's `lg`. Matched in JS because the tree, not the styling, is what changes. */
 const isWide = useMediaQuery('(min-width: 1024px)')
+
+/**
+ * The loading placeholder's code lines, as widths.
+ *
+ * Ragged on purpose — a stack of identical full-width bars reads as a table, and
+ * the thing behind it is source. The array is the whole of the variation, so
+ * nothing here needs a random number that would change on every render.
+ */
+const CODE_LINES = ['w-3/4', 'w-full', 'w-5/6', 'w-1/2', 'w-11/12', 'w-2/3', 'w-4/5'] as const
+
+/**
+ * The explorer rail's rows, same idea — shorter, and fewer, because a filename
+ * is not a line of code and a list of seven equal bars beside seven other equal
+ * bars reads as a table rather than as two different things.
+ */
+const FILE_ROWS = ['w-2/3', 'w-5/6', 'w-1/2', 'w-3/4'] as const
 
 watch(
   () => route.params['projectId'],
@@ -49,20 +67,131 @@ watch(
   },
   { immediate: true },
 )
+
+/**
+ * The header badge, from the connection itself.
+ *
+ * **This used to read the project's stored `locationId`** — a value snapshotted
+ * when the project was created — which meant a project made before the account
+ * was connected said "Not connected" for ever, while the dashboard said the
+ * opposite about the same account. One connection cannot have two answers, so
+ * the badge asks the thing that knows. `locationId` keeps its real job: which
+ * location this project targets.
+ *
+ * Red for missing and for expired alike: neither can read your CRM, and both are
+ * fixed by the same button on the dashboard. Nothing is claimed while the status
+ * request is in flight or after it failed — the badge would otherwise tell a
+ * connected user they are not connected.
+ */
+const connection = computed<{ label: string; variant: 'good' | 'bad' } | null>(() => {
+  if (hl.loading || hl.error !== null) return null
+  if (hl.needsReconnect) return { label: 'Reconnect needed', variant: 'bad' }
+  return hl.isConnected
+    ? { label: 'HighLevel connected', variant: 'good' }
+    : { label: 'Not connected', variant: 'bad' }
+})
+
+/*
+ * Asked here as well as on the dashboard: a deep link, a reload or a bookmark
+ * opens this route without the connection panel ever having mounted.
+ */
+onMounted(() => {
+  void hl.refresh()
+})
 </script>
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <!--
-      No answer yet. Deliberately **no panels** — three empty panels during a load
-      are three things that look broken, and AC-20 is the contract.
+      No answer yet.
+
+      **Still no panels** — AC-20, and three *mounted* panels during a load are
+      three components firing their own requests and rendering their own empty
+      states, which is three things that look broken. Drawing the space they will
+      occupy is a different claim, and the one a placeholder is for: this is the
+      workspace's own geometry — full-bleed, header rail, 25/40/35 columns —
+      rather than a lone bar in a centred column, which is the shape of no screen
+      in this app and turned every load into a layout shift.
+
+      It follows the same `isWide` switch as the real thing, so the skeleton
+      never promises three columns to a viewport that is about to get tabs.
     -->
     <div
       v-if="workspace.projectLoading"
       data-testid="workspace-loading"
-      class="mx-auto w-full max-w-5xl px-6 py-10"
+      role="status"
+      aria-busy="true"
+      class="flex min-h-0 flex-1 flex-col"
     >
-      <Skeleton class="h-6 w-56 rounded" />
+      <span class="sr-only">Loading the workspace…</span>
+
+      <!-- The header rail: name, connection badge, back link. -->
+      <header
+        data-testid="workspace-loading-header"
+        class="flex shrink-0 items-center gap-3 px-6 py-4"
+      >
+        <Skeleton class="h-6 w-56" />
+        <Skeleton class="h-5 w-32 rounded-full" />
+        <Skeleton class="ml-auto h-4 w-28" />
+      </header>
+
+      <Separator />
+
+      <!-- Wide: the three columns, at the widths they will actually open at. -->
+      <div v-if="isWide" class="flex min-h-0 flex-1">
+        <!-- Chat: a turn or two, and the composer pinned to the bottom. -->
+        <div
+          data-testid="workspace-loading-chat"
+          class="flex min-h-0 w-1/4 flex-col gap-3 p-4"
+          aria-hidden="true"
+        >
+          <Skeleton class="h-4 w-20" />
+          <Skeleton class="h-14 w-full" />
+          <Skeleton class="h-10 w-4/5 self-end" />
+          <Skeleton class="mt-auto h-16 w-full" />
+        </div>
+
+        <Separator orientation="vertical" />
+
+        <!-- Code: the panel header, then the explorer rail beside the source —
+             which is the shape the panel actually opens in. A placeholder that
+             drew one column would promise a layout that is about to shift. -->
+        <div
+          data-testid="workspace-loading-code"
+          class="flex min-h-0 w-[40%] flex-col gap-3 p-4"
+          aria-hidden="true"
+        >
+          <Skeleton class="h-4 w-24" />
+          <div class="flex min-h-0 flex-1 gap-3">
+            <div class="flex w-2/5 max-w-56 flex-col gap-2">
+              <Skeleton v-for="row in FILE_ROWS" :key="row" class="h-3" :class="row" />
+            </div>
+            <div class="flex min-h-0 flex-1 flex-col gap-2">
+              <Skeleton v-for="line in CODE_LINES" :key="line" class="h-3" :class="line" />
+            </div>
+          </div>
+        </div>
+
+        <Separator orientation="vertical" />
+
+        <!-- Preview: a toolbar over one large surface, which is what it is. -->
+        <div
+          data-testid="workspace-loading-preview"
+          class="flex min-h-0 flex-1 flex-col gap-3 p-4"
+          aria-hidden="true"
+        >
+          <Skeleton class="h-4 w-28" />
+          <Skeleton class="min-h-32 flex-1" />
+        </div>
+      </div>
+
+      <!-- Narrow: the tab strip and the one panel behind it. -->
+      <div v-else class="flex min-h-0 flex-1 flex-col gap-3 p-4">
+        <div data-testid="workspace-loading-tabs" class="flex gap-2" aria-hidden="true">
+          <Skeleton v-for="tab in 3" :key="tab" class="h-8 w-20" />
+        </div>
+        <Skeleton class="min-h-32 flex-1" aria-hidden="true" />
+      </div>
     </div>
 
     <!--
@@ -106,15 +235,11 @@ watch(
           {{ workspace.project.name }}
         </h1>
         <!--
-          The first thing in the product to read the locationId Slice 3 stores, and
-          informational until Slice 10, where "connected" is the difference between
-          real CRM data in the preview and an empty one.
+          Whether this workspace can reach real CRM data, which is a property of
+          the account's connection rather than of the project — see `connection`.
         -->
-        <Badge
-          :variant="workspace.project.locationId ? 'good' : 'secondary'"
-          data-testid="workspace-connection"
-        >
-          {{ workspace.project.locationId ? 'HighLevel connected' : 'Not connected' }}
+        <Badge v-if="connection" :variant="connection.variant" data-testid="workspace-connection">
+          {{ connection.label }}
         </Badge>
         <RouterLink
           to="/dashboard"
@@ -133,15 +258,15 @@ watch(
         class="min-h-0 flex-1"
         data-testid="workspace-panels"
       >
-        <ResizablePanel :default-size="20" :min-size="15">
+        <ResizablePanel :default-size="25" :min-size="15">
           <ChatPanel />
         </ResizablePanel>
         <ResizableHandle with-handle />
-        <ResizablePanel :default-size="30" :min-size="20">
+        <ResizablePanel :default-size="40" :min-size="20">
           <EditorPanel />
         </ResizablePanel>
         <ResizableHandle with-handle />
-        <ResizablePanel :default-size="50" :min-size="20">
+        <ResizablePanel :default-size="35" :min-size="20">
           <PreviewPanel />
         </ResizablePanel>
       </ResizablePanelGroup>

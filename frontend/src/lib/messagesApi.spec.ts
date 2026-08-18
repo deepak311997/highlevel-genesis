@@ -73,13 +73,14 @@ describe('listMessages', () => {
  * refusal.
  */
 describe('path encoding', () => {
-  it.each([
-    ['listMessages', () => listMessages('a/b')],
-  ])('percent-encodes the id for %s', async (_label, call) => {
-    await call()
+  it.each([['listMessages', () => listMessages('a/b')]])(
+    'percent-encodes the id for %s',
+    async (_label, call) => {
+      await call()
 
-    expect(callOf()[0]).toBe('/api/projects/a%2Fb/messages')
-  })
+      expect(callOf()[0]).toBe('/api/projects/a%2Fb/messages')
+    },
+  )
 })
 
 describe('MESSAGE_LIMIT', () => {

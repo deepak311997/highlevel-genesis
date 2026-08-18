@@ -842,7 +842,6 @@ function droppingStream(...frames: string[]): Response {
   } as unknown as Response
 }
 
-
 function cannedStream(...frames: string[]): Response {
   const encoder = new TextEncoder()
   return {
@@ -1108,7 +1107,12 @@ describe('retryGeneration', () => {
     await store.retryGeneration()
     expect(store.generateError).toBe('Something went wrong.')
 
-    fetchMock.mockResolvedValueOnce(cannedStream(frame('user', { message: USER_MESSAGE }), frame('done', { message: ASSISTANT_MESSAGE })))
+    fetchMock.mockResolvedValueOnce(
+      cannedStream(
+        frame('user', { message: USER_MESSAGE }),
+        frame('done', { message: ASSISTANT_MESSAGE }),
+      ),
+    )
     await store.retryGeneration()
 
     expect(store.generateError).toBeNull()
@@ -2408,7 +2412,10 @@ describe('the stream — files', () => {
     fetchMock.mockClear()
 
     fetchMock.mockResolvedValueOnce(
-      cannedStream(frame('user', { message: USER_MESSAGE }), frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null })),
+      cannedStream(
+        frame('user', { message: USER_MESSAGE }),
+        frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }),
+      ),
     )
     await store.retryGeneration()
 
@@ -2800,7 +2807,10 @@ describe('the stream — files', () => {
   it('leaves both counters at zero on a done that stored no file', async () => {
     const store = await openedWithFiles()
     fetchMock.mockResolvedValueOnce(
-      cannedStream(frame('user', { message: USER_MESSAGE }), frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null })),
+      cannedStream(
+        frame('user', { message: USER_MESSAGE }),
+        frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }),
+      ),
     )
 
     await store.retryGeneration()
@@ -3096,7 +3106,10 @@ describe('the snapshot list', () => {
     fetchMock.mockClear()
 
     fetchMock.mockResolvedValueOnce(
-      cannedStream(frame('user', { message: USER_MESSAGE }), frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null })),
+      cannedStream(
+        frame('user', { message: USER_MESSAGE }),
+        frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }),
+      ),
     )
     await store.retryGeneration()
 
@@ -3712,16 +3725,16 @@ describe('restoreSnapshot — what it reports', () => {
 describe('a connection that drops mid-reply', () => {
   it('keeps the prompt and reopens the stream after a mid-stream drop', async () => {
     const store = await opened()
-    fetchMock.mockResolvedValueOnce(droppingStream(frame('user', { message: USER_MESSAGE }), frame('token', { text: 'Here' })))
+    fetchMock.mockResolvedValueOnce(
+      droppingStream(frame('user', { message: USER_MESSAGE }), frame('token', { text: 'Here' })),
+    )
     store.draft = 'build a contact dashboard'
 
     await store.send()
 
     // The prompt is still in the transcript, which is what makes Retry worth offering.
     expect(store.messages).toEqual([USER_MESSAGE])
-    expect(store.generateError).toBe(
-      'Something went wrong. Check your connection and try again.',
-    )
+    expect(store.generateError).toBe('Something went wrong. Check your connection and try again.')
     expect(store.generateError).not.toContain('Failed to fetch')
     expect(store.generating).toBe(false)
 
@@ -3730,10 +3743,7 @@ describe('a connection that drops mid-reply', () => {
 
     await store.retryGeneration()
 
-    expect(requests()).toEqual([
-      'POST /generate',
-      'POST /generate',
-    ])
+    expect(requests()).toEqual(['POST /generate', 'POST /generate'])
     expect(store.generateError).toBeNull()
     expect(store.messages).toEqual([USER_MESSAGE, ASSISTANT_MESSAGE])
   })
