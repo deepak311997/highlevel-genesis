@@ -45,6 +45,20 @@ export const REQUIRED_SECTIONS = [
   'Repository layout',
 ]
 
+/**
+ * Sentences and identifiers that would claim the browser talks to Firestore.
+ *
+ * The same ban `scripts/check-no-firestore.mjs` enforces over the built bundle
+ * and `CLAUDE.md` states as a non-negotiable, one layer further out: over the
+ * artefact that *describes* the architecture. The other two checks read code, so
+ * neither can see the README claim client-side Firestore access while the code
+ * does the opposite — which is exactly what happened. Decision #1 on `main` read
+ * "the SPA subscribes to Firestore directly" for weeks after the API-only
+ * decision reversed it, so that sentence is banned by name alongside the three
+ * SDK calls it would be written with.
+ */
+export const FIRESTORE_CLAIMS = ['onSnapshot', 'getDoc', 'setDoc', 'subscribes to Firestore']
+
 /** The brief's two hard caps, by section. */
 export const BULLET_CAPS = { 'Architecture decisions': 10, 'What I would improve': 5 }
 
@@ -260,4 +274,63 @@ export function localSetupProblems(text, command = scriptCommand) {
     : ['the root `dev` script no longer contains `emulators:exec`']
 
   return [...named, ...wrapped]
+}
+
+/** Which banned claims the text makes, in the order `FIRESTORE_CLAIMS` bans them. */
+export function firestoreClaims(text) {
+  return FIRESTORE_CLAIMS.filter((claim) => text.includes(claim))
+}
+
+// Guarded so importing this module from the spec does not run the check.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  try {
+    const text = readFileSync(README, 'utf8')
+    const firebasercText = readFileSync(join(ROOT, '.firebaserc'), 'utf8')
+    const firebaseJsonText = readFileSync(join(ROOT, 'firebase.json'), 'utf8')
+    const urls = liveUrls(firebasercText, firebaseJsonText)
+
+    const problems = [
+      ...sectionProblems(text),
+      ...unresolvedNpmScripts(text).map(
+        ({ script, prefix }) =>
+          `npm ${prefix === null ? '' : `--prefix ${prefix} `}run ${script} — no such script in ${prefix ?? 'the root'} package.json`,
+      ),
+      ...missingPaths(text).map((path) => `${path} — named in the README, not on disk`),
+      ...liveUrlProblems(text, firebasercText, firebaseJsonText),
+      ...localSetupProblems(text),
+      ...firestoreClaims(text).map(
+        (claim) => `"${claim}" — the README must not claim client-side Firestore access`,
+      ),
+    ]
+
+    if (problems.length > 0) {
+      console.error('README.md:')
+      for (const problem of problems) console.error(`  ${problem}`)
+      console.error('\nSee docs/slices/13-deliverables/02-prd.md, AC-3 … AC-10.')
+      process.exit(1)
+    }
+
+    const decisions = orderedItemCount(sectionBody(text, 'Architecture decisions'))
+    const improvements = orderedItemCount(sectionBody(text, 'What I would improve'))
+
+    console.log(
+      `README.md — all ${String(REQUIRED_SECTIONS.length)} required sections; ` +
+        `${String(decisions)} architecture decisions (cap 10), ` +
+        `${String(improvements)} improvements (cap 5).`,
+    )
+    console.log(
+      `README.md — ${String(npmScriptsNamed(text).length)} \`npm run\` commands resolve; ` +
+        `${String(pathsNamed(text).length)} referenced paths exist.`,
+    )
+    console.log(
+      `README.md — live URLs derived from .firebaserc + firebase.json: ${urls.hosting} and ${urls.functionsBase}.`,
+    )
+    console.log(
+      'README.md — local setup names `firebase emulators:start`, the root `dev` script ' +
+        'wraps `emulators:exec`, and nothing claims client-side Firestore access.',
+    )
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err))
+    process.exit(1)
+  }
 }

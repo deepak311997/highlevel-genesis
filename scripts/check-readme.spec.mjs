@@ -5,9 +5,11 @@ import { describe, expect, it } from 'vitest'
 
 import {
   BULLET_CAPS,
+  FIRESTORE_CLAIMS,
   README,
   REQUIRED_SECTIONS,
   ROOT,
+  firestoreClaims,
   liveUrlProblems,
   liveUrls,
   localSetupProblems,
@@ -307,5 +309,33 @@ describe('local setup names the emulator — AC-8', () => {
     expect(localSetupProblems(readme, command)).toEqual([
       'the root `dev` script no longer contains `emulators:exec`',
     ])
+  })
+})
+
+describe('no claim of client-side Firestore — AC-10', () => {
+  it('bans the three SDK calls and the sentence that described the old design', () => {
+    expect(FIRESTORE_CLAIMS).toEqual(['onSnapshot', 'getDoc', 'setDoc', 'subscribes to Firestore'])
+  })
+
+  it('the real README makes none of them', () => {
+    expect(firestoreClaims(readme)).toEqual([])
+  })
+
+  it('reports an SDK call named in prose', () => {
+    const fixture = 'Live updates come from an `onSnapshot` listener on the files collection.\n'
+
+    expect(firestoreClaims(fixture)).toEqual(['onSnapshot'])
+  })
+
+  it('reports the architecture decision the README carried on `main`', () => {
+    const fixture = '1. **The SPA subscribes to Firestore directly**, with rules as the guard.\n'
+
+    expect(firestoreClaims(fixture)).toEqual(['subscribes to Firestore'])
+  })
+
+  it('reports every claim a fixture makes, not just the first', () => {
+    const fixture = 'The store calls `getDoc` and `setDoc` directly.\n'
+
+    expect(firestoreClaims(fixture)).toEqual(['getDoc', 'setDoc'])
   })
 })
