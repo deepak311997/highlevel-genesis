@@ -20,28 +20,21 @@ import type { Snapshot } from '@/lib/snapshotsApi'
 import { useWorkspaceStore } from '@/stores/workspace'
 
 /**
- * Version history — the trigger, the sheet and its four states (AC-29, AC-30).
+ * Version history — the trigger, the sheet and its four states.
  *
- * **A sheet rather than a dialog** (D17, P9), sliding in from the right. The
- * workspace is three panels and history is a fifth thing to look at, not a
- * decision that has to interrupt: a centred modal covers the code the user is
- * comparing against, while a side sheet leaves it on screen. Right, because the
- * trigger is in the code panel and the code panel is on the right — the panel
- * that opens is the panel the click was in.
+ * **A sheet rather than a dialog**, sliding in from the right: history is a fifth
+ * thing to look at, not a decision that has to interrupt, and a centred modal
+ * covers the code the user is comparing against. Right, because the trigger is in
+ * the code panel — the panel that opens is the panel the click was in.
  *
- * **The confirm is two states of one row, and there is no second overlay** (D19).
- * A restore overwrites every file in the project, so it is worth a second click;
- * it is not worth a modal *over* a sheet, which is a second focus trap stacked
- * on the first and a second place for Escape to mean two different things. The
- * row already carries the version's identity, so confirming in place asks the
- * question next to the answer — a separate dialog would have to restate "Version
- * 3, 18 Aug, 3 files" to be safe to click at all.
+ * **The confirm is two states of one row, and there is no second overlay.** A
+ * restore overwrites every file, so it is worth a second click; it is not worth a
+ * modal *over* a sheet, which is a second focus trap and a second meaning for
+ * Escape. Confirming in place also asks the question next to the answer, where a
+ * separate dialog would have to restate the version's identity to be safe to click.
  *
- * **The fetch is the opening, not the mounting.** The list route reads a
- * collection per call, so loading on mount would spend a request on every
- * project opened, whether or not anyone wanted history. `open` and the
- * confirming row's id are local `ref`s (D20): neither survives the sheet
- * closing, and neither is anyone else's business.
+ * **The fetch is the opening, not the mounting**: loading on mount would spend a
+ * request on every project opened, whether or not anyone wanted history.
  */
 const workspace = useWorkspaceStore()
 
@@ -49,21 +42,18 @@ const open = ref(false)
 const confirmingId = ref<string | null>(null)
 
 /**
- * Newest first. The server already returns the list ordered by `seq`
- * descending, so this sort changes nothing today — it is here because "newest
- * first" is a *rendering* rule (AC-29) and the component that renders it should
- * not be able to be broken by a change to a query it cannot see. Sorting a list
- * capped at `SNAPSHOT_LIMIT` entries costs nothing worth measuring.
- *
- * A copy, not `.sort()` in place: `workspace.snapshots` is the store's array.
+ * Newest first. The server already orders by `seq` descending, so this changes
+ * nothing today — it is here because "newest first" is a *rendering* rule, and the
+ * component that renders it should not be breakable by a change to a query it
+ * cannot see. A copy, not `.sort()` in place: the array is the store's.
  */
 const rows = computed<Snapshot[]>(() => [...workspace.snapshots].sort((a, b) => b.seq - a.seq))
 
 /**
  * One restore at a time, and none at all while a generation is writing the very
- * files a restore would overwrite. The store enforces both (AC-26); this is the
- * half the user can see, so the second click has nothing to aim at rather than
- * being swallowed in silence.
+ * files a restore would overwrite. The store enforces both; this is the half the
+ * user can see, so the second click has nothing to aim at rather than being
+ * swallowed in silence.
  */
 const restoreBlocked = computed(() => workspace.generating || workspace.restoringId !== null)
 
@@ -71,35 +61,29 @@ function onOpenChange(next: boolean): void {
   open.value = next
   // A confirm is a question about *this* visit; closing the sheet withdraws it.
   confirmingId.value = null
-  // And so is a failed restore — but on the way *out*, because while the sheet
-  // is open the banner is the only report the user gets. It is one attempt on
-  // one version, not a state of the history, so left in the store it outlives
-  // the visit and greets the next one with a failure long since abandoned.
+  // And so is a failed restore — but on the way *out*, because while the sheet is
+  // open the banner is the only report the user gets. Left in the store it would
+  // outlive the visit and greet the next one with a failure long since abandoned.
   if (next) void workspace.loadSnapshots()
   else workspace.restoreError = null
 }
 
 /**
- * The two notices this app has, and both are here (Slice 12, D3 and D4).
+ * The two notices this app has, and both are here.
  *
  * A restore is the one action in the workspace whose outcome leaves nothing on
- * screen to read. It succeeded and the files were already rendered; or it
- * changed nothing because the project already *was* that version, which looks
- * identical. Neither has a surface of its own, and neither is worth inventing
- * one for — so they are told transiently, next to the click that caused them.
+ * screen to read: it succeeded and the files were already rendered, or it changed
+ * nothing because the project already *was* that version — which looks identical.
+ * So they are told transiently, next to the click that caused them.
  *
- * Anything else is deliberately silent here. A failure renders in
- * `snapshot-restore-error` and stays there until the sheet closes, because an
- * error that disappears after four seconds is an error the user cannot act on;
- * a refusal is a button that was already disabled. That is D4, and it is why
- * this file and the region's own component are the only two that name the
- * toast library at all. (Slice 12, D4.)
+ * Anything else is deliberately silent: a failure renders in the sheet and stays
+ * until it closes, because an error that disappears after four seconds is one the
+ * user cannot act on.
  *
- * The copy goes through `versionLabel`, the same helper the row's heading uses,
- * so the sheet and the notice cannot come to disagree about what a version is
- * called. The seq is read from the row the user confirmed and is not sent to
- * the store: the restore route identifies the version by id, and handing it a
- * second identifier the client derived is a way for the two to differ.
+ * The copy goes through `versionLabel`, the same helper the row's heading uses. The
+ * seq is read from the row and not sent to the store: the route identifies the
+ * version by id, and a second client-derived identifier is a way for the two to
+ * differ.
  */
 async function confirmRestore(snapshot: Snapshot): Promise<void> {
   confirmingId.value = null
@@ -126,9 +110,8 @@ async function confirmRestore(snapshot: Snapshot): Promise<void> {
       data-testid="snapshot-sheet"
     >
       <SheetHeader>
-        <!-- Reka UI warns when dialog content has no title, and a screen reader
-             would announce an unnamed region — so the title is required, not
-             decorative. -->
+        <!-- Required rather than decorative: Reka UI warns when dialog content has
+             no title, and a screen reader would announce an unnamed region. -->
         <SheetTitle>Version history</SheetTitle>
         <SheetDescription>
           Every generation saves the project’s files. Restoring replaces them with that version.
@@ -157,14 +140,9 @@ async function confirmRestore(snapshot: Snapshot): Promise<void> {
         <AlertDescription>{{ workspace.restoreError }}</AlertDescription>
       </Alert>
 
-      <!-- Above the list rather than instead of it, exactly as the restore's own
-           failure is. The store deliberately keeps the versions it already has
-           when a refetch fails (AC-23), because an emptied history under a
-           Restore button claims "this project has no versions" — a different
-           thing from "we could not reach the server". Rendering the error in
-           place of the rows would throw that away at the last step: a sheet open
-           on twenty versions would lose them all to a refetch nobody asked
-           for. -->
+      <!-- Above the list rather than instead of it: the store keeps the versions it
+           already has when a refetch fails, and rendering the error in place of the
+           rows would throw that away at the last step. -->
       <div v-if="workspace.snapshotsError" class="flex flex-col gap-2" data-testid="snapshot-error">
         <Alert variant="destructive">
           <AlertDescription>{{ workspace.snapshotsError }}</AlertDescription>
@@ -179,13 +157,10 @@ async function confirmRestore(snapshot: Snapshot): Promise<void> {
         </Button>
       </div>
 
-      <!-- No answer yet — in flight, or not started. `snapshotsLoading` alone
-           cannot say the second: it is still false between the sheet opening and
-           the request going out, and an empty state shown then reads as a
-           project with no history. The `snapshotsError` term is what keeps a
-           failed *first* load from sitting under a skeleton that never resolves
-           — `FileTree.vue`'s rule, kept, now that the error no longer takes the
-           whole body with it. -->
+      <!-- No answer yet — in flight, or not started. `snapshotsLoading` alone cannot
+           say the second: it is still false between the sheet opening and the
+           request going out. The `snapshotsError` term keeps a failed *first* load
+           from sitting under a skeleton that never resolves. -->
       <div
         v-if="
           workspace.snapshotsLoading || (!workspace.snapshotsLoaded && !workspace.snapshotsError)
@@ -268,10 +243,9 @@ async function confirmRestore(snapshot: Snapshot): Promise<void> {
         </li>
       </ul>
 
-      <!-- Asked, **answered**, and there is nothing — a project that has never
-           generated. Guarded on `snapshotsLoaded` rather than falling out of the
-           chain, so a first load that failed says so above and stays silent here
-           instead of claiming the project has no versions. -->
+      <!-- Asked, answered, and there is nothing. Guarded on `snapshotsLoaded` so a
+           first load that failed says so above rather than claiming the project has
+           no versions. -->
       <p
         v-else-if="workspace.snapshotsLoaded"
         class="text-sm text-muted-foreground"

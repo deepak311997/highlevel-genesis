@@ -8,34 +8,24 @@ import { usePreviewStore } from '@/stores/preview'
 import { useWorkspaceStore } from '@/stores/workspace'
 
 /**
- * The generated app, running — **a real screen now** (D18's debt, paid), and the
- * first time anything in this product executes a line of what the model wrote.
+ * The generated app, running — the first time anything in this product executes a
+ * line of what the model wrote.
  *
- * **The sandbox is the whole security boundary** (D9). `allow-scripts` is the
- * point and `allow-forms` is there because a lead-capture form is one of the
- * three app shapes the system prompt names. **`allow-same-origin` is deliberately
- * absent**: with it, the frame would share our origin, read the Firebase session
- * out of IndexedDB and call the API as the user — every property the design buys
- * would be handed straight back. `allow-modals`, `allow-popups` and
- * `allow-top-navigation` are absent because nothing a small CRM dashboard does
- * needs them, and each is a way for generated code to take over the tab.
+ * **The sandbox is the whole security boundary.** `allow-scripts` is the point and
+ * `allow-forms` is there because a lead-capture form is one of the app shapes the
+ * system prompt names. **`allow-same-origin` is deliberately absent**: with it the
+ * frame would share our origin, read the Firebase session out of IndexedDB and call
+ * the API as the user. `allow-modals`, `allow-popups` and `allow-top-navigation`
+ * are absent because each is a way for generated code to take over the tab.
  *
- * The corollary is that the frame cannot reach HighLevel by itself — an opaque
- * origin fails the API's allowlist and cannot attest App Check — so it asks, and
- * this component's `message` listener is where the asking arrives. **No
- * credential crosses the boundary** (D2): the request is made here, on the page
- * that already holds the session, and only the response body goes back.
+ * The corollary is that the frame cannot reach HighLevel by itself, so it asks, and
+ * this component's `message` listener is where the asking arrives. **No credential
+ * crosses the boundary**: the request is made here, and only the response body goes
+ * back.
  *
- * **Every brokered failure renders here rather than in the app** (D17). The
- * generated app's own `try`/`catch` is the one thing that cannot be relied on —
- * it is model output — so F8.3's guarantee that a HighLevel failure is visible
- * belongs to the host, which sees every one of them regardless. A duplicated
- * message is a small price against a blank panel with no explanation.
- *
- * **Slice 12 owns the styling of the three banners and the loading state.** They
- * are hand-rolled `Alert`s here because `sonner` and `skeleton` do not exist yet;
- * that slice's audit introduces both and should fold these in rather than leave
- * two idioms in the codebase.
+ * **Every brokered failure renders here rather than in the app.** The generated
+ * app's own `try`/`catch` is model output and cannot be relied on, so the guarantee
+ * that a HighLevel failure is visible belongs to the host.
  */
 const workspace = useWorkspaceStore()
 const preview = usePreviewStore()
@@ -44,12 +34,9 @@ const frame = useTemplateRef<HTMLIFrameElement>('frame')
 
 /**
  * Installed on `window`, because that is where a frame's `postMessage` to its
- * parent lands — there is no per-iframe event to listen to.
- *
- * Which is exactly why the identity check matters: any frame on the page, and
- * anything that opened this one, can post here. The store hands the event and
- * *this* frame's `contentWindow` to the bridge, which answers only when the two
- * are the same object and the nonce is the current build's.
+ * parent lands — there is no per-iframe event to listen to. Which is exactly why
+ * the identity check matters: any frame on the page can post here, and the store
+ * answers only when the source and the nonce are both this build's.
  */
 function onMessage(event: MessageEvent): void {
   void preview.handleMessage(event, frame.value?.contentWindow ?? null)
@@ -64,14 +51,12 @@ onBeforeUnmount(() => {
 })
 
 /**
- * Shared by the header's Refresh, the stale hint's, and the error state's Try
- * again — one rebuild, three doors.
+ * Shared by the header's Refresh, the stale hint's, and the error state's Try again
+ * — one rebuild, three doors.
  *
- * The one branch: when the *file list* is what failed, there is nothing here to
- * rebuild from. This panel holds no paths and has no business fetching them, so
- * it asks the workspace for the list and the preview store builds as soon as it
- * lands. Rebuilding regardless would re-read an empty list and settle to the
- * empty state — announcing that a project with twenty files has no app yet.
+ * The one branch: when the *file list* is what failed there is nothing to rebuild
+ * from, so it asks the workspace for the list instead. Rebuilding regardless would
+ * re-read an empty list and announce that a project with twenty files has no app.
  */
 function rebuild(): void {
   if (workspace.generating) return
@@ -85,9 +70,9 @@ function rebuild(): void {
     <header class="flex shrink-0 items-center gap-3 px-4 py-3">
       <h2 class="label-micro">Preview</h2>
 
-      <!-- Withheld during a generation (AC-30): the files are being rewritten as
-           we speak, so a rebuild from them would preview a half-written app — and
-           every rebuild spends the CRM account's rate-limit budget. -->
+      <!-- Withheld during a generation: the files are being rewritten as we speak,
+           so a rebuild would preview a half-written app — and every rebuild spends
+           the CRM account's rate-limit budget. -->
       <Button
         class="ml-auto"
         variant="outline"
@@ -117,8 +102,8 @@ function rebuild(): void {
       </Alert>
     </div>
 
-    <!-- The assembler's own sentences, rendered as written and not wrapped in a
-         second one: each already names the file and says what happened to it. -->
+    <!-- The assembler's own sentences, rendered as written: each already names the
+         file and says what happened to it. -->
     <div v-if="preview.warnings.length > 0" class="px-4 pb-3" data-testid="preview-warning">
       <Alert>
         <AlertDescription>
@@ -150,9 +135,8 @@ function rebuild(): void {
       </Alert>
     </div>
 
-    <!-- `idle` is folded into the loading state on purpose: before the file list
-         arrives there is nothing yet to call empty, and a panel that said "no app
-         yet" for the moment before its own data lands would be wrong out loud. -->
+    <!-- `idle` is folded into the loading state: before the file list arrives there
+         is nothing yet to call empty. -->
     <div
       v-if="preview.state === 'idle' || preview.state === 'loading'"
       class="flex flex-1 items-center justify-center p-6"
@@ -182,7 +166,7 @@ function rebuild(): void {
 
     <!-- Two causes, one state, and a different sentence for each: "you have not
          asked for an app yet" and "what you have cannot be opened" are different
-         problems with different next steps. -->
+         problems. -->
     <div
       v-else-if="preview.state === 'empty'"
       class="flex flex-1 items-center justify-center p-6"
@@ -202,11 +186,9 @@ function rebuild(): void {
 
     <!--
       `:key` on the nonce, so a rebuild **replaces** the element rather than
-      renavigating it. The previous document's `WindowProxy` is then gone as well
-      as out-of-nonce, which closes the stale-document race twice (D3).
-
-      `sandbox` is a **static** attribute — nothing can compute it, which is what
-      keeps `allow-same-origin` out of reach of a future refactor.
+      renavigating it: the previous document's `WindowProxy` is then gone as well as
+      out-of-nonce. `sandbox` is a **static** attribute, which is what keeps
+      `allow-same-origin` out of reach of a future refactor.
     -->
     <iframe
       v-else
