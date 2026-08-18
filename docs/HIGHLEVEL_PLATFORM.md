@@ -564,7 +564,7 @@ curl -sSD- -o/dev/null "https://services.leadconnectorhq.com/locations/${LOC}" \
 | 8 | Sandbox 6-month expiry / fair-use | ℹ️ Irrelevant at this timescale |
 | 9 | Redirect URI exact-match across emulator vs prod | ⚠️ Sort out on day 0 — check whether multiple redirect URLs are allowed |
 
-**Note:** the toughest architectural problems in this project — how a `srcdoc` iframe with an opaque origin authenticates to your proxy, and whether SSE survives a Firebase Hosting rewrite — are **not** HighLevel problems. This doc doesn't address them, and they remain the two highest-risk unknowns in the build.
+**Note:** the toughest architectural problems in this project — how a `srcdoc` iframe with an opaque origin authenticates to your proxy, and whether SSE survives a Firebase Hosting rewrite — are **not** HighLevel problems. This doc doesn't address them. The second is now answered, and the answer is no: Hosting's CDN buffers the response to completion and drops the origin at 60 seconds, so `/generate` bypasses Hosting and calls the function directly (see `PRODUCT_SPEC.md`, fact 3).
 
 ---
 

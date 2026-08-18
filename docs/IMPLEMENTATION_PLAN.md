@@ -393,8 +393,13 @@ Firestore doc — with a test at every level, so the harness itself is proven.
 
 **Also settled here, and worth naming because later slices depend on all three:** region
 `asia-south1`, the named Firestore database `hl-genesis`, and a `generate` stub that
-streams SSE through a Hosting rewrite — which is what retired §8's "does Functions v2
-stream in this region" risk before Slice 5 could be blocked by it.
+streams SSE — which is what retired §8's "does Functions v2 stream in this region" risk
+before Slice 5 could be blocked by it.
+
+**Half of that third one was wrong, and it took production to show it.** The stub streamed
+through a Hosting rewrite and the conclusion drawn was that a rewrite is fine. It is not:
+Hosting's CDN buffers the whole response before sending a byte, and the stub's reply was
+over in about a second, far too short for the buffering to be visible. See §8's risk row.
 
 **Libraries:** `vue`, `vue-router`, `pinia`, `tailwindcss` v4, `reka-ui` + `cva` + `clsx` +
 `tailwind-merge` (the shadcn-vue substrate), `firebase`, `firebase-admin`,
@@ -565,7 +570,8 @@ timeout the Slice 0 stub deliberately withheld.
 a stubbed LLM including mid-stream abort, L5 prompt → tokens visibly appear → done.
 **Demo:** type a prompt, watch text stream in token by token.
 **Risk:** downgraded. Slice 0's `generate` stub already proved Functions v2 streams
-unbuffered from `asia-south1` through a Hosting rewrite, which was §8's open item. What
+unbuffered from `asia-south1`, which was §8's open item — direct to the function; a Hosting
+rewrite buffers it, which is a transport question, not an SSE one. What
 remains is the SDK's stream shape and the accumulation trap in
 `.claude/skills/feature-review/references/typescript-vue.md`.
 
@@ -991,7 +997,7 @@ still open gets settled in the discovery interview of the slice that first needs
 | Decision | Needed by | State |
 |---|---|---|
 | Client-direct Firestore vs API-only data access | Slice 2b | ✅ **Settled: API-only** (2026-08-17). The frontend uses no Firestore client SDK; every read and write goes through a Cloud Function route that authenticates, parses with Zod, and scopes by uid. Rules deny clients outright and are proven by L3 denial tests. Retroactive — Slice 2b migrates `users/{uid}`. Costs `onSnapshot`: liveness is refetch-after-mutation, or an existing SSE stream |
-| SSE transport on Functions v2 | Slice 5 | ✅ **Settled in Slice 0.** Streams unbuffered from `asia-south1` through the Hosting rewrite; no chunked-fetch fallback needed |
+| SSE transport on Functions v2 | Slice 5 | ✅ **Settled, and corrected in production (2026-08-18).** Functions v2 streams unbuffered from `asia-south1`; no chunked-fetch fallback needed. **A Hosting rewrite does not** — its CDN buffers the response to completion and drops the origin at 60s, so a two-minute generation reached the browser as a 502 while the function finished and stored the reply, and no reply ever streamed. Measured 0.35s to first byte direct against 11.8s through the rewrite. `/generate` therefore goes straight to the function's own url via `VITE_GENERATE_URL`; `/api/**` stays behind the rewrite |
 | LLM provider | Slice 5 | ✅ **Settled.** `@anthropic-ai/sdk`, `claude-opus-5`, `messages.stream()`, `max_tokens: 64000`, cheat-sheet behind `cache_control` |
 | Google SSO alongside email + password | Slice 1 | ✅ **Settled: out** (Slice 1, D1). Not required by the brief |
 | Preview runtime: `srcdoc` vs Sandpack | Slice 10 | ✅ **Settled: `srcdoc` + shim.** The *credential-passing mechanism* into an opaque-origin iframe is still open — decide it in Slice 10 discovery |

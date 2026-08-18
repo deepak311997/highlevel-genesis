@@ -1,4 +1,4 @@
-import { ApiError, apiUrl, connectionError, errorForResponse } from './api'
+import { ApiError, connectionError, errorForResponse, generateUrl } from './api'
 import { authHeaders, noteApiError, rearmSessionExpiry } from './apiClient'
 import type { Message } from './messagesApi'
 import { createSseParser } from './sse'
@@ -176,7 +176,7 @@ export async function* streamGeneration(
 ): AsyncGenerator<GenerateEvent> {
   let res: Response
   try {
-    res = await fetch(apiUrl('/generate'), {
+    res = await fetch(generateUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
       /*

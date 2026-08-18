@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { ApiError, apiGet, apiUrl, errorForResponse } from './api'
+import { ApiError, apiGet, apiUrl, errorForResponse, generateUrl } from './api'
 
 function stubFetch(response: Response) {
   vi.stubGlobal(
@@ -11,6 +11,7 @@ function stubFetch(response: Response) {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
 })
 
 describe('apiUrl', () => {
@@ -20,6 +21,41 @@ describe('apiUrl', () => {
 
   it('tolerates a path without a leading slash', () => {
     expect(apiUrl('api/health')).toBe('/api/health')
+  })
+})
+
+/*
+ * The one call that does not stay same-origin, and the reason it does not.
+ *
+ * Firebase Hosting's CDN buffers a rewritten response to completion before it
+ * sends a byte, and drops the origin at sixty seconds. A generation runs to two
+ * minutes, so the browser got a 502 while the function finished and stored the
+ * reply. Blank is still same-origin: dev, the emulator and this suite all want
+ * the proxy, which buffers nothing.
+ */
+describe('generateUrl', () => {
+  it('stays same-origin when nothing is configured', () => {
+    expect(generateUrl()).toBe('/generate')
+  })
+
+  it('uses the configured URL verbatim rather than joining a path onto it', async () => {
+    vi.stubEnv('VITE_GENERATE_URL', 'https://generate-abc.a.run.app')
+    vi.resetModules()
+
+    const { generateUrl: configured } = await import('./api')
+
+    expect(configured()).toBe('https://generate-abc.a.run.app')
+  })
+
+  // A variable set to nothing is a variable that is not set. Trimming it here is
+  // what stops a stray space in .env pointing the turn at a URL of one space.
+  it('treats a blank value as unset', async () => {
+    vi.stubEnv('VITE_GENERATE_URL', '   ')
+    vi.resetModules()
+
+    const { generateUrl: blank } = await import('./api')
+
+    expect(blank()).toBe('/generate')
   })
 })
 
