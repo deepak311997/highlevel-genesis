@@ -3,12 +3,10 @@ import { defineSecret } from 'firebase-functions/params'
 import { baseUrl, emulatorNumber, emulatorOverride, requiredSecret } from '../lib/env'
 
 /**
- * HighLevel configuration, resolved per call rather than at module scope.
- *
- * Lazy for the same reason `getDb()` is: `firebase deploy` loads and analyses
- * every module *before* injecting functions/.env, so a top-level read would
- * bake in an empty environment and a top-level throw would fail the deploy
- * rather than the request.
+ * HighLevel configuration, resolved per call rather than at module scope — for
+ * `getDb()`'s reason: `firebase deploy` analyses every module before injecting
+ * `functions/.env`, so a top-level read bakes in an empty environment and a
+ * top-level throw fails the deploy rather than the request.
  */
 
 /** Where the marketplace serves `/oauth/chooselocation`. */
@@ -20,21 +18,15 @@ const DEFAULT_API_BASE = 'https://services.leadconnectorhq.com'
 /**
  * Every scope the marketplace app is configured with.
  *
- * **This list and the app's Advanced Settings → Auth → OAuth Scopes are one
- * contract with two halves, and this repo can only see one of them.** Adding a
- * scope here without adding it there yields an authorisation page that grants
- * less than the code expects; adding it there without here is harmless but
- * misleading. Adding one *after* installs exist forces every user to
- * re-authorise, which is why the list is taken in full up front (PRD D18).
+ * **This list and the app's OAuth Scopes are one contract with two halves, and
+ * this repo can only see one of them.** Adding a scope here without adding it
+ * there yields an authorisation page that grants less than the code expects, and
+ * adding one *after* installs exist forces every user to re-authorise — which is
+ * why the list is taken in full up front.
  *
- * **Five scopes were requested and refused**, with `invalid_scope` naming each:
- * `conversations.write`, `users.readonly`, `opportunities.readonly`,
- * `locations/customFields.readonly` and `locations/tags.readonly`. None is
- * required by the spec — F7.1 asks for Contacts, Conversations and Calendars,
- * and all three surfaces are covered here. In particular `conversations.write`
- * governs conversation *records*; F7.1's "send" is `conversations/message.write`,
- * which is present. The rest were the "worth adding cheaply" extras from
- * HIGHLEVEL_PLATFORM.md §4, and they cost us nothing.
+ * Five more were requested and refused with `invalid_scope`; none is required.
+ * `conversations.write` governs conversation *records*, where "send a message" is
+ * `conversations/message.write`, which is present.
  */
 export const HL_SCOPES = [
   'locations.readonly',
@@ -51,12 +43,10 @@ export const HL_SCOPES = [
 /**
  * The marketplace app's client id.
  *
- * A Secret Manager value rather than a `functions/.env` line, and not because it
- * is a credential — it is half of a public pair, and it travels in every
- * authorize URL. It is here because `functions/.env` is uploaded as plain Cloud
- * Run environment *and* has to be synthesised by the deploy, which on a public
- * repository meant printing it into a world-readable log. Secret Manager removes
- * the file, and with it the step that leaked.
+ * In Secret Manager not because it is a credential — it is half of a public pair —
+ * but because `functions/.env` is uploaded as plain Cloud Run environment *and*
+ * had to be synthesised by the deploy, which on a public repository meant printing
+ * it into a world-readable log.
  */
 export const HL_CLIENT_ID = defineSecret('HL_CLIENT_ID')
 
@@ -68,13 +58,11 @@ export function hlClientId(): string {
  * The app **version** the consent screen should honour.
  *
  * Required by the v2 authorize endpoint, and its absence is not a soft failure:
- * without it HighLevel answers `No integration found with the id: <app id>`,
- * naming the app it could not resolve, which reads like a broken client id and
- * sends you to regenerate keys that were never the problem.
+ * HighLevel answers `No integration found with the id: <app id>`, which reads like
+ * a broken client id and sends you to regenerate keys that were never the problem.
  *
- * The value is the app id — the segment of `HL_CLIENT_ID` before the hyphen —
- * but it is configured separately rather than derived, because "they happen to
- * be equal today" is not a contract HighLevel has offered.
+ * It happens to equal the segment of the client id before the hyphen, but it is
+ * configured separately, because that equality is not a contract HighLevel offers.
  */
 export const HL_VERSION_ID = defineSecret('HL_VERSION_ID')
 
@@ -83,22 +71,13 @@ export function hlVersionId(): string {
 }
 
 /**
- * The marketplace app's client secret, from Secret Manager.
+ * The marketplace app's client secret, from Secret Manager: `functions/.env` is
+ * uploaded as plain Cloud Run environment, and HighLevel displays this exactly
+ * once at creation — so a leak here is not a rotation, it is a re-issue.
  *
- * `defineSecret` rather than `required()`, for the reason `ANTHROPIC_API_KEY` is
- * one (D19): everything left in `functions/.env` is uploaded as a plain
- * environment variable on the Cloud Run service and is readable by anyone with
- * Viewer on the project. This is half of the app's credentials and HighLevel
- * displays it exactly once, at creation — so a leak here is not a rotation, it is
- * a re-issue.
- *
- * Bound to `api` alone in `index.ts`. `generate` never exchanges an
- * authorization code, so it is never granted this.
- *
- * Under the emulator `SecretParam.value()` reads `process.env`, which
- * `functions/.env.local` populates with a fake — so the whole suite is unaffected
- * by the move, and only the deployed endpoint can tell the difference. That is
- * why `index.spec.ts` asserts the binding structurally.
+ * Bound to `api` alone; `generate` never exchanges an authorization code. Under
+ * the emulator `value()` reads `process.env`, so only the deployed endpoint can
+ * tell the difference — which is why the binding is asserted structurally.
  */
 export const HL_CLIENT_SECRET = defineSecret('HL_CLIENT_SECRET')
 
@@ -131,19 +110,17 @@ export function hlApiBase(): string {
 }
 
 /**
- * How long a proxied upstream call may take before it is aborted (D27).
- *
- * The `api` function's own timeout is 60 s, so an unbounded upstream call would
- * burn the whole request budget and answer nothing.
+ * How long a proxied upstream call may take before it is aborted. The `api`
+ * function's own timeout is 60 s, so an unbounded call would burn the whole
+ * request budget and answer nothing.
  */
 export const UPSTREAM_TIMEOUT_MS = 20_000
 
 /**
- * The same emulator-only override `keepAliveMs()` uses, for the same reason: a
- * twenty-second case in a suite that runs on every push is a case people
- * delete. The name appears in no `.env` file, so a shell value survives the
- * emulator's `.env` precedence — and outside the emulator it is ignored
- * outright, so no deploy can shorten the real timeout.
+ * The same emulator-only override the keep-alive uses, for the same reason: a
+ * twenty-second case in a suite that runs on every push is a case people delete.
+ * Outside the emulator it is ignored outright, so no deploy can shorten the real
+ * timeout.
  */
 export function hlUpstreamTimeoutMs(): number {
   return emulatorNumber('HL_TEST_UPSTREAM_TIMEOUT_MS', UPSTREAM_TIMEOUT_MS)

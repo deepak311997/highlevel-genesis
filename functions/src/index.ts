@@ -25,22 +25,17 @@ export const api = onRequest(
     /*
      * Everything the OAuth flow and the CORS layer are configured with.
      *
-     * The grant is stated here rather than beside each reader, which is the
-     * opposite of `ANTHROPIC_API_KEY`'s rule and deliberate: a `defineSecret`
-     * binds nothing by itself — it is *this list* that grants the function
-     * access — and `api` is one function assembled from a dozen routers, so the
-     * grant belongs where the function is, not once per module that reads one.
+     * Stated here rather than beside each reader — the opposite of the model key's
+     * rule, and deliberate: a `defineSecret` binds nothing by itself, it is *this
+     * list* that grants access, and `api` is one function assembled from a dozen
+     * routers.
      *
-     * Only two of these are credentials. The other four are configuration that
-     * used to live in `functions/.env`, and moved for a reason that has nothing
-     * to do with how sensitive they are: that file is uploaded as plain Cloud Run
-     * environment, and the deploy has to *synthesise* it — which on a public
-     * repository meant printing every line into a world-readable log. There is no
-     * longer a step that writes it.
+     * Only two are credentials. The other four are configuration that lived in
+     * `functions/.env` until that file's synthesis started printing every line into
+     * a world-readable deploy log.
      *
-     * `index.spec.ts` asserts all six, because the emulator resolves a secret
-     * from `process.env` whether it was granted or not and so cannot tell a bound
-     * one from an unbound one.
+     * `index.spec.ts` asserts all six, because the emulator resolves a secret from
+     * `process.env` whether it was granted or not.
      */
     secrets: [
       HL_CLIENT_SECRET,
@@ -55,39 +50,27 @@ export const api = onRequest(
 )
 
 /**
- * The streaming endpoint lives in its own function so it can carry a long
- * timeout and more memory without the CRUD endpoints paying for either. (There
- * is no `minInstances` here or anywhere — a generation pays a cold start; a
- * warm instance is a cost decision nobody has taken.)
+ * The streaming endpoint lives in its own function so it can carry a long timeout
+ * and more memory without the CRUD endpoints paying for either.
  *
- * **Its options are declared in `./generate`, not here** — the 540-second
- * timeout, the 512 MiB, and the `ANTHROPIC_API_KEY` secret binding. The secret
- * is the reason: `defineSecret` is called beside the code that reads it, and a
- * binding declared one file away from its reader is a binding that gets dropped
- * in a refactor of the wrong file. `index.spec.ts` asserts all three off
- * `__endpoint`, which is the only place a test can see them.
+ * **Its options are declared in `./generate`, not here.** The secret is the
+ * reason: `defineSecret` belongs beside the code that reads it, and a binding one
+ * file away from its reader gets dropped in a refactor of the wrong file.
  */
 export { generate } from './generate'
 
 /**
- * The daily sweep of never-verified accounts — D18's fourth mitigation.
+ * The daily sweep of never-verified accounts.
  *
- * An attacker can register someone else's address. Rules already make that
- * account inert, and a registration request can never alter an account it does
- * not control, so the account can reach nothing. What remains is that it *sits
- * there*: the real owner could be socially engineered into clicking "verify" on
- * it weeks later, and until then they cannot register the address themselves.
- * Expiring it closes that window instead of leaving it open indefinitely.
+ * An attacker can register someone else's address. Rules make that account inert
+ * and it can reach nothing; what remains is that it *sits there*, so the real
+ * owner cannot register the address themselves and could be talked into verifying
+ * it weeks later. Expiring it closes that window.
  *
- * This trigger was dropped once already, in an unrelated commit, and nothing
- * caught it — every test called the handler directly, so a sweep that no longer
- * ran still looked fully covered. `index.spec.ts` now asserts the export
- * exists, because the deployment surface is the one thing the other test levels
- * cannot see.
- *
- * Timezone is pinned rather than left to the deploy environment: "every 24
- * hours" against a floating zone makes the deletion window drift, and a
- * 24h-age check whose boundary moves is hard to reason about after the fact.
+ * This trigger was dropped once already in an unrelated commit and nothing caught
+ * it — every test called the handler directly — so `index.spec.ts` asserts the
+ * export exists. The timezone is pinned, because a 24-hour age check whose
+ * boundary drifts is hard to reason about after the fact.
  */
 export const cleanupUnverifiedUsers = onSchedule(
   { schedule: 'every 24 hours', timeZone: 'Etc/UTC', memory: '256MiB', timeoutSeconds: 540 },
