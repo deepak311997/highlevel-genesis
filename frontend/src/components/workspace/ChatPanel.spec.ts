@@ -134,6 +134,21 @@ describe('ChatPanel', () => {
     expect(wrapper.find('[data-testid="chat-empty"]').exists()).toBe(false)
   })
 
+  /*
+   * AC-2. The two bubble placeholders are the shared `Skeleton`, not hand-rolled
+   * pulsing divs — the testid still resolves to the same element, and what
+   * it holds carries the primitive's slot attribute.
+   */
+  it('renders Skeleton placeholders while loading', () => {
+    store.messagesLoading = true
+
+    const wrapper = mount(ChatPanel, MOUNT)
+
+    const loading = wrapper.find('[data-testid="chat-loading"]')
+    expect(loading.exists()).toBe(true)
+    expect(loading.findAll('[data-slot="skeleton"]')).toHaveLength(2)
+  })
+
   /* `messagesLoading` alone cannot say "no answer yet": it is still false in the
    * tick between mounting and the request starting. */
   it('shows the loading state before the request has started', () => {

@@ -139,6 +139,19 @@ describe('the four states', () => {
     expect(el('snapshot-empty')).toBeNull()
   })
 
+  /*
+   * AC-2. The two row placeholders are the shared `Skeleton`, not hand-rolled
+   * pulsing divs — the testid still resolves to the same element, and what
+   * it holds carries the primitive's slot attribute.
+   */
+  it('renders Skeleton placeholders while loading', async () => {
+    store.snapshotsLoading = true
+    await open()
+
+    const loading = must('snapshot-loading')
+    expect(loading.findAll('[data-slot="skeleton"]')).toHaveLength(2)
+  })
+
   it('renders the empty state once a request has answered with nothing', async () => {
     store.loadSnapshots.mockImplementation(() => {
       store.snapshotsLoaded = true

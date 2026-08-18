@@ -278,6 +278,20 @@ describe('CodeEditor', () => {
     expect(wrapper.find('[data-testid="code-editor-failed"]').exists()).toBe(false)
   })
 
+  /*
+   * AC-2. The three lines of the skeleton are the shared `Skeleton`, not
+   * hand-rolled pulsing divs — the testid still resolves to the same
+   * element, and what it holds carries the primitive's slot attribute. The
+   * sizing utilities come across unchanged, so the cover keeps its height (R2).
+   */
+  it('renders Skeleton placeholders while loading', () => {
+    const wrapper = mount(CodeEditor)
+
+    const loading = wrapper.find('[data-testid="code-editor-loading"]')
+    expect(loading.exists()).toBe(true)
+    expect(loading.findAll('[data-slot="skeleton"]')).toHaveLength(3)
+  })
+
   it('renders neither once mounted', async () => {
     const { wrapper } = await mounted()
 

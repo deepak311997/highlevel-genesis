@@ -263,6 +263,22 @@ describe('FileEditor', () => {
   })
 
   /*
+   * AC-2. The cover's placeholder is the shared `Skeleton`, not a hand-rolled
+   * pulsing div — the testid still resolves to the same element, and what
+   * it holds carries the primitive's slot attribute.
+   */
+  it('renders Skeleton placeholders while loading', () => {
+    store.selectedPath = 'styles.css'
+    store.openTabs = ['index.html', 'styles.css']
+    store.fileLoading = true
+    const wrapper = mount(FileEditor)
+
+    const loading = wrapper.find('[data-testid="file-editor-loading"]')
+    expect(loading.exists()).toBe(true)
+    expect(loading.findAll('[data-slot="skeleton"]')).toHaveLength(1)
+  })
+
+  /*
    * The byte count reads `editorContent`, which prefers the streaming buffer —
    * so it is the arriving bytes that are counted for a file the server has never
    * stored, not an empty buffer.
