@@ -56,7 +56,7 @@ describe('the committed functions/.env.local', () => {
    * copying them in "just for a moment" — commits them.
    */
   it('defines no HighLevel credentials, so the real ones stay out of git', () => {
-    for (const key of ['HL_CLIENT_SECRET', 'HL_CLIENT_ID']) {
+    for (const key of ['HL_CLIENT_SECRET', 'HL_CLIENT_ID', 'HL_VERSION_ID']) {
       const value = valueOf(key)
       if (value !== undefined) expect(value).toMatch(/^emulator-/)
     }

@@ -130,6 +130,7 @@ describe('the api function\u2019s secret bindings', () => {
     'HL_CLIENT_SECRET',
     'OAUTH_STATE_SECRET',
     'HL_CLIENT_ID',
+    'HL_VERSION_ID',
     'HL_REDIRECT_URI',
     'ALLOWED_ORIGINS',
   ])('binds %s as a secret', (key) => {

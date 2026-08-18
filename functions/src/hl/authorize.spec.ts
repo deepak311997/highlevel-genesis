@@ -17,14 +17,16 @@ import { HL_SCOPES } from './config'
 
 const REDIRECT = 'https://hl-genesis-app.web.app/api/oauth/callback'
 const CLIENT_ID = 'test-client-id-1234'
+const VERSION_ID = 'test-version-id-5678'
 const STATE = 'sealed-state-token'
 
 const saved: Record<string, string | undefined> = {}
-const KEYS = ['HL_CLIENT_ID', 'HL_REDIRECT_URI', 'HL_AUTHORIZE_BASE'] as const
+const KEYS = ['HL_CLIENT_ID', 'HL_VERSION_ID', 'HL_REDIRECT_URI', 'HL_AUTHORIZE_BASE'] as const
 
 beforeEach(() => {
   for (const key of KEYS) saved[key] = process.env[key]
   process.env['HL_CLIENT_ID'] = CLIENT_ID
+  process.env['HL_VERSION_ID'] = VERSION_ID
   process.env['HL_REDIRECT_URI'] = REDIRECT
   delete process.env['HL_AUTHORIZE_BASE']
 })
@@ -47,9 +49,8 @@ describe('buildAuthorizeUrl', () => {
    * asserted — and against a live app that path answers
    * `No integration found with the id: …`, naming the app id it could not
    * resolve. The developer portal's own generated install link uses
-   * `/v2/oauth/chooselocation`. The doc is stale; the portal is authoritative,
-   * and this test is the record of that. The `version_id` that link also
-   * carries is deliberately not sent — see below.
+   * `/v2/oauth/chooselocation` with a `version_id`. The doc is stale; the
+   * portal is authoritative, and this test is the record of that.
    */
   it('targets the v2 chooselocation endpoint', () => {
     expect(buildAuthorizeUrl(STATE)).toMatch(
@@ -74,21 +75,18 @@ describe('buildAuthorizeUrl', () => {
   })
 
   /*
-   * `version_id` is deliberately **absent**, removed 2026-08-18 at the
-   * maintainer's direction: it pinned the consent screen to one published app
-   * version, so a stale value went on installing that old version for ever.
-   * Omitting it is meant to resolve whatever version is current.
-   *
-   * **This is unverified against the live marketplace, and the file it replaces
-   * recorded a failure.** What HIGHLEVEL_PLATFORM.md §2 Step 4 actually measured
-   * was the *v1* path without `version_id`, which answered
-   * `No integration found with the id: <app id>`. Whether v2 tolerates the
-   * absence was never established either way — this test pins the behaviour we
-   * chose, not a behaviour HighLevel has confirmed. If Connect starts failing
-   * with "No integration found", this parameter is the first thing to put back.
+   * `version_id` identifies the app version whose scope list and redirect URL
+   * the consent screen should honour. Without it the v2 endpoint cannot resolve
+   * the app at all — this is the parameter whose absence produced the
+   * "No integration found" failure.
    */
-  it('sends no version_id, so the consent screen is not pinned to one version', () => {
-    expect(new URL(buildAuthorizeUrl(STATE)).searchParams.has('version_id')).toBe(false)
+  it('identifies the app version, without which v2 cannot resolve the app', () => {
+    expect(new URL(buildAuthorizeUrl(STATE)).searchParams.get('version_id')).toBe(VERSION_ID)
+  })
+
+  it('fails loudly when the version id is not configured', () => {
+    Reflect.deleteProperty(process.env, 'HL_VERSION_ID')
+    expect(() => buildAuthorizeUrl(STATE)).toThrow(/HL_VERSION_ID/)
   })
 
   it('sends redirect_uri byte for byte, since HighLevel matches it exactly', () => {
