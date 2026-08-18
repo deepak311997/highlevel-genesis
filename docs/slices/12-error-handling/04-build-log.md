@@ -485,3 +485,5 @@ Everything else in the definition of done is closed and measured above.
 |---|---|
 | `lib/api.ts`'s `apiGet` has no callers anywhere in `src/` (plan C7) | Removing it is not F8 and would put a structural diff beside a uniformity one (D13). Noted for Slice 13's README. |
 | The fifteen refactors earlier reviews handed to "Slice 12's audit" | D13 and the PRD's Out-of-scope table; each is re-homed there with its reason. |
+
+<!-- build-complete -->
