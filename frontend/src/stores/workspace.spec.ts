@@ -3448,3 +3448,93 @@ describe('restoreSnapshot — the preview’s signals', () => {
     expect(store.generationsApplied).toBe(0)
   })
 })
+
+/**
+ * What a restore **reports** (AC-5) — the return value the sheet branches on.
+ *
+ * Slice 11 left `restoreSnapshot` returning `void`, which made the no-op restore
+ * silent: the request went out, the server answered `changed: false`, and the
+ * sheet had no way to tell that from a restore that rewrote every file. Nothing
+ * on screen moved either way, so the only honest report is a transient one — and
+ * a transient report needs the outcome as a value, not as a flag the caller has
+ * to go looking for afterwards.
+ *
+ * Four outcomes, and the caller decides what each is worth: `'restored'` and
+ * `'unchanged'` are the two the user is told about, `'blocked'` and `'failed'`
+ * are the two they are not. A failure already renders in `restoreError` and must
+ * stay there (D4), and a refusal is a button the sheet had already disabled.
+ */
+describe('restoreSnapshot — what it reports', () => {
+  async function openedWithHistory(): Promise<ReturnType<typeof useWorkspaceStore>> {
+    fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE, ABOUT_FILE] }))
+    const store = useWorkspaceStore()
+    await store.open('proj-1')
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+    await store.loadSnapshots()
+    fetchMock.mockClear()
+    return store
+  }
+
+  it('reports a restore that changed the project', async () => {
+    const store = await openedWithHistory()
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE], changed: true }))
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+
+    expect(await store.restoreSnapshot('snap-1')).toBe('restored')
+  })
+
+  /*
+   * AC-5's other half, as far as the client can observe it: `changed: false` is
+   * the project already *being* that version, so no new version was written and
+   * `filesRevision` — the count of changes to the stored file set — does not
+   * move. The outcome is the only thing that differs from the case above, which
+   * is exactly why it has to be reported.
+   */
+  it('reports a restore that changed nothing', async () => {
+    const store = await openedWithHistory()
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE, ABOUT_FILE], changed: false }))
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+    const before = store.filesRevision
+
+    expect(await store.restoreSnapshot('snap-1')).toBe('unchanged')
+    expect(store.restoreError).toBeNull()
+    expect(store.filesRevision).toBe(before)
+  })
+
+  /*
+   * A refusal is not an outcome the user is told about: the sheet had already
+   * disabled the button, and the guard exists because nothing guarantees the
+   * call came from it. No request goes out, so there is nothing to report on.
+   */
+  it('reports a refused restore', async () => {
+    const store = await openedWithHistory()
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    await vi.waitFor(() => {
+      expect(store.generating).toBe(true)
+      expect(requests()).toEqual(['POST /generate'])
+    })
+    fetchMock.mockClear()
+
+    expect(await store.restoreSnapshot('snap-1')).toBe('blocked')
+    expect(requests()).toEqual([])
+
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }))
+    stream.close()
+    await running
+  })
+
+  /* Unchanged behaviour — the banner is still the report — now also returned. */
+  it('reports a failed restore', async () => {
+    const store = await openedWithHistory()
+    fetchMock.mockResolvedValueOnce(
+      response({ error: 'That version could not be restored. Try again.' }, 500),
+    )
+
+    expect(await store.restoreSnapshot('snap-1')).toBe('failed')
+    expect(store.restoreError).toBe('That version could not be restored. Try again.')
+  })
+})
