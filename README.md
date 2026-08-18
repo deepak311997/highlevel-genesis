@@ -25,6 +25,7 @@ fourteen vertical slices, one pull request each — the record is
 | Cloud Functions base | https://asia-south1-hl-genesis-app.cloudfunctions.net/api |
 | Generation endpoint | https://generate-aitsgtnk5a-el.a.run.app |
 | Health check | https://hl-genesis-app.web.app/api/health |
+| Loom walkthrough | https://www.loom.com/share/f77abdb006c847cb8c761defe092f562 |
 
 Deployed on every green CI run against `main`.
 
