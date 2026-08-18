@@ -41,6 +41,8 @@ function routerWith(): Router {
       // predates this slice relies on that.
       { path: '/contained', component: Blank, meta: { access: 'public' } },
       { path: '/full', component: Blank, meta: { access: 'public', layout: 'full' } },
+      // The shell's wordmark points here once a session is verified.
+      { path: '/dashboard', component: Blank, meta: { access: 'public' } },
     ],
   })
 }
@@ -107,6 +109,37 @@ describe('App shell', () => {
     expect(full).toContain('h-screen')
     expect(full).toContain('overflow-hidden')
     expect(full).not.toContain('min-h-screen')
+  })
+
+  /*
+   * The wordmark is the only way back, and where back *is* depends on the
+   * session. A separate "Dashboard" link a step away from a logo that led to
+   * the same place was one more thing to read for no more reach.
+   *
+   * The signed-out case is the one worth asserting: sending a visitor with no
+   * session to /dashboard would bounce them off the route guard, which reads
+   * as a broken logo rather than a redirect.
+   */
+  it('points the wordmark at the dashboard only once there is a verified session', async () => {
+    auth.isSignedIn = true
+    auth.isVerified = true
+    const signedIn = await mountAt('/contained')
+    expect(signedIn.find('[data-testid="header-home"]').attributes('href')).toBe('/dashboard')
+
+    auth.isSignedIn = false
+    auth.isVerified = false
+    const signedOut = await mountAt('/contained')
+    expect(signedOut.find('[data-testid="header-home"]').attributes('href')).toBe('/')
+  })
+
+  it('carries no second link to the dashboard', async () => {
+    auth.isSignedIn = true
+    auth.isVerified = true
+    const wrapper = await mountAt('/contained')
+
+    const toDashboard = wrapper.findAll('a[href="/dashboard"]')
+    expect(toDashboard).toHaveLength(1)
+    expect(toDashboard[0]?.attributes('data-testid')).toBe('header-home')
   })
 
   it('renders the header on both layouts', async () => {
