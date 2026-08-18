@@ -344,6 +344,63 @@ class SeedRequestError extends Error {
   }
 }
 
+/**
+ * `GET /calendars/?locationId=` when either id is missing. Throws, naming the fix.
+ *
+ * The script creates no calendar, deliberately: `calendars.write` is a scope we
+ * chose not to request (`docs/HIGHLEVEL_PLATFORM.md` §4), so a location with no
+ * calendar is a thing only a human can fix in the sandbox UI — and saying so is
+ * more use than a 4xx echoed back. Each of the three ways this can fail names
+ * the exact flag or step that fixes it.
+ */
+export async function resolveCalendar({ fetchImpl, config, calendarId, assignedUserId }) {
+  // Nothing to resolve, nothing to ask. The 28-request run depends on this.
+  if (calendarId !== null && assignedUserId !== null) return { calendarId, assignedUserId }
+
+  const response = await fetchImpl(
+    `${config.apiBase}/calendars/?locationId=${encodeURIComponent(config.locationId)}`,
+    { method: 'GET', headers: headersFor(CALENDARS_VERSION, config.token) },
+  )
+
+  const text = await response.text()
+  let body = null
+  try {
+    body = text === '' ? null : JSON.parse(text)
+  } catch {
+    body = null
+  }
+
+  if (response.status < 200 || response.status >= 300) {
+    throw new SeedConfigError(
+      `Could not list the calendars in ${config.locationId} — ` +
+        `${messageOf(response.status, body)}. Check HL_SEED_LOCATION_ID and the token's ` +
+        'scopes, or pass the calendar directly with --calendar-id.',
+    )
+  }
+
+  const calendars = Array.isArray(body?.calendars) ? body.calendars : []
+  const calendar = calendars.find((entry) => entry?.id === calendarId) ?? calendars[0]
+
+  if (calendar === undefined || typeof calendar.id !== 'string') {
+    throw new SeedConfigError(
+      `No calendar in location ${config.locationId}. This script does not create one — ` +
+        'calendars.write is not a granted scope — so create one in the sandbox UI ' +
+        '(Calendars → Create Calendar) and run this again.',
+    )
+  }
+
+  const resolvedUserId = assignedUserId ?? calendar.teamMembers?.[0]?.userId ?? null
+  if (typeof resolvedUserId !== 'string' || resolvedUserId === '') {
+    throw new SeedConfigError(
+      `Calendar ${calendar.id} ("${calendar.name ?? 'unnamed'}") has no team member to ` +
+        'assign appointments to. Add one in the sandbox UI, or pass the user directly ' +
+        'with --assigned-user-id.',
+    )
+  }
+
+  return { calendarId: calendarId ?? calendar.id, assignedUserId: resolvedUserId }
+}
+
 function emptySummary(dryRun) {
   return {
     dryRun,
@@ -400,6 +457,15 @@ export async function seed({
     return fetchImpl(url, init)
   }
 
+  // First request of the run, and counted like every other. A run that cannot
+  // place its appointments should not create twenty contacts first.
+  const { calendarId, assignedUserId } = await resolveCalendar({
+    fetchImpl: counted,
+    config,
+    calendarId: args.calendarId,
+    assignedUserId: args.assignedUserId,
+  })
+
   /*
    * Per item, not per run.
    *
@@ -454,13 +520,13 @@ export async function seed({
 
   const appointments = plannedAppointments({
     locationId: config.locationId,
-    calendarId: args.calendarId,
-    assignedUserId: args.assignedUserId,
+    calendarId,
+    assignedUserId,
     contactIds,
     now: now(),
   })
 
-  out.log(`Creating ${appointments.length} appointments on calendar ${args.calendarId}…`)
+  out.log(`Creating ${appointments.length} appointments on calendar ${calendarId}…`)
 
   for (const [index, appointment] of appointments.entries()) {
     const item = `appointment ${index + 1} — ${appointment.startTime}`

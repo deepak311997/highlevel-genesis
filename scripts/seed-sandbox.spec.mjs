@@ -16,6 +16,7 @@ import {
   parseArgs,
   plannedContacts,
   readConfig,
+  resolveCalendar,
   seed,
 } from './seed-sandbox.mjs'
 
@@ -547,5 +548,166 @@ describe('seed — one failure does not end the run (AC-15)', () => {
     expect(summary.failures[0].status).toBe(422)
     expect(summary.failures[0].message).toMatch(/ISO 8601/)
     expect(exitCodeFor(summary)).toBe(1)
+  })
+})
+
+/**
+ * The recorded `GET /calendars/` response from the sandbox.
+ *
+ * Reused rather than hand-rolled, which is what makes the assignee edge real:
+ * every calendar in it has `teamMembers: []`, so the "no resolvable assignee"
+ * path below is the sandbox's actual shape, not an invented one.
+ */
+const CALENDARS = fixture('calendars')
+
+/** The same fixture with a team member on the first calendar. */
+function calendarsWithTeamMember(userId) {
+  return {
+    ...CALENDARS,
+    calendars: CALENDARS.calendars.map((calendar, index) =>
+      index === 0 ? { ...calendar, teamMembers: [{ userId }] } : calendar,
+    ),
+  }
+}
+
+describe('resolveCalendar — T6', () => {
+  const config = readConfig(ENV)
+
+  it('issues GET /calendars/?locationId= with the calendars Version', async () => {
+    const { fetchImpl, calls } = stubFetch(() => json(200, calendarsWithTeamMember('usr-team-1')))
+
+    const resolved = await resolveCalendar({
+      fetchImpl,
+      config,
+      calendarId: null,
+      assignedUserId: null,
+    })
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0].method).toBe('GET')
+    expect(calls[0].url).toBe(
+      `${DEFAULT_API_BASE}/calendars/?locationId=${ENV.HL_SEED_LOCATION_ID}`,
+    )
+    expect(calls[0].headers.Version).toBe(CALENDARS_VERSION)
+    expect(calls[0].headers.Authorization).toBe(`Bearer ${ENV.HL_SEED_TOKEN}`)
+
+    expect(resolved).toEqual({
+      calendarId: CALENDARS.calendars[0].id,
+      assignedUserId: 'usr-team-1',
+    })
+  })
+
+  it('asks nothing when both ids are given', async () => {
+    const { fetchImpl, calls } = stubFetch(noFetch)
+
+    expect(
+      await resolveCalendar({ fetchImpl, config, calendarId: 'cal1', assignedUserId: 'usr1' }),
+    ).toEqual({ calendarId: 'cal1', assignedUserId: 'usr1' })
+    expect(calls).toHaveLength(0)
+  })
+
+  it('rejects naming the sandbox-UI step when the location has no calendar', async () => {
+    const { fetchImpl } = stubFetch(() => json(200, { calendars: [], traceId: 't' }))
+
+    const rejection = resolveCalendar({
+      fetchImpl,
+      config,
+      calendarId: null,
+      assignedUserId: null,
+    })
+
+    await expect(rejection).rejects.toBeInstanceOf(SeedConfigError)
+    await expect(rejection).rejects.toThrow(/calendars\.write/)
+    await expect(rejection).rejects.toThrow(/create one in the sandbox/i)
+  })
+
+  it('rejects naming --assigned-user-id when the first calendar has no team member', async () => {
+    const { fetchImpl } = stubFetch(() => json(200, CALENDARS))
+
+    expect(CALENDARS.calendars[0].teamMembers).toEqual([])
+
+    const rejection = resolveCalendar({
+      fetchImpl,
+      config,
+      calendarId: null,
+      assignedUserId: null,
+    })
+
+    await expect(rejection).rejects.toBeInstanceOf(SeedConfigError)
+    await expect(rejection).rejects.toThrow(/--assigned-user-id/)
+  })
+
+  it('rejects naming --calendar-id when the calendar list 404s', async () => {
+    const { fetchImpl } = stubFetch(() => json(404, { message: 'Location not found' }))
+
+    const rejection = resolveCalendar({
+      fetchImpl,
+      config,
+      calendarId: null,
+      assignedUserId: null,
+    })
+
+    await expect(rejection).rejects.toBeInstanceOf(SeedConfigError)
+    await expect(rejection).rejects.toThrow(/--calendar-id/)
+  })
+
+  it('takes the named calendar’s team member when only --calendar-id is given', async () => {
+    const second = CALENDARS.calendars[1]
+    const body = {
+      ...CALENDARS,
+      calendars: CALENDARS.calendars.map((calendar) =>
+        calendar.id === second.id
+          ? { ...calendar, teamMembers: [{ userId: 'usr-second' }] }
+          : calendar,
+      ),
+    }
+    const { fetchImpl } = stubFetch(() => json(200, body))
+
+    expect(
+      await resolveCalendar({
+        fetchImpl,
+        config,
+        calendarId: second.id,
+        assignedUserId: null,
+      }),
+    ).toEqual({ calendarId: second.id, assignedUserId: 'usr-second' })
+  })
+})
+
+describe('seed — resolution comes first, and is counted (T6)', () => {
+  it('resolves the calendar before any create, and counts the request', async () => {
+    const { fetchImpl, calls } = stubFetch((url) => {
+      if (url.includes('/calendars/?locationId=')) {
+        return json(200, calendarsWithTeamMember('usr-team-1'))
+      }
+      return url.endsWith('/contacts/')
+        ? json(201, CONTACT_CREATED)
+        : json(200, APPOINTMENT_CREATED)
+    })
+    const { out } = collector()
+
+    const summary = await seed({ env: ENV, argv: [], fetchImpl, now, out })
+
+    expect(calls[0].url).toContain('/calendars/?locationId=')
+    expect(calls).toHaveLength(1 + CONTACT_COUNT + APPOINTMENT_COUNT)
+    expect(summary.requests).toBe(29)
+
+    for (const call of appointmentCalls(calls)) {
+      expect(call.body.calendarId).toBe(CALENDARS.calendars[0].id)
+      expect(call.body.assignedUserId).toBe('usr-team-1')
+    }
+    expect(exitCodeFor(summary)).toBe(0)
+  })
+
+  it('rejects before creating anything when the location has no calendar', async () => {
+    const { fetchImpl, calls } = stubFetch(() => json(200, { calendars: [] }))
+    const { out } = collector()
+
+    await expect(seed({ env: ENV, argv: [], fetchImpl, now, out })).rejects.toBeInstanceOf(
+      SeedConfigError,
+    )
+
+    expect(calls).toHaveLength(1)
+    expect(contactCalls(calls)).toHaveLength(0)
   })
 })
