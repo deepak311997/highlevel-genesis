@@ -16,30 +16,24 @@ export type RouteAccess =
   /** The verify-email gate itself. */
   | 'gate'
   /**
-   * The handler for emailed links.
-   *
-   * Exempt in **every** auth state, and that exemption is the whole reason this
-   * class exists. The verification link lands here, and the person following it
-   * is by definition signed in and unverified — the exact state the gate
-   * intercepts. Treated as `protected`, the guard would bounce them to the gate
-   * before the code could be applied, and they could never verify at all.
+   * The handler for emailed links, exempt in **every** auth state — which is the
+   * whole reason this class exists. The person following a verification link is by
+   * definition signed in and unverified, the exact state the gate intercepts, so
+   * `protected` would bounce them before the code could be applied.
    */
   | 'action'
   /** Requires a session *and* a verified address. */
   | 'protected'
 
 /**
- * How much room `main` gives a route (Slice 4, D22).
+ * How much room `main` gives a route.
  *
- * `contained` is the default and what every screen before the workspace wants: the
- * centred, padded container. `full` is the whole window — the workspace's three
- * panels need a *bounded* height to scroll inside, and a flex column gives them one
- * without a `calc()` that hard-codes the header's height and breaks the first time
- * the header gains a line.
+ * `contained` is the default. `full` is the whole window — the workspace's panels
+ * need a *bounded* height to scroll inside, and a flex column gives them one
+ * without a `calc()` that hard-codes the header's height.
  *
  * Declared per route rather than decided inside a view, because breaking out of the
- * container from the inside means negative margins: a lie about who owns the layout,
- * which also leaves the container's padding in the scroll height.
+ * container from the inside means negative margins.
  */
 export type RouteLayout = 'contained' | 'full'
 
@@ -59,10 +53,8 @@ export interface AuthSnapshot {
 }
 
 /**
- * Where a navigation should end up, or `null` to let it through.
- *
- * Pure, so the whole three-state matrix is testable without a router: the guard
- * below is only responsible for waiting on auth state and applying this.
+ * Where a navigation should end up, or `null` to let it through. Pure, so the whole
+ * three-state matrix is testable without a router.
  */
 export function resolveNavigation(
   access: RouteAccess,
@@ -72,8 +64,8 @@ export function resolveNavigation(
   if (access === 'public' || access === 'action') return null
 
   if (!auth.isSignedIn) {
-    // Only `protected` routes are worth returning to; the auth-flow pages and
-    // the gate are means, not destinations.
+    // Only `protected` routes are worth returning to; the auth-flow pages and the
+    // gate are means, not destinations.
     if (access === 'protected') {
       return `${SIGN_IN_PATH}?redirect=${encodeURIComponent(intendedPath)}`
     }
@@ -82,8 +74,7 @@ export function resolveNavigation(
 
   if (!auth.isVerified) {
     // Signed in but unverified: everything funnels to the gate, including the
-    // auth-flow pages — bouncing them to the dashboard instead would just cost
-    // a second redirect.
+    // auth-flow pages — bouncing them to the dashboard would cost a second redirect.
     return access === 'gate' ? null : GATE_PATH
   }
 
@@ -92,30 +83,17 @@ export function resolveNavigation(
 
 /**
  * The routes a user may be *returned to* after signing in — the allowlist
- * `safeRedirect` is handed.
+ * `safeRedirect` is handed, and narrower than "every route we registered".
  *
- * A narrower thing than "every route we registered", and `resolveNavigation`
- * above already says why in the other direction: only a `protected` route is
- * worth returning to, because the auth-flow pages and the gate are means, not
- * destinations. Both callers of `safeRedirect` used to pass
- * `router.getRoutes().map((r) => r.path)`, which made every registered route a
- * legal `?redirect=` target.
+ * Both callers used to pass every registered path, one of which is `/auth/action`:
+ * the single route exempt from this guard in every auth state, which applies a
+ * Firebase action code straight off its query string. A crafted `?redirect=` to it
+ * handed a user who had *just* typed their password a "choose a new password" form
+ * bound to someone else's account.
  *
- * One of them is `/auth/action` — the single route exempt from this guard in
- * every auth state, which applies a Firebase action code straight off its query
- * string. `?redirect=%2Fauth%2Faction%3Fmode%3DresetPassword%26oobCode%3D<the
- * attacker's own code>` therefore handed a user who had *just* typed their
- * password a "choose a new password" form bound to someone else's account. A
- * password typed twice in thirty seconds is the ordinary case, and
- * `confirmPasswordReset` then sets the attacker's account to the victim's
- * password.
- *
- * Keyed off `access` rather than a hand-written list of good paths, so a route
- * added later is classified once, here and in `resolveNavigation`, rather than
- * twice — and so `/hl/callback`, which is `protected` precisely so a lapsed
- * session round-trips back to its outcome, keeps working without anyone having
- * to remember it. The fail-open default matches the guard's own: a route with
- * no `access` is protected, and a protected route is a destination.
+ * Keyed off `access` rather than a hand-written list, so a route added later is
+ * classified once. The fail-open default matches the guard's own: a route with no
+ * `access` is protected, and a protected route is a destination.
  */
 export function destinationPaths(routes: readonly { path: string; meta: RouteMeta }[]): string[] {
   return routes
@@ -124,12 +102,9 @@ export function destinationPaths(routes: readonly { path: string; meta: RouteMet
 }
 
 /**
- * Install the guard.
- *
- * Awaits the store's `ready` promise before deciding anything. Firebase reports
- * auth state asynchronously, so without that wait the first navigation of every
- * page load sees "signed out" and redirects — the sign-in flash on refreshing a
- * protected page.
+ * Install the guard, awaiting the store's `ready` promise before deciding anything:
+ * Firebase reports auth state asynchronously, so without that wait the first
+ * navigation of every page load sees "signed out" and redirects.
  */
 export function installAuthGuard(router: Router): void {
   const guard: NavigationGuardWithThis<undefined> = async (to) => {
@@ -145,9 +120,8 @@ export function installAuthGuard(router: Router): void {
 
     if (target === null) return true
 
-    // Hold the destination across the emailed link, which leaves the SPA and
-    // comes back on /auth/action — a target living only in the query string is
-    // lost the moment the user verifies in the tab they signed in from.
+    // Hold the destination across the emailed link, which leaves the SPA and comes
+    // back on /auth/action.
     if (access === 'protected' && !store.isSignedIn) {
       storeRedirect(to.fullPath)
     }
