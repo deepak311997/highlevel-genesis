@@ -1,11 +1,13 @@
 @import 'tailwindcss';
 
-/* Self-hosted so there is no third-party request and no flash of fallback text.
-   Space Grotesk carries the interface; IBM Plex Mono carries anything the
-   machine produced — file paths, event names, IDs, timings, generated code. */
-@import '@fontsource-variable/space-grotesk';
-@import '@fontsource/ibm-plex-mono/400.css';
-@import '@fontsource/ibm-plex-mono/500.css';
+/* Self-hosted so there is no third-party request and no flash of fallback text
+   — `no-cdn.spec.ts` holds that line. Geist carries the interface; Geist Mono
+   carries anything the machine produced — file paths, event names, IDs,
+   timings, generated code. They are drawn as siblings, so a path in the file
+   tree and a sentence in the chat sit on the same skeleton. Both variable, so
+   the whole weight range costs two files. */
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
 
 /* vue-sonner ships its own stylesheet, and it is load-bearing: without this
    import the Toaster mounts and every test still passes, but nothing is
@@ -16,100 +18,115 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ============================================================================
-   Genesis tokens
-   Cobalt carries structure. Ember marks whatever is live — exactly one element
-   per view, the same rule the logo follows.
+   Genesis tokens — Instrument
+   A four-stop neutral scale and one blue, used as punctuation rather than
+   decoration: links, focus, the primary action, and nothing else. Hierarchy
+   comes from density and hairlines, not from colour or elevation, so the
+   shadows here are close to nothing on purpose.
    ========================================================================== */
 :root {
-  /* neutrals: biased toward cobalt, never a flat grey */
-  --background: hsl(220 30% 97%);
-  --foreground: hsl(226 30% 8%);
+  /* Four stops, biased a few degrees toward the blue so the greys read as
+     chosen rather than inherited. */
+  --background: hsl(240 20% 99%);
+  --foreground: hsl(228 8% 10%);
   --card: hsl(0 0% 100%);
-  --card-foreground: hsl(226 30% 8%);
+  --card-foreground: hsl(228 8% 10%);
   --raised: hsl(0 0% 100%);
   --popover: hsl(0 0% 100%);
-  --popover-foreground: hsl(226 30% 8%);
+  --popover-foreground: hsl(228 8% 10%);
 
+  /* Cobalt — the brand blue, unchanged. In this language it is punctuation:
+     one blue, and it appears only where something is a link, has focus, or is
+     the primary action on the view. */
   --primary: hsl(230 88% 56%);
   --primary-hi: hsl(230 92% 63%);
   --primary-lo: hsl(230 84% 49%);
   --primary-foreground: hsl(0 0% 100%);
 
-  --secondary: hsl(225 25% 95.5%);
-  --secondary-foreground: hsl(226 30% 12%);
-  --muted: hsl(225 25% 95.5%);
-  --muted-foreground: hsl(226 12% 44%);
+  --secondary: hsl(240 12% 96%);
+  --secondary-foreground: hsl(228 10% 14%);
+  --muted: hsl(240 12% 96%);
+  --muted-foreground: hsl(228 5% 39%);
 
-  /* live state only — never "success", never a decorative highlight */
-  --accent: hsl(18 100% 55%);
+  /* The accent is the primary. Instrument has one blue, not two — a second
+     hue for "live" is exactly the decoration this language removes. */
+  --accent: hsl(230 88% 56%);
   --accent-foreground: hsl(0 0% 100%);
 
-  /* semantic, deliberately separate from the accent */
-  --good: hsl(152 58% 34%);
-  --warn: hsl(38 92% 40%);
-  --destructive: hsl(348 74% 45%);
+  /* Semantic, and deliberately not the accent: a state the product reports is
+     not a control you can press. */
+  --good: hsl(160 84% 28%);
+  --warn: hsl(38 88% 34%);
+  --destructive: hsl(354 57% 49%);
   --destructive-foreground: hsl(0 0% 100%);
 
-  /* two-tone borders: dividers vs. things you can interact with */
-  --border: hsl(225 22% 88%);
-  --border-strong: hsl(225 20% 80%);
-  --input: hsl(225 20% 80%);
+  /* Two hairlines: one that divides, one that says "interactive". Both are the
+     main structural device here, which is why they are worth two tokens. */
+  --border: hsl(240 12% 93%);
+  --border-strong: hsl(240 10% 89%);
+  --input: hsl(240 10% 89%);
   --ring: hsl(230 88% 56%);
 
-  /* the editor ground stays dark in both themes */
-  --code-bg: hsl(226 32% 10%);
-  --code-fg: hsl(225 25% 87%);
+  /* The editor ground stays dark in both themes, as it has since Slice 7. */
+  --code-bg: hsl(228 12% 10%);
+  --code-fg: hsl(240 5% 87%);
 
-  /* depth is three steps, no more */
-  --sh-1: 0 1px 2px hsl(226 30% 8% / 0.06), 0 1px 1px hsl(226 30% 8% / 0.04);
-  --sh-2: 0 2px 4px hsl(226 30% 8% / 0.06), 0 4px 12px hsl(226 30% 8% / 0.07);
-  --sh-3: 0 8px 20px hsl(226 30% 8% / 0.12), 0 2px 6px hsl(226 30% 8% / 0.08);
-  /* inner top highlight — gives raised surfaces a light source */
-  --sh-hi: inset 0 1px 0 hsl(0 0% 100% / 0.16);
+  /* Shadows barely exist. Three steps are kept so the component API does not
+     change, but each is a fraction of what it was: depth is not the device. */
+  --sh-1: 0 1px 1px hsl(228 8% 10% / 0.03);
+  --sh-2: 0 1px 2px hsl(228 8% 10% / 0.05), 0 2px 6px hsl(228 8% 10% / 0.04);
+  --sh-3: 0 4px 16px hsl(228 8% 10% / 0.08), 0 1px 3px hsl(228 8% 10% / 0.05);
+  --sh-hi: inset 0 1px 0 hsl(0 0% 100% / 0.5);
 
-  --radius: 0.4375rem;
+  --radius: 0.375rem;
 }
 
-.dark {
-  --background: hsl(226 32% 6%);
-  --foreground: hsl(225 25% 93%);
-  --card: hsl(226 26% 9.5%);
-  --card-foreground: hsl(225 25% 93%);
-  --raised: hsl(226 24% 12%);
-  --popover: hsl(226 24% 12%);
-  --popover-foreground: hsl(225 25% 93%);
 
+.dark {
+  /* The same four stops, inverted and re-tuned rather than mirrored: near-black
+     rather than black, so a hairline still has something to sit against. */
+  --background: hsl(240 4% 4%);
+  --foreground: hsl(240 5% 93%);
+  --card: hsl(240 5% 6%);
+  --card-foreground: hsl(240 5% 93%);
+  --raised: hsl(240 5% 7%);
+  --popover: hsl(240 6% 9%);
+  --popover-foreground: hsl(240 5% 93%);
+
+  /* Cobalt at 56% is too dark to carry a control on this ground, so the dark
+     theme lifts it — same hue, more light. */
   --primary: hsl(230 100% 70%);
   --primary-hi: hsl(230 100% 76%);
   --primary-lo: hsl(230 92% 62%);
-  --primary-foreground: hsl(226 30% 8%);
+  --primary-foreground: hsl(228 30% 8%);
 
-  --secondary: hsl(226 24% 13.5%);
-  --secondary-foreground: hsl(225 25% 93%);
-  --muted: hsl(226 24% 13.5%);
-  --muted-foreground: hsl(226 14% 60%);
+  --secondary: hsl(240 5% 11%);
+  --secondary-foreground: hsl(240 5% 93%);
+  --muted: hsl(240 5% 11%);
+  --muted-foreground: hsl(228 6% 62%);
 
-  --accent: hsl(18 100% 63%);
-  --accent-foreground: hsl(226 30% 8%);
+  --accent: hsl(230 100% 70%);
+  --accent-foreground: hsl(228 30% 8%);
 
-  --good: hsl(152 55% 55%);
-  --warn: hsl(38 95% 62%);
-  --destructive: hsl(348 90% 68%);
-  --destructive-foreground: hsl(226 30% 8%);
+  --good: hsl(160 60% 50%);
+  --warn: hsl(38 82% 58%);
+  --destructive: hsl(354 85% 66%);
+  --destructive-foreground: hsl(228 30% 8%);
 
-  --border: hsl(226 20% 19%);
-  --border-strong: hsl(226 18% 27%);
-  --input: hsl(226 18% 27%);
+  --border: hsl(240 5% 12%);
+  --border-strong: hsl(240 6% 18%);
+  --input: hsl(240 6% 18%);
   --ring: hsl(230 100% 70%);
 
-  --code-bg: hsl(226 32% 7.5%);
-  --code-fg: hsl(225 25% 87%);
+  --code-bg: hsl(240 5% 5%);
+  --code-fg: hsl(240 5% 87%);
 
-  --sh-1: 0 1px 2px hsl(0 0% 0% / 0.4);
-  --sh-2: 0 2px 6px hsl(0 0% 0% / 0.45);
-  --sh-3: 0 10px 26px hsl(0 0% 0% / 0.55);
-  --sh-hi: inset 0 1px 0 hsl(0 0% 100% / 0.07);
+  --sh-1: 0 1px 1px hsl(0 0% 0% / 0.4);
+  --sh-2: 0 1px 2px hsl(0 0% 0% / 0.5);
+  --sh-3: 0 4px 16px hsl(0 0% 0% / 0.55);
+  --sh-hi: inset 0 1px 0 hsl(0 0% 100% / 0.04);
 }
+
 
 @theme inline {
   --color-background: var(--background);
@@ -154,8 +171,8 @@
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) + 4px);
 
-  --font-sans: 'Space Grotesk Variable', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  --font-sans: 'Geist Variable', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, Menlo, monospace;
 }
 
 @layer base {
@@ -180,11 +197,11 @@
     text-rendering: optimizeLegibility;
   }
 
-  /* Space Grotesk sets tight at display sizes; let it. */
+  /* Geist is drawn tight already; at display sizes it wants a touch more. */
   h1,
   h2,
   h3 {
-    letter-spacing: -0.02em;
+    letter-spacing: -0.025em;
   }
 
   /* Tailwind v3's Preflight set `cursor: pointer` on buttons; v4 removed it to

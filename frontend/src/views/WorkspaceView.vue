@@ -111,7 +111,7 @@ watch(
           real CRM data in the preview and an empty one.
         -->
         <Badge
-          :variant="workspace.project.locationId ? 'default' : 'secondary'"
+          :variant="workspace.project.locationId ? 'good' : 'secondary'"
           data-testid="workspace-connection"
         >
           {{ workspace.project.locationId ? 'HighLevel connected' : 'Not connected' }}
