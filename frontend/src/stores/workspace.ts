@@ -990,7 +990,19 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
        * Nothing was written, so nothing on screen is stale, and re-reading the
        * tabs would discard an unsaved edit for a change that did not happen.
        */
-      if (result.changed) await applyRestoredFiles(result.files, gen)
+      if (result.changed) {
+        await applyRestoredFiles(result.files, gen)
+        if (!current(gen)) return
+        /*
+         * The stored file set has changed — by more than any save ever does — so
+         * the preview is stale and says so. Only the hint moves (Slice 10, D12):
+         * `generationsApplied` is the *unasked* rebuild, and a rebuild re-runs
+         * the restored app's HighLevel calls against a 100-request/10-second
+         * account budget. A restore is a deliberate act whose result the user may
+         * want to read before spending that, so they decide when to spend it.
+         */
+        filesRevision.value += 1
+      }
     } catch (err) {
       if (!current(gen)) return
       // The batch is all-or-nothing, so a failure wrote nothing: the files, the

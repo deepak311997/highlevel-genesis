@@ -3377,3 +3377,74 @@ describe('restoreSnapshot', () => {
     expect(store.restoreError).toBeNull()
   })
 })
+
+/**
+ * What a restore owes the preview — found at ship time, when Slice 10 rebased
+ * onto a `main` that had already taken Slice 11.
+ *
+ * The two slices never touched the same lines: Slice 11 wrote `restoreSnapshot`,
+ * Slice 10 wrote the two counters, and the rebase produced one trivial conflict in
+ * the store's exported interface. The result was still wrong. A restore rewrites
+ * the **whole** stored file set — Slice 10's `filesRevision` counts exactly that,
+ * and moved for a one-file save while sitting still for a twenty-file rollback.
+ * The preview kept rendering the version the user had just replaced, with no hint
+ * that it was stale and no way to know except pressing Refresh on spec.
+ *
+ * `generationsApplied` deliberately does **not** move (Slice 10, D12). It is the
+ * unasked rebuild, and every rebuild re-runs the generated app's HighLevel calls
+ * against a 100-request/10-second account budget; a restore is a deliberate act
+ * whose result the user may want to read before spending that. The hint is the
+ * honest middle, and it is the same answer a save gets for the same reason.
+ */
+describe('restoreSnapshot — the preview’s signals', () => {
+  async function openedWithHistory(): Promise<ReturnType<typeof useWorkspaceStore>> {
+    fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE, ABOUT_FILE] }))
+    const store = useWorkspaceStore()
+    await store.open('proj-1')
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+    await store.loadSnapshots()
+    fetchMock.mockClear()
+    return store
+  }
+
+  it('moves filesRevision and not generationsApplied on a restore that changed the files', async () => {
+    const store = await openedWithHistory()
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE], changed: true }))
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+
+    await store.restoreSnapshot('snap-1')
+
+    expect(store.filesRevision).toBe(1)
+    expect(store.generationsApplied).toBe(0)
+  })
+
+  /*
+   * Slice 11's D10: `changed: false` is the project already *being* that version.
+   * Nothing was written, so the document on screen is the document the files
+   * describe — offering a Refresh would spend a rebuild to render it again.
+   */
+  it('moves neither counter when the restore changed nothing', async () => {
+    const store = await openedWithHistory()
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE, ABOUT_FILE], changed: false }))
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+
+    await store.restoreSnapshot('snap-1')
+
+    expect(store.filesRevision).toBe(0)
+    expect(store.generationsApplied).toBe(0)
+  })
+
+  /* A restore that failed wrote nothing — the batch is all-or-nothing. */
+  it('moves neither counter when the restore fails', async () => {
+    const store = await openedWithHistory()
+    fetchMock.mockResolvedValueOnce(response({ error: 'Could not restore that version.' }, 500))
+
+    await store.restoreSnapshot('snap-1')
+
+    expect(store.restoreError).not.toBeNull()
+    expect(store.filesRevision).toBe(0)
+    expect(store.generationsApplied).toBe(0)
+  })
+})
