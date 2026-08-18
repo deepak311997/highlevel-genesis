@@ -179,10 +179,7 @@ describe('PLACEHOLDER_KEY', () => {
    * whole check exists to prevent.
    */
   it('is the value functions/.secret.local.example ships', () => {
-    const example = readFileSync(
-      resolve(__dirname, '..', '..', '.secret.local.example'),
-      'utf8',
-    )
+    const example = readFileSync(resolve(__dirname, '..', '..', '.secret.local.example'), 'utf8')
     const assigned = /^ANTHROPIC_API_KEY=(.*)$/m.exec(example)?.[1]?.trim()
 
     expect(assigned).toBe(PLACEHOLDER_KEY)

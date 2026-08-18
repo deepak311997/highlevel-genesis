@@ -8,47 +8,26 @@ import { HL_KNOWLEDGE } from './hlKnowledge'
  * The system prompt — the stable prefix, whole: who the model is, how it writes
  * files, and how the app it writes talks to HighLevel.
  *
- * ## Three blocks, in the order they became true
+ * Three blocks, added only once the thing each describes existed: an endpoint list
+ * written before the allowlist would have been wrong by the time it shipped, and
+ * stability is the requirement the breakpoint imposes.
  *
- * Identity and response style (Slice 5), the file format (Slice 6), and the
- * HighLevel cheat-sheet (Slice 9, F3.2). Each was added only once the thing it
- * describes existed — an endpoint list written in Slice 5 would have been wrong
- * by Slice 8's allowlist, and a file-format instruction would have described a
- * parser that did not exist. Stability is the requirement the breakpoint imposes,
- * and the surest way to be stable is to say only what is already true.
+ * The cheat-sheet is one block and it is **last**, which is what keeps "the
+ * breakpoint is the last element of the stable prefix" a one-line assertion — and
+ * it is the property `params.ts` depends on when it appends the volatile
+ * project-state block after this array.
  *
- * The cheat-sheet is one block rather than several, and it is last. That is what
- * keeps "the breakpoint is the last element of the stable prefix" a one-line
- * assertion, and it is the property `params.ts` depends on when it appends the
- * volatile project-state block *after* this array (D11).
+ * **The `cache_control` breakpoint is real from here.** `claude-opus-5` caches
+ * nothing below a 512-token prefix and nothing errors when a prefix is too short,
+ * so an earlier, shorter prompt made it a silent no-op. `prompt.spec.ts` asserts
+ * the prefix estimates to at least 1,024 tokens — twice the minimum, because the
+ * estimate is four characters per token rather than the tokenizer. The
+ * confirmation is a non-zero cache read on the second generation of a session,
+ * which no automated test here can observe.
  *
- * ## The `cache_control` breakpoint, which is real from here (D18)
- *
- * Slice 5 declared the breakpoint and recorded it as a **silent no-op**:
- * `claude-opus-5` caches nothing below a 512-token prefix, the two-block prompt
- * was far shorter, and nothing errors when a prefix is too short —
- * `cache_creation_input_tokens` and `cache_read_input_tokens` simply both read
- * `0`. That note was a promissory one, and this is the slice it comes due in.
- *
- * What changed: the cheat-sheet is roughly a thousand tokens of allowlist,
- * parameter notes and response shapes, so the prefix now clears the minimum, and
- * the breakpoint moved from the file-format block down onto it — a breakpoint in
- * the middle would cache a prefix shorter than the stable one, which is a subtler
- * bug than no breakpoint at all. `prompt.spec.ts` asserts the prefix estimates to
- * at least **1,024** tokens: twice the minimum, because `estimateTokens` is four
- * characters per token rather than the tokenizer, and a margin is what makes an
- * estimate safe to build on.
- *
- * The estimate is not the confirmation. The confirmation is
- * `cacheReadInputTokens > 0` on the second generation of a session, which the
- * `generation.complete` log line already carries and which the definition of done
- * checks by hand against real credentials — no automated test in this repo can
- * observe it.
- *
- * A constant, not a function: anything computed per call — a date, a project
- * name, an interpolated id — makes every request a cache miss now that caching is
- * real, and the only symptom is the bill. `prompt.spec.ts` asserts the absence
- * with a pattern rather than trusting this paragraph.
+ * **A constant, not a function**: anything computed per call — a date, a name, an
+ * interpolated id — makes every request a cache miss, and the only symptom is the
+ * bill. The spec asserts the absence with a pattern rather than trusting this.
  */
 export const SYSTEM_PROMPT: TextBlockParam[] = [
   {
@@ -127,13 +106,10 @@ export const SYSTEM_PROMPT: TextBlockParam[] = [
   },
   {
     type: 'text',
-    // Rendered from `HL_ROUTES` and `proxyError.ts` at module load, so the
-    // allowlist has one source and this is a view of it (D2). Included whole
-    // rather than assembled here: what it says is `hlKnowledge.ts`'s business,
-    // and what this file decides is where it sits and what is pinned to it.
+    // Rendered from the allowlist at module load, so the table has one source and
+    // this is a view of it.
     text: HL_KNOWLEDGE,
-    // The breakpoint, on the last element of the stable prefix — and from this
-    // slice a real cache read rather than a declared one (D18).
+    // The breakpoint, on the last element of the stable prefix.
     cache_control: { type: 'ephemeral' },
   },
 ]

@@ -1,39 +1,26 @@
 import { z } from 'zod'
 
 /**
- * Boundary schemas for the auth endpoints.
+ * Boundary schemas for the auth endpoints, doing two security-relevant jobs.
  *
- * Two jobs, both security-relevant beyond ordinary input hygiene:
+ * **Validate before touching Firebase Auth**: a call that only happens for some
+ * inputs is an oracle, because "rejected instantly" versus "rejected after a round
+ * trip" tells an attacker whether the address exists.
  *
- * 1. **Validate before touching Firebase Auth.** A weak password has to be
- *    rejected without an Admin SDK call, because a call that only happens for
- *    some inputs is an oracle: the difference between "rejected instantly" and
- *    "rejected after a round trip" tells an attacker whether the address exists.
- *
- * 2. **Normalise the address.** `Alice@X` and `alice@x` are the same account to
- *    Firebase, so treating them as different here would let one user hold two
- *    registrations and would make the throttle key in ./throttle trivially
- *    evadable by changing case.
+ * **Normalise the address**, since `Alice@X` and `alice@x` are one account to
+ * Firebase — treating them as different would let one user hold two registrations
+ * and make the throttle key evadable by changing case.
  */
 
 /**
- * Password policy.
+ * Password policy, mirroring the Identity Platform policy configured on the
+ * project — and it has to: the console policy applies to `confirmPasswordReset`,
+ * which runs client-side, so a password accepted here but refused there would let
+ * someone sign up with a password they could never set again.
  *
- * These rules mirror the Identity Platform policy configured on the Firebase
- * project, and they have to: the console policy applies to
- * `confirmPasswordReset`, which runs client-side, so a password accepted here
- * but refused there would let someone sign up with a password they could never
- * set again. The two must agree, and the console is the one we cannot enforce
- * from this repo.
- *
- * This reverses discovery D23, which chose NIST SP 800-63B — length only, no
- * composition rules. That guidance holds generally (composition rules push
- * people toward `P@ssw0rd1`, and length is what actually resists guessing), but
- * the project owner chose the stricter-looking policy and the code follows the
- * console rather than diverging from it.
- *
- * The maximum is 50 because the console caps there, not because it is a good
- * limit — it is below the length at which passphrases become interesting.
+ * This reverses the NIST-style length-only guidance the discovery preferred; the
+ * project owner chose the stricter console policy, and the code follows it rather
+ * than diverging. The maximum is 50 because the console caps there.
  */
 export const PASSWORD_MIN = 8
 export const PASSWORD_MAX = 50
@@ -46,8 +33,8 @@ export const PASSWORD_POLICY_MESSAGE =
   'with an uppercase letter, a lowercase letter, a number and a symbol.'
 
 /**
- * Trimmed and lower-cased *before* validation, so the value that reaches the
- * Admin SDK is the same value the throttle hashed.
+ * Trimmed and lower-cased *before* validation, so the value that reaches the Admin
+ * SDK is the same value the throttle hashed.
  */
 const email = z
   .string()
@@ -56,11 +43,9 @@ const email = z
   .pipe(z.email({ message: 'Enter a valid email address.' }))
 
 /**
- * One message for every way the policy can be missed.
- *
- * Deliberately not "you are missing a digit": itemised feedback tells anyone
- * probing the endpoint exactly which rule a candidate password already
- * satisfies, and it is of no more use to a legitimate user than the full rule.
+ * One message for every way the policy can be missed. Itemised feedback would tell
+ * anyone probing the endpoint which rules a candidate password already satisfies,
+ * and is of no more use to a legitimate user than the full rule.
  */
 const password = z
   .string()
