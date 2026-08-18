@@ -50,6 +50,7 @@ const EXPECTED = [
   'tailwind-merge',
   'vue',
   'vue-router',
+  'vue-sonner',
 ]
 
 describe('the frontend’s dependencies', () => {
