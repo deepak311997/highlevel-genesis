@@ -425,6 +425,7 @@ describe('PreviewPanel — the banners', () => {
       expect(link.exists()).toBe(true)
       expect(link.props('to')).toBe('/dashboard')
       expect(link.text()).toContain('Reconnect HighLevel')
+      expect(link.attributes('data-testid')).toBe('preview-reconnect')
     },
   )
 
