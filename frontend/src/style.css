@@ -7,6 +7,12 @@
 @import '@fontsource/ibm-plex-mono/400.css';
 @import '@fontsource/ibm-plex-mono/500.css';
 
+/* vue-sonner ships its own stylesheet, and it is load-bearing: without this
+   import the Toaster mounts and every test still passes, but nothing is
+   visible on screen (Slice 12, R1). Kept after `@import 'tailwindcss'`, which
+   must stay first. */
+@import 'vue-sonner/style.css';
+
 @custom-variant dark (&:is(.dark *));
 
 /* ============================================================================
