@@ -193,7 +193,7 @@ describe('ChatPanel', () => {
 
     const wrapper = mount(ChatPanel, MOUNT)
 
-    expect(wrapper.find('[data-testid="message-time"]').text()).toBe('09:05')
+    expect(wrapper.find('[data-testid="message-time"]').text()).toBe('14:35')
   })
 
   /*

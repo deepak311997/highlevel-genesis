@@ -4,15 +4,18 @@
  * **Locale and time zone are pinned deliberately, in both formatters.** Left to
  * the environment, a rendered value depends on whichever machine the page — or the
  * test — happens to run on: two users see different text for the same instant, and
- * an assertion becomes machine-dependent. Each formatter is built once at module
- * scope, since constructing an `Intl.DateTimeFormat` is the expensive part and
- * neither of these ever varies.
+ * an assertion becomes machine-dependent. The zone is IST, the team's own, so a
+ * timestamp reads as the clock everyone here works by. Each formatter is built once
+ * at module scope, since constructing an `Intl.DateTimeFormat` is the expensive
+ * part and neither of these ever varies.
  */
+const IST = 'Asia/Kolkata'
+
 const DAY = new Intl.DateTimeFormat('en-GB', {
   day: 'numeric',
   month: 'short',
   year: 'numeric',
-  timeZone: 'UTC',
+  timeZone: IST,
 })
 
 /** `HH:mm`, 24-hour and zero-padded — a chat bubble's timestamp (D29). */
@@ -20,7 +23,7 @@ const TIME = new Intl.DateTimeFormat('en-GB', {
   hour: '2-digit',
   minute: '2-digit',
   hour12: false,
-  timeZone: 'UTC',
+  timeZone: IST,
 })
 
 /**

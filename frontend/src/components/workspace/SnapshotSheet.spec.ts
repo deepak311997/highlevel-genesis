@@ -268,7 +268,7 @@ describe('the four states', () => {
     expect(first).toContain('Before restore')
     expect(first).toContain('3 files · 11 KB')
     expect(first).toContain('18 Aug 2026')
-    expect(first).toContain('14:05')
+    expect(first).toContain('19:35')
 
     const second = row('snap-1').text()
     expect(second).toContain('Version 1')
