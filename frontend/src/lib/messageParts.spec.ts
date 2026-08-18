@@ -83,3 +83,39 @@ describe('splitMessageContent', () => {
     ])
   })
 })
+
+describe('the edit and error markers', () => {
+  it('reads an edit marker as its own kind', () => {
+    expect(splitMessageContent('[edit: styles.css]')).toEqual([
+      { kind: 'edit', path: 'styles.css' },
+    ])
+  })
+
+  it('reads an error marker as text rather than a path', () => {
+    expect(splitMessageContent('[error: it did not apply]')).toEqual([
+      { kind: 'error', text: 'it did not apply' },
+    ])
+  })
+
+  it('keeps the three apart in one message', () => {
+    const parts = splitMessageContent(
+      'Done.\n[file: index.html]\n[edit: styles.css]\n[error: nope]\n',
+    )
+    expect(parts).toEqual([
+      { kind: 'text', text: 'Done.' },
+      { kind: 'file', path: 'index.html' },
+      { kind: 'edit', path: 'styles.css' },
+      { kind: 'error', text: 'nope' },
+    ])
+  })
+
+  it('reads an unknown label as prose', () => {
+    expect(splitMessageContent('[delete: app.js]')).toEqual([
+      { kind: 'text', text: '[delete: app.js]' },
+    ])
+  })
+
+  it('reads a marker carrying a bracket as prose, so nothing escapes its line', () => {
+    expect(splitMessageContent('[error: a ] b]')).toEqual([{ kind: 'text', text: '[error: a ] b]' }])
+  })
+})

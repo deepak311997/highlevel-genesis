@@ -443,11 +443,60 @@ describe('the file events', () => {
     )
 
     expect(await collect()).toEqual([
-      { type: 'file_start', path: 'index.html' },
+      // No `mode` on the wire reads as `rewrite`: claiming a file is new when it
+      // may not be is the worse of the two guesses.
+      { type: 'file_start', path: 'index.html', mode: 'rewrite' },
       { type: 'file_chunk', path: 'index.html', text: '<h1>x</h1>\n' },
       { type: 'file_end', path: 'index.html' },
       { type: 'done', message: MESSAGE, files: ['index.html'], fileError: null },
     ])
+  })
+
+  it('carries the create and rewrite modes through', async () => {
+    fetchMock.mockResolvedValue(
+      streaming([
+        frame('file_start', { path: 'a.js', mode: 'create' }),
+        frame('file_start', { path: 'b.js', mode: 'rewrite' }),
+        frame('done', { message: MESSAGE, files: [], fileError: null }),
+      ]),
+    )
+
+    expect((await collect()).slice(0, 2)).toEqual([
+      { type: 'file_start', path: 'a.js', mode: 'create' },
+      { type: 'file_start', path: 'b.js', mode: 'rewrite' },
+    ])
+  })
+
+  it('yields the three located-change events, and drops a malformed range', async () => {
+    fetchMock.mockResolvedValue(
+      streaming([
+        frame('edit_start', { path: 'a.css', from: 4, to: 9 }),
+        frame('edit_chunk', { path: 'a.css', text: '.x { }\n' }),
+        frame('edit_end', { path: 'a.css' }),
+        frame('edit_start', { path: 'b.css', from: 0, to: 2 }),
+        frame('edit_start', { path: 'c.css', from: 5, to: 2 }),
+        frame('edit_start', { path: 'd.css', from: 1.5, to: 2 }),
+        frame('done', { message: MESSAGE, files: [], fileError: null }),
+      ]),
+    )
+
+    expect(await collect()).toEqual([
+      { type: 'edit_start', path: 'a.css', from: 4, to: 9 },
+      { type: 'edit_chunk', path: 'a.css', text: '.x { }\n' },
+      { type: 'edit_end', path: 'a.css' },
+      { type: 'done', message: MESSAGE, files: [], fileError: null },
+    ])
+  })
+
+  it('accepts an insertion, where the range is empty', async () => {
+    fetchMock.mockResolvedValue(
+      streaming([
+        frame('edit_start', { path: 'a.css', from: 9, to: 9 }),
+        frame('done', { message: MESSAGE, files: [], fileError: null }),
+      ]),
+    )
+
+    expect((await collect())[0]).toEqual({ type: 'edit_start', path: 'a.css', from: 9, to: 9 })
   })
 
   it('carries files and fileError off a done frame', async () => {

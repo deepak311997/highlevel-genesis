@@ -111,8 +111,8 @@ describe('FileTree', () => {
     store.filesLoaded = true
     store.files = [meta('styles.css'), meta('index.html')]
     store.fileTree = [
-      { path: 'index.html', writing: false },
-      { path: 'styles.css', writing: false },
+      { path: 'index.html', state: 'idle' as const },
+      { path: 'styles.css', state: 'idle' as const },
     ]
     const wrapper = mount(FileTree)
 
@@ -125,8 +125,8 @@ describe('FileTree', () => {
     store.filesLoaded = true
     store.selectedPath = 'styles.css'
     store.fileTree = [
-      { path: 'index.html', writing: false },
-      { path: 'styles.css', writing: false },
+      { path: 'index.html', state: 'idle' as const },
+      { path: 'styles.css', state: 'idle' as const },
     ]
     const wrapper = mount(FileTree)
 
@@ -136,7 +136,7 @@ describe('FileTree', () => {
 
   it('selects a file when its row is clicked', async () => {
     store.filesLoaded = true
-    store.fileTree = [{ path: 'app.js', writing: false }]
+    store.fileTree = [{ path: 'app.js', state: 'idle' as const }]
     const wrapper = mount(FileTree)
 
     await wrapper.find('[data-testid="file-row"]').trigger('click')
@@ -144,27 +144,32 @@ describe('FileTree', () => {
     expect(store.selectFile).toHaveBeenCalledWith('app.js')
   })
 
-  /** The *writing* marker is the whole of "the tree fills in as the reply streams". */
-  it('marks a row the generation is still writing', () => {
+  /** The marker is the whole of "the tree fills in as the reply streams". */
+  it.each([
+    ['creating', 'Creating'],
+    ['rewriting', 'Rewriting'],
+    ['editing', 'Editing'],
+  ] as const)('marks a %s row with its own word', (state, label) => {
     store.filesLoaded = true
     store.fileTree = [
-      { path: 'index.html', writing: false },
-      { path: 'app.js', writing: true },
+      { path: 'index.html', state: 'idle' as const },
+      { path: 'app.js', state },
     ]
     const wrapper = mount(FileTree)
 
     const rows = wrapper.findAll('[data-testid="file-row"]')
-    expect(rows.map((row) => row.attributes('data-writing'))).toEqual(['false', 'true'])
-    expect(rows[1]?.text()).toContain('Writing')
+    expect(rows.map((row) => row.attributes('data-state'))).toEqual(['idle', state])
+    expect(rows[1]?.text()).toContain(label)
+    expect(rows[0]?.text()).not.toContain('…')
   })
 
   /** The sections, which are the only hierarchy a flat namespace has. */
   it('renders a heading per kind, with the rows beneath it', () => {
     store.filesLoaded = true
     store.fileTree = [
-      { path: 'index.html', writing: false },
-      { path: 'styles.css', writing: false },
-      { path: 'app.js', writing: false },
+      { path: 'index.html', state: 'idle' as const },
+      { path: 'styles.css', state: 'idle' as const },
+      { path: 'app.js', state: 'idle' as const },
     ]
     const wrapper = mount(FileTree)
 
@@ -182,8 +187,8 @@ describe('FileTree', () => {
   it('folds a section from its heading', async () => {
     store.filesLoaded = true
     store.fileTree = [
-      { path: 'index.html', writing: false },
-      { path: 'app.js', writing: false },
+      { path: 'index.html', state: 'idle' as const },
+      { path: 'app.js', state: 'idle' as const },
     ]
     const wrapper = mount(FileTree)
 
@@ -204,8 +209,8 @@ describe('FileTree', () => {
   it('gives each row its file icon', () => {
     store.filesLoaded = true
     store.fileTree = [
-      { path: 'index.html', writing: false },
-      { path: 'styles.css', writing: false },
+      { path: 'index.html', state: 'idle' as const },
+      { path: 'styles.css', state: 'idle' as const },
     ]
     const wrapper = mount(FileTree)
 
@@ -223,7 +228,7 @@ describe('FileTree', () => {
     const wrapper = mount(FileTree)
     expect(wrapper.find('[data-testid="file-tree-empty"]').exists()).toBe(true)
 
-    store.fileTree = [{ path: 'index.html', writing: true }]
+    store.fileTree = [{ path: 'index.html', state: 'editing' as const }]
     await wrapper.vm.$nextTick()
 
     expect(wrapper.find('[data-testid="file-tree-empty"]').exists()).toBe(false)

@@ -1864,20 +1864,22 @@ describe('the stream — files', () => {
     fetchMock.mockResolvedValueOnce(stream.response)
     const running = store.retryGeneration()
 
-    stream.push(frame('file_start', { path: 'styles.css' }))
-    stream.push(frame('file_start', { path: 'app.js' }))
+    stream.push(frame('file_start', { path: 'styles.css', mode: 'create' }))
+    stream.push(frame('file_start', { path: 'app.js', mode: 'rewrite' }))
     stream.push(frame('file_chunk', { path: 'styles.css', text: 'body{}' }))
     stream.push(frame('file_chunk', { path: 'app.js', text: 'const a' }))
     stream.push(frame('file_chunk', { path: 'app.js', text: ' = 1' }))
 
     await vi.waitFor(() => {
-      expect(store.streamingFiles['app.js']).toBe('const a = 1')
+      expect(store.streamingContent('app.js')).toBe('const a = 1')
     })
-    expect(store.streamingFiles['styles.css']).toBe('body{}')
+    expect(store.streamingContent('styles.css')).toBe('body{}')
     expect(store.fileTree).toEqual([
-      { path: 'index.html', writing: false },
-      { path: 'app.js', writing: true },
-      { path: 'styles.css', writing: true },
+      { path: 'index.html', state: 'idle' },
+      // `app.js` is already stored, so the reply is replacing it; `styles.css` is
+      // new to the project, so it is appearing.
+      { path: 'app.js', state: 'rewriting' },
+      { path: 'styles.css', state: 'creating' },
     ])
 
     stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }))
@@ -1921,7 +1923,7 @@ describe('the stream — files', () => {
     stream.push(frame('file_start', { path: 'app.js' }))
     stream.push(frame('file_start', { path: 'styles.css' }))
     await vi.waitFor(() => {
-      expect(store.streamingFiles['styles.css']).toBe('')
+      expect(store.streamingContent('styles.css')).toBe('')
     })
 
     expect(store.openTabs).toEqual(['index.html'])
@@ -1969,7 +1971,7 @@ describe('the stream — files', () => {
     stream.push(frame('file_start', { path: 'app.js' }))
     stream.push(frame('file_chunk', { path: 'app.js', text: 'x' }))
     await vi.waitFor(() => {
-      expect(store.streamingFiles['app.js']).toBe('x')
+      expect(store.streamingContent('app.js')).toBe('x')
     })
 
     expect(store.selectedPath).toBe('index.html')
@@ -2023,7 +2025,7 @@ describe('the stream — files', () => {
     expect(store.files).toEqual([INDEX_FILE, { ...APP_FILE, size: 20 }])
     expect(store.editorContent).toBe('// repaired\n')
     expect(store.fileDirty).toBe(false)
-    expect(store.streamingFiles).toEqual({})
+    expect(store.streamingStates).toEqual({})
   })
 
   /*
@@ -2046,7 +2048,7 @@ describe('the stream — files', () => {
     await running
 
     expect(requests()).toEqual(['POST /generate'])
-    expect(store.streamingFiles).toEqual({})
+    expect(store.streamingStates).toEqual({})
     expect(store.editorContent).toBe('old')
   })
 
@@ -2357,35 +2359,28 @@ describe('the stream — files', () => {
   })
 
   /** AC-42. */
-  it('records a fileError and clears it on the next generation', async () => {
+  /**
+   * The refusal is not a store field any more: it arrives inside the message the
+   * server persisted, as an `[error: …]` marker, so it survives a reload and
+   * reaches the model on the next turn. `MessageBody` renders it in the bubble.
+   */
+  it('carries a refused turn’s reason in the message rather than beside it', async () => {
     const store = await openedWithFiles()
+    const refused = {
+      ...ASSISTANT_MESSAGE,
+      content: 'Here you go.\n[error: Genesis could not apply the change.]\n',
+    }
     fetchMock.mockResolvedValueOnce(
       cannedStream(
         frame('user', { message: USER_MESSAGE }),
-        frame('done', {
-          message: ASSISTANT_MESSAGE,
-          files: [],
-          fileError: 'That reply left “app.js” unfinished, so nothing was saved.',
-        }),
+        frame('done', { message: refused, files: [], fileError: 'ignored by the store now' }),
       ),
     )
+
     await store.retryGeneration()
-    expect(store.generateFileError).toBe(
-      'That reply left “app.js” unfinished, so nothing was saved.',
-    )
 
-    const stream = pushableStream()
-    fetchMock.mockResolvedValueOnce(stream.response)
-    const running = store.retryGeneration()
-    await vi.waitFor(() => {
-      expect(store.generating).toBe(true)
-    })
-
-    expect(store.generateFileError).toBeNull()
-
-    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }))
-    stream.close()
-    await running
+    expect(store.messages.at(-1)?.content).toContain('[error: Genesis could not apply the change.]')
+    expect(store.generateError).toBeNull()
   })
 
   /**
@@ -2438,7 +2433,7 @@ describe('the stream — files', () => {
 
     await store.retryGeneration()
 
-    expect(store.streamingFiles).toEqual({})
+    expect(store.streamingStates).toEqual({})
     expect(store.files).toEqual([INDEX_FILE, APP_FILE])
     expect(store.generateError).toBe('The reply was interrupted.')
   })
@@ -2515,15 +2510,13 @@ describe('the stream — files', () => {
       ),
     )
     await store.retryGeneration()
-    expect(store.generateFileError).not.toBeNull()
 
     store.reset()
 
-    expect(store.streamingFiles).toEqual({})
+    expect(store.streamingStates).toEqual({})
     expect(store.fileTree).toEqual([])
     expect(store.editorContent).toBe('')
     expect(store.fileReplaced).toBe(false)
-    expect(store.generateFileError).toBeNull()
   })
 
   it('returns them to their initial value when another project is opened', async () => {
@@ -2545,7 +2538,6 @@ describe('the stream — files', () => {
     fetchMock.mockResolvedValueOnce(response({ files: [] }))
     await store.open('proj-2')
 
-    expect(store.generateFileError).toBeNull()
     expect(store.fileTree).toEqual([])
   })
 
@@ -2578,7 +2570,7 @@ describe('the stream — files', () => {
 
     expect(requests()).toEqual([])
     expect(store.files).toEqual([])
-    expect(store.streamingFiles).toEqual({})
+    expect(store.streamingStates).toEqual({})
   })
 
   /** The rebuild signal moves **after** the refetch, never before. */

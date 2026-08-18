@@ -57,43 +57,59 @@ describe('compareFilePaths', () => {
 describe('mergeFileTree', () => {
   /** The union of what is stored and what is streaming, streaming ones marked. */
   it('returns the union, in the comparator’s order', () => {
-    const rows = mergeFileTree([meta('styles.css'), meta('index.html')], ['app.js'])
+    const rows = mergeFileTree([meta('styles.css'), meta('index.html')], { 'app.js': 'creating' })
 
     expect(rows.map((row) => row.path)).toEqual(['index.html', 'app.js', 'styles.css'])
   })
 
   it('marks the streaming paths and no others', () => {
-    const rows = mergeFileTree([meta('index.html')], ['app.js'])
+    const rows = mergeFileTree([meta('index.html')], { 'app.js': 'creating' })
 
     expect(rows).toEqual<FileRow[]>([
-      { path: 'index.html', writing: false },
-      { path: 'app.js', writing: true },
+      { path: 'index.html', state: 'idle' },
+      { path: 'app.js', state: 'creating' },
     ])
   })
 
   it('shows a path that is both stored and streaming exactly once, marked', () => {
-    const rows = mergeFileTree([meta('index.html'), meta('app.js')], ['index.html'])
+    const rows = mergeFileTree([meta('index.html'), meta('app.js')], { 'index.html': 'rewriting' })
 
     expect(rows).toEqual<FileRow[]>([
-      { path: 'index.html', writing: true },
-      { path: 'app.js', writing: false },
+      { path: 'index.html', state: 'rewriting' },
+      { path: 'app.js', state: 'idle' },
+    ])
+  })
+
+  it('carries each of the three streaming states through', () => {
+    const rows = mergeFileTree([], {
+      'index.html': 'creating',
+      'app.js': 'rewriting',
+      'styles.css': 'editing',
+    })
+
+    expect(rows.map((row) => [row.path, row.state])).toEqual([
+      ['index.html', 'creating'],
+      ['app.js', 'rewriting'],
+      ['styles.css', 'editing'],
     ])
   })
 
   it('handles both sides being empty', () => {
-    expect(mergeFileTree([], [])).toEqual([])
+    expect(mergeFileTree([], {})).toEqual([])
   })
 
   it('handles a first generation, where nothing is stored yet', () => {
-    expect(mergeFileTree([], ['index.html', 'app.js'])).toEqual<FileRow[]>([
-      { path: 'index.html', writing: true },
-      { path: 'app.js', writing: true },
+    expect(
+      mergeFileTree([], { 'index.html': 'creating', 'app.js': 'creating' }),
+    ).toEqual<FileRow[]>([
+      { path: 'index.html', state: 'creating' },
+      { path: 'app.js', state: 'creating' },
     ])
   })
 
-  /* A path streamed twice in one turn is still one row. */
-  it('deduplicates repeated streaming paths', () => {
-    expect(mergeFileTree([], ['app.js', 'app.js'])).toHaveLength(1)
+  /* A path changed twice in one turn is still one row. */
+  it('shows a path changed more than once as one row', () => {
+    expect(mergeFileTree([], { 'app.js': 'editing' })).toHaveLength(1)
   })
 })
 
@@ -171,7 +187,7 @@ describe('fileKind', () => {
 })
 
 describe('groupFileTree', () => {
-  const row = (path: string): FileRow => ({ path, writing: false })
+  const row = (path: string): FileRow => ({ path, state: 'idle' })
 
   /** The groups come out in a fixed order and the rows keep the tree's. */
   it('groups by kind in a fixed order, preserving the row order inside each', () => {
@@ -205,9 +221,9 @@ describe('groupFileTree', () => {
 
   /* The marker has to survive the grouping, or a streaming file loses the one
      thing that says its bytes are not stored yet. */
-  it('carries the writing marker through untouched', () => {
-    const groups = groupFileTree([{ path: 'app.js', writing: true }])
+  it('carries the streaming state through untouched', () => {
+    const groups = groupFileTree([{ path: 'app.js', state: 'editing' }])
 
-    expect(groups[0]?.rows[0]).toEqual({ path: 'app.js', writing: true })
+    expect(groups[0]?.rows[0]).toEqual({ path: 'app.js', state: 'editing' })
   })
 })

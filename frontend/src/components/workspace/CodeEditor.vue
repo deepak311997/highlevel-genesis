@@ -33,6 +33,8 @@ import { useWorkspaceStore } from '@/stores/workspace'
  * `lib/editorContent.ts`'s; what happens here is turning its answer into a range.
  * `setValue` would snap the viewport to line 1 on every chunk, reset the undo
  * stack, and re-tokenize the whole document — and would pass every test below L5.
+ * A full-range replace is the same mistake one step smaller, which is why a
+ * mid-file change arrives here as a splice over the range that actually moved.
  *
  * **3. `applying` is load-bearing, not defensive.** The wrapper emits
  * `update:value` on *every* content change including ours, and its own comparison
@@ -173,7 +175,27 @@ function syncModel(): void {
       // The view follows the tail — the whole of "tokens appear live".
       instance.revealLine(model.getLineCount())
     } else {
-      model.applyEdits([{ range: model.getFullModelRange(), text: edit.text }])
+      /*
+       * The minimal changed range, not the whole document: a located change
+       * touches its own lines, so the ones above it keep their screen position and
+       * only what changed is re-tokenized.
+       */
+      const start = model.getPositionAt(edit.offset)
+      const end = model.getPositionAt(edit.offset + edit.length)
+      model.applyEdits([
+        {
+          range: {
+            startLineNumber: start.lineNumber,
+            startColumn: start.column,
+            endLineNumber: end.lineNumber,
+            endColumn: end.column,
+          },
+          text: edit.text,
+        },
+      ])
+      // The view follows the change rather than the tail, and only if it is off
+      // screen — a reveal on every chunk would fight a user who scrolled away.
+      instance.revealLineInCenterIfOutsideViewport(start.lineNumber)
     }
   } finally {
     applying = false

@@ -46,11 +46,10 @@ vi.mock('@/lib/monacoSetup', () => ({
 /**
  * A model that behaves like a document under `applyEdits`, and records what was done to it.
  *
- * It understands the only two edits this component produces: a zero-width range at the end
- * (append) and the full model range (replace). Modelling them rather than just recording them is
- * what makes a *sequence* of appends meaningful — with a static `getValue`, the second chunk's
- * edit would be computed from the first chunk's document and the test would pass over a broken
- * accumulator.
+ * It understands the two edits this component produces: a zero-width range at the end (append)
+ * and an arbitrary range (splice). Modelling them rather than just recording them is what makes a
+ * *sequence* of edits meaningful — with a static `getValue`, the second chunk's edit would be
+ * computed from the first chunk's document and the test would pass over a broken accumulator.
  */
 function fakeModel(value: string) {
   const model = {
@@ -82,16 +81,35 @@ function fakeModel(value: string) {
       endLineNumber: model.getLineCount(),
       endColumn: model.getLineMaxColumn(model.getLineCount()),
     }),
+    /** Monaco's own mapping, modelled: an offset is a line and a column. */
+    getPositionAt: (offset: number) => {
+      const before = model.value.slice(0, offset).split('\n')
+      return {
+        lineNumber: before.length,
+        column: (before[before.length - 1] ?? '').length + 1,
+      }
+    },
+    /** The inverse, which is what makes the fake apply an arbitrary range. */
+    offsetAt: (position: { lineNumber: number; column: number }) => {
+      const lines = model.value.split('\n')
+      let offset = 0
+      for (let line = 0; line < position.lineNumber - 1; line += 1) {
+        offset += (lines[line] ?? '').length + 1
+      }
+      return offset + position.column - 1
+    },
     applyEdits: vi.fn((edits: FakeEdit[]) => {
       for (const edit of edits) {
         model.edits.push(edit)
-        const full = model.getFullModelRange()
-        const isFull =
-          edit.range.startLineNumber === full.startLineNumber &&
-          edit.range.startColumn === full.startColumn &&
-          edit.range.endLineNumber === full.endLineNumber &&
-          edit.range.endColumn === full.endColumn
-        model.value = isFull ? edit.text : model.value + edit.text
+        const start = model.offsetAt({
+          lineNumber: edit.range.startLineNumber,
+          column: edit.range.startColumn,
+        })
+        const end = model.offsetAt({
+          lineNumber: edit.range.endLineNumber,
+          column: edit.range.endColumn,
+        })
+        model.value = model.value.slice(0, start) + edit.text + model.value.slice(end)
       }
       model.onChange?.()
     }),
@@ -127,6 +145,7 @@ function fakeEditor(initial: FakeModel | null) {
   let model = initial
   return {
     revealLine: vi.fn(),
+    revealLineInCenterIfOutsideViewport: vi.fn(),
     saveViewState: vi.fn(() => ({ scroll: 1 })),
     restoreViewState: vi.fn(),
     setValue: vi.fn(),
@@ -407,9 +426,9 @@ describe('CodeEditor', () => {
     expect(instance.setValue).not.toHaveBeenCalled()
   })
 
-  /* A server repair that changed earlier bytes is a replace over the whole
-   * range — still `applyEdits`, still never `setValue` (P4). */
-  it('replaces over the full range when the content is not an extension', async () => {
+  /* A server repair that changed earlier bytes splices over the range that moved —
+   * still `applyEdits`, still never `setValue`. */
+  it('splices over the changed range when the content is not an extension', async () => {
     store.selectedPath = 'index.html'
     store.contents = { 'index.html': '<h1>Contacts</h1>' }
     const { instance } = await mounted()
@@ -419,14 +438,37 @@ describe('CodeEditor', () => {
     await flushPromises()
 
     expect(model.edits).toHaveLength(1)
-    expect(model.edits[0]?.text).toBe('<!doctype html>\n<h1>Contacts</h1>')
-    expect(model.edits[0]?.range).toEqual({
-      startLineNumber: 1,
-      startColumn: 1,
-      endLineNumber: 1,
-      endColumn: 18,
-    })
+    expect(model.getValue()).toBe('<!doctype html>\n<h1>Contacts</h1>')
     expect(model.setValue).not.toHaveBeenCalled()
+  })
+
+  /**
+   * AC-30/AC-31, in the component: a change in the middle of a file must touch
+   * **only** that range. A full-range replace would pass the value assertion above
+   * and still re-tokenize the whole document and move the viewport.
+   */
+  it('touches only the changed lines for a change in the middle of a file', async () => {
+    const before = `${'x\n'.repeat(20)}old\n${'y\n'.repeat(20)}`
+    store.selectedPath = 'app.js'
+    store.contents = { 'app.js': before }
+    const { instance } = await mounted()
+    const model = activeModel(instance)
+
+    store.contents = { 'app.js': before.replace('old', 'new') }
+    await flushPromises()
+
+    expect(model.edits).toHaveLength(1)
+    expect(model.edits[0]?.range).toEqual({
+      startLineNumber: 21,
+      startColumn: 1,
+      endLineNumber: 21,
+      endColumn: 4,
+    })
+    expect(model.edits[0]?.text).toBe('new')
+    expect(model.getValue()).toBe(before.replace('old', 'new'))
+    // The view follows the change rather than the tail, and only if it is off screen.
+    expect(instance.revealLineInCenterIfOutsideViewport).toHaveBeenCalledWith(21)
+    expect(instance.revealLine).not.toHaveBeenCalled()
   })
 
   /** AC-12. The stream writes another path; the open document does not move. */

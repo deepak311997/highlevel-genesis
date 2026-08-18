@@ -16,7 +16,7 @@ import { useWorkspaceStore } from '@/stores/workspace'
  *   bubble labelled "Generating…" is indistinguishable from a hang, and the pause
  *   is measured in seconds, not milliseconds.
  * - **Once files start, the interesting fact is which one.** The store already
- *   routes every chunk by path (`streamingFiles`), and the panel was discarding
+ *   routes every chunk by path, and the panel was discarding
  *   that to print a fixed string.
  *
  * Three states, read from the same two pieces of state the bubble renders, so
@@ -33,7 +33,7 @@ const workspace = useWorkspaceStore()
  * be, since a file that has ended is only ever followed by another `file_start`
  * or by the terminal frame, which unmounts this component.
  */
-const paths = computed(() => Object.keys(workspace.streamingFiles))
+const paths = computed(() => Object.keys(workspace.streamingStates))
 const currentFile = computed(() => paths.value[paths.value.length - 1] ?? null)
 
 /** Nothing has arrived yet — the thinking pause (see above). */

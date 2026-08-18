@@ -108,8 +108,8 @@ describe('EditorPanel', () => {
     expect(wrapper.find('[data-testid="editor-file-count"]').exists()).toBe(false)
 
     store.fileTree = [
-      { path: 'index.html', writing: false },
-      { path: 'app.js', writing: true },
+      { path: 'index.html', state: 'idle' as const },
+      { path: 'app.js', state: 'editing' as const },
     ]
     await wrapper.vm.$nextTick()
 

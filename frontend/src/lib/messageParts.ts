@@ -1,10 +1,11 @@
 /**
  * A message, split into the prose you read and the files it wrote (D29).
  *
- * The transcript stores marker lines — `[file: index.html]` — where a file went,
- * never the code itself (D6): the code lives in its own document and the bubble
- * says which files a turn produced. Rendered raw, those markers read like a build
- * log with a bug in it; rendered as chips, they read like what they are.
+ * The transcript stores marker lines where a change went, never the code itself:
+ * the code lives in its own document and the bubble says which files a turn
+ * touched. `[file: …]` is a file written whole, `[edit: …]` one changed in place,
+ * and `[error: …]` is why a turn's files were refused — in the transcript rather
+ * than in a banner, so it survives a reload and reaches the next turn.
  *
  * This is a splitter, **not a markdown renderer**. D6 and D29 both refuse one: the
  * reply's prose is prose, and a renderer would be a second parser over content the
@@ -15,7 +16,14 @@
  * message cut off mid-marker.
  */
 
-export type MessagePart = { kind: 'text'; text: string } | { kind: 'file'; path: string }
+export type MessagePart =
+  | { kind: 'text'; text: string }
+  /** A file the turn wrote whole. */
+  | { kind: 'file'; path: string }
+  /** A file the turn changed in place. */
+  | { kind: 'edit'; path: string }
+  /** Why the turn's files were refused, written into the transcript so it lasts. */
+  | { kind: 'error'; text: string }
 
 /**
  * The whole line, or nothing.
@@ -26,7 +34,10 @@ export type MessagePart = { kind: 'text'; text: string } | { kind: 'file'; path:
  * the server emits none, but showing a user a raw marker because of one is a
  * worse failure than accepting it.
  */
-const MARKER_LINE = /^[ \t]*\[file: ([^\]\n]+)\][ \t]*$/
+const MARKER_LINE = /^[ \t]*\[(file|edit|error): ([^\]\n]+)\][ \t]*$/
+
+/** The marker kinds, and what each one becomes. */
+const MARKER_KINDS = { file: 'file', edit: 'edit', error: 'error' } as const
 
 export function splitMessageContent(content: string): MessagePart[] {
   const parts: MessagePart[] = []
@@ -52,8 +63,11 @@ export function splitMessageContent(content: string): MessagePart[] {
     flush()
     // The regex cannot match without capturing, but `noUncheckedIndexedAccess`
     // does not know that — checked rather than asserted past.
-    const path = match[1]
-    if (path !== undefined) parts.push({ kind: 'file', path })
+    const label = match[1]
+    const value = match[2]
+    if (label === undefined || value === undefined) continue
+    const kind = MARKER_KINDS[label as keyof typeof MARKER_KINDS]
+    parts.push(kind === 'error' ? { kind, text: value } : { kind, path: value })
   }
   flush()
 
