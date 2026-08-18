@@ -1,0 +1,942 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Slice 13 — Deliverables · design companion</title>
+    <style>
+      /* ───────────────────────────────────────────────────────────────
+         Slice 13's identity: a shipping manifest. Ruled columns, stamped
+         status marks, a monospace ledger voice. Every stroke and fill in
+         every figure resolves through these tokens, so both themes come
+         from one set.
+         ─────────────────────────────────────────────────────────────── */
+      :root {
+        color-scheme: light dark;
+
+        --paper: #faf7f0;
+        --paper-2: #f2ece0;
+        --ink: #23201a;
+        --ink-2: #57503f;
+        --ink-3: #8b8371;
+        --rule: #d9d0bd;
+        --rule-2: #c2b69c;
+
+        --stamp-done: #1c6b48;
+        --stamp-done-bg: #d9ecdf;
+        --stamp-pr: #1f5d8f;
+        --stamp-pr-bg: #d9e7f3;
+        --stamp-human: #9a4a12;
+        --stamp-human-bg: #f6e3d2;
+        --stamp-bad: #a32b2b;
+        --stamp-bad-bg: #f6dcda;
+
+        --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+          sans-serif;
+        --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
+          monospace;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --paper: #14130f;
+          --paper-2: #1c1a15;
+          --ink: #ece5d6;
+          --ink-2: #b8b0a0;
+          --ink-3: #857d6d;
+          --rule: #34302a;
+          --rule-2: #4a453b;
+
+          --stamp-done: #6bd39c;
+          --stamp-done-bg: #12291f;
+          --stamp-pr: #7cb8e8;
+          --stamp-pr-bg: #112430;
+          --stamp-human: #e3a56a;
+          --stamp-human-bg: #2e2013;
+          --stamp-bad: #ef8b85;
+          --stamp-bad-bg: #2e1614;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: var(--font);
+        font-size: 16px;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .wrap {
+        max-width: 60rem;
+        margin: 0 auto;
+        padding: 3rem 1.5rem 6rem;
+      }
+
+      header.masthead {
+        border-top: 3px solid var(--ink);
+        border-bottom: 1px solid var(--rule-2);
+        padding: 1.25rem 0 1.5rem;
+        margin-bottom: 2.5rem;
+      }
+
+      .kicker {
+        font-family: var(--mono);
+        font-size: 0.75rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--ink-3);
+        margin: 0 0 0.4rem;
+      }
+
+      h1 {
+        font-size: clamp(1.9rem, 4vw, 2.6rem);
+        line-height: 1.15;
+        margin: 0 0 0.6rem;
+        letter-spacing: -0.02em;
+      }
+
+      .lede {
+        font-size: 1.1rem;
+        color: var(--ink-2);
+        max-width: 46rem;
+        margin: 0;
+      }
+
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem 1.5rem;
+        margin-top: 1.1rem;
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        color: var(--ink-3);
+      }
+
+      .meta b {
+        color: var(--ink-2);
+        font-weight: 600;
+      }
+
+      h2 {
+        font-size: 1.35rem;
+        letter-spacing: -0.01em;
+        margin: 3.25rem 0 0.5rem;
+        padding-bottom: 0.4rem;
+        border-bottom: 1px solid var(--rule);
+      }
+
+      h2 .num {
+        font-family: var(--mono);
+        font-size: 0.8rem;
+        color: var(--ink-3);
+        margin-right: 0.6rem;
+      }
+
+      p.claim {
+        color: var(--ink-2);
+        max-width: 46rem;
+        margin: 0.75rem 0 1.5rem;
+      }
+
+      figure {
+        margin: 0 0 1.25rem;
+        background: var(--paper-2);
+        border: 1px solid var(--rule);
+        border-radius: 4px;
+        padding: 1.25rem;
+      }
+
+      .scroller {
+        overflow-x: auto;
+      }
+
+      figure svg {
+        display: block;
+        min-width: 640px;
+        height: auto;
+        max-width: 100%;
+      }
+
+      figcaption {
+        margin-top: 0.9rem;
+        padding-top: 0.75rem;
+        border-top: 1px solid var(--rule);
+        font-size: 0.85rem;
+        color: var(--ink-2);
+      }
+
+      /* SVG type + strokes, all token-driven */
+      .s-label {
+        font-family: var(--mono);
+        font-size: 11px;
+        fill: var(--ink);
+      }
+      .s-small {
+        font-family: var(--mono);
+        font-size: 9.5px;
+        fill: var(--ink-3);
+      }
+      .s-head {
+        font-family: var(--mono);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        fill: var(--ink-2);
+      }
+      .s-title {
+        font-family: var(--font);
+        font-size: 13px;
+        font-weight: 600;
+        fill: var(--ink);
+      }
+      .s-box {
+        fill: var(--paper);
+        stroke: var(--rule-2);
+        stroke-width: 1;
+      }
+      .s-lane {
+        fill: none;
+        stroke: var(--rule);
+        stroke-width: 1;
+      }
+      .s-rule {
+        stroke: var(--rule-2);
+        stroke-width: 1;
+      }
+      .s-dash {
+        stroke: var(--rule-2);
+        stroke-width: 1;
+        stroke-dasharray: 3 3;
+        fill: none;
+      }
+      .a-done {
+        stroke: var(--stamp-done);
+      }
+      .a-pr {
+        stroke: var(--stamp-pr);
+      }
+      .a-human {
+        stroke: var(--stamp-human);
+      }
+      .a-bad {
+        stroke: var(--stamp-bad);
+      }
+      .f-done {
+        fill: var(--stamp-done);
+      }
+      .f-pr {
+        fill: var(--stamp-pr);
+      }
+      .f-human {
+        fill: var(--stamp-human);
+      }
+      .f-bad {
+        fill: var(--stamp-bad);
+      }
+      .bg-done {
+        fill: var(--stamp-done-bg);
+      }
+      .bg-pr {
+        fill: var(--stamp-pr-bg);
+      }
+      .bg-human {
+        fill: var(--stamp-human-bg);
+      }
+      .bg-bad {
+        fill: var(--stamp-bad-bg);
+      }
+      marker path {
+        stroke: none;
+      }
+
+      /* Legend */
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1.25rem;
+        font-family: var(--mono);
+        font-size: 0.75rem;
+        color: var(--ink-2);
+        margin-bottom: 1rem;
+      }
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+      }
+      .swatch {
+        width: 0.85rem;
+        height: 0.85rem;
+        border-radius: 2px;
+        border: 1px solid var(--rule-2);
+      }
+
+      /* Cards */
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+        gap: 1rem;
+      }
+      .card {
+        border: 1px solid var(--rule);
+        border-left: 3px solid var(--stamp-human);
+        border-radius: 4px;
+        background: var(--paper-2);
+        padding: 0.9rem 1rem;
+      }
+      .card h3 {
+        margin: 0 0 0.5rem;
+        font-family: var(--mono);
+        font-size: 0.8rem;
+        letter-spacing: 0.02em;
+        color: var(--ink);
+        word-break: break-word;
+      }
+      .card dl {
+        margin: 0;
+        display: grid;
+        grid-template-columns: 5.5rem 1fr;
+        gap: 0.25rem 0.6rem;
+        font-size: 0.8rem;
+      }
+      .card dt {
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--ink-3);
+        padding-top: 0.15rem;
+      }
+      .card dd {
+        margin: 0;
+        color: var(--ink-2);
+      }
+      .card code {
+        font-family: var(--mono);
+        font-size: 0.75rem;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.88rem;
+        margin-bottom: 1rem;
+      }
+      th,
+      td {
+        text-align: left;
+        vertical-align: top;
+        padding: 0.55rem 0.7rem;
+        border-bottom: 1px solid var(--rule);
+      }
+      th {
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--ink-3);
+        border-bottom: 1px solid var(--rule-2);
+      }
+      td code {
+        font-family: var(--mono);
+        font-size: 0.8rem;
+      }
+
+      .tag {
+        display: inline-block;
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0.1rem 0.4rem;
+        border-radius: 3px;
+        white-space: nowrap;
+      }
+      .t-done {
+        color: var(--stamp-done);
+        background: var(--stamp-done-bg);
+      }
+      .t-pr {
+        color: var(--stamp-pr);
+        background: var(--stamp-pr-bg);
+      }
+      .t-human {
+        color: var(--stamp-human);
+        background: var(--stamp-human-bg);
+      }
+
+      footer {
+        margin-top: 4rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--rule);
+        font-size: 0.82rem;
+        color: var(--ink-3);
+      }
+      footer code {
+        font-family: var(--mono);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="masthead">
+        <p class="kicker">Slice 13 · design companion</p>
+        <h1>Deliverables</h1>
+        <p class="lede">
+          Nothing here is new product. This slice makes the repository tell the truth about the
+          product that already exists — and then makes a test hold that truth in place.
+        </p>
+        <div class="meta">
+          <span><b>Spec</b> F9.1–F9.5, F7.3</span>
+          <span><b>Branch</b> slice/13-deliverables</span>
+          <span><b>Base</b> b834b61</span>
+          <span><b>Contract</b> 02-prd.md</span>
+        </div>
+      </header>
+
+      <p class="claim">
+        The PRD beside this file is the contract — decisions, acceptance criteria, the test
+        matrix. This page draws only the four things prose makes a reader assemble in their
+        head: <b>who closes each deliverable</b>, <b>how a README goes stale</b>, <b>why a
+        second seed run has to be safe</b>, and <b>where this slice's risk actually sits</b>.
+      </p>
+
+      <!-- ═══════════════════════ FIGURE 1 — the boundary ═══════════════════════ -->
+      <h2><span class="num">01</span>The boundary: three owners, twelve lines</h2>
+      <p class="claim">
+        The plan's checklist reads as one list, which hides the fact that its lines close in
+        three different ways. Four are already closed by machinery that runs without anyone
+        asking. Six close inside this pull request. Two need a human with a browser and a
+        microphone — and no amount of test coverage will move them across.
+      </p>
+
+      <div class="legend">
+        <span
+          ><i class="swatch" style="background: var(--stamp-done-bg); border-color: var(--stamp-done)"></i
+          >automated — closes on merge</span
+        >
+        <span
+          ><i class="swatch" style="background: var(--stamp-pr-bg); border-color: var(--stamp-pr)"></i
+          >this PR — closes with a test</span
+        >
+        <span
+          ><i class="swatch" style="background: var(--stamp-human-bg); border-color: var(--stamp-human)"></i
+          >human — closes with a procedure</span
+        >
+      </div>
+
+      <figure>
+        <div class="scroller">
+          <svg
+            viewBox="0 0 900 430"
+            role="img"
+            aria-label="Three columns of deliverable ownership. Automated on merge: deploy Hosting, deploy functions, post-deploy health smoke test, secrets bound from Secret Manager. This pull request: root env example parity, README rewrite, README conformance checker, secrets checker, seed-sandbox script, Loom script and release checklist. Human hands: register the deployed redirect URI on the HighLevel marketplace app, seed the real sandbox, record and link the Loom, and two owed hand-checks. A dashed line marks the boundary the test suite cannot cross."
+          >
+            <defs>
+              <marker id="m-done" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" class="f-done" />
+              </marker>
+              <marker id="m-pr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" class="f-pr" />
+              </marker>
+              <marker id="m-human" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" class="f-human" />
+              </marker>
+            </defs>
+
+            <!-- column 1 -->
+            <rect x="8" y="8" width="280" height="384" rx="4" class="bg-done" opacity="0.45" />
+            <rect x="8" y="8" width="280" height="384" rx="4" fill="none" class="a-done" stroke-width="1.5" />
+            <text x="24" y="34" class="s-head">AUTOMATED · ON MERGE</text>
+            <text x="24" y="52" class="s-small">.github/workflows/deploy.yml</text>
+            <line x1="24" y1="62" x2="272" y2="62" class="s-rule" />
+
+            <g class="s-label">
+              <text x="24" y="86">✓ Hosting deployed</text>
+              <text x="24" y="112">✓ Functions deployed</text>
+              <text x="24" y="138">✓ Rules + indexes deployed</text>
+              <text x="24" y="164">✓ /api/health smoke test</text>
+              <text x="24" y="190">✓ 7 secrets bound as</text>
+              <text x="38" y="204">secretKeyRef</text>
+            </g>
+            <text x="24" y="240" class="s-small">Verified live at b834b61:</text>
+            <text x="24" y="256" class="s-small">web.app → 200</text>
+            <text x="24" y="272" class="s-small">web.app/api/health → ok:true</text>
+            <text x="24" y="288" class="s-small">cloudfunctions.net → 200</text>
+
+            <rect x="24" y="312" width="248" height="60" rx="3" class="s-box" />
+            <text x="36" y="332" class="s-label">Slice 13 runs no deploy.</text>
+            <text x="36" y="350" class="s-small">A second path to production is</text>
+            <text x="36" y="364" class="s-small">a path without a smoke test.</text>
+
+            <!-- column 2 -->
+            <rect x="306" y="8" width="280" height="384" rx="4" class="bg-pr" opacity="0.45" />
+            <rect x="306" y="8" width="280" height="384" rx="4" fill="none" class="a-pr" stroke-width="1.5" />
+            <text x="322" y="34" class="s-head">THIS PULL REQUEST</text>
+            <text x="322" y="52" class="s-small">closes with a failing test first</text>
+            <line x1="322" y1="62" x2="570" y2="62" class="s-rule" />
+
+            <g class="s-label">
+              <text x="322" y="86">□ root .env.example parity</text>
+              <text x="322" y="112">□ README, rewritten</text>
+              <text x="322" y="138">□ check-readme.mjs</text>
+              <text x="322" y="164">□ check-secrets.mjs</text>
+              <text x="322" y="190">□ seed-sandbox.mjs</text>
+              <text x="322" y="216">□ loom-script.md</text>
+              <text x="322" y="242">□ release-checklist.md</text>
+              <text x="322" y="268">□ delete bootstrap-github.sh</text>
+            </g>
+
+            <rect x="322" y="300" width="248" height="72" rx="3" class="s-box" />
+            <text x="334" y="320" class="s-label">18 acceptance criteria</text>
+            <text x="334" y="338" class="s-small">all L1 — every one of them runs</text>
+            <text x="334" y="352" class="s-small">over the real file, not a fixture</text>
+            <text x="334" y="366" class="s-small">copy of it.</text>
+
+            <!-- boundary -->
+            <line x1="596" y1="8" x2="596" y2="392" class="s-dash" stroke-width="1.5" />
+            <text x="600" y="404" class="s-small">no test crosses this line</text>
+
+            <!-- column 3 -->
+            <rect x="612" y="8" width="280" height="384" rx="4" class="bg-human" opacity="0.45" />
+            <rect x="612" y="8" width="280" height="384" rx="4" fill="none" class="a-human" stroke-width="1.5" />
+            <text x="628" y="34" class="s-head">HUMAN HANDS</text>
+            <text x="628" y="52" class="s-small">release-checklist.md</text>
+            <line x1="628" y1="62" x2="876" y2="62" class="s-rule" />
+
+            <g class="s-label">
+              <text x="628" y="86">☐ register redirect URI</text>
+              <text x="642" y="100" class="s-small">marketplace console · F9.3</text>
+              <text x="628" y="130">☐ create sandbox calendar</text>
+              <text x="642" y="144" class="s-small">calendars.write not granted</text>
+              <text x="628" y="174">☐ run seed against sandbox</text>
+              <text x="642" y="188" class="s-small">--dry-run first · F7.3</text>
+              <text x="628" y="218">☐ record + link the Loom</text>
+              <text x="642" y="232" class="s-small">≤5 min · F9.5</text>
+              <text x="628" y="262">☐ SSE server-disconnect check</text>
+              <text x="642" y="276" class="s-small">owed by plan §9 · F6.5</text>
+              <text x="628" y="306">☐ client-disconnect partial</text>
+              <text x="642" y="320" class="s-small">owed by plan §9 · F8.2</text>
+            </g>
+
+            <rect x="628" y="336" width="248" height="40" rx="3" class="s-box" />
+            <text x="640" y="354" class="s-label">Each carries a procedure,</text>
+            <text x="640" y="368" class="s-small">not a reminder.</text>
+
+            <!-- flow arrows -->
+            <path d="M292 200 L302 200" class="a-pr" stroke-width="1.5" marker-end="url(#m-pr)" fill="none" />
+            <path d="M590 200 L606 200" class="a-human" stroke-width="1.5" marker-end="url(#m-human)" fill="none" />
+          </svg>
+        </div>
+        <figcaption>
+          The deliverables checklist, sorted by what actually closes each line. The dashed
+          divider is the honest part: six items on its right need a browser, a sandbox or a
+          microphone, so this slice's job for them is to write the procedure down, not to claim
+          them.
+        </figcaption>
+      </figure>
+
+      <!-- ═══════════════════════ FIGURE 2 — the failure fan ═══════════════════════ -->
+      <h2><span class="num">02</span>The failure fan: five ways one README lies</h2>
+      <p class="claim">
+        A README does not rot all at once. It rots one sentence at a time, and every one of the
+        five ways below is <em>already present</em> on <code>main</code> at
+        <code>b834b61</code>. The fan below traces each from the change that caused it to the
+        moment a reviewer hits it — and to the check that turns that moment into a red test
+        instead.
+      </p>
+
+      <figure>
+        <div class="scroller">
+          <svg
+            viewBox="0 0 900 400"
+            role="img"
+            aria-label="Five staleness paths from a single README. A deleted script leaves a dead command; a renamed npm script leaves a command that does not exist; a reversed architecture decision leaves a false claim; a completed deploy leaves a not-deployed-yet placeholder; a new allowlist route leaves an incomplete table. Each path shows what the reviewer sees and which check catches it before they do."
+          >
+            <defs>
+              <marker id="f-bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" class="f-bad" />
+              </marker>
+              <marker id="f-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" class="f-done" />
+              </marker>
+            </defs>
+
+            <!-- source -->
+            <rect x="8" y="160" width="120" height="70" rx="4" class="s-box" />
+            <text x="20" y="186" class="s-title">README.md</text>
+            <text x="20" y="204" class="s-small">one file, twelve</text>
+            <text x="20" y="217" class="s-small">slices of drift</text>
+
+            <text x="150" y="24" class="s-head">THE CHANGE THAT BROKE IT</text>
+            <text x="430" y="24" class="s-head">WHAT THE REVIEWER SEES</text>
+            <text x="700" y="24" class="s-head">THE CHECK THAT CATCHES IT</text>
+            <line x1="150" y1="32" x2="880" y2="32" class="s-rule" />
+
+            <!-- rows -->
+            <g>
+              <!-- row 1 -->
+              <path d="M132 178 C 145 60, 145 60, 158 56" class="a-bad" fill="none" stroke-width="1.4" marker-end="url(#f-bad)" />
+              <text x="166" y="52" class="s-label">Slice 1 deleted set-verified.mjs</text>
+              <text x="166" y="66" class="s-small">af825a5 · README kept the section</text>
+              <text x="430" y="52" class="s-label">command not found</text>
+              <text x="430" y="66" class="s-small">first thing they try</text>
+              <path d="M660 52 L 690 52" class="a-done" stroke-width="1.4" marker-end="url(#f-ok)" fill="none" />
+              <text x="700" y="49" class="s-label">AC-4 path check</text>
+              <text x="700" y="63" class="s-small">every scripts/… must exist</text>
+              <line x1="150" y1="80" x2="880" y2="80" class="s-lane" />
+
+              <!-- row 2 -->
+              <path d="M132 182 C 145 116, 145 116, 158 112" class="a-bad" fill="none" stroke-width="1.4" marker-end="url(#f-bad)" />
+              <text x="166" y="108" class="s-label">Slice 2 folded dev:emulator into dev</text>
+              <text x="166" y="122" class="s-small">root has no dev:emulator script</text>
+              <text x="430" y="108" class="s-label">npm ERR! missing script</text>
+              <text x="430" y="122" class="s-small">the documented local path</text>
+              <path d="M660 108 L 690 108" class="a-done" stroke-width="1.4" marker-end="url(#f-ok)" fill="none" />
+              <text x="700" y="105" class="s-label">AC-3 script check</text>
+              <text x="700" y="119" class="s-small">resolved in a package.json</text>
+              <line x1="150" y1="136" x2="880" y2="136" class="s-lane" />
+
+              <!-- row 3 -->
+              <path d="M132 188 C 145 172, 145 172, 158 168" class="a-bad" fill="none" stroke-width="1.4" marker-end="url(#f-bad)" />
+              <text x="166" y="164" class="s-label">2026-08-17: data access is API-only</text>
+              <text x="166" y="178" class="s-small">decision #1 still says the opposite</text>
+              <text x="430" y="164" class="s-label">"the SPA subscribes to</text>
+              <text x="430" y="178" class="s-label">Firestore directly"</text>
+              <path d="M660 164 L 690 164" class="a-done" stroke-width="1.4" marker-end="url(#f-ok)" fill="none" />
+              <text x="700" y="161" class="s-label">AC-10 claim scan</text>
+              <text x="700" y="175" class="s-small">mirrors check-no-firestore</text>
+              <line x1="150" y1="192" x2="880" y2="192" class="s-lane" />
+
+              <!-- row 4 -->
+              <path d="M132 200 C 145 228, 145 228, 158 232" class="a-bad" fill="none" stroke-width="1.4" marker-end="url(#f-bad)" />
+              <text x="166" y="228" class="s-label">PR #18 deployed and smoke-tested</text>
+              <text x="166" y="242" class="s-small">both URLs answered 200 all along</text>
+              <text x="430" y="228" class="s-label">"not deployed yet"</text>
+              <text x="430" y="242" class="s-small">the graded line, F9.1</text>
+              <path d="M660 228 L 690 228" class="a-done" stroke-width="1.4" marker-end="url(#f-ok)" fill="none" />
+              <text x="700" y="225" class="s-label">AC-7 URL derivation</text>
+              <text x="700" y="239" class="s-small">from .firebaserc + firebase.json</text>
+              <line x1="150" y1="256" x2="880" y2="256" class="s-lane" />
+
+              <!-- row 5 -->
+              <path d="M132 210 C 145 288, 145 288, 158 292" class="a-bad" fill="none" stroke-width="1.4" marker-end="url(#f-bad)" />
+              <text x="166" y="288" class="s-label">a fourteenth row joins HL_ROUTES</text>
+              <text x="166" y="302" class="s-small">the future version of the same bug</text>
+              <text x="430" y="288" class="s-label">an allowlist table that is</text>
+              <text x="430" y="302" class="s-label">quietly one row short</text>
+              <path d="M660 288 L 690 288" class="a-done" stroke-width="1.4" marker-end="url(#f-ok)" fill="none" />
+              <text x="700" y="285" class="s-label">AC-9 table ≡ HL_ROUTES</text>
+              <text x="700" y="299" class="s-small">imported, not transcribed</text>
+              <line x1="150" y1="316" x2="880" y2="316" class="s-lane" />
+            </g>
+
+            <rect x="150" y="332" width="730" height="52" rx="3" class="s-box" />
+            <text x="164" y="352" class="s-label">
+              Four of these five are live defects on main today. The fifth is the one the checks exist for.
+            </text>
+            <text x="164" y="370" class="s-small">
+              The checker is a floor, not a bar: it holds mechanical claims true. Whether the prose is any good stays a stage-4 review judgement.
+            </text>
+          </svg>
+        </div>
+        <figcaption>
+          One entry, five exits. Every path a README takes to being wrong, with the reviewer's
+          experience in the middle column — because that is the cost being paid — and the
+          acceptance criterion that intercepts it on the right.
+        </figcaption>
+      </figure>
+
+      <!-- ═══════════════════════ FIGURE 3 — the hazard ═══════════════════════ -->
+      <h2><span class="num">03</span>The hazard: the second seed run</h2>
+      <p class="claim">
+        Seeding is a chore that gets run twice — once when it is written, once an hour before
+        the recording, because a contact got deleted or the calendar changed. The first run is
+        trivial. The second is the whole design problem, and the obvious fix for it (search for
+        what exists, then create what does not) hangs the script's correctness on
+        <code>/contacts/search</code>'s filter grammar — the one call
+        <code>HIGHLEVEL_PLATFORM.md</code> flags as least verified. So the script does not search.
+      </p>
+
+      <figure>
+        <div class="scroller">
+          <svg
+            viewBox="0 0 900 340"
+            role="img"
+            aria-label="Two seed runs compared. Without duplicate tolerance, the second run's contact creates return 400 duplicate, the script aborts, and the appointments are never created, leaving a half-seeded sandbox. With duplicate tolerance, the 400 duplicate response's contact id is read and carried forward, so the second run creates the appointments and converges on the same state as the first."
+          >
+            <defs>
+              <marker id="h-bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" class="f-bad" />
+              </marker>
+              <marker id="h-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" class="f-done" />
+              </marker>
+            </defs>
+
+            <!-- WITHOUT -->
+            <rect x="8" y="8" width="430" height="324" rx="4" class="bg-bad" opacity="0.35" />
+            <rect x="8" y="8" width="430" height="324" rx="4" fill="none" class="a-bad" stroke-width="1.5" />
+            <text x="24" y="32" class="s-head">WITHOUT DUPLICATE TOLERANCE</text>
+            <text x="24" y="48" class="s-small">treat every non-2xx as a failure</text>
+            <line x1="24" y1="58" x2="422" y2="58" class="s-rule" />
+
+            <rect x="24" y="72" width="180" height="34" rx="3" class="s-box" />
+            <text x="36" y="93" class="s-label">run #1 · empty location</text>
+            <path d="M214 89 L 246 89" class="a-done" stroke-width="1.4" marker-end="url(#h-ok)" fill="none" />
+            <rect x="252" y="72" width="170" height="34" rx="3" class="s-box" />
+            <text x="264" y="93" class="s-label">20 contacts, 8 appts ✓</text>
+
+            <rect x="24" y="126" width="180" height="34" rx="3" class="s-box" />
+            <text x="36" y="147" class="s-label">run #2 · same location</text>
+            <path d="M214 143 L 246 143" class="a-bad" stroke-width="1.4" marker-end="url(#h-bad)" fill="none" />
+            <rect x="252" y="126" width="170" height="34" rx="3" class="s-box" />
+            <text x="264" y="141" class="s-label">400 · duplicated contact</text>
+            <text x="264" y="154" class="s-small">on the very first create</text>
+
+            <path d="M337 162 L 337 186" class="a-bad" stroke-width="1.4" marker-end="url(#h-bad)" fill="none" />
+            <rect x="252" y="192" width="170" height="34" rx="3" class="s-box" />
+            <text x="264" y="207" class="s-label">script aborts</text>
+            <text x="264" y="220" class="s-small">0 appointments attempted</text>
+
+            <rect x="24" y="252" width="398" height="64" rx="3" class="s-box" />
+            <text x="36" y="272" class="s-label">Result: a sandbox that looks seeded and is not.</text>
+            <text x="36" y="288" class="s-small">The calendar the preview renders is empty, and the person</text>
+            <text x="36" y="302" class="s-small">who finds out is the one already recording.</text>
+
+            <!-- WITH -->
+            <rect x="462" y="8" width="430" height="324" rx="4" class="bg-done" opacity="0.35" />
+            <rect x="462" y="8" width="430" height="324" rx="4" fill="none" class="a-done" stroke-width="1.5" />
+            <text x="478" y="32" class="s-head">WITH DUPLICATE TOLERANCE · D10</text>
+            <text x="478" y="48" class="s-small">a duplicate refusal is a successful outcome</text>
+            <line x1="478" y1="58" x2="876" y2="58" class="s-rule" />
+
+            <rect x="478" y="72" width="180" height="34" rx="3" class="s-box" />
+            <text x="490" y="93" class="s-label">run #1 · empty location</text>
+            <path d="M668 89 L 700 89" class="a-done" stroke-width="1.4" marker-end="url(#h-ok)" fill="none" />
+            <rect x="706" y="72" width="170" height="34" rx="3" class="s-box" />
+            <text x="718" y="93" class="s-label">20 created, 8 appts ✓</text>
+
+            <rect x="478" y="126" width="180" height="34" rx="3" class="s-box" />
+            <text x="490" y="147" class="s-label">run #2 · same location</text>
+            <path d="M668 143 L 700 143" class="a-done" stroke-width="1.4" marker-end="url(#h-ok)" fill="none" />
+            <rect x="706" y="126" width="170" height="46" rx="3" class="s-box" />
+            <text x="718" y="141" class="s-label">400 · duplicated contact</text>
+            <text x="718" y="154" class="s-small">…which carries the existing</text>
+            <text x="718" y="166" class="s-small">contact id in its body</text>
+
+            <path d="M791 174 L 791 192" class="a-done" stroke-width="1.4" marker-end="url(#h-ok)" fill="none" />
+            <rect x="706" y="198" width="170" height="34" rx="3" class="s-box" />
+            <text x="718" y="213" class="s-label">20 existing, 8 appts ✓</text>
+            <text x="718" y="226" class="s-small">exit 0 · AC-13</text>
+
+            <rect x="478" y="252" width="398" height="64" rx="3" class="s-box" />
+            <text x="490" y="272" class="s-label">Result: run #2 converges on run #1's state.</text>
+            <text x="490" y="288" class="s-small">No search call, so no dependence on the filter DSL that</text>
+            <text x="490" y="302" class="s-small">HIGHLEVEL_PLATFORM.md §6.1 says is still unverified.</text>
+          </svg>
+        </div>
+        <figcaption>
+          The same two runs, with and without the one decision this script turns on. Reading a
+          refusal for the id it already contains is what makes the seed idempotent without
+          asking HighLevel a question we cannot yet phrase reliably.
+        </figcaption>
+      </figure>
+
+      <!-- ═══════════════════════ FIGURE 4 — where the risk lives ═══════════════════════ -->
+      <h2><span class="num">04</span>Where this slice's risk lives</h2>
+      <p class="claim">
+        Every acceptance criterion is L1, and no slice before this one could say that. It is not
+        a gap in coverage — it is what the slice <em>is</em>. Nothing here runs in a browser or
+        crosses a network, so the failure mode is never a race; it is a file that says something
+        untrue. What no L1 can reach is drawn beside it, at its real size.
+      </p>
+
+      <figure>
+        <div class="scroller">
+          <svg
+            viewBox="0 0 900 260"
+            role="img"
+            aria-label="Distribution of Slice 13's acceptance criteria across test levels: eighteen at L1 unit, none at L2 component, L3 rules, L4 integration or L5 end to end. Beside it, six residual items that no automated level can reach, each closed by a written procedure in the release checklist."
+          >
+            <text x="8" y="24" class="s-head">18 ACCEPTANCE CRITERIA, BY LEVEL</text>
+            <line x1="8" y1="32" x2="520" y2="32" class="s-rule" />
+
+            <g>
+              <text x="8" y="62" class="s-label">L1 unit</text>
+              <rect x="86" y="48" width="396" height="20" rx="2" class="bg-pr" />
+              <rect x="86" y="48" width="396" height="20" rx="2" fill="none" class="a-pr" stroke-width="1.2" />
+              <text x="94" y="62" class="s-label">18 — every one over the real file, fixtures only to prove the check can fail</text>
+
+              <text x="8" y="94" class="s-label">L2 component</text>
+              <line x1="86" y1="88" x2="130" y2="88" class="s-dash" />
+              <text x="138" y="92" class="s-small">0 — no component changes (D14)</text>
+
+              <text x="8" y="122" class="s-label">L3 rules</text>
+              <line x1="86" y1="116" x2="130" y2="116" class="s-dash" />
+              <text x="138" y="120" class="s-small">0 — no new collection; firestore.rules untouched, proven by git diff --stat</text>
+
+              <text x="8" y="150" class="s-label">L4 integration</text>
+              <line x1="86" y1="144" x2="130" y2="144" class="s-dash" />
+              <text x="138" y="148" class="s-small">0 — no endpoint added or changed</text>
+
+              <text x="8" y="178" class="s-label">L5 e2e</text>
+              <line x1="86" y1="172" x2="130" y2="172" class="s-dash" />
+              <text x="138" y="176" class="s-small">0 — the demo is the Loom, and a Loom is a human (D15)</text>
+            </g>
+
+            <rect x="8" y="200" width="512" height="50" rx="3" class="s-box" />
+            <text x="20" y="220" class="s-label">A flat L1 profile is the correct shape here.</text>
+            <text x="20" y="238" class="s-small">Spending an e2e walk on "the README file exists" would be the wrong level for the claim.</text>
+
+            <!-- residue -->
+            <line x1="546" y1="8" x2="546" y2="250" class="s-dash" stroke-width="1.5" />
+            <text x="566" y="24" class="s-head">WHAT NO LEVEL REACHES</text>
+            <line x1="566" y1="32" x2="892" y2="32" class="s-rule" />
+
+            <g class="s-label">
+              <text x="566" y="56">6 items, closed by procedure</text>
+            </g>
+            <g class="s-small">
+              <text x="566" y="78">· the marketplace redirect URI · a console</text>
+              <text x="566" y="96">· the sandbox calendar · calendars.write ungranted</text>
+              <text x="566" y="114">· the live seed run · costs real writes</text>
+              <text x="566" y="132">· the Loom · a person, a voice, five minutes</text>
+              <text x="566" y="150">· SSE server-side disconnect · undeliverable</text>
+              <text x="566" y="164">  from the emulator, owed since Slice 5</text>
+              <text x="566" y="182">· client-disconnect partial · same shape, F8.2</text>
+            </g>
+
+            <rect x="566" y="200" width="326" height="50" rx="3" class="s-box" />
+            <text x="578" y="220" class="s-label">Each one gets a command and an evidence slot.</text>
+            <text x="578" y="238" class="s-small">A pending item with a procedure is recoverable; a silent one is not.</text>
+          </svg>
+        </div>
+        <figcaption>
+          The distribution is the design statement: this slice's risk is entirely
+          documentation drift, which L1 catches perfectly, plus an irreducible six that only a
+          human can close — so those get written procedures rather than optimistic checkboxes.
+        </figcaption>
+      </figure>
+
+      <!-- ═══════════════════════ CONTRACTS ═══════════════════════ -->
+      <h2><span class="num">05</span>The only new wire calls</h2>
+      <p class="claim">
+        This slice adds no Genesis endpoint. The seed script is its only new caller of anything,
+        and it talks to HighLevel directly — not through the proxy, which deliberately does not
+        allowlist appointment creation (Slice 8, D4), and not through Firestore, which it never
+        touches.
+      </p>
+
+      <div class="cards">
+        <div class="card">
+          <h3>POST /contacts/</h3>
+          <dl>
+            <dt>Version</dt>
+            <dd><code>2021-07-28</code></dd>
+            <dt>Auth</dt>
+            <dd><code>Bearer $HL_SEED_TOKEN</code> — a PIT or an OAuth access token</dd>
+            <dt>Body</dt>
+            <dd><code>{locationId, firstName, lastName, email, phone, tags}</code></dd>
+            <dt>OK</dt>
+            <dd><code>{contact:{id}}</code> → counted <code>created</code></dd>
+            <dt>400 dup</dt>
+            <dd>counted <code>existing</code>, id read from the response and carried forward</dd>
+          </dl>
+        </div>
+        <div class="card">
+          <h3>GET /calendars/?locationId=</h3>
+          <dl>
+            <dt>Version</dt>
+            <dd><code>2021-04-15</code></dd>
+            <dt>When</dt>
+            <dd>only if <code>--calendar-id</code> is omitted</dd>
+            <dt>Uses</dt>
+            <dd>first calendar; its <code>teamMembers[0].userId</code> becomes the assigned user</dd>
+            <dt>None</dt>
+            <dd>exit 1, naming the sandbox-UI step — <code>calendars.write</code> is not granted</dd>
+          </dl>
+        </div>
+        <div class="card">
+          <h3>POST /calendars/events/appointments</h3>
+          <dl>
+            <dt>Version</dt>
+            <dd><code>2021-04-15</code></dd>
+            <dt>Body</dt>
+            <dd>
+              <code>{locationId, calendarId, contactId, assignedUserId, startTime, endTime, title}</code>
+            </dd>
+            <dt>Time</dt>
+            <dd>
+              ISO 8601 with offset. The epoch-milliseconds finding is about the
+              <code>GET /calendars/events</code> <em>query</em>, not this body (D11)
+            </dd>
+            <dt>Spread</dt>
+            <dd>8 appointments, business hours, next 14 days</dd>
+          </dl>
+        </div>
+        <div class="card" style="border-left-color: var(--stamp-bad)">
+          <h3>POST /conversations/messages</h3>
+          <dl>
+            <dt>Called</dt>
+            <dd><b>Never.</b> It sends a real SMS or email and costs money</dd>
+            <dt>Proof</dt>
+            <dd>AC-16 scans the script's source for it, alongside the no-Firebase and no-proxy assertions</dd>
+          </dl>
+        </div>
+      </div>
+
+      <!-- ═══════════════════════ RISKS ═══════════════════════ -->
+      <h2><span class="num">06</span>Risks</h2>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 38%">Risk</th>
+            <th>Mitigation</th>
+            <th style="width: 12%">Owner</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>The seed script's live correctness is unproven — the appointment body and the duplicate-refusal shape are stubbed from documentation, not measured</td>
+            <td><code>--dry-run</code> first, so the first live run costs nothing; both shapes named as hand-checks with the exact command and the response to record</td>
+            <td><span class="tag t-human">human</span></td>
+          </tr>
+          <tr>
+            <td>A conformance test can be satisfied by a technically-true, badly-written README</td>
+            <td>The checks are a floor. Prose accuracy is a stage-4 review item, read against <code>main</code> rather than against the checks</td>
+            <td><span class="tag t-pr">this PR</span></td>
+          </tr>
+          <tr>
+            <td>The URLs pass a derivation test while the deployment is broken</td>
+            <td>The deploy workflow's own <code>/api/health</code> smoke test fails the run; the checklist adds one manual open before recording</td>
+            <td><span class="tag t-done">automated</span></td>
+          </tr>
+          <tr>
+            <td>The Loom link is the one deliverable no test can force, and the session recording it is not this one</td>
+            <td>A <em>pending</em> row exists in the Live URLs table rather than no row, so the gap is visible; the checklist names the line to edit and the PR body repeats it</td>
+            <td><span class="tag t-human">human</span></td>
+          </tr>
+          <tr>
+            <td>The checklist becomes where work goes to be forgotten</td>
+            <td>Every item names an owner and a procedure, AC-18 enforces the owner tag, and the ship stage links the file from the PR</td>
+            <td><span class="tag t-pr">this PR</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <footer>
+        Companion to <code>docs/slices/13-deliverables/02-prd.md</code>, which is the contract —
+        decisions D1–D20, acceptance criteria AC-1–AC-18, and the test matrix live there and
+        only there. Not published: this session has no <code>Artifact</code> tool, so there is
+        no URL. Open the file locally.
+      </footer>
+    </div>
+  </body>
+</html>

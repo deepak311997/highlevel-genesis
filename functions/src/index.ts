@@ -56,7 +56,9 @@ export const api = onRequest(
 
 /**
  * The streaming endpoint lives in its own function so it can carry a long
- * timeout and a warm instance without the CRUD endpoints paying for either.
+ * timeout and more memory without the CRUD endpoints paying for either. (There
+ * is no `minInstances` here or anywhere — a generation pays a cold start; a
+ * warm instance is a cost decision nobody has taken.)
  *
  * **Its options are declared in `./generate`, not here** — the 540-second
  * timeout, the 512 MiB, and the `ANTHROPIC_API_KEY` secret binding. The secret

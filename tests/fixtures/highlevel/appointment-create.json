@@ -1,0 +1,14 @@
+{
+  "id": "seedAppointment00001",
+  "locationId": "lUanVn0CtZJTlymH8ySo",
+  "calendarId": "j02qMVwUOyDFNMUwWGTL",
+  "contactId": "seedC0ntact000000001",
+  "assignedUserId": "REDACTED-USER-ID",
+  "title": "Genesis seed appointment 1",
+  "startTime": "2026-08-19T10:00:00+00:00",
+  "endTime": "2026-08-19T10:30:00+00:00",
+  "appointmentStatus": "confirmed",
+  "address": "",
+  "isRecurring": false,
+  "traceId": "6d4b3a0e-9f5c-4c2b-8f0a-3d1c2b7e5a90"
+}

@@ -27,8 +27,8 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 | 9 — HighLevel knowledge injection | ✅ merged to `main` |
 | 10 — Live preview | ✅ merged to `main` |
 | 11 — Snapshots & restore | ✅ merged to `main` |
-| 12 — Error handling & state hardening | ✅ built, reviewed, PR open from `slice/12-error-handling` |
-| 13 — Deliverables | not started |
+| 12 — Error handling & state hardening | ✅ merged to `main` |
+| 13 — Deliverables | 🔨 in progress on `slice/13-deliverables` |
 
 **Slice 8 ran ahead of 7**, which §4's dependency line permits: it depends on 2 alone,
 and 2 merged on day 1. Nothing in 7 is owed to it. **Slice 11 ran ahead of 10** for the
@@ -800,8 +800,10 @@ add components speculatively.
 **Spec:** F9.1–F9.5 · **Depends on:** 12 · **Mode:** fast · **Day 5**
 
 Deploy frontend and functions, register the deployed callback URL, write the root README,
-the sandbox seed script (`scripts/seed-sandbox.ts`, ~20 contacts and 5–10 appointments),
-and the Loom script.
+the sandbox seed script (`scripts/seed-sandbox.mjs`, ~20 contacts and 5–10 appointments —
+`.mjs` because `scripts/` holds plain ESM scripts, each with a `.spec.mjs` run by
+`vitest.scripts.config.mts`, and the root `tsconfig` excludes the directory), and the
+Loom script.
 
 **This slice is graded on a literal checklist, so it gets one.** Every line below is a
 sentence from the brief's Deliverables section:
@@ -897,8 +899,8 @@ of it.
 
 ## 7. Repo setup — as built
 
-The repository exists and CI runs. `main` carries Slice 0; `slice/01-account-session` is
-open and awaiting merge.
+The repository exists and CI runs. `main` carries every slice through 12; §1's table above
+is the live status.
 
 | | |
 |---|---|
@@ -909,10 +911,11 @@ open and awaiting merge.
 | Local secrets | `frontend/.env`, `functions/.env`, `functions/.secret.local` — all gitignored |
 | Deployed secrets | Secret Manager (`firebase functions:secrets:set`), never plain env vars |
 
-`scripts/bootstrap-github.sh` did its job and is now historical; leave it or delete it in
-Slice 13's cleanup.
+`scripts/bootstrap-github.sh` did its job and was **deleted in Slice 13**: it bootstrapped a
+repository that now exists, and a script whose preconditions can never recur again is not
+history, it is a trap for whoever runs it next.
 
-**Running it:**
+**Running the project:**
 
 ```bash
 npm run install:all      # root + frontend + functions
@@ -929,8 +932,8 @@ the SPA proxied `/api` to the deployed functions. Nothing could be tried before 
 
 It starts auth, firestore and functions, imports and re-exports `.emulator-data` so a local
 account survives a restart, and wires a stubbed HighLevel so the whole OAuth loop runs
-offline. Slice 13 still owes the README a walked-through version of this, because the brief
-names `firebase emulators:start` explicitly.
+offline. Slice 13 walked this from a fresh clone into the README's **Local setup**, which
+names `firebase emulators:start` explicitly because the brief does.
 
 ---
 
@@ -979,14 +982,14 @@ read. `PRODUCT_SPEC.md` §7 holds the package-level version of this.
 | Snapshot history in a sheet/dialog with Restore | F6.6 | 11 | ✅ shipped — a shadcn-vue `sheet`, opened by **History** in the code panel header because versions are versions *of the files*; rows newest-first with their version number, origin (*Generation* / *Before restore*), file count, size and time. **Restore** confirms **inline in the row** rather than in a second overlay over a sheet, is disabled for the length of a stream — in the component *and* in the store, because a keyboard path does not go through the button — and open tabs reconcile behind it: re-read, or closed outright when the restore deleted the file |
 | Contacts · Conversations · Calendars exposed to generated apps | F7.1 | 8 | ✅ thirteen allowlisted rows over `<METHOD> /api/hl/proxy/**` — contacts search/get/create/update, conversations search/get/messages/send, calendars list/get/events/appointment/free-slots. `POST /conversations/messages` ships **disabled** behind `HL_ALLOW_MESSAGE_SEND` (D5): it sends a real message. The table is data, so 9 renders it and 13 documents it from the same rows |
 | Authenticated proxy attaching/refreshing tokens server-side | F7.2 | 8 | ✅ ID token + `email_verified` + App Check on the caller's side; on HighLevel's side our `Authorization`, the row's `Version`, `Accept` and nothing of the caller's — the token is attached and rotated server-side and the browser never sees one |
-| Sandbox HL account | F7.3 | 2, 13 | ⏭ — create it before Slice 2, seed it before the Loom |
+| Sandbox HL account | F7.3 | 2, 13 | 🟡 `scripts/seed-sandbox.mjs` shipped — 20 contacts, 8 appointments, a `--dry-run` that writes nothing, duplicate-tolerant on a re-run, HighLevel stubbed in its tests. The **live** run against the real sandbox is a human item in `docs/slices/13-deliverables/release-checklist.md` |
 | Malformed LLM output handled without corrupting state | F8.1 | 6, 12 | 🟡 shipped in 6 — a bad path, a duplicate, an oversized file, an over-cap set and an unterminated block each refuse the **whole** turn's files, name the reason on screen, and leave the stored tree byte-identical. The message still commits. Slice 12 covers the rest of F8 |
 | Interrupted streams: partial results preserved | F8.2 | 5, 12 | 🟡 a partial is persisted with `truncated: true` on every interruption the emulator can reach — a mid-stream upstream failure — and marked in the transcript, with a Retry beside it; the client-disconnect trigger is the Slice 13 hand-check above |
 | Failed HL calls surfaced clearly | F8.3 | 8, 10, 12 | 🟡 the proxy half shipped in 8 — every upstream condition maps to its own status and `code` in the existing envelope, carrying HighLevel's own message as `detail` (never a 401, which would sign the user out of Genesis), and a dead connection reaches a **Reconnect HighLevel** button in the dashboard's Data access section; **surfacing a failure inside the preview is Slice 10** |
-| Hosting + Functions deployed, live URLs in README | F9.1 | 13 | ⏭ |
-| Secrets via env/Secret Manager, `.env.example` | F9.2 | 13 | 🟡 per-package examples exist; **root `.env.example` owed** |
-| Deployed callback registered as the HL redirect URI | F9.3 | 2, 13 | ⏭ |
-| Repo layout + README (setup, ≤10 decisions, ≤5 improvements, deploy notes) | F9.4 | 13 | 🟡 layout ✅, README sections owed |
-| Loom ≤5 min walking the golden path | F9.5 | 13 | ⏭ |
-| Emulators: `firebase emulators:start` documented and working | NFR | 13 | 🟡 emulators back the test suites; the documented dev path is owed |
+| Hosting + Functions deployed, live URLs in README | F9.1 | 13 | ✅ deployed continuously by `.github/workflows/deploy.yml` on every green CI run against `main`, with an `/api/health` smoke test behind it. The URLs are in the README, and a test derives them from `.firebaserc` + `firebase.json` rather than matching a literal — so a project rename cannot leave the README quietly wrong |
+| Secrets via env/Secret Manager, `.env.example` | F9.2 | 13 | ✅ a root `.env.example` at full parity with both package files, and both halves tested by `scripts/check-secrets.mjs`: every package variable appears in the root file, and no `defineSecret` name is written into `functions/.env` by the deploy |
+| Deployed callback registered as the HL redirect URI | F9.3 | 2, 13 | ⏭ human-owned — the step that closes it is an item in `docs/slices/13-deliverables/release-checklist.md` |
+| Repo layout + README (setup, ≤10 decisions, ≤5 improvements, deploy notes) | F9.4 | 13 | ✅ README rewritten and held true by `scripts/check-readme.mjs` — sections present, ≤10 decisions, ≤5 improvements, every `npm run` resolving to a real script, every path existing, the live URLs derived, no client-Firestore claim — and by `functions/src/hl/readme.spec.ts`, which checks the documented allowlist table against `HL_ROUTES` |
+| Loom ≤5 min walking the golden path | F9.5 | 13 | ⏭ human-owned — the recording is an item in `docs/slices/13-deliverables/release-checklist.md` |
+| Emulators: `firebase emulators:start` documented and working | NFR | 13 | ✅ the README's Local setup walks `npm run install:all` then `npm run dev` — emulators and Vite in one command, no `.env` and no Firebase project needed — and names `firebase emulators:start` for the standalone case; a test asserts both |
 | Streaming mandatory — never request/response | NFR | 5 | ✅ `messages.stream()` only, and a source scan over `functions/src` asserts `messages.create` appears in no file |
