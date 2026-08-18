@@ -1,0 +1,830 @@
+<title>Genesis Deploy Pipeline</title>
+
+<style>
+  /* ── tokens: complete light palette ───────────────────────────────── */
+  :root {
+    --ground: #f6f8fa;
+    --surface: #ffffff;
+    --surface-sunk: #eef1f5;
+    --ink: #11161d;
+    --ink-soft: #333d4b;
+    --muted: #5b6675;
+    --line: #d8dee7;
+    --line-soft: #e7ecf2;
+
+    --accent: #2e6b5a;
+    --accent-soft: #e4efea;
+    --secretful: #9c7212;
+    --secretful-soft: #f6eed9;
+    --stop: #a33a32;
+    --stop-soft: #f8e7e5;
+
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+    --measure: 68ch;
+    --shadow: 0 1px 2px rgb(17 22 29 / 0.05), 0 8px 24px -12px rgb(17 22 29 / 0.14);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0e1217;
+      --surface: #151b23;
+      --surface-sunk: #10151b;
+      --ink: #e3e9f1;
+      --ink-soft: #c3ccd8;
+      --muted: #8e9bab;
+      --line: #29323d;
+      --line-soft: #1e252e;
+
+      --accent: #62b79c;
+      --accent-soft: #16302a;
+      --secretful: #d6a844;
+      --secretful-soft: #322709;
+      --stop: #e4796f;
+      --stop-soft: #331b18;
+
+      --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.7);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0e1217;
+    --surface: #151b23;
+    --surface-sunk: #10151b;
+    --ink: #e3e9f1;
+    --ink-soft: #c3ccd8;
+    --muted: #8e9bab;
+    --line: #29323d;
+    --line-soft: #1e252e;
+
+    --accent: #62b79c;
+    --accent-soft: #16302a;
+    --secretful: #d6a844;
+    --secretful-soft: #322709;
+    --stop: #e4796f;
+    --stop-soft: #331b18;
+
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.7);
+  }
+
+  /* ── base ─────────────────────────────────────────────────────────── */
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: clamp(2rem, 6vw, 4.5rem) clamp(1.1rem, 4vw, 2rem) 6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 3.25rem;
+  }
+
+  .measure { max-width: var(--measure); }
+
+  h1, h2, h3 { text-wrap: balance; margin: 0; }
+
+  h1 {
+    font-size: clamp(2rem, 5.5vw, 3rem);
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    line-height: 1.05;
+  }
+
+  h2 {
+    font-size: clamp(1.25rem, 2.8vw, 1.6rem);
+    font-weight: 750;
+    letter-spacing: -0.022em;
+    line-height: 1.2;
+  }
+
+  h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  p { margin: 0; }
+  strong { font-weight: 680; color: var(--ink); }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    background: var(--surface-sunk);
+    border: 1px solid var(--line-soft);
+    border-radius: 4px;
+    padding: 0.08em 0.34em;
+    white-space: nowrap;
+  }
+
+  a { color: var(--accent); text-underline-offset: 2px; }
+  a:focus-visible,
+  summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 3px;
+  }
+
+  /* ── eyebrow + header ─────────────────────────────────────────────── */
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  header { display: flex; flex-direction: column; gap: 1rem; }
+
+  .standfirst {
+    font-size: clamp(1.02rem, 2vw, 1.16rem);
+    color: var(--ink-soft);
+    line-height: 1.55;
+  }
+
+  .facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.6rem;
+    margin-top: 0.4rem;
+  }
+
+  .fact {
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.01em;
+    color: var(--ink-soft);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 0.28rem 0.72rem;
+  }
+
+  /* ── sections ─────────────────────────────────────────────────────── */
+  section { display: flex; flex-direction: column; gap: 1.15rem; }
+
+  .rule {
+    height: 1px;
+    background: var(--line);
+    border: 0;
+    margin: 0;
+  }
+
+  /* ── figures ──────────────────────────────────────────────────────── */
+  figure {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .figframe {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: clamp(0.85rem, 2.5vw, 1.5rem);
+    overflow-x: auto;
+    box-shadow: var(--shadow);
+  }
+
+  .figframe svg { display: block; max-width: 100%; height: auto; min-width: 620px; }
+
+  figcaption {
+    font-size: 0.88rem;
+    color: var(--muted);
+    max-width: var(--measure);
+  }
+
+  /* diagram strokes take their hue from `color`, so one marker def serves all */
+  .d-base { color: var(--muted); }
+  .d-go { color: var(--accent); }
+  .d-stop { color: var(--stop); }
+  .d-secret { color: var(--secretful); }
+
+  .n-box { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; }
+  .n-box-go { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+  .n-box-secret { fill: var(--secretful-soft); stroke: var(--secretful); stroke-width: 1.5; }
+  .n-box-stop { fill: var(--stop-soft); stroke: var(--stop); stroke-width: 1.5; }
+  .n-box-sunk { fill: var(--surface-sunk); stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 4 3; }
+
+  .t-title { fill: var(--ink); font-family: var(--mono); font-size: 12.5px; font-weight: 600; }
+  .t-sub { fill: var(--muted); font-family: var(--sans); font-size: 11px; }
+  .t-edge { fill: var(--muted); font-family: var(--sans); font-size: 10.5px; }
+  .t-edge-go { fill: var(--accent); font-family: var(--sans); font-size: 10.5px; font-weight: 600; }
+  .t-edge-stop { fill: var(--stop); font-family: var(--sans); font-size: 10.5px; font-weight: 600; }
+  .t-lane { fill: var(--muted); font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; }
+
+  .edge { stroke: currentColor; stroke-width: 1.6; fill: none; }
+  .edge-dash { stroke: currentColor; stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+
+  /* ── step list ────────────────────────────────────────────────────── */
+  ol.steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  ol.steps > li {
+    background: var(--surface);
+    padding: 0.85rem 1.1rem;
+    display: grid;
+    grid-template-columns: 2.1rem 1fr;
+    gap: 0.2rem 0.85rem;
+    align-items: baseline;
+  }
+
+  ol.steps > li.is-gate { background: var(--accent-soft); }
+
+  .step-n {
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .step-name { font-family: var(--mono); font-size: 0.87rem; font-weight: 600; letter-spacing: -0.01em; }
+  .step-why { grid-column: 2; font-size: 0.88rem; color: var(--ink-soft); }
+
+  /* ── table ────────────────────────────────────────────────────────── */
+  .tablewrap {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+
+  table { border-collapse: collapse; width: 100%; font-size: 0.87rem; min-width: 560px; }
+
+  th, td {
+    text-align: left;
+    padding: 0.6rem 0.9rem;
+    border-bottom: 1px solid var(--line-soft);
+    vertical-align: top;
+  }
+
+  thead th {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: var(--surface-sunk);
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+
+  tbody tr:last-child td { border-bottom: 0; }
+  td.k { font-family: var(--mono); font-size: 0.82rem; white-space: nowrap; }
+
+  .pill {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    padding: 0.12rem 0.46rem;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    white-space: nowrap;
+  }
+
+  .pill-api { color: var(--accent); }
+  .pill-gen { color: var(--secretful); }
+  .pill-both { color: var(--ink-soft); }
+
+  /* ── code blocks ──────────────────────────────────────────────────── */
+  pre {
+    margin: 0;
+    background: var(--surface-sunk);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.85rem 1rem;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    line-height: 1.65;
+    color: var(--ink-soft);
+  }
+
+  pre code { background: none; border: 0; padding: 0; font-size: inherit; white-space: pre; }
+  pre .cm { color: var(--muted); }
+
+  /* ── notes ────────────────────────────────────────────────────────── */
+  .note {
+    border-left: 2px solid var(--secretful);
+    padding: 0.15rem 0 0.15rem 1rem;
+    color: var(--ink-soft);
+    font-size: 0.94rem;
+    max-width: var(--measure);
+  }
+
+  .note.is-stop { border-left-color: var(--stop); }
+
+  /* ── failure log ──────────────────────────────────────────────────── */
+  .log { display: flex; flex-direction: column; gap: 0.6rem; }
+
+  details {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.7rem 1rem;
+  }
+
+  summary {
+    cursor: pointer;
+    font-weight: 640;
+    font-size: 0.92rem;
+    display: flex;
+    gap: 0.6rem;
+    align-items: baseline;
+  }
+
+  summary::-webkit-details-marker { display: none; }
+  summary::marker { content: ""; }
+
+  summary .tag {
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--stop);
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    padding: 0.06rem 0.42rem;
+    flex: none;
+  }
+
+  details[open] summary { margin-bottom: 0.6rem; }
+  details p { font-size: 0.9rem; color: var(--ink-soft); max-width: var(--measure); }
+  details > *:not(summary) + * { margin-top: 0.6rem; }
+
+  footer {
+    font-size: 0.83rem;
+    color: var(--muted);
+    border-top: 1px solid var(--line);
+    padding-top: 1.25rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="page">
+
+  <header>
+    <span class="eyebrow">Genesis · production deployment</span>
+    <h1>How a commit becomes production</h1>
+    <p class="standfirst measure">
+      A merge to <code>main</code> deploys itself — but only after CI has gone green on that exact
+      commit. Nothing in the pipeline holds a credential except the one key that lets it ask
+      Secret Manager for the rest.
+    </p>
+    <div class="facts">
+      <span class="fact">2 triggers</span>
+      <span class="fact">15 steps</span>
+      <span class="fact">8 Secret Manager entries</span>
+      <span class="fact">1 GitHub secret</span>
+      <span class="fact">0 GitHub variables</span>
+    </div>
+  </header>
+
+  <hr class="rule" />
+
+  <!-- ═══ 1. TRIGGERS ═══════════════════════════════════════════════ -->
+  <section>
+    <h2>What starts a deploy</h2>
+    <p class="measure">
+      The deploy is chained to CI's <em>completion</em>, not to the push. That is the whole reason
+      it can be trusted to run unattended: a <code>push</code> trigger would race CI and could put
+      an untested commit in front of users, whereas <code>workflow_run</code> waits for the verdict
+      and reads <code>head_sha</code> — so it deploys the commit that was actually tested, not
+      whatever <code>main</code> points at by the time a runner frees up.
+    </p>
+
+    <figure>
+      <div class="figframe">
+        <svg viewBox="0 0 860 330" role="img"
+             aria-label="A merge to main starts CI; only a successful CI run starts the Deploy workflow, which reads the tested commit SHA. A failed CI run starts nothing. A manual workflow_dispatch starts Deploy directly, bypassing the gate.">
+          <defs>
+            <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5"
+                    markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
+            </marker>
+          </defs>
+
+          <!-- lane labels -->
+          <text class="t-lane" x="16" y="60">AUTOMATIC</text>
+          <text class="t-lane" x="16" y="276">MANUAL</text>
+
+          <!-- automatic lane -->
+          <rect class="n-box" x="120" y="52" width="146" height="52" rx="7" />
+          <text class="t-title" x="193" y="76" text-anchor="middle">merge to main</text>
+          <text class="t-sub" x="193" y="92" text-anchor="middle">squash from a PR</text>
+
+          <g class="d-base">
+            <line class="edge" x1="266" y1="78" x2="330" y2="78" marker-end="url(#ar)" />
+          </g>
+
+          <rect class="n-box" x="330" y="52" width="146" height="52" rx="7" />
+          <text class="t-title" x="403" y="76" text-anchor="middle">CI</text>
+          <text class="t-sub" x="403" y="92" text-anchor="middle">15 steps · 5 test levels</text>
+
+          <!-- success branch -->
+          <g class="d-go">
+            <path class="edge" d="M 476 68 L 560 68 L 560 92 L 636 92" marker-end="url(#ar)" />
+            <text class="t-edge-go" x="486" y="58">success → head_sha</text>
+          </g>
+
+          <!-- failure branch -->
+          <g class="d-stop">
+            <path class="edge-dash" d="M 476 92 L 530 92 L 530 160 L 604 160" marker-end="url(#ar)" />
+            <text class="t-edge-stop" x="486" y="118">failure</text>
+          </g>
+
+          <rect class="n-box-stop" x="604" y="138" width="176" height="44" rx="7" />
+          <text class="t-title" x="692" y="158" text-anchor="middle">nothing runs</text>
+          <text class="t-sub" x="692" y="173" text-anchor="middle">a red main never ships</text>
+
+          <!-- deploy node -->
+          <rect class="n-box-go" x="636" y="52" width="176" height="60" rx="7" />
+          <text class="t-title" x="724" y="76" text-anchor="middle">Deploy</text>
+          <text class="t-sub" x="724" y="92" text-anchor="middle">15 steps · serialised</text>
+
+          <!-- manual lane -->
+          <rect class="n-box" x="120" y="242" width="146" height="52" rx="7" />
+          <text class="t-title" x="193" y="266" text-anchor="middle">gh workflow run</text>
+          <text class="t-sub" x="193" y="282" text-anchor="middle">targets · ref</text>
+
+          <g class="d-base">
+            <path class="edge-dash" d="M 266 268 L 724 268 L 724 116" marker-end="url(#ar)" />
+            <text class="t-edge" x="400" y="258">skips the gate — the operator is the gate</text>
+          </g>
+
+          <!-- concurrency note -->
+          <rect class="n-box-sunk" x="636" y="196" width="176" height="44" rx="7" />
+          <text class="t-title" x="724" y="216" text-anchor="middle">one at a time</text>
+          <text class="t-sub" x="724" y="231" text-anchor="middle">never cancelled mid-flight</text>
+          <g class="d-base">
+            <line class="edge-dash" x1="724" y1="112" x2="724" y2="196" marker-end="url(#ar)" />
+          </g>
+        </svg>
+      </div>
+      <figcaption>
+        Both paths end at the same job. The dashed edge from the concurrency box is the reason a
+        queued deploy waits rather than replacing the one in flight: <code>firebase deploy</code> is
+        not atomic — it uploads a Hosting release and replaces Cloud Run revisions one at a time —
+        so a cancelled run can leave the two halves on different commits.
+      </figcaption>
+    </figure>
+  </section>
+
+  <hr class="rule" />
+
+  <!-- ═══ 2. THE STEPS ══════════════════════════════════════════════ -->
+  <section>
+    <h2>The fifteen steps</h2>
+    <p class="measure">
+      Ordered so that anything cheap enough to fail fast does. The two highlighted steps are the
+      ones that decide whether the run means anything: the deploy itself, and the check that the
+      thing it deployed actually answers.
+    </p>
+
+    <ol class="steps">
+      <li>
+        <span class="step-n">01</span>
+        <span class="step-name">Resolve the commit to deploy</span>
+        <span class="step-why">CI's <code>head_sha</code>, or the ref you typed, or <code>main</code>.</span>
+      </li>
+      <li>
+        <span class="step-n">02</span>
+        <span class="step-name">actions/checkout</span>
+        <span class="step-why">At that exact SHA — not at the branch head.</span>
+      </li>
+      <li>
+        <span class="step-n">03</span>
+        <span class="step-name">actions/setup-node</span>
+        <span class="step-why">Node 22, with all three lockfiles cached.</span>
+      </li>
+      <li>
+        <span class="step-n">04</span>
+        <span class="step-name">Install</span>
+        <span class="step-why"><code>npm ci</code> three times — root, frontend, functions. Never <code>install</code>: <code>ci</code> fails if a lockfile disagrees with its package.json.</span>
+      </li>
+      <li>
+        <span class="step-n">05</span>
+        <span class="step-name">google-github-actions/auth</span>
+        <span class="step-why">Writes the service-account key to a file and exports <code>GOOGLE_APPLICATION_CREDENTIALS</code>. It runs <em>before</em> the build, because the build's configuration comes from Secret Manager and this is what unlocks it.</span>
+      </li>
+      <li>
+        <span class="step-n">06</span>
+        <span class="step-name">setup-gcloud</span>
+        <span class="step-why">So the next step can read a secret.</span>
+      </li>
+      <li>
+        <span class="step-n">07</span>
+        <span class="step-name">Resolve the project from the repository</span>
+        <span class="step-why">Project id from <code>.firebaserc</code>, Firestore database id from <code>firebase.json</code>. Both are committed, so a copy in GitHub would be a second source of truth for a value that already has one.</span>
+      </li>
+      <li>
+        <span class="step-n">08</span>
+        <span class="step-name">Fetch the SPA configuration</span>
+        <span class="step-why">The <code>FRONTEND_ENV</code> secret, straight from Secret Manager to <code>frontend/.env</code> — never through a shell variable or an <code>env:</code> block. It prints the key <em>names</em> and a count, never the values.</span>
+      </li>
+      <li>
+        <span class="step-n">09</span>
+        <span class="step-name">Write functions/.env</span>
+        <span class="step-why">One line, the database id from step 07. Everything else the functions need is a <code>defineSecret</code>.</span>
+      </li>
+      <li>
+        <span class="step-n">10</span>
+        <span class="step-name">Build the SPA</span>
+        <span class="step-why"><code>vue-tsc</code> then <code>vite build</code>.</span>
+      </li>
+      <li>
+        <span class="step-n">11</span>
+        <span class="step-name">No Firestore SDK in the bundle</span>
+        <span class="step-why">Scans the built artefact. It is the only layer that can catch a <em>transitive</em> pull of the client SDK — the ESLint rule and the source scan both read our own code, so neither would notice a dependency importing it on our behalf.</span>
+      </li>
+      <li>
+        <span class="step-n">12</span>
+        <span class="step-name">Resolve deploy targets</span>
+        <span class="step-why">Everything, or just one surface if you chose one.</span>
+      </li>
+      <li class="is-gate">
+        <span class="step-n">13</span>
+        <span class="step-name">Deploy</span>
+        <span class="step-why">Functions, Hosting, Firestore rules and indexes. <code>--force</code>, so a function deleted from source is deleted from the project: source is the only thing that decides what exists.</span>
+      </li>
+      <li class="is-gate">
+        <span class="step-n">14</span>
+        <span class="step-name">Smoke test the deployed API</span>
+        <span class="step-why">See below — this is the step that turns "it uploaded" into "it works".</span>
+      </li>
+      <li>
+        <span class="step-n">15</span>
+        <span class="step-name">Summary</span>
+        <span class="step-why">Commit, targets, project and site into the run summary. Runs even when something above failed.</span>
+      </li>
+    </ol>
+
+    <p class="note">
+      <strong>Why the smoke test earns its place.</strong> A deploy that reports success has proven
+      the upload and nothing else. <code>/api/health</code> writes a Firestore document, reads it
+      back and deletes it — so a 200 proves four separate things at once: the Hosting rewrite
+      reaches the function, the function booted, its configuration arrived, and the Admin SDK can
+      reach the named database. Each of those has broken a deploy before, and none of them shows up
+      as a failed upload.
+    </p>
+  </section>
+
+  <hr class="rule" />
+
+  <!-- ═══ 3. SECRETS ════════════════════════════════════════════════ -->
+  <section>
+    <h2>Where the secrets come from</h2>
+    <p class="measure">
+      Two lanes, and the difference between them is the point. Values the functions read never leave
+      Google's side: the deploy attaches a reference, and the Cloud Run instance resolves it as it
+      starts. Values the browser needs cannot be secret at all — Vite compiles them into the bundle,
+      so they end up served to every visitor no matter where they were stored.
+    </p>
+
+    <figure>
+      <div class="figframe">
+        <svg viewBox="0 0 860 400" role="img"
+             aria-label="Two provenance lanes. Function values go from a local env file through the setup script into Secret Manager, are attached to the Cloud Run revision as secret references, and are resolved inside the private runtime. SPA values go from Secret Manager to the runner's disk, are compiled into the bundle by Vite, and are served to every visitor's browser.">
+          <defs>
+            <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5"
+                    markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
+            </marker>
+          </defs>
+
+          <!-- source -->
+          <rect class="n-box" x="18" y="150" width="150" height="60" rx="7" />
+          <text class="t-title" x="93" y="176" text-anchor="middle">functions/.env</text>
+          <text class="t-sub" x="93" y="192" text-anchor="middle">your laptop · gitignored</text>
+
+          <g class="d-secret">
+            <line class="edge" x1="168" y1="180" x2="232" y2="180" marker-end="url(#ar2)" />
+            <text class="t-edge" x="200" y="170" text-anchor="middle">setup-deploy.sh</text>
+          </g>
+
+          <!-- secret manager -->
+          <rect class="n-box-secret" x="232" y="132" width="168" height="96" rx="7" />
+          <text class="t-title" x="316" y="158" text-anchor="middle">Secret Manager</text>
+          <text class="t-sub" x="316" y="176" text-anchor="middle">8 entries</text>
+          <text class="t-sub" x="316" y="192" text-anchor="middle">the only home for</text>
+          <text class="t-sub" x="316" y="207" text-anchor="middle">every configured value</text>
+
+          <!-- ── lane A: functions ── -->
+          <text class="t-lane" x="440" y="42">LANE A · THE FUNCTIONS</text>
+
+          <g class="d-go">
+            <path class="edge" d="M 400 158 L 428 158 L 428 92 L 470 92" marker-end="url(#ar2)" />
+            <text class="t-edge-go" x="470" y="72">deploy attaches a reference</text>
+          </g>
+
+          <rect class="n-box-go" x="470" y="66" width="164" height="52" rx="7" />
+          <text class="t-title" x="552" y="88" text-anchor="middle">Cloud Run revision</text>
+          <text class="t-sub" x="552" y="104" text-anchor="middle">secretKeyRef, not a value</text>
+
+          <g class="d-go">
+            <line class="edge" x1="634" y1="92" x2="686" y2="92" marker-end="url(#ar2)" />
+            <text class="t-edge-go" x="660" y="82" text-anchor="middle">on start</text>
+          </g>
+
+          <rect class="n-box-go" x="686" y="66" width="158" height="52" rx="7" />
+          <text class="t-title" x="765" y="88" text-anchor="middle">process.env</text>
+          <text class="t-sub" x="765" y="104" text-anchor="middle">inside the instance</text>
+
+          <text class="t-edge-go" x="470" y="140">never leaves Google’s side</text>
+
+          <!-- ── lane B: SPA ── -->
+          <text class="t-lane" x="440" y="268">LANE B · THE SPA</text>
+
+          <g class="d-secret">
+            <path class="edge" d="M 400 202 L 428 202 L 428 312 L 470 312" marker-end="url(#ar2)" />
+            <text class="t-edge" x="470" y="292">FRONTEND_ENV → disk</text>
+          </g>
+
+          <rect class="n-box-secret" x="470" y="286" width="164" height="52" rx="7" />
+          <text class="t-title" x="552" y="308" text-anchor="middle">vite build</text>
+          <text class="t-sub" x="552" y="324" text-anchor="middle">inlines every value</text>
+
+          <g class="d-stop">
+            <line class="edge" x1="634" y1="312" x2="686" y2="312" marker-end="url(#ar2)" />
+          </g>
+
+          <rect class="n-box-stop" x="686" y="286" width="158" height="52" rx="7" />
+          <text class="t-title" x="765" y="308" text-anchor="middle">every browser</text>
+          <text class="t-sub" x="765" y="324" text-anchor="middle">public, unavoidably</text>
+
+          <text class="t-edge-stop" x="470" y="366">so nothing secret may enter this lane</text>
+
+          <!-- github -->
+          <rect class="n-box-sunk" x="18" y="286" width="150" height="60" rx="7" />
+          <text class="t-title" x="93" y="310" text-anchor="middle">GitHub</text>
+          <text class="t-sub" x="93" y="326" text-anchor="middle">1 secret: the key</text>
+          <g class="d-base">
+            <path class="edge-dash" d="M 168 316 L 200 316 L 200 228" marker-end="url(#ar2)" />
+            <text class="t-edge" x="206" y="346">unlocks, holds nothing</text>
+          </g>
+        </svg>
+      </div>
+      <figcaption>
+        The service-account key is the only credential GitHub holds. It grants permission to
+        <em>bind</em> secrets, not to read the ones the functions use — which is why the run log has
+        nothing to leak.
+      </figcaption>
+    </figure>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Secret Manager entry</th>
+            <th>Bound to</th>
+            <th>What it is</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="k">ANTHROPIC_API_KEY</td>
+            <td><span class="pill pill-gen">generate</span></td>
+            <td>The model key. One function only — the one that spends money.</td>
+          </tr>
+          <tr>
+            <td class="k">HL_CLIENT_SECRET</td>
+            <td><span class="pill pill-api">api</span></td>
+            <td>Half the marketplace app's credentials. HighLevel shows it once, at creation.</td>
+          </tr>
+          <tr>
+            <td class="k">OAUTH_STATE_SECRET</td>
+            <td><span class="pill pill-api">api</span></td>
+            <td>The key every OAuth <code>state</code> is sealed under. Read it and the uid a callback carries becomes forgeable.</td>
+          </tr>
+          <tr>
+            <td class="k">HL_CLIENT_ID</td>
+            <td><span class="pill pill-api">api</span></td>
+            <td>Configuration, not a credential — here so no step has to write a <code>.env</code>.</td>
+          </tr>
+          <tr>
+            <td class="k">HL_VERSION_ID</td>
+            <td><span class="pill pill-api">api</span></td>
+            <td>Same. The v2 authorize endpoint refuses without it.</td>
+          </tr>
+          <tr>
+            <td class="k">HL_REDIRECT_URI</td>
+            <td><span class="pill pill-api">api</span></td>
+            <td>Must match the marketplace registration byte for byte.</td>
+          </tr>
+          <tr>
+            <td class="k">ALLOWED_ORIGINS</td>
+            <td><span class="pill pill-both">api + generate</span></td>
+            <td>Both, because <code>generate.ts</code> imports the allowlist from <code>api</code>. Bound to one alone, the other falls back to localhost and rejects the real site.</td>
+          </tr>
+          <tr>
+            <td class="k">FRONTEND_ENV</td>
+            <td><span class="pill pill-both">the build</span></td>
+            <td>The SPA's whole <code>.env</code> as one entry, because the deploy writes it back out as one file.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Adding or rotating one</h3>
+    <pre><code><span class="cm"># A credential — you type the value, it never passes through a script</span>
+npx firebase functions:secrets:set ANTHROPIC_API_KEY --project hl-genesis-app
+
+<span class="cm"># Configuration — read from your local .env, pushed as a new version</span>
+scripts/setup-deploy.sh
+
+<span class="cm"># Either way, a running instance keeps the old value until it is replaced</span>
+gh workflow run deploy.yml -f targets=functions</code></pre>
+
+    <p class="note is-stop">
+      <strong>A new version is not a deploy.</strong> Cloud Run resolves a secret when an instance
+      starts, so adding a version changes nothing for instances already running. Rotating means
+      adding the version <em>and</em> redeploying — which is why the third command is there and not
+      an afterthought.
+    </p>
+  </section>
+
+  <hr class="rule" />
+
+  <!-- ═══ 4. FAILURES ═══════════════════════════════════════════════ -->
+  <section>
+    <h2>What has actually gone wrong</h2>
+    <p class="measure">
+      Three real failures from building this, kept because each one misdirects — the message names
+      something other than the cause.
+    </p>
+
+    <div class="log">
+      <details>
+        <summary><span class="tag">parse</span> The workflow never ran, and nothing said why</summary>
+        <p>
+          A comment inside a <code>run:</code> block contained a literal empty expression —
+          <code>${{ }}</code>. GitHub parses expressions inside <code>run:</code> regardless of
+          comments, so the file was invalid and the workflow simply did not exist. Every test suite
+          stayed green throughout; the Actions tab listed the workflow by its file path instead of
+          its name, which is the only visible tell.
+        </p>
+        <p>
+          <strong>Now caught by:</strong> actionlint, running first in CI. A workflow is not
+          compiled, not typechecked and not imported by any test — it is parsed at trigger time, so
+          nothing else can see a mistake in one.
+        </p>
+      </details>
+
+      <details>
+        <summary><span class="tag">billing</span> "Cloud Billing API has not been used in this project"</summary>
+        <p>
+          Nothing was wrong with the billing account. <code>firebase-tools</code> checks the plan
+          before deploying a v2 function, because those require Blaze, and that check needs
+          <code>cloudbilling.googleapis.com</code> — which had never been enabled. The failure
+          arrives late, after rules and indexes are already applied, and the word "billing" sends
+          you to the wrong console page.
+        </p>
+        <p><strong>Now caught by:</strong> <code>setup-deploy.sh</code>, which enables the eleven APIs a deploy needs.</p>
+      </details>
+
+      <details>
+        <summary><span class="tag">silent</span> The model key was missing and nothing complained</summary>
+        <p>
+          The Secret Manager API had never been enabled on the project, so
+          <code>ANTHROPIC_API_KEY</code> did not exist — and a function whose declared secret cannot
+          be resolved deploys perfectly happily. It answers <code>500</code> on the first real
+          generation and says nothing before that.
+        </p>
+        <p>
+          <strong>Now caught by:</strong> <code>requiredSecret()</code>, which throws a message
+          naming the secret instead of letting an empty string reach the SDK — and by
+          <code>index.spec.ts</code>, which asserts every binding structurally, because under the
+          emulator a secret resolves from <code>process.env</code> whether it was granted or not.
+        </p>
+      </details>
+    </div>
+  </section>
+
+  <footer>
+    Sources of truth: <code>.github/workflows/deploy.yml</code>,
+    <code>scripts/setup-deploy.sh</code>, <code>functions/src/index.ts</code>.
+    Anything on this page that disagrees with those is out of date.
+  </footer>
+
+</div>
