@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { RouterLinkStub, enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
 
@@ -95,8 +96,21 @@ const PROJECT: Project = {
  * behaviour is `CodeEditor.spec.ts`'s subject; what belongs here is the layout
  * switch.
  */
+/**
+ * **A real Pinia, because `PreviewPanel` has a real store since Slice 10.**
+ *
+ * The panel is deliberately *not* stubbed: two of the cases below are about the
+ * layout switch putting three panels on screen at once and one behind a tab, so
+ * the third panel has to be the third panel. Its store settles to the empty state
+ * with no request — this suite's workspace fake reports a loaded, empty file list
+ * — so mounting it costs nothing but the plugin.
+ *
+ * Fresh per mount rather than shared: a store cached across cases would carry one
+ * test's build into the next.
+ */
 const MOUNT = {
   global: {
+    plugins: [createPinia()],
     stubs: { RouterLink: RouterLinkStub, MessageComposer: true, CodeEditor: true },
   },
 }
@@ -279,7 +293,14 @@ describe('WorkspaceView', () => {
     expect(wrapper.find(PREVIEW).exists()).toBe(true)
     expect(wrapper.find(`${EDITOR} [data-testid="file-tree"]`).exists()).toBe(true)
     expect(wrapper.find(`${EDITOR} [data-testid="file-editor"]`).exists()).toBe(true)
-    expect(wrapper.find(PREVIEW).text()).toContain('Slice 10')
+    /*
+     * The preview is a screen rather than a placeholder since Slice 10, so what
+     * is asserted here is one of its own states — this suite's workspace fake
+     * reports a loaded, empty file list, which is the empty one. Its four states
+     * and its iframe belong to `PreviewPanel.spec.ts`; what belongs here is that
+     * the third panel is really the third panel.
+     */
+    expect(wrapper.find(`${PREVIEW} [data-testid="preview-empty"]`).exists()).toBe(true)
     // The tabbed tree is not merely hidden — it is not mounted (see the header).
     expect(wrapper.find('[data-testid="workspace-tabs"]').exists()).toBe(false)
   })
