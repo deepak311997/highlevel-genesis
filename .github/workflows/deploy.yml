@@ -108,10 +108,10 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
           VITE_GOOGLE_RECAPTCHA_V3_KEY: ${{ vars.VITE_GOOGLE_RECAPTCHA_V3_KEY }}
         run: |
-          # Values reach the shell through `env:`, never through `${{ }}` inside
-          # the script — an interpolated value containing a quote or a newline
-          # would otherwise be substituted into the source of this script before
-          # bash ever sees it.
+          # Values reach the shell through `env:` above, never through an
+          # expression inside this script — an interpolated value containing a
+          # quote or a newline would otherwise be substituted into the source of
+          # the script before bash ever saw it.
           {
             echo "VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY"
             echo "VITE_FIREBASE_AUTH_DOMAIN=$VITE_FIREBASE_AUTH_DOMAIN"
