@@ -1,4 +1,4 @@
-import { ApiError, apiUrl, errorForResponse } from './api'
+import { ApiError, apiUrl, connectionError, errorForResponse } from './api'
 import { appCheckHeader } from './appCheck'
 import { auth } from './firebase'
 
@@ -76,7 +76,8 @@ export function registerSessionExpiredHook(hook: SessionExpiredHook | null): voi
  * could not be attested — the session is fine and reloading fixes it. Signing a
  * user out for the second destroys a good session and takes their unsaved
  * editor buffers with it. A 401 carrying no code at all is likewise not a
- * death: `authHeaders` throws one when nobody was ever signed in.
+ * death — a bare 401 with no envelope says only that something refused the
+ * call, which is not enough to end a session over.
  */
 export function noteApiError(err: unknown): void {
   if (!(err instanceof ApiError)) return
@@ -87,8 +88,23 @@ export function noteApiError(err: unknown): void {
   onSessionExpired?.()
 }
 
-/** A call that succeeded proves the session is alive; the next death is a new one. */
-export function noteSessionAlive(): void {
+/**
+ * Re-arm the latch: the next death is a new one.
+ *
+ * Two things prove that, and it took both. A call that **succeeded** proves the
+ * session is alive, so whatever was reported is over. And an expiry that has
+ * **finished being answered** — signed out and navigated, or having failed at
+ * either — is over by definition.
+ *
+ * The second caller is not a nicety. A dead session cannot produce the
+ * successful call that would otherwise clear this, so with only the first, the
+ * *second* death in a page session was swallowed as a repeat of the first: a
+ * user who signed in again into an account the server no longer accepts sat on
+ * a workspace whose every panel read "Sign in and try again." with nothing to
+ * click — the exact state this hook exists to get them out of. A sign-out that
+ * threw stranded them the same way, permanently.
+ */
+export function rearmSessionExpiry(): void {
   signalled = false
 }
 
@@ -110,7 +126,7 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
     // Status 0 rather than a thrown TypeError: a caller rendering an error state
     // needs something with a message in it, and "check your connection" is the
     // only advice that is ever right here.
-    throw new ApiError('Something went wrong. Check your connection and try again.', 0)
+    throw connectionError()
   }
 
   if (!res.ok) {
@@ -119,6 +135,6 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
     throw err
   }
 
-  noteSessionAlive()
+  rearmSessionExpiry()
   return (await res.json()) as T
 }

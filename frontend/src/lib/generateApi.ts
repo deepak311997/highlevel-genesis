@@ -1,5 +1,5 @@
-import { ApiError, apiUrl, errorForResponse } from './api'
-import { authHeaders, noteApiError, noteSessionAlive } from './apiClient'
+import { ApiError, apiUrl, connectionError, errorForResponse } from './api'
+import { authHeaders, noteApiError, rearmSessionExpiry } from './apiClient'
 import type { Message } from './messagesApi'
 import { createSseParser } from './sse'
 
@@ -158,7 +158,7 @@ export async function* streamGeneration(
     // from `fetch` is a network failure, and status 0 with advice is the only
     // thing that is ever right to say about one.
     if (err instanceof ApiError) throw err
-    throw new ApiError('Something went wrong. Check your connection and try again.', 0)
+    throw connectionError()
   }
 
   // Before a single event is yielded (AC-31) — and through `noteApiError`, so
@@ -174,7 +174,7 @@ export async function* streamGeneration(
 
   // The stream opened, which is proof the session is alive: the same latch
   // `request` clears, cleared from the same evidence.
-  noteSessionAlive()
+  rearmSessionExpiry()
 
   const reader = res.body?.getReader()
   if (reader === undefined) {
@@ -224,7 +224,7 @@ export async function* streamGeneration(
         chunk = await reader.read()
       } catch (err) {
         if (signal.aborted) throw err
-        throw new ApiError('Something went wrong. Check your connection and try again.', 0)
+        throw connectionError()
       }
 
       const { done, value } = chunk

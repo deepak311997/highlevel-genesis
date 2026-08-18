@@ -1,4 +1,4 @@
-import type { SessionExpiredHook } from './apiClient'
+import { rearmSessionExpiry, type SessionExpiredHook } from './apiClient'
 import { SIGN_IN_PATH } from '@/router/guard'
 
 /**
@@ -45,15 +45,43 @@ export function expiredSignInPath(from: string): string {
  * `no-floating-promises` still has a named call to point its `void` at.
  */
 async function expire(deps: SessionExpiryDeps): Promise<void> {
-  // Read the path *before* signing out. Signing out flips the auth store, the
-  // route guard fires its own navigation off that, and by the time it settles
-  // the current route is the sign-in page — so a later read would send the user
-  // back to where the redirect already put them rather than to their project.
+  // Read the path *before* signing out. Signing out flips the auth store, so a
+  // later read risks reporting wherever the app has moved to rather than the
+  // project the user was actually in.
   const from = deps.currentPath()
 
-  await deps.signOut()
-  await deps.replace(expiredSignInPath(from))
+  try {
+    await deps.signOut()
+    await deps.replace(expiredSignInPath(from))
+  } catch {
+    /*
+     * Nothing here can be retried and nothing can be said: the surface that
+     * would say it is the page we just failed to navigate to. `signOut` ends in
+     * a storage write, which private browsing and a full quota both refuse.
+     *
+     * What must not happen is the failure *latching*. Swallowing it here and
+     * re-arming below is what leaves the next 401 its own attempt, rather than
+     * one transient storage error stranding the session for the life of the
+     * page.
+     */
+  } finally {
+    expiring = false
+    rearmSessionExpiry()
+  }
 }
+
+/**
+ * One expiry at a time, and the guard is here rather than only in `apiClient`.
+ *
+ * `apiClient`'s latch is cleared by any call that *succeeds*, and a request the
+ * server had already committed can land during the `await deps.signOut()` above
+ * — at which point `isSignedIn()` is still true and a second 401 would start a
+ * second `expire()`. That one re-reads `currentPath()`, by then already
+ * `/signin?redirect=…`, and lands the user on a sign-in page pointing at the
+ * sign-in page. They would reach the dashboard after signing in, not their
+ * project.
+ */
+let expiring = false
 
 /**
  * The hook `main.ts` registers with `apiClient`.
@@ -64,7 +92,8 @@ async function expire(deps: SessionExpiryDeps): Promise<void> {
  */
 export function createSessionExpiredHook(deps: SessionExpiryDeps): SessionExpiredHook {
   return () => {
-    if (!deps.isSignedIn()) return
+    if (expiring || !deps.isSignedIn()) return
+    expiring = true
     void expire(deps)
   }
 }
