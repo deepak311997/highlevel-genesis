@@ -195,6 +195,7 @@ describe('toMessage', () => {
       content: 'build a contact dashboard',
       createdAt: '2023-11-14T22:13:20.000Z',
       truncated: false,
+      error: null,
     })
   })
 
@@ -207,7 +208,14 @@ describe('toMessage', () => {
   it('never emits a seq key', () => {
     const message = toMessage('msg-1', storedMessageSchema.parse({ ...complete, seq: 1 }))
 
-    expect(Object.keys(message).sort()).toEqual(['content', 'createdAt', 'id', 'role', 'truncated'])
+    expect(Object.keys(message).sort()).toEqual([
+      'content',
+      'createdAt',
+      'error',
+      'id',
+      'role',
+      'truncated',
+    ])
   })
 
   /** AC-40's server half: the flag is on the wire for every message. */

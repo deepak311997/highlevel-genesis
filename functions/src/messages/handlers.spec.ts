@@ -215,7 +215,7 @@ function storedAssistant(truncated: boolean): Record<string, unknown> {
  * happen to have different types. An object says which is which.
  */
 function turn(content: string, overrides: Partial<AssistantTurn> = {}): AssistantTurn {
-  return { content, truncated: false, fileWrites: [], snapshot: null, ...overrides }
+  return { content, truncated: false, error: null, fileWrites: [], snapshot: null, ...overrides }
 }
 
 /** A ref that knows its own path and can reach its subcollection, like a real one. */
@@ -264,6 +264,9 @@ describe('appendAssistantMessage', () => {
     expect(Object.keys(written).sort()).toEqual([
       'content',
       'createdAt',
+      // Why the turn failed, or null — the field that lets the chat show a
+      // failure instead of swallowing it.
+      'error',
       'role',
       'seq',
       'truncated',
@@ -319,6 +322,7 @@ describe('appendAssistantMessage', () => {
       content: 'Here is a contact dashboard',
       createdAt: '2023-11-14T22:13:20.000Z',
       truncated: true,
+      error: null,
     })
   })
 

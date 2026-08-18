@@ -3,44 +3,74 @@ import { describe, expect, it } from 'vitest'
 import { generateBodySchema } from './schema'
 
 /**
- * `POST /generate`'s body — `{ projectId }`, and nothing else.
+ * `POST /generate`'s body — one turn, in one request.
  *
- * `.strict()` is the load-bearing call, and D2 is the reason. The prompt is
- * **not** in this body: the model's input is the transcript, and the transcript
- * is the server's own record. A body carrying the prompt would let the client's
- * copy disagree with what is stored — a caller could stream a reply to a prompt
- * that is not in the history the reply gets appended to — and it would duplicate
- * both the 4,000-character validation and the 200-message cap in a second place.
+ * **`content` is the prompt; `retry: true` re-runs the turn already stored.**
+ * The prompt travels here because a turn that took two requests could fail
+ * between them: the message landed, the client died, and the transcript kept a
+ * prompt no reply was coming for. The durability that split was protecting is
+ * preserved by ordering inside the handler — the user turn is written before the
+ * stream opens — rather than by the extra round trip.
  *
- * It is also what makes Retry work with no new user message and no special case:
- * the endpoint's whole input is a project id.
+ * `.strict()` is still load-bearing, and so is the refine. Exactly one of the
+ * two shapes: a body carrying both is a caller that has not decided what it
+ * wants, and a body carrying neither would silently generate a second reply to
+ * whatever the transcript happens to end with. `role`, `uid` and the rest stay
+ * refused for Slice 4's reasons — `uid` doubly so, since a uid in a payload is a
+ * second, forgeable source of identity.
  *
  * `projectId` is checked against the **same** `projectIdSchema` the path routes
  * use, so `/generate` and `/api/projects/:projectId/*` cannot disagree about what
  * an id is.
  */
 
-const VALID = { projectId: 'proj-1' }
+const VALID = { projectId: 'proj-1', content: 'Build a contacts view' }
 
 describe('generateBodySchema — what a caller may send', () => {
-  it('accepts a project id on its own', () => {
+  it('accepts a project id and a prompt', () => {
     expect(generateBodySchema.parse(VALID)).toEqual(VALID)
+  })
+
+  it('accepts a retry, which carries no prompt', () => {
+    expect(generateBodySchema.safeParse({ projectId: 'proj-1', retry: true }).success).toBe(true)
+  })
+
+  /* Exactly one shape: neither is a reply to nothing, both is undecided. */
+  it.each([
+    ['neither', { projectId: 'proj-1' }],
+    ['both', { projectId: 'proj-1', content: 'hi', retry: true }],
+    ['retry: false', { projectId: 'proj-1', retry: false }],
+  ])('refuses a body carrying %s', (_name, body) => {
+    expect(generateBodySchema.safeParse(body).success).toBe(false)
+  })
+
+  /* The prompt is validated here exactly as the message route validated it. */
+  it('refuses a prompt past the 4,000-character cap', () => {
+    expect(
+      generateBodySchema.safeParse({ projectId: 'proj-1', content: 'a'.repeat(4001) }).success,
+    ).toBe(false)
+  })
+
+  it('refuses a whitespace-only prompt, after trimming', () => {
+    expect(generateBodySchema.safeParse({ projectId: 'proj-1', content: '   ' }).success).toBe(
+      false,
+    )
   })
 
   it('accepts an id at the 64-character limit', () => {
     const projectId = 'a'.repeat(64)
 
-    expect(generateBodySchema.safeParse({ projectId }).success).toBe(true)
+    expect(generateBodySchema.safeParse({ projectId, content: 'hi' }).success).toBe(true)
   })
 
   /*
-   * D2. `content` is the tempting one and the one that must be refused: a body
-   * carrying the prompt is the shape every chat tutorial uses, and accepting it
-   * would put the client in charge of what the model is asked. `role` and `uid`
-   * are the server's for the reasons Slice 4 recorded — `uid` doubly so, since a
-   * uid in a payload is a second, forgeable source of identity.
+   * `content` is now accepted and validated; everything else a chat payload
+   * tends to carry is still the server's. `role` and `uid` are refused for the
+   * reasons Slice 4 recorded — `uid` doubly so, since a uid in a payload is a
+   * second, forgeable source of identity, and `messages` and `model` because
+   * the transcript and the model are the server's to decide.
    */
-  it.each(['content', 'role', 'uid', 'prompt', 'messages', 'model'])(
+  it.each(['role', 'uid', 'prompt', 'messages', 'model'])(
     'refuses a body carrying %s alongside a valid projectId',
     (key) => {
       expect(generateBodySchema.safeParse({ ...VALID, [key]: 'x' }).success).toBe(false)

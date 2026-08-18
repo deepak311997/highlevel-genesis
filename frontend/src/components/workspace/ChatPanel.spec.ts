@@ -69,6 +69,7 @@ const USER: Message = {
   content: 'build a contact dashboard',
   createdAt: '2026-08-17T09:05:00.000Z',
   truncated: false,
+  error: null,
 }
 
 const ASSISTANT: Message = {
@@ -77,6 +78,7 @@ const ASSISTANT: Message = {
   content: 'Here is a contact dashboard',
   createdAt: '2026-08-17T09:05:00.000Z',
   truncated: false,
+  error: null,
 }
 
 /* The composer owns the store and has a suite of its own. */
@@ -658,5 +660,70 @@ describe('ChatPanel — the generation’s file error', () => {
     const wrapper = mount(ChatPanel, MOUNT)
 
     expect(wrapper.find('[data-testid="generate-file-error"]').exists()).toBe(false)
+  })
+})
+
+/*
+ * The failure, in the transcript.
+ *
+ * A turn that failed is written down now, carrying why, so it survives a
+ * refresh and reads in order with everything else. It used to exist only as a
+ * flag in memory: the reply vanished, a banner appeared under the panel, and
+ * reloading swallowed the whole turn as if the user had never spoken.
+ */
+describe('a failed turn', () => {
+  const FAILED = {
+    id: 'msg-9',
+    role: 'assistant' as const,
+    content: '',
+    createdAt: '2026-08-18T09:00:00.000Z',
+    truncated: true,
+    error: 'upstream',
+  }
+
+  it('reads the failure out of the message, with a Retry on it', async () => {
+    store.messagesLoaded = true
+    store.messages = [USER, FAILED]
+
+    const wrapper = mount(ChatPanel, MOUNT)
+    await flushPromises()
+
+    const failure = wrapper.find('[data-testid="message-failure"]')
+    expect(failure.exists()).toBe(true)
+    expect(failure.text()).toContain('The reply was interrupted.')
+    expect(wrapper.find('[data-testid="message-retry"]').exists()).toBe(true)
+  })
+
+  it('leaves a successful turn alone', async () => {
+    store.messagesLoaded = true
+    store.messages = [USER, ASSISTANT]
+
+    const wrapper = mount(ChatPanel, MOUNT)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="message-failure"]').exists()).toBe(false)
+  })
+
+  /* One Retry per failure, each attached to the turn it would re-run. */
+  it('offers one Retry per failed turn', async () => {
+    store.messagesLoaded = true
+    store.messages = [USER, FAILED, USER, { ...FAILED, id: 'msg-11', error: 'refused' }]
+
+    const wrapper = mount(ChatPanel, MOUNT)
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-testid="message-retry"]')).toHaveLength(2)
+    expect(wrapper.text()).toContain('The model declined to answer that.')
+  })
+
+  it('re-runs the turn through the store', async () => {
+    store.messagesLoaded = true
+    store.messages = [USER, FAILED]
+
+    const wrapper = mount(ChatPanel, MOUNT)
+    await flushPromises()
+    await wrapper.find('[data-testid="message-retry"]').trigger('click')
+
+    expect(store.retryGeneration).toHaveBeenCalledTimes(1)
   })
 })
