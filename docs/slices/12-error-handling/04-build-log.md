@@ -82,3 +82,24 @@ The plan pins the lanes (§ Lanes) and the build follows them exactly:
   and the plan records this departure. `npx shadcn-vue@latest add skeleton` was deliberately
   not run.
 - **Deviation:** none.
+
+### T2 — Skeleton: the dashboard three (AC-2) · lane L-SKELETON, run concurrently with T3
+
+- **Red:** four tests, one per loading surface, each asserting the existing loading testid
+  still resolves **and** the count of `[data-slot="skeleton"]` inside it.
+  - `AccountCard.spec.ts` — `renders Skeleton placeholders while loading` (`account-loading`, 2)
+  - `ConnectionPanel.spec.ts` — `renders Skeleton placeholders while loading` (`connection-loading`, 2)
+  - `ConnectionPanel.spec.ts` — `renders Skeleton placeholders while the probe runs`
+    (`data-access-loading`, 3)
+  - `ProjectsCard.spec.ts` — `renders Skeleton placeholders while loading` (`projects-loading`, 2)
+
+  All four failed on the count (`expected [] to have a length of 2 but got +0`), not on an
+  import — the right red.
+- **Green:** seven `<div class="… animate-pulse rounded bg-secondary" />` became
+  `<Skeleton class="… rounded" />`, keeping `rounded` rather than the base `rounded-md` so
+  tailwind-merge preserves each shape (R2), and keeping `v-for="n in 3"` / `:key="n"` on the
+  probe's placeholder.
+- **Deviation:** the second ConnectionPanel test is named `renders Skeleton placeholders while
+  the probe runs` rather than repeating the plan's literal name. Two identically-named tests in
+  one file makes a failure report ambiguous about which state broke, and it sits in a different
+  `describe` block (`ConnectionPanel — data access`). Behaviour asserted is exactly as planned.
