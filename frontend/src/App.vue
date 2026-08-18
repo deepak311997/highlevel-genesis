@@ -30,7 +30,19 @@ async function signOut(): Promise<void> {
 </script>
 
 <template>
-  <div class="flex min-h-screen flex-col">
+  <!--
+    Two different scroll models, chosen by the route's layout.
+
+    A contained route is a document: it grows as tall as its content and the
+    window scrolls, which is what a dashboard or a sign-in form should do.
+
+    A full route is an application window: it is exactly the viewport, and the
+    scrolling happens *inside* the panels — the chat's own scroller, monaco's,
+    the preview's iframe. `min-h-screen` here would let a long transcript push
+    the whole shell taller than the window, so the page would scroll and the
+    editor's own scrollbar would sit somewhere below the fold.
+  -->
+  <div :class="contained ? 'flex min-h-screen flex-col' : 'flex h-screen flex-col overflow-hidden'">
     <header class="shrink-0 border-b bg-gradient-to-b from-raised to-card">
       <nav class="mx-auto flex max-w-5xl items-center gap-6 px-6 py-3">
         <RouterLink to="/" class="flex items-center gap-2 text-base font-semibold tracking-tight">
@@ -80,7 +92,11 @@ async function signOut(): Promise<void> {
     </header>
 
     <main
-      :class="contained ? 'mx-auto w-full max-w-5xl px-6 py-10' : 'flex min-h-0 flex-1 flex-col'"
+      :class="
+        contained
+          ? 'mx-auto w-full max-w-5xl px-6 py-10'
+          : 'flex min-h-0 flex-1 flex-col overflow-hidden'
+      "
     >
       <!--
         The router guard awaits the same signal before resolving any route, so

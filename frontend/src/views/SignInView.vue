@@ -98,7 +98,7 @@ async function submit(): Promise<void> {
 </script>
 
 <template>
-  <div class="mx-auto flex max-w-md flex-col gap-6">
+  <div class="mx-auto flex max-w-md flex-col gap-5">
     <Card>
       <CardHeader>
         <CardTitle>Sign in</CardTitle>
@@ -109,7 +109,7 @@ async function submit(): Promise<void> {
              not interrupt. The failure alert below is the one that is `alert`. -->
         <Alert v-if="notice !== null" data-testid="signin-notice">{{ notice }}</Alert>
 
-        <form class="flex flex-col gap-4" novalidate @submit.prevent="submit">
+        <form class="flex flex-col gap-3.5" novalidate @submit.prevent="submit">
           <Alert v-if="state.kind === 'failed'" variant="destructive" data-testid="signin-error">
             {{ state.message }}
           </Alert>

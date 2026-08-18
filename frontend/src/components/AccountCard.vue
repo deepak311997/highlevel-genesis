@@ -81,7 +81,7 @@ const memberSince = computed(() => {
         </p>
         <p
           v-if="memberSince"
-          class="text-xs text-muted-foreground"
+          class="tabular text-xs text-muted-foreground"
           data-testid="account-member-since"
         >
           Member since {{ memberSince }}

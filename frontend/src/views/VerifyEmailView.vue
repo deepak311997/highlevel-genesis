@@ -142,7 +142,7 @@ onScopeDispose(stop)
 </script>
 
 <template>
-  <div class="mx-auto flex max-w-md flex-col gap-6">
+  <div class="mx-auto flex max-w-md flex-col gap-5">
     <Card>
       <CardContent class="flex flex-col gap-5 pt-6" data-testid="verify-gate">
         <!-- A single focal point. The page has no action the user takes *here* —
