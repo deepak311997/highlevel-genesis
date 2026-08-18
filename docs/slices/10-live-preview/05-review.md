@@ -211,3 +211,49 @@ The three defects worth the stage were all in the same seam — the preview stor
 to the workspace's lifecycle — and none of them had a test: a re-open that stranded the panel,
 a list failure with no state, and a call budget on the wrong side of the trust boundary. All
 three are fixed test-first. Run `/feature-ship 10`.
+
+---
+
+## Ship-time addendum — 2026-08-18
+
+`main` moved while this branch sat in review: **Slice 11 (snapshots & restore) merged
+first**, so `/feature-ship` rebased onto it rather than onto the `main` the review read.
+The rebase changed the numbers above and found one defect, and the two are unrelated.
+
+**The conflict was trivial.** Slice 11 and Slice 10 both added fields to `WorkspaceStore`'s
+exported interface and to the object the setup store returns; git flagged three hunks, all
+resolved by keeping both sides. Nothing about either slice's behaviour was in question.
+
+**The defect was not flagged by anything.** `restoreSnapshot` was written against a `main`
+where the preview did not exist. It rewrites the **whole** stored file set — the exact event
+`filesRevision` counts — and moved neither counter, so a twenty-file rollback left the
+preview rendering the version the user had just replaced, silently, while a one-file save
+moved the hint. This slice's own PRD names the obligation in its out-of-scope table
+("Slice 11, which owns snapshots — its restore must move `filesRevision`"); Slice 11 could
+not discharge it, because the counter was not on `main` yet, and nothing carried the note
+across. Typecheck, lint and every other case were green either side of it.
+
+Fixed here, test-first, in `fix: a restore is a change to the files, so the preview says so`
+— three L1 cases on the workspace store (changed, unchanged, failed), the first red first.
+`filesRevision` moves; `generationsApplied` deliberately does not, on D12's reasoning: the
+unasked rebuild re-runs the restored app's HighLevel calls against a 100-request/10-second
+budget, and a restore is a deliberate act whose result the user may want to read first. Same
+answer a save gets, for the same reason.
+
+**Suite, re-run in full after the rebase and the fix** — not the review's run, and not the
+orchestrator's gate:
+
+| Check | At ship |
+|---|---|
+| `typecheck` | clean |
+| `lint` (`--max-warnings 0`) | clean |
+| `prettier --check` on every touched file | clean |
+| `test:unit` | **2,119** — 1,136 functions · 962 frontend · 21 scripts |
+| `test:rules` | **52** |
+| `test:integration` | **378** |
+| `test:e2e` | **18 passed**, the whole file set, run after the fix |
+
+2,567 cases, all six green. The rules and integration counts are Slice 11's, unchanged —
+this slice adds no server file, which is D19 and was measured rather than assumed.
+
+Everything under *Deliberately deferred* stands as written. Nothing in it was touched here.
