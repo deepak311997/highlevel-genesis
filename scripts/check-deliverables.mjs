@@ -162,15 +162,69 @@ export function loomProblems(text) {
   return problems
 }
 
+/**
+ * The three owners D2 names, and the only tags a checklist item may carry.
+ *
+ * An item with no owner is the failure mode this whole document exists to
+ * prevent: the release checklist is a hand-off to a session that is not this
+ * one, and "someone will do this" is what a checklist is supposed to replace.
+ */
+export const OWNER_TAGS = ['(automated)', '(this PR)', '(human)']
+
+const CHECKBOX = /^\s*[-*] \[[ xX]\]/
+const OWNER_PATTERN = new RegExp(
+  OWNER_TAGS.map((tag) => tag.replace(/[()]/g, (char) => `\\${char}`)).join('|'),
+  'g',
+)
+
+/**
+ * Every `- [ ]` / `- [x]` line, with the owner tags it carries, in the order
+ * they appear on it.
+ *
+ * **Only the checkbox line is read, never its continuation lines.** Items here
+ * run to several lines — a procedure, then an evidence slot — and a tag on the
+ * third line of an item is invisible to anyone skimming the file for who owns
+ * what, which is the only thing the tag is for. Repeats are kept rather than
+ * deduped, so `(human) … (human)` is a problem too.
+ */
+export function checkboxLines(text) {
+  return text
+    .split('\n')
+    .filter((line) => CHECKBOX.test(line))
+    .map((line) => ({
+      line: line.trim(),
+      owners: [...line.matchAll(OWNER_PATTERN)].map((m) => m[0]),
+    }))
+}
+
+/** Lines carrying other than exactly one owner tag. Empty means conformant. */
+export function ownerProblems(text) {
+  return checkboxLines(text).flatMap(({ line, owners }) => {
+    if (owners.length === 1) return []
+    if (owners.length === 0) {
+      return [`No owner tag — expected one of ${OWNER_TAGS.join(', ')} — on: ${line}`]
+    }
+    return [`${String(owners.length)} owner tags (${owners.join(', ')}) on: ${line}`]
+  })
+}
+
 // Guarded so importing this module from the spec does not run the checks.
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  const problems = loomProblems(readFileSync(LOOM_DOC, 'utf8'))
+  const checks = [
+    { file: 'loom-script.md', problems: loomProblems(readFileSync(LOOM_DOC, 'utf8')) },
+    { file: 'release-checklist.md', problems: ownerProblems(readFileSync(CHECKLIST_DOC, 'utf8')) },
+  ]
 
-  if (problems.length > 0) {
-    console.error('loom-script.md:')
-    for (const problem of problems) console.error(`  ${problem}`)
+  const failed = checks.filter((check) => check.problems.length > 0)
+  if (failed.length > 0) {
+    for (const { file, problems } of failed) {
+      console.error(`${file}:`)
+      for (const problem of problems) console.error(`  ${problem}`)
+    }
     process.exit(1)
   }
 
+  const items = checkboxLines(readFileSync(CHECKLIST_DOC, 'utf8')).length
   console.log(`loom-script.md — ${String(LOOM_BEATS.length)} beats in order, inside the budget.`)
+  console.log(`release-checklist.md — ${String(items)} items, each with exactly one owner.`)
 }
