@@ -59,6 +59,93 @@ export function mergeFileTree(stored: FileMeta[], streaming: string[]): FileRow[
   return [...paths].sort(compareFilePaths).map((path) => ({ path, writing: writing.has(path) }))
 }
 
+/**
+ * What a file *is*, which is the only hierarchy a flat namespace has.
+ *
+ * `filePathSchema` refuses slashes outright, so a generated project has no
+ * directories for the panel to draw — every path is a bare filename. The kind is
+ * what is left to group by, and it is a real grouping rather than an invented
+ * one: markup, styles, scripts, data, notes.
+ *
+ * `other` exists for the same reason `PLAINTEXT` does in `editorLanguage.ts`: an
+ * extension the allowlist does not know still has to render, as a row with a
+ * generic icon rather than as a throw.
+ */
+export type FileKind = 'markup' | 'style' | 'script' | 'data' | 'doc' | 'other'
+
+/**
+ * Extension → kind, over the server's `FILE_EXTENSIONS` allowlist.
+ *
+ * The same table shape as `EDITOR_LANGUAGES`, and for the same reason: one map
+ * with its own test, rather than a `v-if` chain repeated in every surface that
+ * renders a filename.
+ */
+const KIND_BY_EXTENSION = {
+  html: 'markup',
+  css: 'style',
+  js: 'script',
+  json: 'data',
+  md: 'doc',
+} as const satisfies Record<string, FileKind>
+
+/**
+ * The kinds in the order the tree shows them, with the words it shows.
+ *
+ * Markup leads for `compareFilePaths`' reason — `index.html` is where a reader
+ * starts, and a grouping that buried the entry point under an alphabetised kind
+ * would undo the one ordering decision this module has already made. `other`
+ * last, because it is the bucket for things nothing else claimed.
+ */
+const KIND_ORDER = [
+  { kind: 'markup', label: 'Markup' },
+  { kind: 'style', label: 'Styles' },
+  { kind: 'script', label: 'Scripts' },
+  { kind: 'data', label: 'Data' },
+  { kind: 'doc', label: 'Notes' },
+  { kind: 'other', label: 'Other' },
+] as const satisfies readonly { kind: FileKind; label: string }[]
+
+/** One kind's rows, as the tree renders them — never empty. */
+export interface FileGroup {
+  kind: FileKind
+  /** The section heading, decided here so two surfaces cannot word it differently. */
+  label: string
+  rows: FileRow[]
+}
+
+/**
+ * A path's kind, by its last extension.
+ *
+ * Lower-cased because case is not part of an extension, and read through a
+ * bracket with a `??` — which `noUncheckedIndexedAccess` requires anyway, and
+ * which is the same expression that makes the miss land on `other`.
+ */
+export function fileKind(path: string): FileKind {
+  const dot = path.lastIndexOf('.')
+  if (dot <= 0) return 'other'
+
+  const extension = path.slice(dot + 1).toLowerCase()
+  return (KIND_BY_EXTENSION as Record<string, FileKind>)[extension] ?? 'other'
+}
+
+/**
+ * The tree, in sections — the flat list `mergeFileTree` returns, grouped.
+ *
+ * The row order inside a group is the one it arrived in, so `compareFilePaths`
+ * stays the single authority on ordering and this only decides where the
+ * partitions fall. Empty kinds are dropped: a heading over nothing tells a
+ * project with no JSON that it has a Data section.
+ */
+export function groupFileTree(rows: FileRow[]): FileGroup[] {
+  return KIND_ORDER.map(
+    ({ kind, label }): FileGroup => ({
+      kind,
+      label,
+      rows: rows.filter((row) => fileKind(row.path) === kind),
+    }),
+  ).filter((group) => group.rows.length > 0)
+}
+
 /*
  * One encoder for the module. `utf8Bytes` is called on every keystroke in the
  * editor, and a fresh `TextEncoder` per call is an allocation per character

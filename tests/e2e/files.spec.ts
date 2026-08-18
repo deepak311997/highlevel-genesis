@@ -47,8 +47,15 @@ import {
 /** `__slow` makes the stream observable: 600 ms, then a token every 150 ms. */
 const PROMPT = '__slow build a contact dashboard'
 
-/** What `reply.json` writes, in the tree's order (entry point first). */
-const GENERATED = ['index.html', 'app.js', 'styles.css']
+/**
+ * What `reply.json` writes, in the tree's order.
+ *
+ * The tree groups by kind now — markup, styles, scripts — with the entry point
+ * still first inside its own group, so this is no longer the flat alphabetical
+ * order the paths would sort into. Written out rather than derived, because a
+ * list computed the same way the component computes it asserts nothing.
+ */
+const GENERATED = ['index.html', 'styles.css', 'app.js']
 
 /**
  * Slice 9 AC-26 — the one function the generated code reaches HighLevel through.

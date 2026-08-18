@@ -162,6 +162,78 @@ describe('FileTree', () => {
     expect(rows[1]?.text()).toContain('Writing')
   })
 
+  /**
+   * The sections, which are the only hierarchy a flat namespace has.
+   *
+   * `filePathSchema` refuses slashes, so there are no directories to draw and a
+   * twenty-row list has nothing to break it up. The partition is
+   * `groupFileTree`'s, tested in `files.spec.ts`; what is asserted here is that
+   * the template renders what it is given rather than partitioning a second
+   * time.
+   */
+  it('renders a heading per kind, with the rows beneath it', () => {
+    store.filesLoaded = true
+    store.fileTree = [
+      { path: 'index.html', writing: false },
+      { path: 'styles.css', writing: false },
+      { path: 'app.js', writing: false },
+    ]
+    const wrapper = mount(FileTree)
+
+    const groups = wrapper.findAll('[data-testid="file-group"]')
+    expect(groups.map((group) => group.attributes('data-kind'))).toEqual([
+      'markup',
+      'style',
+      'script',
+    ])
+    expect(groups[0]?.text()).toContain('Markup')
+    expect(wrapper.findAll('[data-testid="file-row"]')).toHaveLength(3)
+  })
+
+  /**
+   * A section folds, and `aria-expanded` says so.
+   *
+   * Twenty files is the cap, and the point of a heading you can close is that
+   * the kind you are not working in costs one line instead of eight. The role is
+   * deliberately *not* `tree`: a tree widget owes the user arrow-key traversal
+   * and typeahead, and a role promising keyboard behaviour the component does
+   * not implement is worse than the plain list it lies about.
+   */
+  it('folds a section from its heading', async () => {
+    store.filesLoaded = true
+    store.fileTree = [
+      { path: 'index.html', writing: false },
+      { path: 'app.js', writing: false },
+    ]
+    const wrapper = mount(FileTree)
+
+    const markup = wrapper.find('[data-testid="file-group"][data-kind="markup"]')
+    expect(markup.attributes('aria-expanded')).toBe('true')
+
+    await markup.trigger('click')
+
+    expect(markup.attributes('aria-expanded')).toBe('false')
+    const rows = wrapper.findAll('[data-testid="file-row"]')
+    expect(rows.map((row) => row.attributes('data-path'))).toEqual(['app.js'])
+
+    await markup.trigger('click')
+    expect(wrapper.findAll('[data-testid="file-row"]')).toHaveLength(2)
+  })
+
+  /** Every row carries its kind's glyph, from the one component that decides it. */
+  it('gives each row its file icon', () => {
+    store.filesLoaded = true
+    store.fileTree = [
+      { path: 'index.html', writing: false },
+      { path: 'styles.css', writing: false },
+    ]
+    const wrapper = mount(FileTree)
+
+    const rows = wrapper.findAll('[data-testid="file-row"]')
+    expect(rows[0]?.find('svg').classes()).toContain('lucide-code-xml')
+    expect(rows[1]?.find('svg').classes()).toContain('lucide-palette')
+  })
+
   /*
    * A generation that streams into an empty project must replace the empty state
    * rather than render beside it — so the branch keys off the tree, not the
