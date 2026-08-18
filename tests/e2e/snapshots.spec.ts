@@ -28,11 +28,14 @@ import { assertEmulatorBuild, editorText, openNewProject, signUpAndVerify } from
  * "restore broke", so a red run still names the culprit.
  */
 
-/** What `reply.json` writes, in the tree's order (entry point first). */
-const VERSION_ONE = ['index.html', 'app.js', 'styles.css']
+/**
+ * What `reply.json` writes, in the tree's order — grouped by kind (markup,
+ * styles, scripts), with the entry point first inside its own group.
+ */
+const VERSION_ONE = ['index.html', 'styles.css', 'app.js']
 
 /** What `reply-alt.json` leaves behind it: the same three, plus the about page. */
-const VERSION_TWO = ['index.html', 'about.html', 'app.js', 'styles.css']
+const VERSION_TWO = ['index.html', 'about.html', 'styles.css', 'app.js']
 
 async function generate(page: import('@playwright/test').Page, prompt: string): Promise<void> {
   await page.getByTestId('composer-input').fill(prompt)

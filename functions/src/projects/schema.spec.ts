@@ -5,6 +5,7 @@ import {
   createProjectBodySchema,
   DESCRIPTION_MAX,
   NAME_MAX,
+  normalizeName,
   patchProjectBodySchema,
   projectIdSchema,
   projectsPath,
@@ -279,5 +280,31 @@ describe('toProject', () => {
     })
 
     expect(Object.keys(toProject('proj-1', deleted))).not.toContain('deletedAt')
+  })
+})
+
+/**
+ * The comparison key behind "you already have a project called that".
+ *
+ * It exists because two projects named `Contact center` and `contact  center`
+ * are one project to every reader of the list and two to a byte comparison. The
+ * cases below are the ones a user actually produces: a shifted capital, a double
+ * space from a paste, a trailing space from a copy.
+ */
+describe('normalizeName', () => {
+  it.each([
+    ['Contact center', 'contact center'],
+    ['contact center', 'contact center'],
+    ['  Contact center  ', 'contact center'],
+    ['Contact  center', 'contact center'],
+    ['Contact\tcenter', 'contact center'],
+  ])('folds %j to %j', (input, expected) => {
+    expect(normalizeName(input)).toBe(expected)
+  })
+
+  /* Different names stay different — the fold is not so eager that it merges
+   * projects the user meant to keep apart. */
+  it('keeps genuinely different names apart', () => {
+    expect(normalizeName('Contacts')).not.toBe(normalizeName('Contact center'))
   })
 })

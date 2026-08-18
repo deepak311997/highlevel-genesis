@@ -2,6 +2,7 @@
 import { computed, onMounted } from 'vue'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -106,6 +107,22 @@ const CHECK_LABELS: Record<ProbeState, string> = {
 
 const checkLabel = computed(() => CHECK_LABELS[hl.probe])
 
+/**
+ * The header chip: green for a working link, red for one that is missing or
+ * expired, and nothing at all until the first request has answered.
+ *
+ * `needsReconnect` is red rather than amber because it is not a middle state —
+ * the connection does not work, and the only way out of it is the same button
+ * the empty state offers.
+ */
+const statusChip = computed<{ label: string; variant: 'good' | 'bad' } | null>(() => {
+  if (hl.loading || hl.error !== null) return null
+  if (hl.needsReconnect) return { label: 'Reconnect needed', variant: 'bad' }
+  return hl.isConnected
+    ? { label: 'Connected', variant: 'good' }
+    : { label: 'Not connected', variant: 'bad' }
+})
+
 onMounted(() => {
   void hl.refresh()
 })
@@ -113,8 +130,19 @@ onMounted(() => {
 
 <template>
   <Card data-testid="connection-panel">
-    <CardHeader>
+    <!--
+      The chip answers "does this work?" before you have read a word. The
+      branches below still say what to do about it — this only removes the need
+      to read them to find out whether you have to.
+
+      Nothing is claimed while the first request is in flight or after it failed:
+      a red chip over a skeleton tells a connected user they are not connected.
+    -->
+    <CardHeader class="flex flex-row items-center justify-between gap-3">
       <CardTitle>HighLevel</CardTitle>
+      <Badge v-if="statusChip" :variant="statusChip.variant" data-testid="connection-status">
+        {{ statusChip.label }}
+      </Badge>
     </CardHeader>
 
     <CardContent class="flex flex-col gap-4">

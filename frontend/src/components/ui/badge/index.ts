@@ -17,6 +17,10 @@ export const badgeVariants = cva(
            filled so it reads as information beside the primary action's solid
            blue instead of competing with it. */
         good: 'border-good/25 bg-good/10 text-good',
+        /* `good`'s opposite, and deliberately not `destructive`: that one is a
+           solid red fill, which is the weight a *warning about an action* earns.
+           A connection that is simply absent is a state, and states are tinted. */
+        bad: 'border-destructive/25 bg-destructive/10 text-destructive',
         outline: 'text-foreground',
       },
     },

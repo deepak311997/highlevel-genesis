@@ -8,7 +8,6 @@ import {
   getJson,
   idTokenFor,
   postGenerate,
-  postJson,
   resetEmulators,
   seedUser,
   type GenerateResponse,
@@ -146,21 +145,24 @@ beforeEach(async () => {
 describe('POST /generate — the boundary, before a byte is streamed', () => {
   /** AC-20. */
   it('refuses a request with no Authorization header, as JSON, writing nothing', async () => {
-    const res = await postGenerate({ projectId: 'proj-1' })
+    const res = await postGenerate({ projectId: 'proj-1', retry: true })
 
     expectJsonRefusal(res, 401, 'unauthenticated')
     expect(await countMessages(aliceUid, 'proj-1')).toBe(1)
   })
 
   it('refuses a malformed Authorization header', async () => {
-    const res = await postGenerate({ projectId: 'proj-1' }, { Authorization: 'Bearer not-a-token' })
+    const res = await postGenerate(
+      { projectId: 'proj-1', retry: true },
+      { Authorization: 'Bearer not-a-token' },
+    )
 
     expectJsonRefusal(res, 401, 'unauthenticated')
   })
 
   /** AC-21. A router guard stops a browser; it does not stop a direct call. */
   it('refuses an unverified caller with 403, as JSON, writing nothing', async () => {
-    const res = await postGenerate({ projectId: 'proj-1' }, auth(unverifiedToken))
+    const res = await postGenerate({ projectId: 'proj-1', retry: true }, auth(unverifiedToken))
 
     expectJsonRefusal(res, 403, 'email_unverified')
     expect(await countMessages(aliceUid, 'proj-1')).toBe(1)
@@ -177,7 +179,7 @@ describe('POST /generate — the boundary, before a byte is streamed', () => {
     await seedMessage(bobUid, 'bob-1', 'msg-a', { content: "Bob's prompt" })
     const before = await storedMessages(bobUid, 'bob-1')
 
-    const res = await postGenerate({ projectId: 'bob-1' }, auth(aliceToken))
+    const res = await postGenerate({ projectId: 'bob-1', retry: true }, auth(aliceToken))
 
     expectJsonRefusal(res, 404, 'not_found')
     expect(await storedMessages(bobUid, 'bob-1')).toEqual(before)
@@ -188,13 +190,17 @@ describe('POST /generate — the boundary, before a byte is streamed', () => {
     await seedProject(aliceUid, 'gone', { deletedAt: Timestamp.fromMillis(1_700_000_900_000) })
     await seedMessage(aliceUid, 'gone', 'msg-a')
 
-    expectJsonRefusal(await postGenerate({ projectId: 'gone' }, auth(aliceToken)), 404, 'not_found')
+    expectJsonRefusal(
+      await postGenerate({ projectId: 'gone', retry: true }, auth(aliceToken)),
+      404,
+      'not_found',
+    )
 
     expect(await countMessages(aliceUid, 'gone')).toBe(1)
   })
 
   it('answers 404 for an id that never existed, writing nothing', async () => {
-    const res = await postGenerate({ projectId: 'neverExisted' }, auth(aliceToken))
+    const res = await postGenerate({ projectId: 'neverExisted', retry: true }, auth(aliceToken))
 
     expectJsonRefusal(res, 404, 'not_found')
     expect(await countMessages(aliceUid, 'neverExisted')).toBe(0)
@@ -204,28 +210,38 @@ describe('POST /generate — the boundary, before a byte is streamed', () => {
     await adminDb().doc(`users/${aliceUid}/projects/corrupt`).set({ description: 'no name here' })
 
     expectJsonRefusal(
-      await postGenerate({ projectId: 'corrupt' }, auth(aliceToken)),
+      await postGenerate({ projectId: 'corrupt', retry: true }, auth(aliceToken)),
       404,
       'not_found',
     )
   })
 
   /*
-   * AC-24, D2. Every one of these is refused **before any Firestore read**,
-   * which is why the body parse is the first statement of the handler. `content`
-   * is the one that matters: a body carrying the prompt is the shape every chat
-   * tutorial uses, and accepting it would let the client's copy disagree with
-   * what is stored.
+   * AC-24. Every one of these is refused **before any Firestore read**, which is
+   * why the body parse is the first statement of the handler.
+   *
+   * `content` is a real field now — a turn is one request, and the prompt
+   * travels in it — so what the table guards has moved rather than gone. The
+   * load-bearing pair is the first two: a body carrying **both** `content` and
+   * `retry` is a caller that has not decided what it wants, and a body carrying
+   * **neither** would silently generate a second reply to whatever the
+   * transcript happens to end with. The refine says exactly one; this is the
+   * proof it is enforced at the boundary rather than in the handler.
    */
   it.each([
-    ['an extra content key', { projectId: 'proj-1', content: 'my own prompt' }],
-    ['an extra role key', { projectId: 'proj-1', role: 'assistant' }],
-    ['an extra uid key', { projectId: 'proj-1', uid: 'somebody-else' }],
+    ['both content and retry', { projectId: 'proj-1', content: 'a prompt', retry: true }],
+    ['neither content nor retry', { projectId: 'proj-1' }],
+    ['retry: false', { projectId: 'proj-1', retry: false }],
+    ['an empty content', { projectId: 'proj-1', content: '   ' }],
+    ['a content past the cap', { projectId: 'proj-1', content: 'a'.repeat(4001) }],
+    ['a numeric content', { projectId: 'proj-1', content: 42 }],
+    ['an extra role key', { projectId: 'proj-1', retry: true, role: 'assistant' }],
+    ['an extra uid key', { projectId: 'proj-1', retry: true, uid: 'somebody-else' }],
     ['a missing projectId', {}],
-    ['a numeric projectId', { projectId: 42 }],
-    ['a 65-character projectId', { projectId: 'a'.repeat(65) }],
-    ['a punctuated projectId', { projectId: 'bad!id' }],
-    ['a slashed projectId', { projectId: 'a/b' }],
+    ['a numeric projectId', { projectId: 42, retry: true }],
+    ['a 65-character projectId', { projectId: 'a'.repeat(65), retry: true }],
+    ['a punctuated projectId', { projectId: 'bad!id', retry: true }],
+    ['a slashed projectId', { projectId: 'a/b', retry: true }],
   ])('refuses %s with 400 invalid_body, writing nothing', async (_label, body) => {
     const res = await postGenerate(body, auth(aliceToken))
 
@@ -247,7 +263,7 @@ describe('POST /generate — the boundary, before a byte is streamed', () => {
       seq: 1,
     })
 
-    const res = await postGenerate({ projectId: 'echoes' }, auth(aliceToken))
+    const res = await postGenerate({ projectId: 'echoes', retry: true }, auth(aliceToken))
 
     expectJsonRefusal(res, 400, 'empty_context')
     expect((res.body as { error?: string }).error).toBe(
@@ -285,7 +301,7 @@ describe('POST /generate — the boundary, before a byte is streamed', () => {
     }
     await batch.commit()
 
-    const res = await postGenerate({ projectId: 'full' }, auth(aliceToken))
+    const res = await postGenerate({ projectId: 'full', retry: true }, auth(aliceToken))
 
     expectJsonRefusal(res, 409, 'message_limit')
     expect((res.body as { error?: string }).error).toBe(
@@ -299,7 +315,7 @@ describe('POST /generate — the boundary, before a byte is streamed', () => {
     await seedProject(aliceUid, 'empty')
 
     expectJsonRefusal(
-      await postGenerate({ projectId: 'empty' }, auth(aliceToken)),
+      await postGenerate({ projectId: 'empty', retry: true }, auth(aliceToken)),
       400,
       'empty_context',
     )
@@ -323,7 +339,7 @@ const tokenText = (res: GenerateResponse): string =>
 describe('POST /generate — a turn that streams', () => {
   /** AC-1. The frame sequence, and the headers that make it a stream at all. */
   it('answers 200 with the streaming headers, tokens, then exactly one done', async () => {
-    const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+    const res = await postGenerate({ projectId: 'proj-1', retry: true }, auth(aliceToken))
 
     expect(res.status).toBe(200)
     expect(res.contentType).toBe('text/event-stream; charset=utf-8')
@@ -337,7 +353,7 @@ describe('POST /generate — a turn that streams', () => {
     const res = await fetch(GENERATE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...auth(aliceToken) },
-      body: JSON.stringify({ projectId: 'proj-1' }),
+      body: JSON.stringify({ projectId: 'proj-1', retry: true }),
     })
     await res.text()
 
@@ -351,7 +367,7 @@ describe('POST /generate — a turn that streams', () => {
    * bubble with it and the next page load reads the document.
    */
   it('persists exactly one assistant message equal to the concatenated tokens', async () => {
-    const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+    const res = await postGenerate({ projectId: 'proj-1', retry: true }, auth(aliceToken))
 
     const stored = await storedMessages(aliceUid, 'proj-1')
     expect(stored).toHaveLength(2)
@@ -363,7 +379,7 @@ describe('POST /generate — a turn that streams', () => {
   })
 
   it('describes that document in the done frame, in wire shape', async () => {
-    const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+    const res = await postGenerate({ projectId: 'proj-1', retry: true }, auth(aliceToken))
     const message = doneMessage(res)
 
     const snapshot = await adminDb()
@@ -375,14 +391,22 @@ describe('POST /generate — a turn that streams', () => {
     expect(message['id']).toBe(doc?.id)
     expect(message['content']).toBe(doc?.get('content'))
     expect(message['createdAt']).toBe((doc?.get('createdAt') as Timestamp).toDate().toISOString())
-    // The wire shape, and `seq` is still not part of it.
-    expect(Object.keys(message).sort()).toEqual(['content', 'createdAt', 'id', 'role', 'truncated'])
+    // The wire shape, and `seq` is still not part of it. `error` is: a turn
+    // that failed has to be able to say so on the next page load.
+    expect(Object.keys(message).sort()).toEqual([
+      'content',
+      'createdAt',
+      'error',
+      'id',
+      'role',
+      'truncated',
+    ])
   })
 
   /* AC-11 end to end: `reply.json` carries a recorded thinking delta, and it
    * must not have become a token. */
   it('forwards no thinking text as a token', async () => {
-    const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+    const res = await postGenerate({ projectId: 'proj-1', retry: true }, auth(aliceToken))
 
     expect(tokenText(res)).not.toContain('The user wants')
     expect(tokenText(res)).toContain('Here is a contact dashboard.')
@@ -390,7 +414,7 @@ describe('POST /generate — a turn that streams', () => {
 
   /** AC-3. The transcript, read back the way the browser reads it. */
   it('returns the user message before the assistant one, both untruncated', async () => {
-    await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+    await postGenerate({ projectId: 'proj-1', retry: true }, auth(aliceToken))
 
     const res = await getJson(`/api/projects/proj-1/messages`, auth(aliceToken))
     const messages = (res.body as { messages: Record<string, unknown>[] }).messages
@@ -409,7 +433,7 @@ describe('POST /generate — a turn that streams', () => {
     await seedProject(aliceUid, 'slow')
     await seedMessage(aliceUid, 'slow', 'msg-a', { content: '__slow build a contact dashboard' })
 
-    const res = await postGenerate({ projectId: 'slow' }, auth(aliceToken))
+    const res = await postGenerate({ projectId: 'slow', retry: true }, auth(aliceToken))
 
     const firstToken = res.frames.findIndex((frame) => frame.event === 'token')
     const comments = res.frames.filter((frame) => frame.comment !== null)
@@ -420,27 +444,23 @@ describe('POST /generate — a turn that streams', () => {
   })
 
   /*
-   * The whole two-request turn, twice — D3 executed. The second prompt goes
-   * through the real `POST` route rather than being seeded, so the commit
-   * timestamps are Firestore's own and the ordering is the one a browser sees.
+   * Two whole turns, and the second one carries its own prompt — which is now
+   * all a turn is. The prompt used to go through `POST /api/projects/:id/
+   * messages` before a second request opened the stream; that route is gone,
+   * and with it the window where a client could die between the two.
    *
    * It is also R1 end to end: the second `/generate` reads a transcript that
-   * ends `user → assistant → user`, and the first `/generate` read one ending
-   * `user`. A trailing assistant would be a prefill and a 400; neither call is.
+   * ends `user → assistant` and appends its own prompt to it, so what reaches
+   * the model ends `user`. A trailing assistant would be a prefill and a 400;
+   * neither call is.
    */
   it('answers a second turn, so the transcript grows rather than being replaced', async () => {
-    await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
-    expect(
-      (
-        await postJson(
-          '/api/projects/proj-1/messages',
-          { content: 'and add a search box' },
-          auth(aliceToken),
-        )
-      ).status,
-    ).toBe(201)
+    await postGenerate({ projectId: 'proj-1', retry: true }, auth(aliceToken))
 
-    const second = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+    const second = await postGenerate(
+      { projectId: 'proj-1', content: 'and add a search box' },
+      auth(aliceToken),
+    )
 
     expect(second.status).toBe(200)
     expect(framesOf(second.frames, 'done')).toHaveLength(1)
@@ -480,7 +500,7 @@ describe('POST /generate — failure, mid-stream', () => {
       content: '__fail_midstream build a contact dashboard',
     })
 
-    const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+    const res = await postGenerate({ projectId: 'proj-1', retry: true }, auth(aliceToken))
 
     expect(res.status).toBe(200)
     expect(framesOf(res.frames, 'token')).toHaveLength(2)
@@ -499,17 +519,33 @@ describe('POST /generate — failure, mid-stream', () => {
     expect(payload.message?.['truncated']).toBe(true)
   })
 
-  /** AC-13. Nothing was produced, so there is nothing to preserve. */
-  it('answers one error with a null message and writes nothing when it fails upfront', async () => {
+  /**
+   * AC-13, **rewritten by "a failure survives a refresh"**.
+   *
+   * It used to say that a generation producing no prose wrote nothing at all —
+   * and that was the bug: the only trace of the failure was an in-memory flag,
+   * so a reload showed a transcript that had silently swallowed the turn. A
+   * failed turn now stores an assistant document with no prose and the reason
+   * there is none, and the `error` frame carries that document so the client
+   * replaces its placeholder with what was actually written.
+   */
+  it('persists the failure itself when the generation fails upfront', async () => {
     await seedMessage(aliceUid, 'proj-1', 'msg-a', { content: '__fail_upfront build a dashboard' })
 
-    const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+    const res = await postGenerate({ projectId: 'proj-1', retry: true }, auth(aliceToken))
 
     expect(res.status).toBe(200)
     expect(framesOf(res.frames, 'token')).toHaveLength(0)
     expect(framesOf(res.frames, 'error')).toHaveLength(1)
-    expect(errorPayload(res)).toMatchObject({ code: 'upstream', message: null })
-    expect(await assistantMessages(aliceUid, 'proj-1')).toHaveLength(0)
+    expect(errorPayload(res).code).toBe('upstream')
+
+    const stored = await assistantMessages(aliceUid, 'proj-1')
+    expect(stored).toHaveLength(1)
+    expect(stored[0]?.['content']).toBe('')
+    expect(stored[0]?.['error']).toBe('upstream')
+    // The frame is the document, so success and failure are one client path.
+    expect(errorPayload(res).message?.['id']).toBeDefined()
+    expect(errorPayload(res).message?.['error']).toBe('upstream')
   })
 
   /*
@@ -520,13 +556,18 @@ describe('POST /generate — failure, mid-stream', () => {
   it('answers one refused error and writes nothing when the model declines', async () => {
     await seedMessage(aliceUid, 'proj-1', 'msg-a', { content: '__refuse do something dubious' })
 
-    const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+    const res = await postGenerate({ projectId: 'proj-1', retry: true }, auth(aliceToken))
 
     expect(res.status).toBe(200)
     expect(framesOf(res.frames, 'error')).toHaveLength(1)
-    expect(errorPayload(res)).toMatchObject({ code: 'refused', message: null })
+    expect(errorPayload(res).code).toBe('refused')
     expect(errorPayload(res).error).toBe('Claude declined to answer that. Try rephrasing.')
-    expect(await assistantMessages(aliceUid, 'proj-1')).toHaveLength(0)
+
+    // Nothing was said, and the reason it was not said is what gets stored.
+    const stored = await assistantMessages(aliceUid, 'proj-1')
+    expect(stored).toHaveLength(1)
+    expect(stored[0]?.['content']).toBe('')
+    expect(stored[0]?.['error']).toBe('refused')
   })
 
   /*
@@ -537,7 +578,7 @@ describe('POST /generate — failure, mid-stream', () => {
   it('ends with done and truncated true when the model hits max_tokens', async () => {
     await seedMessage(aliceUid, 'proj-1', 'msg-a', { content: '__max_tokens write me an epic' })
 
-    const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+    const res = await postGenerate({ projectId: 'proj-1', retry: true }, auth(aliceToken))
 
     expect(framesOf(res.frames, 'done')).toHaveLength(1)
     expect(framesOf(res.frames, 'error')).toHaveLength(0)
@@ -553,7 +594,7 @@ describe('POST /generate — failure, mid-stream', () => {
   it('caps a runaway generation, ending in done with a stored reply under the limit', async () => {
     await seedMessage(aliceUid, 'proj-1', 'msg-a', { content: '__long write me everything' })
 
-    const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+    const res = await postGenerate({ projectId: 'proj-1', retry: true }, auth(aliceToken))
 
     expect(framesOf(res.frames, 'done')).toHaveLength(1)
     const stored = (await assistantMessages(aliceUid, 'proj-1'))[0]
@@ -607,7 +648,7 @@ describe('POST /generate — a transcript ending in an assistant turn', () => {
       truncated: true,
     })
 
-    const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+    const res = await postGenerate({ projectId: 'proj-1', retry: true }, auth(aliceToken))
 
     expect(res.status).toBe(200)
     expect(framesOf(res.frames, 'done')).toHaveLength(1)
@@ -631,9 +672,193 @@ describe('POST /generate — a transcript ending in an assistant turn', () => {
       })
     }
 
-    const res = await postGenerate({ projectId: 'proj-1' }, auth(aliceToken))
+    const res = await postGenerate({ projectId: 'proj-1', retry: true }, auth(aliceToken))
 
     expect(res.status).toBe(200)
     expect(framesOf(res.frames, 'done')).toHaveLength(1)
+  })
+})
+
+/** The `user` frame's payload — the prompt as stored, echoed before the tokens. */
+function userMessage(res: GenerateResponse): Record<string, unknown> {
+  const frame = framesOf(res.frames, 'user')[0]
+  const payload = frame?.data as { message?: Record<string, unknown> } | undefined
+  if (payload?.message === undefined) throw new Error('no user frame carrying a message')
+  return payload.message
+}
+
+/**
+ * The prompt travels with the turn — one request, and this is what it buys.
+ *
+ * A turn used to take two requests: `POST /api/projects/:id/messages` wrote the
+ * prompt, then `POST /generate` streamed the reply. The property that split was
+ * protecting is that the prompt is durable before the expensive half starts, and
+ * it is preserved here by *ordering inside the handler* rather than by a round
+ * trip — so the guarantees the message route used to carry are asserted against
+ * `/generate` now, because that is where they live.
+ *
+ * The window the old shape had is what is really being closed: a client that
+ * died between the two requests left a transcript ending on a prompt no reply
+ * was ever coming for, with nothing on screen to say so. There is no "between"
+ * any more.
+ */
+describe('POST /generate — the prompt travels with the turn', () => {
+  /* The project seeded by `beforeEach` already holds one message, so these cases
+     use projects of their own where the count is the assertion. */
+  it('writes the prompt as seq 0 and echoes the stored document before the tokens', async () => {
+    await seedProject(aliceUid, 'fresh')
+
+    const res = await postGenerate(
+      { projectId: 'fresh', content: 'build a contact dashboard' },
+      auth(aliceToken),
+    )
+
+    expect(res.status).toBe(200)
+    const stored = await storedMessages(aliceUid, 'fresh')
+    expect(stored.map((doc) => doc['role'])).toEqual(['user', 'assistant'])
+    expect(stored[0]?.['seq']).toBe(0)
+    expect(stored[0]?.['content']).toBe('build a contact dashboard')
+
+    /*
+     * The echo is not decoration: without it the browser would have to invent an
+     * id and a timestamp for the bubble it drew optimistically, and be wrong
+     * about both until the next refetch.
+     */
+    const echoed = userMessage(res)
+    expect(echoed['content']).toBe('build a contact dashboard')
+    expect(echoed['role']).toBe('user')
+    expect(Object.keys(echoed).sort()).toEqual([
+      'content',
+      'createdAt',
+      'error',
+      'id',
+      'role',
+      'truncated',
+    ])
+    // Before a single token, or the bubble is replaced after the reply lands.
+    expect(res.frames.findIndex((frame) => frame.event === 'user')).toBeLessThan(
+      res.frames.findIndex((frame) => frame.event === 'token'),
+    )
+  })
+
+  /* Trimmed on the way in, so a prompt is never stored with the whitespace a
+     text area left on it — the same rule the message route enforced. */
+  it('trims the prompt', async () => {
+    await seedProject(aliceUid, 'trimmed')
+
+    await postGenerate(
+      { projectId: 'trimmed', content: '  build a contact dashboard  ' },
+      auth(aliceToken),
+    )
+
+    expect((await storedMessages(aliceUid, 'trimmed'))[0]?.['content']).toBe(
+      'build a contact dashboard',
+    )
+  })
+
+  /**
+   * The ordering, asserted where it matters: **the prompt survives a generation
+   * that never produced a byte.**
+   *
+   * This is the case the two-request shape existed for. Written after the
+   * upstream call instead, a failed generation would lose the prompt as well as
+   * the reply, and the user would be looking at a transcript that had silently
+   * dropped what they typed.
+   */
+  it('keeps the prompt when the generation fails before its first token', async () => {
+    await seedProject(aliceUid, 'doomed')
+
+    const res = await postGenerate(
+      { projectId: 'doomed', content: '__fail_upfront build a dashboard' },
+      auth(aliceToken),
+    )
+
+    expect(framesOf(res.frames, 'error')).toHaveLength(1)
+    const stored = await storedMessages(aliceUid, 'doomed')
+    // The prompt, and beside it the assistant document that says why no reply
+    // came — both of which a reload has to be able to read back.
+    expect(stored.map((doc) => doc['role'])).toEqual(['user', 'assistant'])
+    expect(stored[0]?.['content']).toBe('__fail_upfront build a dashboard')
+    expect(stored[1]?.['content']).toBe('')
+    expect(stored[1]?.['error']).toBe('upstream')
+  })
+
+  /**
+   * The cap, and **a new turn needs room for two documents where a retry needs
+   * one**.
+   *
+   * Refusing a new turn at 199 is what stops a transcript ending on a prompt
+   * with nowhere to put its answer. Refusing a retry only at 200 is the other
+   * half: a retry writes no prompt, so a transcript with one slot left has room
+   * for exactly the reply it is asking for.
+   */
+  async function seedTranscript(projectId: string, count: number): Promise<void> {
+    await seedProject(aliceUid, projectId)
+    const batch = adminDb().batch()
+    for (let index = 0; index < count; index += 1) {
+      batch.set(
+        adminDb().doc(`users/${aliceUid}/projects/${projectId}/messages/m${String(index)}`),
+        {
+          role: index % 2 === 0 ? 'user' : 'assistant',
+          content: `message ${String(index)}`,
+          seq: index % 2,
+          createdAt: Timestamp.fromMillis(1_700_000_000_000 + index * 1000),
+          truncated: false,
+        },
+      )
+    }
+    await batch.commit()
+  }
+
+  it('refuses a new turn at 199, where only one of the pair would fit', async () => {
+    await seedTranscript('at199', 199)
+
+    const res = await postGenerate({ projectId: 'at199', content: 'one more' }, auth(aliceToken))
+
+    expectJsonRefusal(res, 409, 'message_limit')
+    expect(await countMessages(aliceUid, 'at199')).toBe(199)
+  })
+
+  it('accepts a new turn at 198, leaving exactly one slot for the reply', async () => {
+    await seedTranscript('at198', 198)
+
+    const res = await postGenerate({ projectId: 'at198', content: 'one more' }, auth(aliceToken))
+
+    expect(res.status).toBe(200)
+    expect(framesOf(res.frames, 'done')).toHaveLength(1)
+    expect(await countMessages(aliceUid, 'at198')).toBe(200)
+  })
+
+  /* A retry writes no prompt, so the last slot is the reply's. */
+  it('accepts a retry at 199 and refuses one at 200', async () => {
+    await seedTranscript('retry199', 199)
+    const accepted = await postGenerate({ projectId: 'retry199', retry: true }, auth(aliceToken))
+
+    expect(accepted.status).toBe(200)
+    expect(await countMessages(aliceUid, 'retry199')).toBe(200)
+
+    await seedTranscript('retry200', 200)
+    expectJsonRefusal(
+      await postGenerate({ projectId: 'retry200', retry: true }, auth(aliceToken)),
+      409,
+      'message_limit',
+    )
+    expect(await countMessages(aliceUid, 'retry200')).toBe(200)
+  })
+
+  /* The project document is not the transcript: a turn touches neither its name
+     nor its timestamps. */
+  it('leaves the project document byte-identical', async () => {
+    await seedProject(aliceUid, 'untouched')
+    const before = (await adminDb().doc(`users/${aliceUid}/projects/untouched`).get()).data()
+
+    await postGenerate(
+      { projectId: 'untouched', content: 'build a contact dashboard' },
+      auth(aliceToken),
+    )
+
+    expect((await adminDb().doc(`users/${aliceUid}/projects/untouched`).get()).data()).toEqual(
+      before,
+    )
   })
 })

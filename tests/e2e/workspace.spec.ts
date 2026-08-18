@@ -54,7 +54,9 @@ test.describe('Slice 05 — streaming generation', () => {
    * error state, a Retry — without poisoning the connection for whatever runs
    * after it.
    */
-  test('a failed generation, a Retry, and a reply that arrives progressively', async ({ page }) => {
+  test('a refused generation, a resend, and a reply that arrives progressively', async ({
+    page,
+  }) => {
     await signUpAndVerify(page, 'workspace')
 
     await expect(page.getByTestId('projects-empty')).toBeVisible()
@@ -103,22 +105,29 @@ test.describe('Slice 05 — streaming generation', () => {
     await page.getByTestId('composer-input').press('Enter')
 
     const bubbles = page.getByTestId('message-bubble')
-    // The prompt is durable before the expensive half begins (D3, F8.2): the user
-    // bubble is on screen even though the generation never started.
-    await expect(bubbles).toHaveCount(1)
-    await expect(bubbles.nth(0)).toContainText(PROMPT)
-    await expect(bubbles.nth(0)).toHaveAttribute('data-role', 'user')
-    await expect(page.getByTestId('generate-error')).toContainText(
+    /*
+     * **The server refused before it wrote anything, so the bubble comes back
+     * out.** A turn is one request now: the prompt is written inside
+     * `/generate`, after the checks that can refuse it — so a *status* means
+     * nothing was stored, and leaving an optimistic bubble on screen would show
+     * a turn that does not exist and would surprise the user on the next load.
+     *
+     * The words go back in the composer with the reason beside them, because
+     * that is where they can be acted on. A Retry is deliberately not offered:
+     * for a refusal that will refuse again — a project at its message cap, a
+     * malformed request — retrying is an offer to fail twice.
+     */
+    await expect(bubbles).toHaveCount(0)
+    await expect(page.getByTestId('composer-error')).toContainText(
       'Something went wrong. Please try again.',
     )
-    await expect(page.getByTestId('generate-retry')).toBeVisible()
-    // The composer cleared and is usable again, so the turn is not a dead end.
-    await expect(page.getByTestId('composer-input')).toHaveValue('')
+    await expect(page.getByTestId('composer-input')).toHaveValue(PROMPT)
+    await expect(page.getByTestId('generate-retry')).toHaveCount(0)
     await expect(page.getByTestId('chat-generating')).toBeHidden()
 
-    /* Movement two: withdraw the failure and retry — no new user message (D26). */
+    /* Movement two: withdraw the failure and send the prompt the composer kept. */
     await page.unroute('**/generate')
-    await page.getByTestId('generate-retry').click()
+    await page.getByTestId('composer-input').press('Enter')
 
     // The badge, while the model is thinking (D30). `__slow` holds this open for
     // 600 ms before the first token, which is also what AC-19's keep-alive needs.
@@ -263,11 +272,11 @@ test.describe('Slice 05 — streaming generation', () => {
   /**
    * The model declining, which is a 200 with no content at all (D18).
    *
-   * Nothing is persisted, because there is nothing to persist — so the transcript
-   * keeps just the prompt, and the panel says why rather than showing an empty
-   * assistant bubble.
+   * The prose is empty, and the turn is still written down: an assistant
+   * document carrying the reason there is nothing to show. The panel says why in
+   * the transcript rather than only in a footer a refresh would clear.
    */
-  test('a refusal leaves the prompt alone and explains itself', async ({ page }) => {
+  test('a refusal is explained in the transcript, and survives a reload', async ({ page }) => {
     await signUpAndVerify(page, 'workspace-refused')
     await openNewProject(page)
 
@@ -275,8 +284,27 @@ test.describe('Slice 05 — streaming generation', () => {
     await page.getByTestId('composer-input').press('Enter')
 
     await expect(page.getByTestId('generate-error')).toContainText('Claude declined to answer that')
-    await expect(page.getByTestId('message-bubble')).toHaveCount(1)
+
+    /*
+     * **Two bubbles, and the second one is the refusal.** The turn reached the
+     * model, so it exists: the prompt is stored, and beside it an assistant
+     * document with no prose and the reason there is none. That is what makes a
+     * failure survive a refresh — before it, a reload showed a transcript that
+     * had silently swallowed the turn.
+     */
+    const bubbles = page.getByTestId('message-bubble')
+    await expect(bubbles).toHaveCount(2)
+    await expect(bubbles.nth(0)).toContainText('__refuse do something dubious')
+    // The bubble's own words, which are the transcript's rather than the
+    // stream's: the footer quotes the server's sentence, the message says what a
+    // reader coming back to it needs.
+    await expect(bubbles.nth(1)).toContainText('The model declined to answer that')
     await expect(page.getByTestId('chat-generating')).toBeHidden()
+
+    // And it is still there after a reload, which is the whole claim.
+    await page.reload()
+    await expect(bubbles).toHaveCount(2)
+    await expect(bubbles.nth(1)).toContainText('The model declined to answer that')
   })
 
   /*

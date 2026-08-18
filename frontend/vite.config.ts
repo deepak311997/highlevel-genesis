@@ -155,9 +155,12 @@ export default defineConfig(({ mode, command }) => {
        */
       env: EMULATOR_ENV,
       include: ['src/**/*.spec.ts'],
+      // jsdom's missing pieces, filled once — see the file's own header.
+      setupFiles: ['./src/test-setup.ts'],
       coverage: {
         provider: 'v8',
         include: ['src/**/*.{ts,vue}'],
+        exclude: ['src/test-setup.ts'],
       },
     },
   }

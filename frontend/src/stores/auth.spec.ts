@@ -195,6 +195,7 @@ describe('session state', () => {
         content: 'build a contact dashboard',
         createdAt: '',
         truncated: false,
+        error: null,
       },
     ]
     workspace.messagesLoaded = true

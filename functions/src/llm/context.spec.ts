@@ -37,6 +37,7 @@ function message(role: 'user' | 'assistant', content: string, index: number): Me
     content,
     createdAt: '2026-08-17T09:00:00.000Z',
     truncated: false,
+    error: null,
   }
 }
 

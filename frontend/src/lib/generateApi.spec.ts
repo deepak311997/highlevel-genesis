@@ -14,6 +14,9 @@ vi.mock('@/lib/apiClient', async () => ({
 }))
 
 const { streamGeneration } = await import('./generateApi')
+
+/** A turn carrying a prompt. `{ retry: true }` is the other shape. */
+const TURN = { content: 'Build a contacts view' } as const
 const { registerSessionExpiredHook } = await import('./apiClient')
 const { ApiError } = await import('./api')
 
@@ -39,6 +42,7 @@ const MESSAGE = {
   content: 'Here is a contact dashboard',
   createdAt: '2026-08-17T09:00:00.000Z',
   truncated: false,
+  error: null,
 }
 
 /** A `Response` whose body streams the given chunks, in order. */
@@ -137,7 +141,12 @@ function lastCall(): [string, RequestInit] {
 
 async function collect(signal = new AbortController().signal): Promise<unknown[]> {
   const out: unknown[] = []
-  for await (const event of streamGeneration('proj-1', signal)) out.push(event)
+  for await (const event of streamGeneration(
+    'proj-1',
+    { content: 'Build a contacts view' },
+    signal,
+  ))
+    out.push(event)
   return out
 }
 
@@ -158,13 +167,13 @@ afterEach(() => {
 
 describe('streamGeneration — the request', () => {
   /** AC-30. */
-  it('POSTs to /generate with a body of exactly { projectId }', async () => {
+  it('POSTs to /generate with the project and the prompt', async () => {
     await collect()
     const [url, init] = lastCall()
 
     expect(url).toContain('/generate')
     expect(init.method).toBe('POST')
-    expect(init.body).toBe('{"projectId":"proj-1"}')
+    expect(init.body).toBe('{"projectId":"proj-1","content":"Build a contacts view"}')
   })
 
   it('sends both credentials and a JSON content type', async () => {
@@ -177,13 +186,34 @@ describe('streamGeneration — the request', () => {
   })
 
   /* The prompt is not in the body (D2): the transcript is the server's record. */
-  it('sends no prompt, role or content', async () => {
+  /*
+   * The prompt travels with the request that streams the reply, so a turn
+   * cannot half-happen. Nothing else a chat payload tends to carry goes with
+   * it — no role, no model, no transcript: those are the server's.
+   */
+  it('sends the project and the prompt, and nothing else', async () => {
     await collect()
 
     // The client always sends a JSON string; narrowed rather than coerced, since
     // `RequestInit['body']` also admits shapes with no useful stringification.
     const { body } = lastCall()[1]
-    expect(JSON.parse(typeof body === 'string' ? body : '')).toEqual({ projectId: 'proj-1' })
+    expect(JSON.parse(typeof body === 'string' ? body : '')).toEqual({
+      projectId: 'proj-1',
+      content: 'Build a contacts view',
+    })
+  })
+
+  /* A retry names itself and carries no prompt: the turn is already stored. */
+  it('sends retry instead of a prompt when re-running a turn', async () => {
+    fetchMock.mockResolvedValueOnce(streaming([`event: done\ndata: {"message":null}\n\n`]))
+    const drained = streamGeneration('proj-1', { retry: true }, new AbortController().signal)
+    for await (const event of drained) void event
+
+    const { body } = lastCall()[1]
+    expect(JSON.parse(typeof body === 'string' ? body : '')).toEqual({
+      projectId: 'proj-1',
+      retry: true,
+    })
   })
 
   it('passes the abort signal through to fetch', async () => {
@@ -310,7 +340,7 @@ describe('streamGeneration — refusals', () => {
 
     await expect(
       (async () => {
-        for await (const event of streamGeneration('proj-1', new AbortController().signal)) {
+        for await (const event of streamGeneration('proj-1', TURN, new AbortController().signal)) {
           seen.push(event)
         }
       })(),
@@ -514,7 +544,7 @@ describe('streamGeneration — a connection that drops mid-stream', () => {
 
     const seen: unknown[] = []
     const walk = (async () => {
-      for await (const event of streamGeneration('proj-1', new AbortController().signal)) {
+      for await (const event of streamGeneration('proj-1', TURN, new AbortController().signal)) {
         seen.push(event)
       }
     })()
@@ -571,7 +601,7 @@ describe('streamGeneration — a consumer that stops reading', () => {
     const cancel = vi.fn(() => Promise.resolve())
     fetchMock.mockResolvedValue(endless(cancel))
 
-    for await (const event of streamGeneration('proj-1', new AbortController().signal)) {
+    for await (const event of streamGeneration('proj-1', TURN, new AbortController().signal)) {
       expect(event).toEqual({ type: 'token', text: 'x' })
       break
     }
@@ -585,7 +615,7 @@ describe('streamGeneration — a consumer that stops reading', () => {
     const boom = new Error('openTab blew up')
 
     const walk = (async () => {
-      for await (const event of streamGeneration('proj-1', new AbortController().signal)) {
+      for await (const event of streamGeneration('proj-1', TURN, new AbortController().signal)) {
         expect(event).toEqual({ type: 'token', text: 'x' })
         throw boom
       }

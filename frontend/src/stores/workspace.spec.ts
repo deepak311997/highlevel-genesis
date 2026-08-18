@@ -57,6 +57,7 @@ const USER_MESSAGE = {
   content: 'build a contact dashboard',
   createdAt: '2026-08-17T09:00:00.000Z',
   truncated: false,
+  error: null,
 }
 
 const ASSISTANT_MESSAGE = {
@@ -65,6 +66,7 @@ const ASSISTANT_MESSAGE = {
   content: 'Here is a contact dashboard',
   createdAt: '2026-08-17T09:00:00.000Z',
   truncated: false,
+  error: null,
 }
 
 let fetchMock: ReturnType<typeof vi.fn>
@@ -458,19 +460,53 @@ describe('send', () => {
     const store = useWorkspaceStore()
     await store.open('proj-1')
     fetchMock.mockClear()
-    fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }, 201))
-    // The reply is a second request now (D3); this case is about the first.
-    fetchMock.mockResolvedValueOnce(cannedStream(`event: done\ndata: {"message":null}\n\n`))
+    fetchMock.mockResolvedValueOnce(
+      cannedStream(
+        `event: user\ndata: ${JSON.stringify({ message: USER_MESSAGE })}\n\n`,
+        `event: done\ndata: {"message":null}\n\n`,
+      ),
+    )
     store.draft = 'build a contact dashboard'
 
     await store.send()
 
-    expect(requests()[0]).toBe('POST /api/projects/proj-1/messages')
-    expect(requests()).not.toContain('GET /api/projects/proj-1/messages')
+    // One request for the whole turn, and no refetch: the stream said what it
+    // stored, so there is nothing to go back and ask for.
+    expect(requests()).toEqual(['POST /generate'])
     expect(store.messages).toEqual([USER_MESSAGE])
     expect(store.draft).toBe('')
     expect(store.sendError).toBeNull()
     expect(store.sending).toBe(false)
+  })
+
+  /*
+   * The bubble is on screen before the server has answered — waiting on a round
+   * trip to see your own words is a lag the user did not cause — and the
+   * placeholder carries an id no Firestore document can have, so the `user`
+   * frame can replace exactly it and nothing else.
+   */
+  it('shows the prompt immediately, then replaces it with what was stored', async () => {
+    const store = await opened()
+    const gate = deferred()
+    fetchMock.mockReturnValueOnce(gate.promise)
+    store.draft = 'build a contact dashboard'
+
+    const sending = store.send()
+    await Promise.resolve()
+
+    expect(store.messages).toHaveLength(1)
+    expect(store.messages[0]?.content).toBe('build a contact dashboard')
+    expect(store.messages[0]?.id).not.toBe(USER_MESSAGE.id)
+
+    gate.settle(
+      cannedStream(
+        `event: user\ndata: ${JSON.stringify({ message: USER_MESSAGE })}\n\n`,
+        `event: done\ndata: {"message":null}\n\n`,
+      ),
+    )
+    await sending
+
+    expect(store.messages).toEqual([USER_MESSAGE])
   })
 
   it('appends to an existing transcript rather than replacing it', async () => {
@@ -479,11 +515,17 @@ describe('send', () => {
     const store = useWorkspaceStore()
     await store.open('proj-1')
 
-    fetchMock.mockResolvedValueOnce(response({ messages: [ASSISTANT_MESSAGE] }, 201))
+    const second = { ...USER_MESSAGE, id: 'msg-9', content: 'again' }
+    fetchMock.mockResolvedValueOnce(
+      cannedStream(
+        `event: user\ndata: ${JSON.stringify({ message: second })}\n\n`,
+        `event: done\ndata: {"message":null}\n\n`,
+      ),
+    )
     store.draft = 'again'
     await store.send()
 
-    expect(store.messages).toEqual([USER_MESSAGE, ASSISTANT_MESSAGE])
+    expect(store.messages).toEqual([USER_MESSAGE, second])
   })
 
   it('sends the trimmed draft', async () => {
@@ -491,15 +533,17 @@ describe('send', () => {
     const store = useWorkspaceStore()
     await store.open('proj-1')
     fetchMock.mockClear()
-    fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }, 201))
+    fetchMock.mockResolvedValueOnce(cannedStream(`event: done\ndata: {"message":null}\n\n`))
     store.draft = '  build a contact dashboard  '
 
     await store.send()
 
     // The client always sends a JSON string; narrowed rather than coerced, since
     // `RequestInit['body']` also admits shapes with no useful stringification.
+    // The turn now carries the project and the prompt together — one request.
     const init = (fetchMock.mock.calls[0]?.[1] ?? {}) as RequestInit
     expect(JSON.parse(typeof init.body === 'string' ? init.body : '')).toEqual({
+      projectId: 'proj-1',
       content: 'build a contact dashboard',
     })
   })
@@ -508,7 +552,6 @@ describe('send', () => {
     respondOpenOk()
     const store = useWorkspaceStore()
     await store.open('proj-1')
-    fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }, 201))
     store.draft = 'hi'
 
     const pending = store.send()
@@ -521,11 +564,16 @@ describe('send', () => {
    * server's — a user who wrote a page of prose must not lose it to a 500, and
    * re-submitting has to be able to send the same text again.
    */
-  it('keeps the draft and appends nothing when the send fails, and retries', async () => {
-    respondOpenOk()
-    const store = useWorkspaceStore()
-    await store.open('proj-1')
-    fetchMock.mockClear()
+  /*
+   * A turn refused before the stream opened — the cap, a malformed body, a
+   * connection that never landed. The server writes the prompt before it
+   * flushes headers, so a refusal here means nothing was stored: the bubble
+   * comes back out, the words go back in the composer, and the reason appears
+   * beside the composer rather than as a Retry, because retrying at the cap
+   * would only fail again.
+   */
+  it('takes the bubble back and returns the draft when the turn is refused', async () => {
+    const store = await opened()
     fetchMock.mockResolvedValueOnce(
       response({ error: 'This project has reached its limit of 200 messages.' }, 409),
     )
@@ -534,21 +582,41 @@ describe('send', () => {
     await store.send()
 
     expect(store.sendError).toBe('This project has reached its limit of 200 messages.')
+    expect(store.generateError).toBeNull()
     expect(store.messages).toEqual([])
     expect(store.draft).toBe('build a contact dashboard')
     expect(store.sending).toBe(false)
 
-    fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }, 201))
-    fetchMock.mockResolvedValueOnce(cannedStream(`event: done\ndata: {"message":null}\n\n`))
+    fetchMock.mockResolvedValueOnce(
+      cannedStream(
+        `event: user\ndata: ${JSON.stringify({ message: USER_MESSAGE })}\n\n`,
+        `event: done\ndata: {"message":null}\n\n`,
+      ),
+    )
     await store.send()
 
-    expect(requests()).toEqual([
-      'POST /api/projects/proj-1/messages',
-      'POST /api/projects/proj-1/messages',
-      'POST /generate',
-    ])
+    // One request per attempt, both to the same place.
+    expect(requests()).toEqual(['POST /generate', 'POST /generate'])
     expect(store.sendError).toBeNull()
     expect(store.draft).toBe('')
+  })
+
+  /* The words are only put back if the composer is still empty — a user who has
+     started typing the next prompt does not want it overwritten. */
+  it('leaves a newly typed draft alone when a refused turn is rolled back', async () => {
+    const store = await opened()
+    const gate = deferred()
+    fetchMock.mockReturnValueOnce(gate.promise)
+    store.draft = 'first'
+
+    const sending = store.send()
+    await Promise.resolve()
+    store.draft = 'second'
+    gate.settle(response({ error: 'Nope.' }, 409))
+    await sending
+
+    expect(store.draft).toBe('second')
+    expect(store.messages).toEqual([])
   })
 
   /* A blank or whitespace-only draft is not a request. The composer disables
@@ -618,7 +686,6 @@ describe('canSend and atLimit', () => {
     respondOpenOk()
     const store = useWorkspaceStore()
     await store.open('proj-1')
-    fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }, 201))
     store.draft = 'hi'
 
     const pending = store.send()
@@ -749,12 +816,26 @@ const frame = (event: string, data: unknown): string =>
  */
 function droppingStream(...frames: string[]): Response {
   const encoder = new TextEncoder()
+  let delivered = false
   return {
     ok: true,
     status: 200,
     body: new ReadableStream<Uint8Array>({
-      start(controller) {
-        if (frames.length > 0) controller.enqueue(encoder.encode(frames.join('')))
+      /*
+       * Pull-based on purpose: the frames are handed over on the first read and
+       * the socket dies on the second, which is what a mid-stream drop is. An
+       * `error()` raised in `start` races the enqueued chunk and the reader
+       * usually loses — that models a connection that never delivered anything,
+       * which is a different case with different consequences for the prompt.
+       */
+      pull(controller) {
+        if (!delivered) {
+          delivered = true
+          if (frames.length > 0) {
+            controller.enqueue(encoder.encode(frames.join('')))
+            return
+          }
+        }
         controller.error(new TypeError('Failed to fetch'))
       },
     }),
@@ -786,40 +867,47 @@ async function opened(): Promise<ReturnType<typeof useWorkspaceStore>> {
   return store
 }
 
-describe('send — the two requests of a turn', () => {
+describe('send — the one request of a turn', () => {
   /*
-   * AC-32, D3. The message write first, then the stream, and **no `GET`**: the
-   * prompt is durable before the expensive, failure-prone half begins, which is
-   * the whole of F8.2. A refetch would re-read the entire history on every turn
-   * to re-read something that cannot have changed.
+   * AC-32. **One request, and no `GET`.** The prompt travels with the call that
+   * streams the reply, so the turn cannot half-happen — there is no window
+   * between "stored" and "asked for an answer" for a dead tab to fall into. The
+   * durability F8.2 wants is still there, bought by ordering inside the handler
+   * rather than by a second round trip: the server writes the prompt before it
+   * opens the stream. A refetch would re-read the entire history to learn what
+   * the stream just said.
    */
-  it('posts the message, then opens the stream, and issues no GET', async () => {
+  it('opens one stream carrying the prompt, and issues no GET', async () => {
     const store = await opened()
-    fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }, 201))
-    fetchMock.mockResolvedValueOnce(cannedStream(frame('done', { message: ASSISTANT_MESSAGE })))
+    fetchMock.mockResolvedValueOnce(
+      cannedStream(
+        frame('user', { message: USER_MESSAGE }),
+        frame('done', { message: ASSISTANT_MESSAGE }),
+      ),
+    )
     store.draft = 'build a contact dashboard'
 
     await store.send()
 
-    expect(requests()).toEqual(['POST /api/projects/proj-1/messages', 'POST /generate'])
+    expect(requests()).toEqual(['POST /generate'])
     expect(store.messages).toEqual([USER_MESSAGE, ASSISTANT_MESSAGE])
     expect(store.draft).toBe('')
   })
 
   /*
-   * AC-33. A failed write opens **no stream at all**: there is nothing to
-   * generate from, the user's words are still in the composer, and offering a
-   * generation for a prompt that was never stored would produce a reply attached
-   * to nothing.
+   * AC-33, inverted by the new shape. There is no separate write to fail, so
+   * the case is a turn refused before the stream opened: nothing is stored, so
+   * the bubble is taken back and the words are returned to the composer rather
+   * than left as a prompt the server has never heard of.
    */
-  it('opens no stream when the message write fails, and keeps the draft', async () => {
+  it('rolls the turn back when the request is refused outright', async () => {
     const store = await opened()
     fetchMock.mockResolvedValueOnce(response({ error: 'That project no longer exists.' }, 404))
     store.draft = 'build a contact dashboard'
 
     await store.send()
 
-    expect(requests()).toEqual(['POST /api/projects/proj-1/messages'])
+    expect(requests()).toEqual(['POST /generate'])
     expect(store.messages).toEqual([])
     expect(store.draft).toBe('build a contact dashboard')
     expect(store.sendError).toBe('That project no longer exists.')
@@ -876,7 +964,6 @@ describe('the stream', () => {
    */
   it('accumulates tokens without touching the transcript, then appends on done', async () => {
     const store = await opened()
-    fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }, 201))
     const stream = pushableStream()
     fetchMock.mockResolvedValueOnce(stream.response)
     store.draft = 'build a contact dashboard'
@@ -884,6 +971,11 @@ describe('the stream', () => {
     const sending = store.send()
     await vi.waitFor(() => {
       expect(store.generating).toBe(true)
+    })
+    // The server writes the prompt before it streams, so this is the first frame.
+    stream.push(frame('user', { message: USER_MESSAGE }))
+    await vi.waitFor(() => {
+      expect(store.messages).toEqual([USER_MESSAGE])
     })
 
     stream.push(frame('token', { text: 'Here is ' }))
@@ -915,9 +1007,9 @@ describe('the stream', () => {
    */
   it('appends the persisted partial and sets the error', async () => {
     const store = await opened()
-    fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }, 201))
     fetchMock.mockResolvedValueOnce(
       cannedStream(
+        frame('user', { message: USER_MESSAGE }),
         frame('token', { text: 'Here is ' }),
         frame('error', {
           error: 'The reply was interrupted. Try again.',
@@ -939,9 +1031,9 @@ describe('the stream', () => {
   /** AC-35's other half: nothing was produced, so nothing is appended. */
   it('appends nothing when the error carries a null message', async () => {
     const store = await opened()
-    fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }, 201))
     fetchMock.mockResolvedValueOnce(
       cannedStream(
+        frame('user', { message: USER_MESSAGE }),
         frame('error', {
           error: 'Claude declined to answer that. Try rephrasing.',
           code: 'refused',
@@ -963,18 +1055,24 @@ describe('the stream', () => {
    * than an event — so it has to reach the same error state, or a 404 on
    * `/generate` would leave the composer disabled with nothing on screen.
    */
-  it('records a refusal to open the stream as a generation error', async () => {
+  /*
+   * A refusal on a **retry** is a generation error rather than a send error, and
+   * the difference is whether anything is pending: a retry carries no prompt, so
+   * there is nothing to take back off the screen and Retry is still the right
+   * thing to offer.
+   */
+  it('records a refused retry as a generation error, rolling nothing back', async () => {
     const store = await opened()
-    fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }, 201))
+    store.messages = [USER_MESSAGE]
     fetchMock.mockResolvedValueOnce(
       response({ error: 'There is nothing to generate from yet. Send a message first.' }, 400),
     )
-    store.draft = 'build a contact dashboard'
 
-    await store.send()
+    await store.retryGeneration()
 
     expect(store.messages).toEqual([USER_MESSAGE])
     expect(store.generateError).toBe('There is nothing to generate from yet. Send a message first.')
+    expect(store.sendError).toBeNull()
     expect(store.generating).toBe(false)
     expect(store.streamingText).toBe('')
   })
@@ -994,6 +1092,13 @@ describe('retryGeneration', () => {
 
     expect(requests()).toEqual(['POST /generate'])
     expect(store.messages).toEqual([ASSISTANT_MESSAGE])
+
+    // No prompt on the wire: the turn being re-run is already in the transcript.
+    const init = (fetchMock.mock.calls[0]?.[1] ?? {}) as RequestInit
+    expect(JSON.parse(typeof init.body === 'string' ? init.body : '')).toEqual({
+      projectId: 'proj-1',
+      retry: true,
+    })
   })
 
   it('clears a previous generation error when it succeeds', async () => {
@@ -1002,7 +1107,12 @@ describe('retryGeneration', () => {
     await store.retryGeneration()
     expect(store.generateError).toBe('Something went wrong.')
 
-    fetchMock.mockResolvedValueOnce(cannedStream(frame('done', { message: ASSISTANT_MESSAGE })))
+    fetchMock.mockResolvedValueOnce(
+      cannedStream(
+        frame('user', { message: USER_MESSAGE }),
+        frame('done', { message: ASSISTANT_MESSAGE }),
+      ),
+    )
     await store.retryGeneration()
 
     expect(store.generateError).toBeNull()
@@ -2302,7 +2412,10 @@ describe('the stream — files', () => {
     fetchMock.mockClear()
 
     fetchMock.mockResolvedValueOnce(
-      cannedStream(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null })),
+      cannedStream(
+        frame('user', { message: USER_MESSAGE }),
+        frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }),
+      ),
     )
     await store.retryGeneration()
 
@@ -2413,6 +2526,7 @@ describe('the stream — files', () => {
     const store = await openedWithFiles()
     fetchMock.mockResolvedValueOnce(
       cannedStream(
+        frame('user', { message: USER_MESSAGE }),
         frame('done', {
           message: ASSISTANT_MESSAGE,
           files: [],
@@ -2550,6 +2664,7 @@ describe('the stream — files', () => {
 
     fetchMock.mockResolvedValueOnce(
       cannedStream(
+        frame('user', { message: USER_MESSAGE }),
         frame('error', {
           error: 'The reply was interrupted.',
           code: 'upstream_error',
@@ -2595,6 +2710,7 @@ describe('the stream — files', () => {
     const store = await openedWithFiles()
     fetchMock.mockResolvedValueOnce(
       cannedStream(
+        frame('user', { message: USER_MESSAGE }),
         frame('done', {
           message: ASSISTANT_MESSAGE,
           files: [],
@@ -2691,7 +2807,10 @@ describe('the stream — files', () => {
   it('leaves both counters at zero on a done that stored no file', async () => {
     const store = await openedWithFiles()
     fetchMock.mockResolvedValueOnce(
-      cannedStream(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null })),
+      cannedStream(
+        frame('user', { message: USER_MESSAGE }),
+        frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }),
+      ),
     )
 
     await store.retryGeneration()
@@ -2783,6 +2902,7 @@ describe('the stream — files', () => {
     const store = await openedWithFiles()
     fetchMock.mockResolvedValueOnce(
       cannedStream(
+        frame('user', { message: USER_MESSAGE }),
         frame('done', { message: ASSISTANT_MESSAGE, files: ['index.html'], fileError: null }),
       ),
     )
@@ -2800,6 +2920,7 @@ describe('the stream — files', () => {
     const store = await openedWithFiles()
     fetchMock.mockResolvedValueOnce(
       cannedStream(
+        frame('user', { message: USER_MESSAGE }),
         frame('done', { message: ASSISTANT_MESSAGE, files: ['index.html'], fileError: null }),
       ),
     )
@@ -2985,7 +3106,10 @@ describe('the snapshot list', () => {
     fetchMock.mockClear()
 
     fetchMock.mockResolvedValueOnce(
-      cannedStream(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null })),
+      cannedStream(
+        frame('user', { message: USER_MESSAGE }),
+        frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }),
+      ),
     )
     await store.retryGeneration()
 
@@ -3601,17 +3725,16 @@ describe('restoreSnapshot — what it reports', () => {
 describe('a connection that drops mid-reply', () => {
   it('keeps the prompt and reopens the stream after a mid-stream drop', async () => {
     const store = await opened()
-    fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }, 201))
-    fetchMock.mockResolvedValueOnce(droppingStream(frame('token', { text: 'Here' })))
+    fetchMock.mockResolvedValueOnce(
+      droppingStream(frame('user', { message: USER_MESSAGE }), frame('token', { text: 'Here' })),
+    )
     store.draft = 'build a contact dashboard'
 
     await store.send()
 
     // The prompt is still in the transcript, which is what makes Retry worth offering.
     expect(store.messages).toEqual([USER_MESSAGE])
-    expect(store.generateError).toBe(
-      'Something went wrong. Check your connection and try again.',
-    )
+    expect(store.generateError).toBe('Something went wrong. Check your connection and try again.')
     expect(store.generateError).not.toContain('Failed to fetch')
     expect(store.generating).toBe(false)
 
@@ -3620,11 +3743,7 @@ describe('a connection that drops mid-reply', () => {
 
     await store.retryGeneration()
 
-    expect(requests()).toEqual([
-      'POST /api/projects/proj-1/messages',
-      'POST /generate',
-      'POST /generate',
-    ])
+    expect(requests()).toEqual(['POST /generate', 'POST /generate'])
     expect(store.generateError).toBeNull()
     expect(store.messages).toEqual([USER_MESSAGE, ASSISTANT_MESSAGE])
   })

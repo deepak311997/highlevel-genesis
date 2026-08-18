@@ -184,9 +184,28 @@ test.describe('Slice 07 — Monaco editor', () => {
     // empty box that happens to be tall.
     await expect.poll(() => page.locator('.view-line').count()).toBeGreaterThan(0)
 
-    // The tree still scrolls within its cap, with every row reachable.
-    const capped = page.locator('[data-testid="editor-panel"] .max-h-56')
-    await expect(capped).toHaveCount(1)
+    // The explorer sits beside the editor and scrolls on its own, with every
+    // row reachable. It is a flex item in a row the panel gives a height to, so
+    // there is no cap to assert any more — the bounding box is the assertion.
+    const rail = page.getByTestId('file-explorer')
+    await expect(rail).toBeVisible()
+    const railBox = await rail.boundingBox()
+    expect(railBox?.height ?? 0).toBeGreaterThan(100)
+    expect(railBox?.width ?? 0).toBeLessThan(wide?.width ?? 0)
+    await expect(page.getByTestId('file-row')).toHaveCount(3)
+
+    /*
+     * And it folds, which is what makes a rail affordable in a panel this
+     * narrow: the editor is wider afterwards, and no row is left focusable
+     * behind a zero-width box.
+     */
+    await page.getByTestId('explorer-toggle').click()
+    await expect(rail).toHaveCount(0)
+    await expect(page.getByTestId('file-row')).toHaveCount(0)
+    const widened = await page.getByTestId('code-editor').boundingBox()
+    expect(widened?.width ?? 0).toBeGreaterThan(wide?.width ?? 0)
+
+    await page.getByTestId('explorer-toggle').click()
     await expect(page.getByTestId('file-row')).toHaveCount(3)
 
     /* The narrow layout is a different component tree, so it is asserted again. */

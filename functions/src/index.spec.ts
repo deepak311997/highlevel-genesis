@@ -199,18 +199,20 @@ describe('the guards on the money-spending routes', () => {
   })
 
   /*
-   * Slice 4's route keeps both, and this is the case that would notice it
-   * losing one while attention was on the new endpoint. `attested` is the local
-   * name the router gives `requireAppCheck`.
+   * The messages router has no write any more: a prompt is stored by
+   * `/generate`, inside the request that streams the reply, so the attestation
+   * that used to guard the write lives there — asserted by the `generate.ts`
+   * case above.
+   *
+   * This checks the router did not keep a mutation quietly: a `post` here would
+   * be a second, unattested way to write a message, which is exactly the hole
+   * moving the write was meant to close.
    */
-  it('the messages POST route still carries both guards', () => {
+  it('the messages router exposes no write at all', () => {
     const source = read('messages/index.ts')
 
     expect(source).toContain('withVerifiedUser')
-    expect(source).toContain('attested')
-    expect(source).toMatch(
-      /messagesRouter\.post\(\s*'\/projects\/:projectId\/messages',\s*attested/,
-    )
+    expect(source).not.toMatch(/messagesRouter\.(post|put|patch|delete)\(/)
   })
 
   /**

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { compareFilePaths, formatBytes, mergeFileTree, utf8Bytes, type FileRow } from './files'
+import {
+  compareFilePaths,
+  fileKind,
+  formatBytes,
+  groupFileTree,
+  mergeFileTree,
+  utf8Bytes,
+  type FileRow,
+} from './files'
 import type { FileMeta } from './filesApi'
 
 /**
@@ -164,5 +172,83 @@ describe('formatBytes', () => {
   it('rounds to the nearest kilobyte above the floor', () => {
     expect(formatBytes(1500)).toBe('2 KB')
     expect(formatBytes(11_240)).toBe('11 KB')
+  })
+})
+
+describe('fileKind', () => {
+  /**
+   * The extension is the only thing a flat filename can be sorted *by*.
+   *
+   * The server refuses slashes outright (`filePathSchema`), so a generated
+   * project has no directories to draw and the panel's only real grouping is
+   * what a file *is*. Mapping that here rather than in the template is the same
+   * decision `editorLanguage` made about tokenizers: one table, tested against
+   * the server's allowlist, instead of a `v-if` chain per surface that renders
+   * a filename.
+   */
+  it('names the kind of every extension the server allows', () => {
+    expect(fileKind('index.html')).toBe('markup')
+    expect(fileKind('styles.css')).toBe('style')
+    expect(fileKind('app.js')).toBe('script')
+    expect(fileKind('data.json')).toBe('data')
+    expect(fileKind('readme.md')).toBe('doc')
+  })
+
+  /*
+   * Case is not part of an extension, and a path the allowlist never sees still
+   * has to render — `other` is a row with a generic icon rather than a throw.
+   */
+  it('falls back to other for anything unmapped, and ignores case', () => {
+    expect(fileKind('INDEX.HTML')).toBe('markup')
+    expect(fileKind('app.ts')).toBe('other')
+    expect(fileKind('noextension')).toBe('other')
+  })
+})
+
+describe('groupFileTree', () => {
+  const row = (path: string): FileRow => ({ path, writing: false })
+
+  /**
+   * The groups come out in a fixed order and the rows keep the tree's.
+   *
+   * Markup first for `compareFilePaths`' reason: `index.html` is where a reader
+   * starts, and a grouping that buried it under an alphabetised kind would undo
+   * the one ordering decision this module already made.
+   */
+  it('groups by kind in a fixed order, preserving the row order inside each', () => {
+    const groups = groupFileTree([
+      row('readme.md'),
+      row('styles.css'),
+      row('index.html'),
+      row('app.js'),
+      row('theme.css'),
+    ])
+
+    expect(groups.map((group) => group.kind)).toEqual(['markup', 'style', 'script', 'doc'])
+    expect(groups.map((group) => group.label)).toEqual(['Markup', 'Styles', 'Scripts', 'Notes'])
+    expect(groups[1]?.rows.map((entry) => entry.path)).toEqual(['styles.css', 'theme.css'])
+  })
+
+  /* An empty group is a header naming nothing — a project with no JSON should
+     not be told it has a Data section. */
+  it('omits the kinds this project has no files of', () => {
+    expect(groupFileTree([row('index.html')]).map((group) => group.kind)).toEqual(['markup'])
+    expect(groupFileTree([])).toEqual([])
+  })
+
+  /* Unmapped extensions land in one group at the end rather than vanishing. */
+  it('collects anything unmapped into a final Other group', () => {
+    const groups = groupFileTree([row('app.ts'), row('index.html')])
+
+    expect(groups.map((group) => group.kind)).toEqual(['markup', 'other'])
+    expect(groups[1]?.rows.map((entry) => entry.path)).toEqual(['app.ts'])
+  })
+
+  /* The marker has to survive the grouping, or a streaming file loses the one
+     thing that says its bytes are not stored yet. */
+  it('carries the writing marker through untouched', () => {
+    const groups = groupFileTree([{ path: 'app.js', writing: true }])
+
+    expect(groups[0]?.rows[0]).toEqual({ path: 'app.js', writing: true })
   })
 })

@@ -43,9 +43,14 @@ onMounted(() => {
     <div class="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
       <ProjectsCard />
 
+      <!--
+        Account first, connection under it: the rail is ordered by how often you
+        look at it, and "who am I signed in as" is the question the top of a
+        rail should answer.
+      -->
       <div class="flex flex-col gap-4">
-        <ConnectionPanel />
         <AccountCard />
+        <ConnectionPanel />
       </div>
     </div>
   </div>

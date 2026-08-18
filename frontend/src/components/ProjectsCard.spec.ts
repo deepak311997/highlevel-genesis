@@ -254,6 +254,32 @@ describe('ProjectsCard', () => {
     expect(wrapper.findAll('[data-testid="project-row"]')).toHaveLength(0)
   })
 
+  /*
+   * The row's two actions are icons, not words.
+   *
+   * Two text buttons per row put "Rename" and "Delete" beside every project
+   * name at the same weight as the name itself — the list read as a column of
+   * buttons with names attached. An icon needs an accessible name of its own,
+   * which is the second half of this test and the part that would otherwise be
+   * lost in the swap.
+   */
+  it('gives the row actions icons and an accessible name each', () => {
+    store.projects = [PROJECT]
+    store.loaded = true
+
+    const wrapper = mount(ProjectsCard, MOUNT)
+
+    const rename = wrapper.find('[data-testid="project-rename"]')
+    const remove = wrapper.find('[data-testid="project-delete"]')
+
+    expect(rename.text()).toBe('')
+    expect(remove.text()).toBe('')
+    expect(rename.find('svg').exists()).toBe(true)
+    expect(remove.find('svg').exists()).toBe(true)
+    expect(rename.attributes('aria-label')).toBe('Rename Contact dashboard')
+    expect(remove.attributes('aria-label')).toBe('Delete Contact dashboard')
+  })
+
   describe('the dialogs it drives', () => {
     it('opens the form with no project from New project', async () => {
       store.loaded = true
@@ -337,8 +363,8 @@ describe('ProjectsCard', () => {
       const wrapper = mount(ProjectsCard, MOUNT)
       await flushPromises()
 
-      expect(wrapper.findAll('[data-testid="project-row"]')).toHaveLength(8)
-      expect(wrapper.find('[data-testid="projects-range"]').text()).toBe('1–8 of 23')
+      expect(wrapper.findAll('[data-testid="project-row"]')).toHaveLength(10)
+      expect(wrapper.find('[data-testid="projects-range"]').text()).toBe('1–10 of 23')
     })
 
     it('walks forward and back without refetching', async () => {
@@ -349,28 +375,28 @@ describe('ProjectsCard', () => {
       store.load.mockClear()
 
       await wrapper.find('[data-testid="projects-next"]').trigger('click')
-      expect(wrapper.find('[data-testid="projects-range"]').text()).toBe('9–16 of 23')
-      expect(wrapper.findAll('[data-testid="project-name"]')[0]?.text()).toBe('Project 9')
+      expect(wrapper.find('[data-testid="projects-range"]').text()).toBe('11–20 of 23')
+      expect(wrapper.findAll('[data-testid="project-name"]')[0]?.text()).toBe('Project 11')
 
       await wrapper.find('[data-testid="projects-prev"]').trigger('click')
-      expect(wrapper.find('[data-testid="projects-range"]').text()).toBe('1–8 of 23')
+      expect(wrapper.find('[data-testid="projects-range"]').text()).toBe('1–10 of 23')
       expect(store.load).not.toHaveBeenCalled()
     })
 
     it('stops at both ends', async () => {
-      store.projects = projectsNamed(10)
+      store.projects = projectsNamed(12)
 
       const wrapper = mount(ProjectsCard, MOUNT)
       await flushPromises()
 
       expect(wrapper.find('[data-testid="projects-prev"]').attributes('disabled')).toBeDefined()
       await wrapper.find('[data-testid="projects-next"]').trigger('click')
-      expect(wrapper.find('[data-testid="projects-range"]').text()).toBe('9–10 of 10')
+      expect(wrapper.find('[data-testid="projects-range"]').text()).toBe('11–12 of 12')
       expect(wrapper.find('[data-testid="projects-next"]').attributes('disabled')).toBeDefined()
     })
 
     it('hides the controls when everything fits on one page', async () => {
-      store.projects = projectsNamed(5)
+      store.projects = projectsNamed(10)
 
       const wrapper = mount(ProjectsCard, MOUNT)
       await flushPromises()
@@ -380,18 +406,155 @@ describe('ProjectsCard', () => {
 
     /* Delete the last project on the last page and that page stops existing. */
     it('falls back a page when the list shrinks under it', async () => {
-      store.projects = projectsNamed(9)
+      store.projects = projectsNamed(11)
 
       const wrapper = mount(ProjectsCard, MOUNT)
       await flushPromises()
       await wrapper.find('[data-testid="projects-next"]').trigger('click')
-      expect(wrapper.find('[data-testid="projects-range"]').text()).toBe('9–9 of 9')
+      expect(wrapper.find('[data-testid="projects-range"]').text()).toBe('11–11 of 11')
 
-      reactive(store).projects = projectsNamed(8)
+      reactive(store).projects = projectsNamed(10)
       await flushPromises()
 
       expect(wrapper.find('[data-testid="projects-range"]').exists()).toBe(false)
-      expect(wrapper.findAll('[data-testid="project-row"]')).toHaveLength(8)
+      expect(wrapper.findAll('[data-testid="project-row"]')).toHaveLength(10)
+    })
+  })
+
+  /*
+   * Search.
+   *
+   * Client-side over the same loaded list the pager windows, for the same
+   * reason: the server already caps a list at 100, so filtering costs no
+   * request and cannot fail. Name and description both, because the row shows
+   * both and a user searching for words they can see would not accept "only the
+   * name counts".
+   *
+   * The state that needs saying out loud is "matched nothing" — an empty list
+   * under a filled-in box otherwise reads as "your projects are gone".
+   */
+  describe('search', () => {
+    beforeEach(() => {
+      store.loaded = true
+      store.error = null
+    })
+
+    /*
+     * In the header, beside New project — not floating between the title and the
+     * first row, where it read as a row of the list rather than as a control
+     * over it.
+     */
+    it('puts the search field in the card header', () => {
+      store.projects = [PROJECT]
+
+      const wrapper = mount(ProjectsCard, MOUNT)
+
+      const header = wrapper.find('[data-testid="projects-card-header"]')
+      expect(header.find('[data-testid="projects-search"]').exists()).toBe(true)
+      expect(header.find('[data-testid="projects-new"]').exists()).toBe(true)
+    })
+
+    /* The reset inside the field, for a search that matched something you no
+     * longer want filtered — the no-matches state has its own. */
+    it('clears the field from the reset inside it', async () => {
+      store.projects = [PROJECT, SECOND]
+
+      const wrapper = mount(ProjectsCard, MOUNT)
+      await wrapper.find('[data-testid="projects-search"]').setValue('calendar')
+      expect(wrapper.findAll('[data-testid="project-row"]')).toHaveLength(1)
+
+      await wrapper.find('[data-testid="projects-search-reset"]').trigger('click')
+
+      expect(wrapper.findAll('[data-testid="project-row"]')).toHaveLength(2)
+    })
+
+    /* Nothing to reset when nothing is typed. */
+    it('shows no reset while the field is empty', () => {
+      store.projects = [PROJECT]
+
+      const wrapper = mount(ProjectsCard, MOUNT)
+
+      expect(wrapper.find('[data-testid="projects-search-reset"]').exists()).toBe(false)
+    })
+
+    it('offers a search field once there are rows, and not in the empty state', () => {
+      const empty = mount(ProjectsCard, MOUNT)
+      expect(empty.find('[data-testid="projects-search"]').exists()).toBe(false)
+
+      store.projects = [PROJECT]
+      const withRows = mount(ProjectsCard, MOUNT)
+      expect(withRows.find('[data-testid="projects-search"]').exists()).toBe(true)
+    })
+
+    it('filters by name, ignoring case and surrounding space', async () => {
+      store.projects = [PROJECT, SECOND]
+
+      const wrapper = mount(ProjectsCard, MOUNT)
+      await wrapper.find('[data-testid="projects-search"]').setValue('  CALENDAR ')
+
+      const rows = wrapper.findAll('[data-testid="project-row"]')
+      expect(rows).toHaveLength(1)
+      expect(rows[0]?.find('[data-testid="project-name"]').text()).toBe('Calendar sync')
+    })
+
+    it('matches the description too, since the row shows one', async () => {
+      store.projects = [PROJECT, SECOND]
+
+      const wrapper = mount(ProjectsCard, MOUNT)
+      await wrapper.find('[data-testid="projects-search"]').setValue('filters contacts')
+
+      const rows = wrapper.findAll('[data-testid="project-row"]')
+      expect(rows).toHaveLength(1)
+      expect(rows[0]?.find('[data-testid="project-name"]').text()).toBe('Contact dashboard')
+    })
+
+    /* Filtering does not refetch — it windows what is already loaded. */
+    it('says so when nothing matches, and clearing brings the list back', async () => {
+      store.projects = [PROJECT, SECOND]
+
+      const wrapper = mount(ProjectsCard, MOUNT)
+      await flushPromises()
+      store.load.mockClear()
+
+      await wrapper.find('[data-testid="projects-search"]').setValue('nothing like this')
+
+      expect(wrapper.findAll('[data-testid="project-row"]')).toHaveLength(0)
+      expect(wrapper.find('[data-testid="projects-no-matches"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="projects-empty"]').exists()).toBe(false)
+
+      await wrapper.find('[data-testid="projects-clear-search"]').trigger('click')
+
+      expect(wrapper.findAll('[data-testid="project-row"]')).toHaveLength(2)
+      expect(wrapper.find('[data-testid="projects-no-matches"]').exists()).toBe(false)
+      expect(store.load).not.toHaveBeenCalled()
+    })
+
+    it('pages the matches rather than the whole list', async () => {
+      store.projects = [...projectsNamed(23), { ...PROJECT, id: 'odd', name: 'Calendar sync' }]
+
+      const wrapper = mount(ProjectsCard, MOUNT)
+      await wrapper.find('[data-testid="projects-search"]').setValue('project 1')
+
+      // Project 1 and 10–19: eleven matches, so a second page of one.
+      expect(wrapper.find('[data-testid="projects-range"]').text()).toBe('1–10 of 11')
+      await wrapper.find('[data-testid="projects-next"]').trigger('click')
+      expect(wrapper.findAll('[data-testid="project-row"]')).toHaveLength(1)
+    })
+
+    /* Typing on page 3 and staying there would show an empty window under a
+     * result count that says there are matches. */
+    it('returns to the first page when the query changes', async () => {
+      store.projects = projectsNamed(23)
+
+      const wrapper = mount(ProjectsCard, MOUNT)
+      await wrapper.find('[data-testid="projects-next"]').trigger('click')
+      expect(wrapper.find('[data-testid="projects-range"]').text()).toBe('11–20 of 23')
+
+      // Project 1 and 10–19: eleven matches, so the pager survives the filter.
+      await wrapper.find('[data-testid="projects-search"]').setValue('project 1')
+
+      expect(wrapper.find('[data-testid="projects-range"]').text()).toBe('1–10 of 11')
+      expect(wrapper.findAll('[data-testid="project-name"]')[0]?.text()).toBe('Project 1')
     })
   })
 })

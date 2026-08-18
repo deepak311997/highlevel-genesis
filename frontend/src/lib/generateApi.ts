@@ -43,7 +43,11 @@ import { createSseParser } from './sse'
  * bubble. `token` keeps its meaning and carries chat text only.
  */
 
+/** What a turn is: a new prompt, or a re-run of the one already stored. */
+export type GenerateTurn = { content: string } | { retry: true }
+
 export type GenerateEvent =
+  | { type: 'user'; message: Message }
   | { type: 'token'; text: string }
   | { type: 'file_start'; path: string }
   | { type: 'file_chunk'; path: string; text: string }
@@ -63,12 +67,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 function asMessage(value: unknown): Message | null {
   if (!isRecord(value)) return null
-  const { id, role, content, createdAt, truncated } = value
+  const { id, role, content, createdAt, truncated, error } = value
   if (typeof id !== 'string' || typeof content !== 'string' || typeof createdAt !== 'string') {
     return null
   }
   if (role !== 'user' && role !== 'assistant') return null
-  return { id, role, content, createdAt, truncated: truncated === true }
+  return {
+    id,
+    role,
+    content,
+    createdAt,
+    truncated: truncated === true,
+    // Tolerant like the fields above: anything that is not a string is "did not
+    // fail", which is what a server predating this field means by omitting it.
+    error: typeof error === 'string' ? error : null,
+  }
 }
 
 /**
@@ -102,6 +115,17 @@ function asFileError(value: unknown): string | null {
 
 function toEvent(name: string, data: unknown): GenerateEvent | null {
   if (!isRecord(data)) return null
+
+  /*
+   * The prompt, as the server stored it. Emitted once, before any token, for a
+   * turn that carried one — a retry re-runs what is already in the transcript
+   * and emits nothing. The store swaps its optimistic bubble for this, so the
+   * id and the timestamp on screen are the document's rather than a guess.
+   */
+  if (name === 'user') {
+    const message = asMessage(data['message'])
+    return message === null ? null : { type: 'user', message }
+  }
 
   if (name === 'token') {
     return typeof data['text'] === 'string' ? { type: 'token', text: data['text'] } : null
@@ -142,6 +166,7 @@ function toEvent(name: string, data: unknown): GenerateEvent | null {
 
 export async function* streamGeneration(
   projectId: string,
+  turn: GenerateTurn,
   signal: AbortSignal,
 ): AsyncGenerator<GenerateEvent> {
   let res: Response
@@ -149,8 +174,13 @@ export async function* streamGeneration(
     res = await fetch(apiUrl('/generate'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-      // Exactly `{ projectId }` (D2). The prompt is the server's own record.
-      body: JSON.stringify({ projectId }),
+      /*
+       * The prompt travels with the request that streams the reply, so a turn
+       * cannot half-happen: there is no window between storing the message and
+       * asking for an answer for a client to die in. A retry carries no prompt —
+       * the turn it re-runs is already in the transcript.
+       */
+      body: JSON.stringify({ projectId, ...turn }),
       signal,
     })
   } catch (err) {

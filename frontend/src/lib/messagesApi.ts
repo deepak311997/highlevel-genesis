@@ -1,4 +1,3 @@
-import { ApiError } from './api'
 import { request } from './apiClient'
 
 /**
@@ -28,6 +27,14 @@ export interface Message {
    * one flag for all four, so the panel has one thing to render.
    */
   truncated: boolean
+  /**
+   * Why the turn failed, or `null` for one that did not (D2 of this change).
+   *
+   * A failed generation used to persist nothing, so the transcript could not
+   * show what had happened and a refresh cleared the only trace. The reply is
+   * now written even when it has no prose, carrying the reason.
+   */
+  error: string | null
 }
 
 /**
@@ -52,38 +59,4 @@ function pathFor(projectId: string): string {
 export async function listMessages(projectId: string): Promise<Message[]> {
   const { messages } = await request<{ messages: Message[] }>(pathFor(projectId))
   return messages
-}
-
-/**
- * Send a prompt, and get back **the user's turn alone** (D3, D4).
- *
- * The reply is no longer part of this request: `POST /generate` streams it and
- * writes it at the stream's terminal event. Two requests rather than one is what
- * makes the prompt durable *before* the expensive half begins, so a generation
- * that dies before its first byte still leaves a transcript the user recognises
- * and a Retry that works.
- *
- * The server keeps the `{ messages: [...] }` envelope with one element in it, so
- * nothing above had to change shape; this unwraps it to the single message the
- * caller actually wants.
- *
- * The body is `{ content }` and nothing else: `role` is assigned server-side, and
- * a body carrying one is refused rather than stripped. That is the shape this
- * function exists to keep.
- */
-export async function sendMessage(projectId: string, content: string): Promise<Message> {
-  const { messages } = await request<{ messages: Message[] }>(pathFor(projectId), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content }),
-  })
-
-  const message = messages[0]
-  if (message === undefined) {
-    // A 201 with nothing in it is a server that answered and said nothing. The
-    // store would otherwise append `undefined` to the transcript; rejecting turns
-    // it into the composer's error state, where a person can act on it.
-    throw new ApiError('Something went wrong. Please try again.', 500)
-  }
-  return message
 }

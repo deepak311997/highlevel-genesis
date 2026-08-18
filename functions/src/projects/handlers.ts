@@ -11,6 +11,7 @@ import {
   createProjectBodySchema,
   patchProjectBodySchema,
   LIST_LIMIT,
+  normalizeName,
   PROJECT_LIMIT,
   projectIdSchema,
   projectsPath,
@@ -154,27 +155,64 @@ export async function handleListProjects(_req: Request, res: Response, uid: stri
 }
 
 /**
- * How many live projects the caller holds, up to the cap.
+ * The caller's live projects, by id and name and nothing else.
  *
- * `select()` with no arguments asks for document references and no field data,
- * so this is ~100 refs rather than ~100 documents, and `limit(PROJECT_LIMIT)`
- * means a user with thousands of soft-deleted projects still reads at most a
- * hundred. Deliberately not `count()`: the aggregation buys nothing here and
- * adds a question about emulator support.
+ * `select('name')` asks for one small field per document, so this is ~100 names
+ * rather than ~100 documents, and `limit(PROJECT_LIMIT)` means a user with
+ * thousands of soft-deleted projects still reads at most a hundred. Deliberately
+ * not `count()`: the aggregation cannot carry the names, and the cap is what
+ * makes reading them affordable — a hundred is the most there can ever be.
  *
- * Read immediately before the write and not transactional (D8): two simultaneous
- * creates at 99 can both land, which is a guard-rail missing by one rather than
- * a boundary being crossed.
+ * One read answers both questions the write path has: how many are there, and is
+ * one of them already called this. Read immediately before the write and not
+ * transactional (D8): two simultaneous creates at 99 can both land, and two
+ * simultaneous creates of the same name can both land — a guard-rail missing by
+ * one rather than a boundary being crossed.
  */
-async function liveProjectCount(uid: string): Promise<number> {
+async function liveProjects(uid: string): Promise<{ id: string; name: string }[]> {
   const snapshot = await getDb()
     .collection(projectsPath(uid))
     .where('deletedAt', '==', null)
     .limit(PROJECT_LIMIT)
-    .select()
+    .select('name')
     .get()
 
-  return snapshot.size
+  return snapshot.docs.map((doc) => {
+    const stored: unknown = doc.get('name')
+    // A corrupt document has no name to collide with; it is already invisible to
+    // the list and 404 by id, so it cannot be what the user is looking at.
+    return { id: doc.id, name: typeof stored === 'string' ? stored : '' }
+  })
+}
+
+/**
+ * The refusal a second project of the same name earns.
+ *
+ * 409 rather than 400: the body is well-formed and the name is one the user may
+ * legitimately want — it is the *collection's* current state that refuses it,
+ * which is the same shape of answer the project cap gives. The name is echoed
+ * back because the dialog that issued the request shows this sentence whole, and
+ * "that name" is ambiguous when the rename dialog is open over a list.
+ */
+function duplicateName(name: string): HttpError {
+  return new HttpError(409, `You already have a project called “${name}”.`, 'duplicate_name')
+}
+
+/**
+ * Is one of the caller's other live projects already called this?
+ *
+ * `exclude` is the project being renamed: without it every rename that leaves
+ * the name alone — or changes only its capitals — would collide with itself.
+ */
+function nameTaken(
+  existing: { id: string; name: string }[],
+  name: string,
+  exclude?: string,
+): boolean {
+  const wanted = normalizeName(name)
+  return existing.some(
+    (project) => project.id !== exclude && normalizeName(project.name) === wanted,
+  )
 }
 
 /**
@@ -206,13 +244,19 @@ export async function handleCreateProject(req: Request, res: Response, uid: stri
    */
   const body = parseBody(createProjectBodySchema, req)
 
-  if ((await liveProjectCount(uid)) >= PROJECT_LIMIT) {
+  const existing = await liveProjects(uid)
+
+  if (existing.length >= PROJECT_LIMIT) {
     throw new HttpError(
       409,
       `You have reached the limit of ${String(PROJECT_LIMIT)} projects.`,
       'project_limit',
     )
   }
+
+  // Before the connection read and before the write, so a refused name costs
+  // neither and writes nothing.
+  if (nameTaken(existing, body.name)) throw duplicateName(body.name)
 
   const locationId = await resolveLocationId(uid)
 
@@ -282,7 +326,21 @@ export async function handlePatchProject(req: Request, res: Response, uid: strin
    */
   const body = parseBody(patchProjectBodySchema, req)
 
-  if ((await readProject(uid, id)) === null) throw notFound()
+  const current = await readProject(uid, id)
+  if (current === null) throw notFound()
+
+  /*
+   * Only when the name is actually changing shape. Renaming `sample` to
+   * `Sample` is a rename of *this* project, so it is compared against the
+   * others and not against itself — which `exclude` is what guarantees.
+   */
+  if (
+    'name' in body &&
+    body.name !== undefined &&
+    normalizeName(body.name) !== normalizeName(current.name)
+  ) {
+    if (nameTaken(await liveProjects(uid), body.name, id)) throw duplicateName(body.name)
+  }
 
   const patch: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() }
   /*

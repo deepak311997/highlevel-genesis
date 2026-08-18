@@ -10,6 +10,9 @@ const appendAssistantMessage = vi.hoisted(() => vi.fn())
 const openStream = vi.hoisted(() => vi.fn())
 const getDb = vi.hoisted(() => vi.fn())
 
+/** Everything `appendUserMessage` wrote, newest last. Cleared per test. */
+const userWrites: unknown[] = []
+
 /*
  * The originals are spread back in, because these modules are also reached
  * transitively: `./api` mounts both routers, so a mock that returned only the
@@ -168,7 +171,13 @@ function fakeResponse() {
   }
 }
 
-const fakeRequest = (): Request => ({ body: { projectId: 'proj-1' } }) as unknown as Request
+/*
+ * A turn now carries its prompt: one request writes the user message and
+ * streams the reply. `retry: true` is the other shape — re-run what is already
+ * in the transcript, writing no new prompt.
+ */
+const fakeRequest = (body: Record<string, unknown> = { content: 'Build a contacts view' }): Request =>
+  ({ body: { projectId: 'proj-1', ...body } }) as unknown as Request
 
 /** A stored file document, shaped so `storedFileSchema` accepts it. */
 function storedFile(path: string, content: string): { id: string; data: () => unknown } {
@@ -228,8 +237,38 @@ function fakeFilesDb(
       // The heads read is a projection with no ordering after F1 — served here
       // and after `orderBy` both, so neither shape can silently stop matching.
       select: () => noHeads,
-      // `planSnapshot` mints the new version's id from the collection.
-      doc: () => ({ id: 'snap-new', path: `${path}/snap-new` }),
+      /*
+       * `planSnapshot` mints the new version's id from the collection, and
+       * `appendUserMessage` mints the prompt's — the same call, so the stub
+       * serves both. `set` records what was written so a test can assert the
+       * prompt was stored *before* the stream opened, which is the property the
+       * single-request shape rests on.
+       */
+      doc: () => ({
+        id: 'snap-new',
+        path: `${path}/snap-new`,
+        set: (data: unknown) => {
+          userWrites.push(data)
+          return Promise.resolve()
+        },
+        get: () =>
+          Promise.resolve({
+            exists: true,
+            id: 'msg-user',
+            data: () => ({
+              role: 'user',
+              content: 'Build a contacts view',
+              seq: 0,
+              // \`firestoreTimestamp\` keys off toMillis, toMessage uses toDate.
+              createdAt: {
+                toMillis: () => Date.parse('2026-08-18T09:00:00.000Z'),
+                toDate: () => new Date('2026-08-18T09:00:00.000Z'),
+              },
+              truncated: false,
+              error: null,
+            }),
+          }),
+      }),
     }),
   }
 }
@@ -373,6 +412,7 @@ describe('handleGenerate — the hl() counters', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    userWrites.length = 0
     readProject.mockResolvedValue({ id: 'proj-1' })
     getDb.mockReturnValue(fakeFilesDb())
     readTranscript.mockResolvedValue([
@@ -485,6 +525,7 @@ describe('keepAliveMs', () => {
 describe('handleGenerate — the client goes away', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    userWrites.length = 0
     vi.spyOn(console, 'info').mockImplementation(() => undefined)
     readProject.mockResolvedValue({ id: 'proj-1' })
     // The project holds no files yet, so every write is a creation.
@@ -636,6 +677,7 @@ describe('handleGenerate — the message cap', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    userWrites.length = 0
     vi.spyOn(console, 'info').mockImplementation(() => undefined)
     readProject.mockResolvedValue({ id: 'proj-1' })
     getDb.mockReturnValue(fakeFilesDb())
@@ -679,8 +721,37 @@ describe('handleGenerate — the message cap', () => {
   })
 
   /* The boundary: one short of the cap is exactly the turn the cap leaves room for. */
-  it('generates from a transcript one message short of the cap', async () => {
+  /*
+   * A retry needs room for one document, a new turn for two — so the boundary
+   * is different for each, and each is checked.
+   *
+   * At 199 a retry still runs: it adds only the reply. A new turn is refused,
+   * because storing its prompt would leave the transcript ending on a prompt
+   * with nowhere to put the answer — the rule the message route used to carry,
+   * now enforced by the handler that writes both halves.
+   */
+  it('retries from a transcript one message short of the cap', async () => {
     readTranscript.mockResolvedValue(transcriptOf(MESSAGE_LIMIT - 1))
+
+    await handleGenerate(fakeRequest({ retry: true }), fakeResponse().express, 'alice')
+
+    expect(openStream).toHaveBeenCalledTimes(1)
+    expect(appendAssistantMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses a new turn one message short of the cap, before anything is written', async () => {
+    readTranscript.mockResolvedValue(transcriptOf(MESSAGE_LIMIT - 1))
+
+    await expect(
+      handleGenerate(fakeRequest(), fakeResponse().express, 'alice'),
+    ).rejects.toMatchObject({ status: 409, code: 'message_limit' })
+
+    expect(openStream).not.toHaveBeenCalled()
+    expect(userWrites).toHaveLength(0)
+  })
+
+  it('generates from a transcript two messages short of the cap', async () => {
+    readTranscript.mockResolvedValue(transcriptOf(MESSAGE_LIMIT - 2))
 
     await handleGenerate(fakeRequest(), fakeResponse().express, 'alice')
 
@@ -710,6 +781,7 @@ describe('handleGenerate — the message cap', () => {
 describe('handleGenerate — the project’s files', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    userWrites.length = 0
     vi.spyOn(console, 'info').mockImplementation(() => undefined)
     readProject.mockResolvedValue({ id: 'proj-1' })
     openStream.mockResolvedValue(scriptedStream(['one ']))
