@@ -699,23 +699,39 @@ function pushableStream(): {
   response: Response
   push: (chunk: string) => void
   close: () => void
+  released: () => boolean
 } {
   let controller!: ReadableStreamDefaultController<Uint8Array>
   const encoder = new TextEncoder()
+  /*
+   * `released` is the client having *cancelled* the body, which
+   * `streamGeneration` now does on every exit — including the one where the
+   * store walks away from a stream belonging to a project the user has left.
+   *
+   * `push` and `close` go quiet once that has happened, because that is what
+   * the server sees: it goes on writing into a socket the client closed, and
+   * its writes land nowhere. Modelling it as a throw would make this double
+   * fail where the real thing merely stops mattering.
+   */
+  let released = false
   const body = new ReadableStream<Uint8Array>({
     start(c) {
       controller = c
+    },
+    cancel() {
+      released = true
     },
   })
 
   return {
     response: { ok: true, status: 200, body } as unknown as Response,
     push: (chunk: string) => {
-      controller.enqueue(encoder.encode(chunk))
+      if (!released) controller.enqueue(encoder.encode(chunk))
     },
     close: () => {
-      controller.close()
+      if (!released) controller.close()
     },
+    released: () => released,
   }
 }
 
@@ -723,6 +739,28 @@ const frame = (event: string, data: unknown): string =>
   `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
 
 /** A whole stream, delivered as one canned body. */
+/**
+ * A `Response` whose stream delivers its frames and then **drops** — a
+ * connection lost after the headers flushed (AC-8, AC-9).
+ *
+ * Distinct from `cannedStream` closing cleanly and from `fetchMock` rejecting:
+ * this is the case where the request succeeded, tokens arrived, and the
+ * transport died underneath the reader.
+ */
+function droppingStream(...frames: string[]): Response {
+  const encoder = new TextEncoder()
+  return {
+    ok: true,
+    status: 200,
+    body: new ReadableStream<Uint8Array>({
+      start(controller) {
+        if (frames.length > 0) controller.enqueue(encoder.encode(frames.join('')))
+        controller.error(new TypeError('Failed to fetch'))
+      },
+    }),
+  } as unknown as Response
+}
+
 function cannedStream(...frames: string[]): Response {
   const encoder = new TextEncoder()
   return {
@@ -1022,6 +1060,15 @@ describe('a stream that outlives the screen it was opened for', () => {
     fetchMock.mockResolvedValueOnce(response({ messages: [] }))
     fetchMock.mockResolvedValueOnce(response({ files: [] }))
     await store.open('proj-2')
+
+    /*
+     * The body was released the moment the store walked away, so the `done`
+     * below reaches nobody — which is the point, and is why `generate` is not
+     * still billing for proj-1's reply. The state assertions that follow held
+     * before that was true and still hold; this line is what makes them cheap
+     * rather than a race the counter has to win.
+     */
+    expect(stream.released()).toBe(true)
 
     stream.push(frame('done', { message: ASSISTANT_MESSAGE }))
     stream.close()
@@ -2586,6 +2633,9 @@ describe('the stream — files', () => {
     await store.open('proj-2')
     fetchMock.mockClear()
 
+    // Released when the store left proj-1, so the `done` below arrives nowhere.
+    expect(stream.released()).toBe(true)
+
     stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: ['app.js'], fileError: null }))
     stream.close()
     await running
@@ -3446,5 +3496,136 @@ describe('restoreSnapshot — the preview’s signals', () => {
     expect(store.restoreError).not.toBeNull()
     expect(store.filesRevision).toBe(0)
     expect(store.generationsApplied).toBe(0)
+  })
+})
+
+/**
+ * What a restore **reports** (AC-5) — the return value the sheet branches on.
+ *
+ * Slice 11 left `restoreSnapshot` returning `void`, which made the no-op restore
+ * silent: the request went out, the server answered `changed: false`, and the
+ * sheet had no way to tell that from a restore that rewrote every file. Nothing
+ * on screen moved either way, so the only honest report is a transient one — and
+ * a transient report needs the outcome as a value, not as a flag the caller has
+ * to go looking for afterwards.
+ *
+ * Four outcomes, and the caller decides what each is worth: `'restored'` and
+ * `'unchanged'` are the two the user is told about, `'skipped'` and `'failed'`
+ * are the two they are not. A failure already renders in `restoreError` and must
+ * stay there (D4), and a refusal is a button the sheet had already disabled.
+ */
+describe('restoreSnapshot — what it reports', () => {
+  async function openedWithHistory(): Promise<ReturnType<typeof useWorkspaceStore>> {
+    fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE, ABOUT_FILE] }))
+    const store = useWorkspaceStore()
+    await store.open('proj-1')
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+    await store.loadSnapshots()
+    fetchMock.mockClear()
+    return store
+  }
+
+  it('reports a restore that changed the project', async () => {
+    const store = await openedWithHistory()
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE], changed: true }))
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+
+    expect(await store.restoreSnapshot('snap-1')).toBe('restored')
+  })
+
+  /*
+   * AC-5's other half, as far as the client can observe it: `changed: false` is
+   * the project already *being* that version, so no new version was written and
+   * `filesRevision` — the count of changes to the stored file set — does not
+   * move. The outcome is the only thing that differs from the case above, which
+   * is exactly why it has to be reported.
+   */
+  it('reports a restore that changed nothing', async () => {
+    const store = await openedWithHistory()
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE, ABOUT_FILE], changed: false }))
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+    const before = store.filesRevision
+
+    expect(await store.restoreSnapshot('snap-1')).toBe('unchanged')
+    expect(store.restoreError).toBeNull()
+    expect(store.filesRevision).toBe(before)
+  })
+
+  /*
+   * A refusal is not an outcome the user is told about: the sheet had already
+   * disabled the button, and the guard exists because nothing guarantees the
+   * call came from it. No request goes out, so there is nothing to report on.
+   */
+  it('reports a refused restore', async () => {
+    const store = await openedWithHistory()
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    await vi.waitFor(() => {
+      expect(store.generating).toBe(true)
+      expect(requests()).toEqual(['POST /generate'])
+    })
+    fetchMock.mockClear()
+
+    expect(await store.restoreSnapshot('snap-1')).toBe('skipped')
+    expect(requests()).toEqual([])
+
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }))
+    stream.close()
+    await running
+  })
+
+  /* Unchanged behaviour — the banner is still the report — now also returned. */
+  it('reports a failed restore', async () => {
+    const store = await openedWithHistory()
+    fetchMock.mockResolvedValueOnce(
+      response({ error: 'That version could not be restored. Try again.' }, 500),
+    )
+
+    expect(await store.restoreSnapshot('snap-1')).toBe('failed')
+    expect(store.restoreError).toBe('That version could not be restored. Try again.')
+  })
+})
+
+/**
+ * AC-9. What survives a connection dropping mid-reply.
+ *
+ * F8.2 asks that the user can retry, and a retry is only worth offering if the
+ * prompt it would resend is still there. The store commits the user's message
+ * before the stream opens, so this is the assertion that a *client-side* drop
+ * does not undo that — and that the sentence the user reads is the app's own,
+ * not whatever the browser called the failure.
+ */
+describe('a connection that drops mid-reply', () => {
+  it('keeps the prompt and reopens the stream after a mid-stream drop', async () => {
+    const store = await opened()
+    fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }, 201))
+    fetchMock.mockResolvedValueOnce(droppingStream(frame('token', { text: 'Here' })))
+    store.draft = 'build a contact dashboard'
+
+    await store.send()
+
+    // The prompt is still in the transcript, which is what makes Retry worth offering.
+    expect(store.messages).toEqual([USER_MESSAGE])
+    expect(store.generateError).toBe(
+      'Something went wrong. Check your connection and try again.',
+    )
+    expect(store.generateError).not.toContain('Failed to fetch')
+    expect(store.generating).toBe(false)
+
+    // And Retry opens a second stream rather than reporting the first one again.
+    fetchMock.mockResolvedValueOnce(cannedStream(frame('done', { message: ASSISTANT_MESSAGE })))
+
+    await store.retryGeneration()
+
+    expect(requests()).toEqual([
+      'POST /api/projects/proj-1/messages',
+      'POST /generate',
+      'POST /generate',
+    ])
+    expect(store.generateError).toBeNull()
+    expect(store.messages).toEqual([USER_MESSAGE, ASSISTANT_MESSAGE])
   })
 })

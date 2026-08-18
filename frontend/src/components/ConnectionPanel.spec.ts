@@ -105,6 +105,21 @@ describe('ConnectionPanel', () => {
     expect(wrapper.find('[data-testid="connection-connect"]').exists()).toBe(false)
   })
 
+  /*
+   * AC-2. The loading state's placeholders are the shared `Skeleton`, not a
+   * hand-rolled pulsing div — the testid still resolves to the same
+   * element, and what it holds carries the primitive's slot attribute.
+   */
+  it('renders Skeleton placeholders while loading', () => {
+    store.loading = true
+
+    const wrapper = mount(ConnectionPanel)
+
+    const loading = wrapper.find('[data-testid="connection-loading"]')
+    expect(loading.exists()).toBe(true)
+    expect(loading.findAll('[data-slot="skeleton"]')).toHaveLength(2)
+  })
+
   it('shows the empty state with a Connect button when not connected', () => {
     const wrapper = mount(ConnectionPanel)
 
@@ -264,6 +279,18 @@ describe('ConnectionPanel — data access', () => {
     expect(wrapper.find('[data-testid="data-access-check"]').attributes('disabled')).toBeDefined()
   })
 
+  /* AC-2, the probe's own placeholders — one per surface, so three. */
+  it('renders Skeleton placeholders while the probe runs', () => {
+    store.isConnected = true
+    store.probe = 'loading'
+
+    const wrapper = mount(ConnectionPanel)
+
+    const loading = wrapper.find('[data-testid="data-access-loading"]')
+    expect(loading.exists()).toBe(true)
+    expect(loading.findAll('[data-slot="skeleton"]')).toHaveLength(3)
+  })
+
   it('renders one row per surface with its count', () => {
     store.isConnected = true
     store.probe = 'ready'
@@ -353,6 +380,83 @@ describe('ConnectionPanel — data access', () => {
     expect(wrapper.find('[data-testid="data-access-row-contacts"]').text()).toContain(
       'Could not reach HighLevel.',
     )
+  })
+
+  /*
+   * AC-17, at the level the user sees it. The store composes upstream's own
+   * words onto the message; the row's job is to render the whole sentence
+   * rather than truncating it back to the shrug.
+   */
+  it('renders the composed failure in the row', () => {
+    store.isConnected = true
+    store.probe = 'ready'
+    store.probeResult = result({
+      contacts: probed({ count: null, error: 'Could not read contacts. (Invalid JWT)' }),
+    })
+
+    const wrapper = mount(ConnectionPanel)
+
+    expect(wrapper.find('[data-testid="data-access-row-contacts"]').text()).toContain(
+      'Could not read contacts. (Invalid JWT)',
+    )
+  })
+
+  /*
+   * AC-18. `h4` because `CardTitle` is the card's `h3` and `DashboardView` owns
+   * the `h1` — a styled `<p>` looks like a heading and is not one, which is
+   * exactly what a screen-reader heading list is for.
+   */
+  it('titles the section with a heading', () => {
+    store.isConnected = true
+
+    const wrapper = mount(ConnectionPanel)
+    const heading = wrapper.findAll('h4').find((el) => el.text() === 'Data access')
+
+    expect(heading).toBeDefined()
+  })
+
+  /*
+   * AC-18, E14. The live region has to exist *before* the counts land — a
+   * wrapper that only appears once there is a result was never being observed,
+   * so nothing is ever announced.
+   */
+  it.each([
+    ['idle', 'idle', null],
+    ['loading', 'loading', null],
+    ['ready', 'ready', result()],
+    ['error', 'error', result({ contacts: probed({ count: null, error: 'Nope.' }) })],
+  ] as const)('announces its results politely — %s', (_name, probe, probeResult) => {
+    store.isConnected = true
+    store.probe = probe
+    store.probeResult = probeResult
+
+    const wrapper = mount(ConnectionPanel)
+    const region = wrapper.find('[data-testid="data-access-results"]')
+
+    expect(region.exists()).toBe(true)
+    expect(region.attributes('aria-live')).toBe('polite')
+  })
+
+  /*
+   * AC-19, E13. Keyed off the probe state rather than off `probeResult`, which
+   * is null both before the first check and during every one after it — so a
+   * button keyed off the result says "Check data access" again mid-probe.
+   */
+  it.each([
+    ['idle', 'idle', 'Check data access'],
+    ['loading', 'loading', 'Checking…'],
+    ['ready', 'ready', 'Check again'],
+    ['error', 'error', 'Check again'],
+  ] as const)('labels the check button off the probe state — %s', (_name, probe, label) => {
+    store.isConnected = true
+    store.probe = probe
+    store.probeResult = probe === 'ready' || probe === 'error' ? result() : null
+
+    const wrapper = mount(ConnectionPanel)
+    const button = wrapper.find('[data-testid="data-access-check"]')
+
+    expect(button.text()).toBe(label)
+    expect(button.attributes('disabled') === undefined).toBe(probe !== 'loading')
   })
 
   it('renders nothing at all when the user is not connected', () => {

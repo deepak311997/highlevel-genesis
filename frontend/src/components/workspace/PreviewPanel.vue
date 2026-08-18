@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, useTemplateRef } from 'vue'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { usePreviewStore } from '@/stores/preview'
 import { useWorkspaceStore } from '@/stores/workspace'
 
@@ -157,7 +158,7 @@ function rebuild(): void {
       class="flex flex-1 items-center justify-center p-6"
       data-testid="preview-loading"
     >
-      <div class="h-40 w-full max-w-sm animate-pulse rounded-md bg-secondary" />
+      <Skeleton class="h-40 w-full max-w-sm rounded-md" />
     </div>
 
     <div

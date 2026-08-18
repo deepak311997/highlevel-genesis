@@ -53,11 +53,18 @@ beforeEach(() => {
 })
 
 describe('FileTree', () => {
-  it('renders a skeleton while the list is loading', () => {
+  /*
+   * AC-2 rides along here: the placeholders are the shared `Skeleton`, not
+   * hand-rolled pulsing divs — the testid still resolves to the same
+   * element, and what it holds carries the primitive's slot attribute.
+   */
+  it('renders Skeleton placeholders while loading', () => {
     store.filesLoading = true
     const wrapper = mount(FileTree)
 
-    expect(wrapper.find('[data-testid="file-tree-loading"]').exists()).toBe(true)
+    const loading = wrapper.find('[data-testid="file-tree-loading"]')
+    expect(loading.exists()).toBe(true)
+    expect(loading.findAll('[data-slot="skeleton"]')).toHaveLength(2)
     expect(wrapper.find('[data-testid="file-row"]').exists()).toBe(false)
   })
 

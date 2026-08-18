@@ -1,4 +1,4 @@
-import { ApiError, apiUrl, errorForResponse } from './api'
+import { apiUrl, connectionError, errorForResponse } from './api'
 import { appCheckHeader } from './appCheck'
 
 /**
@@ -28,7 +28,7 @@ async function post(path: string, body: unknown): Promise<void> {
       body: JSON.stringify(body),
     })
   } catch {
-    throw new ApiError('Something went wrong. Check your connection and try again.', 0)
+    throw connectionError()
   }
 
   if (res.ok) return

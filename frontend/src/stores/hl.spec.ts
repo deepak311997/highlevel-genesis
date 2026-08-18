@@ -14,7 +14,7 @@ vi.mock('@/lib/hlApi', () => ({
 
 vi.mock('@/lib/hlProxyApi', () => ({ hlProxy }))
 
-const { useHlStore } = await import('./hl')
+const { useHlStore, withDetail } = await import('./hl')
 const { ApiError } = await import('@/lib/api')
 
 /**
@@ -218,6 +218,33 @@ describe('noteCallbackError', () => {
 })
 
 /**
+ * `detail` is upstream's own text about the request, passed through by the
+ * proxy. It earns its parentheses only when it says something the message did
+ * not — an empty detail, an absent one, or one that merely repeats the message
+ * would otherwise render as "Could not read contacts. ()" or as the same
+ * sentence twice.
+ */
+describe('withDetail', () => {
+  it("composes the message and upstream's own words", () => {
+    expect(withDetail('Could not read contacts.', 'Invalid JWT')).toBe(
+      'Could not read contacts. (Invalid JWT)',
+    )
+  })
+
+  it.each([
+    ['no detail', undefined],
+    ['an empty detail', ''],
+    ['a detail that only repeats the message', 'Could not read contacts.'],
+  ])('leaves the message alone, with no parentheses, for %s', (_name, detail) => {
+    const composed = withDetail('Could not read contacts.', detail)
+
+    expect(composed).toBe('Could not read contacts.')
+    expect(composed).not.toContain('(')
+    expect(composed).not.toContain(')')
+  })
+})
+
+/**
  * The data-access probe.
  *
  * One call per HighLevel surface, on demand (D30, D31). The behaviour worth
@@ -306,6 +333,22 @@ describe('checkDataAccess', () => {
     expect(hl.probeResult?.conversations.error).toBe(
       'HighLevel refused that request for this account.',
     )
+  })
+
+  /*
+   * AC-17. The Data access section's whole purpose is diagnosing a HighLevel
+   * call, and "Could not read contacts." alone is a shrug where
+   * "(Invalid JWT)" is a fix.
+   */
+  it("carries upstream's own words about the request into the row", async () => {
+    hlProxy.mockRejectedValue(
+      new ApiError('Could not read contacts.', 403, 'hl_upstream', 'Invalid JWT'),
+    )
+    const hl = useHlStore()
+
+    await hl.checkDataAccess()
+
+    expect(hl.probeResult?.contacts.error).toBe('Could not read contacts. (Invalid JWT)')
   })
 
   it('is an error state only when every surface failed', async () => {

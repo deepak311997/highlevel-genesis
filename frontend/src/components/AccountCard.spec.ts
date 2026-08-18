@@ -53,6 +53,19 @@ describe('AccountCard', () => {
     expect(wrapper.find('[data-testid="dashboard-email"]').exists()).toBe(false)
   })
 
+  /*
+   * AC-2. The loading state's placeholders are the shared `Skeleton`, not a
+   * hand-rolled pulsing div — the testid still resolves to the same
+   * element, and what it holds carries the primitive's slot attribute.
+   */
+  it('renders Skeleton placeholders while loading', () => {
+    const wrapper = mountWith({ loading: true })
+
+    const loading = wrapper.find('[data-testid="account-loading"]')
+    expect(loading.exists()).toBe(true)
+    expect(loading.findAll('[data-slot="skeleton"]')).toHaveLength(2)
+  })
+
   /** AC-18. */
   it('shows the display name when there is one', () => {
     const wrapper = mountWith({ profile: { ...PROFILE, displayName: 'Alice' }, loaded: true })

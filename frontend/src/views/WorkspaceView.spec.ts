@@ -238,6 +238,21 @@ describe('WorkspaceView', () => {
     expect(wrapper.find(PREVIEW).exists()).toBe(false)
   })
 
+  /*
+   * AC-2. The header placeholder is the shared `Skeleton`, not a hand-rolled
+   * pulsing div — the testid still resolves to the same element, and what
+   * it holds carries the primitive's slot attribute.
+   */
+  it('renders Skeleton placeholders while loading', () => {
+    store.projectLoading = true
+
+    const wrapper = mount(WorkspaceView, MOUNT)
+
+    const loading = wrapper.find('[data-testid="workspace-loading"]')
+    expect(loading.exists()).toBe(true)
+    expect(loading.findAll('[data-slot="skeleton"]')).toHaveLength(1)
+  })
+
   /** AC-21. And the transcript is never asked for, which is D25's whole point. */
   it('says the project is gone, links back to the dashboard, and loads no transcript', async () => {
     store.projectMissing = true

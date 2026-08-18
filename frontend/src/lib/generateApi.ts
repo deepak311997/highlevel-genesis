@@ -1,5 +1,5 @@
-import { ApiError, apiUrl, errorForResponse } from './api'
-import { authHeaders } from './apiClient'
+import { ApiError, apiUrl, connectionError, errorForResponse } from './api'
+import { authHeaders, noteApiError, rearmSessionExpiry } from './apiClient'
 import type { Message } from './messagesApi'
 import { createSseParser } from './sse'
 
@@ -158,11 +158,23 @@ export async function* streamGeneration(
     // from `fetch` is a network failure, and status 0 with advice is the only
     // thing that is ever right to say about one.
     if (err instanceof ApiError) throw err
-    throw new ApiError('Something went wrong. Check your connection and try again.', 0)
+    throw connectionError()
   }
 
-  // Before a single event is yielded (AC-31).
-  if (!res.ok) throw await errorForResponse(res)
+  // Before a single event is yielded (AC-31) — and through `noteApiError`, so
+  // that a session which died while this tab sat open signs the user out from
+  // here too (Slice 12, AC-16). This is the only call in the app that does not go through
+  // `request`, so without these three lines it would be the one hole in the
+  // hook, on the call a long-open tab is most likely to make.
+  if (!res.ok) {
+    const err = await errorForResponse(res)
+    noteApiError(err)
+    throw err
+  }
+
+  // The stream opened, which is proof the session is alive: the same latch
+  // `request` clears, cleared from the same evidence.
+  rearmSessionExpiry()
 
   const reader = res.body?.getReader()
   if (reader === undefined) {
@@ -175,13 +187,59 @@ export async function* streamGeneration(
   // solves.
   const decoder = new TextDecoder()
 
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
+  /*
+   * The body is released on **every** exit, and that is what the `try` is for.
+   *
+   * A consumer that stops reading — a `break`, or a throw from inside its
+   * `for await` — finalises this generator, and finalising a generator does not
+   * close a `fetch` body. The socket stays open, `generate`'s `res.on('close')`
+   * never fires, and the model goes on producing to `max_tokens` for a reply
+   * nobody will ever read: a full completion billed for nothing. `runGeneration`
+   * has a live path into exactly that, because a throw from its loop body is
+   * swallowed by the `catch` below it and its `finally` nulls the controller
+   * without aborting it.
+   *
+   * Releasing it here rather than there is the choice that cannot be forgotten
+   * by the next caller: the module that took the reader gives it back.
+   */
+  try {
+    for (;;) {
+      /*
+       * Slice 12, AC-8. Only the read is wrapped, and deliberately so.
+       *
+       * The opening `fetch`'s failure is already mapped above; this is the other
+       * half — a connection lost *after* the headers flushed, which rejects here
+       * instead. Left unwrapped it reached the screen as whatever the browser
+       * called it: `Failed to fetch` in Chrome, `NetworkError when attempting to
+       * fetch resource.` in Firefox. Two browsers, two strings, neither ours.
+       *
+       * An abort rethrows untouched: a user who left the project did not lose
+       * their connection, and telling them to check it would be a lie.
+       *
+       * The frame loop below stays outside the `try`, so a bug in `sse.ts` is
+       * reported as itself rather than laundered into a connection message.
+       */
+      let chunk: Awaited<ReturnType<typeof reader.read>>
+      try {
+        chunk = await reader.read()
+      } catch (err) {
+        if (signal.aborted) throw err
+        throw connectionError()
+      }
 
-    for (const frame of parser.push(decoder.decode(value, { stream: true }))) {
-      const event = toEvent(frame.event, frame.data)
-      if (event !== null) yield event
+      const { done, value } = chunk
+      if (done) break
+
+      for (const frame of parser.push(decoder.decode(value, { stream: true }))) {
+        const event = toEvent(frame.event, frame.data)
+        if (event !== null) yield event
+      }
     }
+  } finally {
+    // `cancel()` rejects on a stream that already errored — the dropped
+    // connection above is exactly that case — so the rejection is swallowed
+    // here rather than replacing the mapped `ApiError` with the browser's own,
+    // which is the string this whole path exists to keep off the screen.
+    await reader.cancel().catch(() => undefined)
   }
 }

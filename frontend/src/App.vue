@@ -4,6 +4,7 @@ import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import { Button } from '@/components/ui/button'
+import { Toaster } from '@/components/ui/sonner'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
@@ -91,5 +92,14 @@ async function signOut(): Promise<void> {
       </p>
       <RouterView v-else />
     </main>
+
+    <!--
+      One toast region for the whole app, and deliberately outside `<main>`: it must
+      survive both the `contained`/`full` class switch and the route change itself. A
+      `Toaster` inside the routed area unmounts on navigation, which kills a toast
+      mid-fade — and a toast that fires *during* the navigation that caused it is the
+      common case here.
+    -->
+    <Toaster />
   </div>
 </template>

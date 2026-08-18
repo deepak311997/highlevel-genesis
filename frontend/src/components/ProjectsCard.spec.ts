@@ -97,6 +97,21 @@ describe('ProjectsCard', () => {
   })
 
   /*
+   * AC-2. The loading state's placeholders are the shared `Skeleton`, not a
+   * hand-rolled pulsing div — the testid still resolves to the same
+   * element, and what it holds carries the primitive's slot attribute.
+   */
+  it('renders Skeleton placeholders while loading', () => {
+    store.loading = true
+
+    const wrapper = mount(ProjectsCard, MOUNT)
+
+    const loading = wrapper.find('[data-testid="projects-loading"]')
+    expect(loading.exists()).toBe(true)
+    expect(loading.findAll('[data-slot="skeleton"]')).toHaveLength(2)
+  })
+
+  /*
    * `loading` alone cannot say "no answer yet": it is first-load-only, and it is
    * still false in the tick between mounting and the request starting.
    */

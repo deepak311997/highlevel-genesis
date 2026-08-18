@@ -2,9 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const authHeaders = vi.hoisted(() => vi.fn())
 
-vi.mock('@/lib/apiClient', () => ({ authHeaders }))
+// Stubbed so importing `apiClient` for real below cannot reach the Firebase
+// SDK: the session-expiry latch is module state, and the only way to assert
+// this client shares it with `request` is to exercise the real one (AC-16).
+vi.mock('@/lib/firebase', () => ({ auth: { currentUser: null } }))
+vi.mock('@/lib/appCheck', () => ({ appCheckHeader: () => Promise.resolve({}) }))
+
+vi.mock('@/lib/apiClient', async () => ({
+  ...(await vi.importActual<typeof import('./apiClient')>('./apiClient')),
+  authHeaders,
+}))
 
 const { streamGeneration } = await import('./generateApi')
+const { registerSessionExpiredHook } = await import('./apiClient')
 const { ApiError } = await import('./api')
 
 /**
@@ -68,6 +78,56 @@ function bodiless(): Response {
   return { ok: true, status: 200, body: null } as unknown as Response
 }
 
+/**
+ * A `Response` whose stream delivers the given chunks and then **drops**.
+ *
+ * The shape of a connection lost after the headers flushed: the reader resolves
+ * normally for a while and then rejects, which is a different failure from the
+ * opening `fetch` throwing and is why it needs its own handling.
+ */
+function dropping(chunks: readonly string[], reason: Error): Response {
+  const encoder = new TextEncoder()
+  let index = 0
+
+  return {
+    ok: true,
+    status: 200,
+    body: {
+      getReader: () => ({
+        read: () =>
+          index < chunks.length
+            ? Promise.resolve({ done: false, value: encoder.encode(chunks[index++]) })
+            : Promise.reject(reason),
+        cancel: () => Promise.resolve(),
+      }),
+    },
+  } as unknown as Response
+}
+
+/**
+ * A `Response` whose reader never ends, and whose `cancel` is observable.
+ *
+ * The shape of a generation still in flight: the server is producing tokens and
+ * will go on producing them until it is told to stop or reaches `max_tokens`.
+ * What a consumer that walks away does with that is the question the tests
+ * below ask.
+ */
+function endless(cancel: () => Promise<void>): Response {
+  const encoder = new TextEncoder()
+
+  return {
+    ok: true,
+    status: 200,
+    body: {
+      getReader: () => ({
+        read: () =>
+          Promise.resolve({ done: false, value: encoder.encode(frame('token', { text: 'x' })) }),
+        cancel,
+      }),
+    },
+  } as unknown as Response
+}
+
 let fetchMock: ReturnType<typeof vi.fn>
 
 function lastCall(): [string, RequestInit] {
@@ -92,6 +152,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  registerSessionExpiredHook(null)
   vi.unstubAllGlobals()
 })
 
@@ -283,6 +344,65 @@ describe('streamGeneration — refusals', () => {
 })
 
 /**
+ * AC-16. The stream is not a hole in the sign-out hook.
+ *
+ * `streamGeneration` is the one call that cannot go through `request`, so
+ * without this it is also the one call that could meet a dead session and say
+ * nothing about it — and it is the call a user is most likely to make on a tab
+ * left open long enough for the session to die.
+ */
+describe('streamGeneration — the session hook', () => {
+  it('invokes the session hook when the stream is refused with a 401 unauthenticated', async () => {
+    const hook = vi.fn()
+    registerSessionExpiredHook(hook)
+    fetchMock.mockResolvedValue(
+      refused({ error: 'Sign in and try again.', code: 'unauthenticated' }, 401),
+    )
+
+    await expect(collect()).rejects.toBeInstanceOf(ApiError)
+    expect(hook).toHaveBeenCalledTimes(1)
+  })
+
+  /* The page failed attestation, not the session — reloading fixes it, and
+   * signing the user out would throw away the reply they are waiting for. */
+  it('does not invoke it for a 401 app_check_failed', async () => {
+    const hook = vi.fn()
+    registerSessionExpiredHook(hook)
+    fetchMock.mockResolvedValue(
+      refused(
+        {
+          error: 'Request could not be verified. Reload the page and try again.',
+          code: 'app_check_failed',
+        },
+        401,
+      ),
+    )
+
+    await expect(collect()).rejects.toThrow('Request could not be verified')
+    expect(hook).not.toHaveBeenCalled()
+  })
+
+  /* A stream that opened proves the session is alive, so the next death is a
+   * new one — the same latch, cleared from the same place `request` clears it. */
+  it('re-arms the hook once a stream has opened', async () => {
+    const hook = vi.fn()
+    registerSessionExpiredHook(hook)
+    const dead = () => refused({ error: 'Sign in and try again.', code: 'unauthenticated' }, 401)
+
+    fetchMock.mockResolvedValue(dead())
+    await expect(collect()).rejects.toThrow()
+
+    fetchMock.mockResolvedValue(streaming([frame('done', { message: MESSAGE })]))
+    await collect()
+
+    fetchMock.mockResolvedValue(dead())
+    await expect(collect()).rejects.toThrow()
+
+    expect(hook).toHaveBeenCalledTimes(2)
+  })
+})
+
+/**
  * The file half of the protocol (AC-36, D5).
  *
  * Every frame repeats its path, which is what lets the store route a chunk
@@ -374,5 +494,133 @@ describe('the file events', () => {
     fetchMock.mockResolvedValue(streaming([frame('file_chunk', { path: 'app.js', text: '' })]))
 
     expect(await collect()).toEqual([{ type: 'file_chunk', path: 'app.js', text: '' }])
+  })
+})
+
+/**
+ * AC-8. A connection that drops **after** the stream opened speaks our language.
+ *
+ * The opening `fetch`'s own failure was already mapped to `ApiError(…, 0)`; the
+ * read loop's was not, so whatever the browser called it went straight to the
+ * screen — `Failed to fetch` in Chrome, `NetworkError when attempting to fetch
+ * resource.` in Firefox. Two browsers, two strings, neither ours, and F8.2 asks
+ * for a retry the user understands the need for.
+ */
+describe('streamGeneration — a connection that drops mid-stream', () => {
+  it('maps a mid-stream read failure to a message the user can act on', async () => {
+    fetchMock.mockResolvedValue(
+      dropping([frame('token', { text: 'Here' })], new TypeError('Failed to fetch')),
+    )
+
+    const seen: unknown[] = []
+    const walk = (async () => {
+      for await (const event of streamGeneration('proj-1', new AbortController().signal)) {
+        seen.push(event)
+      }
+    })()
+
+    await expect(walk).rejects.toMatchObject({
+      status: 0,
+      message: 'Something went wrong. Check your connection and try again.',
+    })
+    await expect(walk).rejects.toBeInstanceOf(ApiError)
+
+    // The events that did arrive are still the caller's — the partial reply is
+    // what the transcript keeps and what Retry is offered under.
+    expect(seen).toEqual([{ type: 'token', text: 'Here' }])
+  })
+
+  it('says nothing about what the browser called it', async () => {
+    fetchMock.mockResolvedValue(dropping([], new TypeError('Failed to fetch')))
+
+    await expect(collect()).rejects.not.toThrow(/Failed to fetch/)
+  })
+
+  /*
+   * A user who left the project is not a user whose connection dropped, and
+   * telling them to check it would be a lie. The original rejection propagates.
+   */
+  it('rethrows a cancellation unchanged', async () => {
+    const controller = new AbortController()
+    const cancelled = new DOMException('The operation was aborted.', 'AbortError')
+    fetchMock.mockResolvedValue(dropping([], cancelled))
+    controller.abort()
+
+    await expect(collect(controller.signal)).rejects.toBe(cancelled)
+  })
+})
+
+/**
+ * A consumer that stops reading has to stop the *request*, not just its own
+ * loop.
+ *
+ * Breaking out of a `for await`, or throwing inside one, finalises this
+ * generator — but finalising a generator does not close a `fetch` body. The
+ * socket stays open, `generate`'s `res.on('close')` never fires, and the model
+ * goes on producing to `max_tokens: 64000` for a reply nobody will ever read.
+ * That is a full completion billed for nothing, and the store has a real path
+ * into it: any throw from the loop body in `runGeneration` — `openTab`, the
+ * `messages` spread, `applyGenerationFiles` — is swallowed by the `catch` below
+ * it, and its `finally` nulls the controller without aborting it.
+ *
+ * So the generator releases the body itself, on every exit. That is the one
+ * place that cannot be forgotten by a caller.
+ */
+describe('streamGeneration — a consumer that stops reading', () => {
+  it('cancels the body when the consumer breaks out of the loop', async () => {
+    const cancel = vi.fn(() => Promise.resolve())
+    fetchMock.mockResolvedValue(endless(cancel))
+
+    for await (const event of streamGeneration('proj-1', new AbortController().signal)) {
+      expect(event).toEqual({ type: 'token', text: 'x' })
+      break
+    }
+
+    expect(cancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('cancels the body when the consumer throws', async () => {
+    const cancel = vi.fn(() => Promise.resolve())
+    fetchMock.mockResolvedValue(endless(cancel))
+    const boom = new Error('openTab blew up')
+
+    const walk = (async () => {
+      for await (const event of streamGeneration('proj-1', new AbortController().signal)) {
+        expect(event).toEqual({ type: 'token', text: 'x' })
+        throw boom
+      }
+    })()
+
+    await expect(walk).rejects.toBe(boom)
+    expect(cancel).toHaveBeenCalledTimes(1)
+  })
+
+  /*
+   * `cancel()` rejects on a stream that already errored — which is precisely the
+   * case a dropped connection brings us to — so the release must not turn a
+   * mapped `ApiError` into an unhandled rejection, or into the wrong error.
+   */
+  it('still reports the connection failure when releasing the body rejects', async () => {
+    const encoder = new TextEncoder()
+    let index = 0
+    const chunks = [frame('token', { text: 'Here' })]
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: {
+        getReader: () => ({
+          read: () =>
+            index < chunks.length
+              ? Promise.resolve({ done: false, value: encoder.encode(chunks[index++]) })
+              : Promise.reject(new TypeError('Failed to fetch')),
+          cancel: () => Promise.reject(new TypeError('Failed to fetch')),
+        }),
+      },
+    })
+
+    await expect(collect()).rejects.toMatchObject({
+      status: 0,
+      message: 'Something went wrong. Check your connection and try again.',
+    })
   })
 })

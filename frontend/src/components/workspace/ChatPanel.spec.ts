@@ -134,6 +134,21 @@ describe('ChatPanel', () => {
     expect(wrapper.find('[data-testid="chat-empty"]').exists()).toBe(false)
   })
 
+  /*
+   * AC-2. The two bubble placeholders are the shared `Skeleton`, not hand-rolled
+   * pulsing divs — the testid still resolves to the same element, and what
+   * it holds carries the primitive's slot attribute.
+   */
+  it('renders Skeleton placeholders while loading', () => {
+    store.messagesLoading = true
+
+    const wrapper = mount(ChatPanel, MOUNT)
+
+    const loading = wrapper.find('[data-testid="chat-loading"]')
+    expect(loading.exists()).toBe(true)
+    expect(loading.findAll('[data-slot="skeleton"]')).toHaveLength(2)
+  })
+
   /* `messagesLoading` alone cannot say "no answer yet": it is still false in the
    * tick between mounting and the request starting. */
   it('shows the loading state before the request has started', () => {
@@ -410,6 +425,30 @@ describe('ChatPanel — the generation error', () => {
     store.messages = [USER]
 
     expect(mount(ChatPanel, MOUNT).find('[data-testid="generate-error"]').exists()).toBe(false)
+  })
+
+  /*
+   * AC-8, at the level the user actually meets it.
+   *
+   * `generateApi` maps a dropped read to this sentence and its L1 spec pins the
+   * mapping; this is the other end of that claim — the panel renders the app's
+   * own line, and the browser's word for it appears nowhere on screen. The
+   * negative assertion is on the whole panel rather than on the alert, because
+   * "the raw message is not visible" is the claim, not "it is not in that one
+   * element".
+   */
+  it("renders the app's own line when the stream dies mid-reply", () => {
+    store.messagesLoaded = true
+    store.messages = [USER]
+    store.generateError = 'Something went wrong. Check your connection and try again.'
+
+    const wrapper = mount(ChatPanel, MOUNT)
+
+    expect(wrapper.find('[data-testid="generate-error"]').text()).toContain(
+      'Something went wrong. Check your connection and try again.',
+    )
+    expect(wrapper.text()).not.toContain('Failed to fetch')
+    expect(wrapper.find('[data-testid="generate-retry"]').exists()).toBe(true)
   })
 
   /*

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { GATE_PATH, resolveNavigation, SIGN_IN_PATH, type RouteAccess } from './guard'
+import {
+  destinationPaths,
+  GATE_PATH,
+  resolveNavigation,
+  SIGN_IN_PATH,
+  type RouteAccess,
+} from './guard'
 
 const SIGNED_OUT = { isSignedIn: false, isVerified: false }
 const UNVERIFIED = { isSignedIn: true, isVerified: false }
@@ -134,5 +140,72 @@ describe('/hl/callback', () => {
     expect(
       resolveNavigation('protected', { isSignedIn: true, isVerified: true }, '/hl/callback'),
     ).toBeNull()
+  })
+})
+
+/**
+ * Which routes a user may be *returned to* — the allowlist `safeRedirect` is
+ * handed, and a narrower thing than "every route we registered".
+ *
+ * `resolveNavigation` already says it, one way: only a `protected` route is
+ * worth returning to, because the auth-flow pages and the gate are means, not
+ * destinations. Both callers of `safeRedirect` were passing
+ * `router.getRoutes().map((r) => r.path)` instead, so every registered route
+ * was a legal `?redirect=` target — and one of them is `/auth/action`, the
+ * single route exempt from the guard in every auth state, which executes a
+ * Firebase action code straight off its query string.
+ *
+ * That made `/signin?redirect=%2Fauth%2Faction%3Fmode%3DresetPassword%26oobCode%3D<the
+ * attacker's own reset code>` a working attack: the victim signs in with their
+ * real password and is handed a "choose a new password" form bound to the
+ * attacker's code. A password typed twice in thirty seconds is the common case,
+ * and `confirmPasswordReset` then sets the *attacker's* account to the
+ * *victim's* password. The `verifyEmail` variant is the quiet one — it gets an
+ * attacker's address verified by the victim's click.
+ */
+describe('destinationPaths', () => {
+  const ROUTES = [
+    { path: '/', meta: { access: 'protected' } },
+    { path: '/signup', meta: { access: 'auth-flow' } },
+    { path: '/signin', meta: { access: 'auth-flow' } },
+    { path: '/forgot-password', meta: { access: 'auth-flow' } },
+    { path: '/auth/action', meta: { access: 'action' } },
+    { path: '/verify-email', meta: { access: 'gate' } },
+    { path: '/hl/callback', meta: { access: 'protected' } },
+    { path: '/dashboard', meta: { access: 'protected' } },
+    { path: '/projects/:projectId', meta: { access: 'protected' } },
+    { path: '/:pathMatch(.*)*', meta: { access: 'protected' } },
+  ] satisfies { path: string; meta: { access: RouteAccess } }[]
+
+  it('refuses the routes that are means rather than destinations', () => {
+    const paths = destinationPaths(ROUTES)
+
+    expect(paths).not.toContain('/auth/action')
+    expect(paths).not.toContain('/signin')
+    expect(paths).not.toContain('/signup')
+    expect(paths).not.toContain('/forgot-password')
+    expect(paths).not.toContain('/verify-email')
+  })
+
+  /*
+   * `/hl/callback` is `protected` on purpose (Slice 2): a session that lapsed
+   * while the user was away at HighLevel round-trips through sign-in and comes
+   * back to the outcome. Keying off `access` rather than a hand-written list is
+   * what keeps that working without anyone having to remember it.
+   */
+  it('keeps every route a user could be sent back to', () => {
+    expect(destinationPaths(ROUTES)).toEqual([
+      '/',
+      '/hl/callback',
+      '/dashboard',
+      '/projects/:projectId',
+      '/:pathMatch(.*)*',
+    ])
+  })
+
+  /* Same default the guard applies, so the two cannot disagree about a route
+   * whose author forgot to classify it. */
+  it('treats an unclassified route the way the guard does', () => {
+    expect(destinationPaths([{ path: '/new-thing', meta: {} }])).toEqual(['/new-thing'])
   })
 })

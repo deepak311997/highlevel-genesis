@@ -14,6 +14,7 @@ const auth = vi.hoisted(() => ({
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
 
 import App from './App.vue'
+import { Toaster } from '@/components/ui/sonner'
 
 /**
  * The app shell's one decision: how much room `main` gives the route (D22).
@@ -107,5 +108,20 @@ describe('App shell', () => {
     const wrapper = await mountAt('/contained')
 
     expect(wrapper.find('[data-testid="app-loading"]').exists()).toBe(true)
+  })
+
+  /*
+   * One toast region for the whole app, and it lives outside `<main>` — outside the
+   * `contained`/`full` switch and outside the routed area. A `Toaster` mounted inside
+   * the route unmounts on navigation, which drops a toast mid-fade; two of them
+   * render every toast twice. Asserted at both layouts because the layout switch is
+   * precisely what must not reach it.
+   */
+  it('mounts exactly one Toaster', async () => {
+    for (const path of ['/contained', '/full']) {
+      const wrapper = await mountAt(path)
+
+      expect(wrapper.findAllComponents(Toaster)).toHaveLength(1)
+    }
   })
 })

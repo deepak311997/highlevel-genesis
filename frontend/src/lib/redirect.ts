@@ -50,19 +50,61 @@ function pathnameOf(value: string): string {
   return cut === -1 ? value : value.slice(0, cut)
 }
 
+/** Everything with a meaning inside a regular expression. */
+const REGEXP_SPECIAL = /[.*+?^${}()|[\]\\]/g
+
+/**
+ * A matcher for one route *pattern*, or `null` if the pattern is not one this
+ * allowlist can safely honour.
+ *
+ * `null` is returned for any pattern containing `(`, `*`, `?` or `+` — which in
+ * this router is exactly the catch-all, `/:pathMatch(.*)*`. It matches every
+ * path there is, so honouring it would make the allowlist a no-op: every
+ * unknown, and every hostile, path would be "registered". A custom-regex or
+ * repeatable param added later lands in the same bucket and is skipped for the
+ * same reason; the cost is one redirect to the dashboard, and the alternative
+ * is deciding an open-redirect question with a regex someone else wrote.
+ *
+ * Otherwise the pattern is compiled segment by segment: a `:param` becomes
+ * `[^/]+` — **one** segment, never the rest of the path — and everything else
+ * is escaped and matched literally. Anchored at both ends.
+ */
+function matcherFor(pattern: string): RegExp | null {
+  if (/[(*?+]/.test(pattern)) return null
+
+  const source = pattern
+    .split('/')
+    .map((segment) => (segment.startsWith(':') ? '[^/]+' : segment.replace(REGEXP_SPECIAL, '\\$&')))
+    .join('/')
+
+  return new RegExp(`^${source}$`)
+}
+
 /**
  * Resolve a candidate target to something safe to navigate to.
  *
  * Returns {@link DEFAULT_REDIRECT} rather than throwing: a bad target is a
  * routine consequence of a stale or tampered link, not an error the user can
  * act on.
+ *
+ * **`knownPaths` holds patterns, not paths.** `router.getRoutes()` reports what
+ * was registered — `/projects/:projectId`, never `/projects/abc123` — so the
+ * membership test this once used could only ever pass for the static routes,
+ * and returned anyone deep-linked to a workspace to the dashboard instead. The
+ * enumeration of concrete paths does not exist and cannot: the id comes from
+ * the user. So each pattern is compiled and the pathname is *matched*, which is
+ * the same question the router itself answers.
  */
 export function safeRedirect(
   raw: string | null | undefined,
   knownPaths: readonly string[],
 ): string {
   if (typeof raw !== 'string' || !hasSafeShape(raw)) return DEFAULT_REDIRECT
-  if (!knownPaths.includes(pathnameOf(raw))) return DEFAULT_REDIRECT
+
+  const pathname = pathnameOf(raw)
+  const known = knownPaths.some((pattern) => matcherFor(pattern)?.test(pathname) === true)
+  if (!known) return DEFAULT_REDIRECT
+
   return raw
 }
 

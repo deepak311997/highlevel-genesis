@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { History } from 'lucide-vue-next'
+import { toast } from 'vue-sonner'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -12,6 +13,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
+import { Skeleton } from '@/components/ui/skeleton'
 import { formatDay, formatTime } from '@/lib/date'
 import { originLabel, snapshotSubtitle, versionLabel } from '@/lib/snapshots'
 import type { Snapshot } from '@/lib/snapshotsApi'
@@ -77,9 +79,35 @@ function onOpenChange(next: boolean): void {
   else workspace.restoreError = null
 }
 
-function confirmRestore(snapshotId: string): void {
+/**
+ * The two notices this app has, and both are here (Slice 12, D3 and D4).
+ *
+ * A restore is the one action in the workspace whose outcome leaves nothing on
+ * screen to read. It succeeded and the files were already rendered; or it
+ * changed nothing because the project already *was* that version, which looks
+ * identical. Neither has a surface of its own, and neither is worth inventing
+ * one for — so they are told transiently, next to the click that caused them.
+ *
+ * Anything else is deliberately silent here. A failure renders in
+ * `snapshot-restore-error` and stays there until the sheet closes, because an
+ * error that disappears after four seconds is an error the user cannot act on;
+ * a refusal is a button that was already disabled. That is D4, and it is why
+ * this file and the region's own component are the only two that name the
+ * toast library at all. (Slice 12, D4.)
+ *
+ * The copy goes through `versionLabel`, the same helper the row's heading uses,
+ * so the sheet and the notice cannot come to disagree about what a version is
+ * called. The seq is read from the row the user confirmed and is not sent to
+ * the store: the restore route identifies the version by id, and handing it a
+ * second identifier the client derived is a way for the two to differ.
+ */
+async function confirmRestore(snapshot: Snapshot): Promise<void> {
   confirmingId.value = null
-  void workspace.restoreSnapshot(snapshotId)
+  const outcome = await workspace.restoreSnapshot(snapshot.id)
+  const label = versionLabel(snapshot.seq)
+
+  if (outcome === 'restored') toast.success(`Restored ${label}.`)
+  else if (outcome === 'unchanged') toast(`Already on ${label}. Nothing changed.`)
 }
 </script>
 
@@ -165,8 +193,8 @@ function confirmRestore(snapshotId: string): void {
         class="flex flex-col gap-2"
         data-testid="snapshot-loading"
       >
-        <div class="h-14 animate-pulse rounded-md bg-secondary" />
-        <div class="h-14 w-5/6 animate-pulse rounded-md bg-secondary" />
+        <Skeleton class="h-14 rounded-md" />
+        <Skeleton class="h-14 w-5/6 rounded-md" />
       </div>
 
       <ul v-else-if="rows.length > 0" class="flex flex-col gap-2">
@@ -219,7 +247,7 @@ function confirmRestore(snapshotId: string): void {
                 size="sm"
                 :disabled="restoreBlocked"
                 data-testid="snapshot-confirm"
-                @click="confirmRestore(snapshot.id)"
+                @click="confirmRestore(snapshot)"
               >
                 Restore this version
               </Button>

@@ -25,9 +25,10 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 | 7 — Monaco editor | ✅ merged to `main` |
 | 8 — HighLevel API proxy | ✅ merged to `main` |
 | 9 — HighLevel knowledge injection | ✅ merged to `main` |
-| 10 — Live preview | ✅ built, reviewed, PR open from `slice/10-live-preview` |
+| 10 — Live preview | ✅ merged to `main` |
 | 11 — Snapshots & restore | ✅ merged to `main` |
-| 12–13 | not started |
+| 12 — Error handling & state hardening | ✅ built, reviewed, PR open from `slice/12-error-handling` |
+| 13 — Deliverables | not started |
 
 **Slice 8 ran ahead of 7**, which §4's dependency line permits: it depends on 2 alone,
 and 2 merged on day 1. Nothing in 7 is owed to it. **Slice 11 ran ahead of 10** for the
@@ -54,7 +55,26 @@ been red since Slice 1: `vite.config.ts` threw at config load on any checkout wi
 8080 — the *development* emulator — so off CI it "passed" by finding a dev session, loading
 its rules over that session's and calling `clearFirestore()` on it.
 
-**Suite, re-run in full on `slice/10-live-preview` at ship time, rebased on `main`
+**Suite, re-run in full on `slice/12-error-handling` at ship time, rebased on `main`
+(2026-08-18):** typecheck 0 · lint 0 · **2,266 unit** (1,180 functions · 1,061 frontend ·
+25 scripts) · **52 rules** · **378 integration** · **19 e2e**. All six green — 2,715 cases.
+
+Slice 12 added **99 frontend unit cases and 1 e2e walk, and nothing anywhere else**: no
+route, no collection, no rules block, no server file, one dependency (`vue-sonner`, for the
+two toast call sites D3/D4 allow). Its D14 required the server half to be *measured* rather
+than asserted — `git diff main...HEAD --stat -- functions firestore.rules tests/rules
+tests/integration` lists nothing, so the flat rules and integration counts are a fact about
+the diff rather than an omission. The functions count moving 1,136 → 1,180 and scripts
+21 → 25 is **not** Slice 12: it is the deployment-pipeline PR (#17), which merged to `main`
+between Slice 10 and this one and is the first non-slice change to land since Slice 0.
+
+**Slice 12's ship-time rebase was clean, and that was checked rather than assumed.** It
+rebased onto the deployment-pipeline PR, which touches `functions/`, `scripts/`, the
+workflows and the README — none of which Slice 12 opens — so the two diffs are disjoint by
+construction. The full suite was still re-run *after* the rebase, per the ordering Slices 9
+and 10 paid for, and all 2,715 cases were green.
+
+**Prior run, `slice/10-live-preview` at ship time, rebased on `main`
 (2026-08-18):** typecheck 0 · lint 0 · **2,119 unit** (1,136 functions · 962 frontend ·
 21 scripts) · **52 rules** · **378 integration** · **18 e2e**. All six green — 2,567 cases.
 

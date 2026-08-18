@@ -189,6 +189,19 @@ describe('PreviewPanel — the four states', () => {
     expect(wrapper.find('iframe').exists()).toBe(false)
   })
 
+  /*
+   * AC-2. The placeholder is the shared `Skeleton`, not a hand-rolled
+   * pulsing div — the testid still resolves to the same element, and what
+   * it holds carries the primitive's slot attribute.
+   */
+  it('renders Skeleton placeholders while loading', async () => {
+    const wrapper = await panel()
+
+    const loading = wrapper.find('[data-testid="preview-loading"]')
+    expect(loading.exists()).toBe(true)
+    expect(loading.findAll('[data-slot="skeleton"]')).toHaveLength(1)
+  })
+
   /** AC-26 — both causes, each saying something different, neither rendering a frame. */
   it('names the chat box when the project has no files', async () => {
     workspace.filesLoaded = true
@@ -412,6 +425,7 @@ describe('PreviewPanel — the banners', () => {
       expect(link.exists()).toBe(true)
       expect(link.props('to')).toBe('/dashboard')
       expect(link.text()).toContain('Reconnect HighLevel')
+      expect(link.attributes('data-testid')).toBe('preview-reconnect')
     },
   )
 

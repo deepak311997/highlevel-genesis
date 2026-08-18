@@ -1,4 +1,4 @@
-import type { NavigationGuardWithThis, Router } from 'vue-router'
+import type { NavigationGuardWithThis, RouteMeta, Router } from 'vue-router'
 
 import { useAuthStore } from '@/stores/auth'
 import { DEFAULT_REDIRECT, storeRedirect } from '@/lib/redirect'
@@ -88,6 +88,39 @@ export function resolveNavigation(
   }
 
   return access === 'protected' ? null : DEFAULT_REDIRECT
+}
+
+/**
+ * The routes a user may be *returned to* after signing in — the allowlist
+ * `safeRedirect` is handed.
+ *
+ * A narrower thing than "every route we registered", and `resolveNavigation`
+ * above already says why in the other direction: only a `protected` route is
+ * worth returning to, because the auth-flow pages and the gate are means, not
+ * destinations. Both callers of `safeRedirect` used to pass
+ * `router.getRoutes().map((r) => r.path)`, which made every registered route a
+ * legal `?redirect=` target.
+ *
+ * One of them is `/auth/action` — the single route exempt from this guard in
+ * every auth state, which applies a Firebase action code straight off its query
+ * string. `?redirect=%2Fauth%2Faction%3Fmode%3DresetPassword%26oobCode%3D<the
+ * attacker's own code>` therefore handed a user who had *just* typed their
+ * password a "choose a new password" form bound to someone else's account. A
+ * password typed twice in thirty seconds is the ordinary case, and
+ * `confirmPasswordReset` then sets the attacker's account to the victim's
+ * password.
+ *
+ * Keyed off `access` rather than a hand-written list of good paths, so a route
+ * added later is classified once, here and in `resolveNavigation`, rather than
+ * twice — and so `/hl/callback`, which is `protected` precisely so a lapsed
+ * session round-trips back to its outcome, keeps working without anyone having
+ * to remember it. The fail-open default matches the guard's own: a route with
+ * no `access` is protected, and a protected route is a destination.
+ */
+export function destinationPaths(routes: readonly { path: string; meta: RouteMeta }[]): string[] {
+  return routes
+    .filter((route) => (route.meta.access ?? 'protected') === 'protected')
+    .map((route) => route.path)
 }
 
 /**
