@@ -237,3 +237,61 @@ mutating `node_modules` underneath four lanes running Vitest is a race with noth
   hand-written tests (same coverage, the state is in the test name); and the disabled assertion
   is written so the non-loading states positively assert *enabled* rather than only checking
   loading.
+
+### T5–T10 — session expiry, end to end · lane L-SESSION
+
+**T5 — `safeRedirect` accepts a parameterised route (plan C2; prerequisite for AC-12, AC-20).**
+Red: 2 failed / 24 passed, `expected '/dashboard' to be '/projects/abc123'` — `includes` can
+never match a pattern. The catch-all and extra-segment cases passed vacuously in the red state,
+which is what makes them guards against the fix *over*-reaching rather than duplicates.
+Green: private `matcherFor(pattern)` returning `null` for `/[(*?+]/` (in this router, exactly the
+catch-all — it matches everything, so honouring it makes the allowlist a no-op), otherwise
+`:param` → `[^/]+` per segment, the rest escaped, anchored both ends; `some()` replaces
+`includes`. All fourteen hostile-payload cases unchanged and passing. **C2 is confirmed exactly
+as the plan states it: this was a real bug on `main` that no test caught.**
+
+**T6 — the sign-out hook in `apiClient` (AC-10, AC-13, AC-14, AC-15).** Red:
+`registerSessionExpiredHook is not a function` took all 20 tests in the file down, because the
+reset lives in the shared `beforeEach`/`afterEach` — the right red for a missing export.
+Green: the three exported functions exactly as pinned; `request` does `errorForResponse` →
+`noteApiError` → `throw`, and `noteSessionAlive()` before parsing on success. Tests:
+`invokes the session hook for a 401 unauthenticated, and still throws`, `leaves app_check_failed
+alone`, `leaves a 403 email_unverified alone`, `fires once for three concurrent 401s`,
+`fires again after a call that succeeded`, `does nothing when no hook is registered`,
+`ignores a 401 with no code`.
+
+**T7 — what the hook does (AC-10).** Red: `Failed to resolve import "./sessionExpiry"`.
+Green: as pinned, `SIGN_IN_PATH` imported from `@/router/guard` rather than restated; the hook is
+synchronous and does `void expire(deps)`, with the async body private so `no-floating-promises`
+has something to point at. `reads the path before signing out` proves the order with an `order`
+array — the guard's own navigation would otherwise have moved the path first.
+
+**T8 — `main.ts` (AC-10 wiring). No test, deliberately** — four statements of assembly with no
+exports and no branches; a unit test would assert that the file calls the functions the file
+calls. T20's L5 walk is the level at which "they are actually connected" is a claim at all.
+
+**T9 — the sign-in notice (AC-11, AC-12).** Red: 1 failed / 15 passed,
+`Cannot call text on an empty DOMWrapper`. AC-12's case was **already green because T5 had
+landed first**, which is exactly the ordering the plan prescribes. Green: a module-level one-entry
+`NOTICES` map, a `notice` computed, and a default-variant `<Alert data-testid="signin-notice">`
+(→ `role="status"`, what a notice wants) as the first child of `CardContent`.
+
+**T10 — the SSE path is not a hole in the hook (AC-16).** Red: 2 failed / 28 passed,
+`expected "vi.fn()" to be called 1 times, but got 0 times`. Green: the three lines from `request`,
+plus `noteSessionAlive()` once the response is ok. **The `reader.read()` loop is untouched**, left
+for T11.
+
+**Deviations, all additive and all recorded:**
+1. `generateApi.spec.ts`'s `apiClient` mock had to change shape. It was
+   `vi.mock('@/lib/apiClient', () => ({ authHeaders }))`, which would leave
+   `registerSessionExpiredHook` and `noteApiError` `undefined` in the module under test. It now
+   spreads `await vi.importActual(...)`, with `@/lib/firebase` and `@/lib/appCheck` stubbed so the
+   real import cannot reach the Firebase SDK. **Stronger than the hand-rolled mock**: the test
+   exercises the real latch, and so proves the stream shares module state with `request`.
+2. Three extra tests beyond the plan's named ones: `encodes a path carrying a query of its own`
+   and `returns nothing, so no caller has a promise to drop` (T7), and `re-arms the hook once a
+   stream has opened` (T10) — without which `noteSessionAlive()` in `streamGeneration` would be an
+   untested line.
+3. `SignInView.spec.ts`'s shared `vue-router` mock gained `{ path: '/projects/:projectId' }` in
+   `getRoutes`, unavoidable for AC-12. `/nowhere` still falls back, so the existing
+   `ignores a %s redirect target` cases are untouched and green.
