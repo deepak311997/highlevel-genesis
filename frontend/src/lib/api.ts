@@ -55,6 +55,24 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * What the app says when the browser could not complete the request at all.
+ *
+ * One sentence, one author. It is the only advice that is ever right about a
+ * failure with no response behind it, and it reaches the user from four places
+ * — the shared fetch, the streaming client's opening call and its read loop,
+ * and the auth client — none of which could see the others' copy. A copy-edit
+ * to the wording used to be four edits and one surface left behind.
+ *
+ * Status 0 because no response arrived: there is no status to report, and a
+ * caller branching on one must not mistake this for a server that answered.
+ */
+export const CONNECTION_MESSAGE = 'Something went wrong. Check your connection and try again.'
+
+export function connectionError(): ApiError {
+  return new ApiError(CONNECTION_MESSAGE, 0)
+}
+
 /** Fetch JSON from the functions API, turning non-2xx into a typed error. */
 export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
   // Build the init conditionally: under exactOptionalPropertyTypes, passing an

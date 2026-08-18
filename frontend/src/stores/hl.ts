@@ -123,17 +123,18 @@ export function withDetail(message: string, detail: string | undefined): string 
   return `${message} (${detail})`
 }
 
+/** The sentence a failed surface shows, in order of how much we know. */
+function messageFor(err: unknown): string {
+  if (err instanceof ApiError) return withDetail(err.message, err.detail)
+  if (err instanceof Error) return err.message
+  return 'Could not reach HighLevel.'
+}
+
 function failureFor(err: unknown): SurfaceProbe {
-  const status = err instanceof ApiError ? err.status : 0
   return {
     count: null,
-    error:
-      err instanceof ApiError
-        ? withDetail(err.message, err.detail)
-        : err instanceof Error
-          ? err.message
-          : 'Could not reach HighLevel.',
-    reconnect: status === RECONNECT_STATUS,
+    error: messageFor(err),
+    reconnect: err instanceof ApiError && err.status === RECONNECT_STATUS,
   }
 }
 

@@ -8,8 +8,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import PasswordField from '@/components/PasswordField.vue'
+import { CONNECTION_MESSAGE } from '@/lib/api'
 import { recallEmail } from '@/lib/handoff'
 import { DEFAULT_REDIRECT, safeRedirect, storeRedirect } from '@/lib/redirect'
+import { SESSION_EXPIRED_REASON } from '@/lib/sessionExpiry'
 import { useAuthStore } from '@/stores/auth'
 
 /**
@@ -29,9 +31,17 @@ const CREDENTIAL_MESSAGE = 'Email or password is incorrect.'
  * from it. The query is attacker-controllable, so the only thing it is allowed
  * to do is *select* one of the messages written here; an unrecognised value
  * selects nothing and the page looks exactly as it always did.
+ *
+ * A `Map` rather than the object literal the rest of this codebase uses for a
+ * lookup table, and that is the attacker-controllable key again:
+ * `NOTICES['constructor']` on an object returns something, and
+ * `NOTICES.get('constructor')` returns `undefined`.
+ *
+ * The key comes from the module that writes it, so the producer and the reader
+ * of this query-string contract cannot drift apart.
  */
 const NOTICES = new Map<string, string>([
-  ['session_expired', 'Your session expired. Sign in again.'],
+  [SESSION_EXPIRED_REASON, 'Your session expired. Sign in again.'],
 ])
 
 type State = { kind: 'editing' } | { kind: 'submitting' } | { kind: 'failed'; message: string }
@@ -56,7 +66,7 @@ function messageFor(err: unknown): string {
   if (typeof code !== 'string') return 'Something went wrong. Please try again.'
 
   if (code === 'auth/network-request-failed') {
-    return 'Something went wrong. Check your connection and try again.'
+    return CONNECTION_MESSAGE
   }
   if (code === 'auth/too-many-requests') {
     return 'Too many attempts. Try again in a few minutes.'
