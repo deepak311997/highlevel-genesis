@@ -168,6 +168,68 @@ describe('the four states', () => {
     expect(store.loadSnapshots).toHaveBeenCalledTimes(2)
   })
 
+  /*
+   * The store keeps the list when a refetch fails, and says why: an emptied
+   * history under a Restore button claims "this project has no versions", which
+   * is a different thing from "we could not reach the server". Rendering the
+   * error *instead of* the rows throws that away at the last step — the user is
+   * reading twenty versions, a generation finishes behind the open sheet, its
+   * refetch 500s, and the list they were reading disappears.
+   *
+   * So the failure renders like a failed *restore* does: above the list, with
+   * the list still under it. The first-load case below keeps the old behaviour,
+   * because then there is genuinely nothing to keep.
+   */
+  it('keeps a loaded list on screen when a refetch fails', async () => {
+    store.snapshots = [snapshot(1), snapshot(2)]
+    store.snapshotsLoaded = true
+    store.snapshotsError = 'Could not load version history.'
+    await open()
+
+    expect(must('snapshot-error').text()).toContain('Could not load version history.')
+    expect(all('snapshot-row')).toHaveLength(2)
+    expect(el('snapshot-empty')).toBeNull()
+    expect(el('snapshot-loading')).toBeNull()
+  })
+
+  it('shows no list and no empty state when the first load fails', async () => {
+    store.snapshotsError = 'Could not load version history.'
+    await open()
+
+    expect(must('snapshot-error').exists()).toBe(true)
+    expect(all('snapshot-row')).toHaveLength(0)
+    expect(el('snapshot-empty')).toBeNull()
+    expect(el('snapshot-loading')).toBeNull()
+  })
+
+  /*
+   * A failed restore is about one attempt on one visit. Left in the store it
+   * outlives the visit: close the sheet, generate successfully, reopen — and the
+   * banner for the abandoned attempt is still sitting above a list that is now
+   * correct. `confirmingId` is already withdrawn on the same event for the same
+   * reason.
+   */
+  it('drops a stale restore failure when the sheet is closed', async () => {
+    store.snapshotsLoaded = true
+    await open()
+
+    // While it is open the banner is the only report the user gets, so it stays.
+    store.restoreError = 'That version could not be restored. Try again.'
+    await flushPromises()
+    expect(must('snapshot-restore-error').exists()).toBe(true)
+
+    // Closed the way a user closes it: the sheet's own X, which the vendored
+    // `SheetContent` gives an `sr-only` label so it is nameable at all.
+    const close = [...document.body.querySelectorAll('button')].find((button) =>
+      button.textContent.includes('Close'),
+    )
+    close?.click()
+    await flushPromises()
+    expect(el('snapshot-sheet')).toBeNull()
+
+    expect(store.restoreError).toBeNull()
+  })
+
   /**
    * AC-29's list half. The store is handed the versions in *ascending* order
    * here on purpose: the server returns them newest-first and the component

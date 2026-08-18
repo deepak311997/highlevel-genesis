@@ -69,7 +69,12 @@ function onOpenChange(next: boolean): void {
   open.value = next
   // A confirm is a question about *this* visit; closing the sheet withdraws it.
   confirmingId.value = null
+  // And so is a failed restore — but on the way *out*, because while the sheet
+  // is open the banner is the only report the user gets. It is one attempt on
+  // one version, not a state of the history, so left in the store it outlives
+  // the visit and greets the next one with a failure long since abandoned.
   if (next) void workspace.loadSnapshots()
+  else workspace.restoreError = null
 }
 
 function confirmRestore(snapshotId: string): void {
@@ -124,10 +129,14 @@ function confirmRestore(snapshotId: string): void {
         <AlertDescription>{{ workspace.restoreError }}</AlertDescription>
       </Alert>
 
-      <!-- Error first, `FileTree.vue`'s rule and for its reason: a failed first
-           request leaves `snapshotsLoaded` false, so a loading branch above this
-           would render a skeleton that never resolves and never show the
-           failure. -->
+      <!-- Above the list rather than instead of it, exactly as the restore's own
+           failure is. The store deliberately keeps the versions it already has
+           when a refetch fails (AC-23), because an emptied history under a
+           Restore button claims "this project has no versions" — a different
+           thing from "we could not reach the server". Rendering the error in
+           place of the rows would throw that away at the last step: a sheet open
+           on twenty versions would lose them all to a refetch nobody asked
+           for. -->
       <div v-if="workspace.snapshotsError" class="flex flex-col gap-2" data-testid="snapshot-error">
         <Alert variant="destructive">
           <AlertDescription>{{ workspace.snapshotsError }}</AlertDescription>
@@ -145,9 +154,14 @@ function confirmRestore(snapshotId: string): void {
       <!-- No answer yet — in flight, or not started. `snapshotsLoading` alone
            cannot say the second: it is still false between the sheet opening and
            the request going out, and an empty state shown then reads as a
-           project with no history. -->
+           project with no history. The `snapshotsError` term is what keeps a
+           failed *first* load from sitting under a skeleton that never resolves
+           — `FileTree.vue`'s rule, kept, now that the error no longer takes the
+           whole body with it. -->
       <div
-        v-else-if="workspace.snapshotsLoading || !workspace.snapshotsLoaded"
+        v-if="
+          workspace.snapshotsLoading || (!workspace.snapshotsLoaded && !workspace.snapshotsError)
+        "
         class="flex flex-col gap-2"
         data-testid="snapshot-loading"
       >
@@ -226,8 +240,15 @@ function confirmRestore(snapshotId: string): void {
         </li>
       </ul>
 
-      <!-- Asked, and there is nothing — a project that has never generated. -->
-      <p v-else class="text-sm text-muted-foreground" data-testid="snapshot-empty">
+      <!-- Asked, **answered**, and there is nothing — a project that has never
+           generated. Guarded on `snapshotsLoaded` rather than falling out of the
+           chain, so a first load that failed says so above and stays silent here
+           instead of claiming the project has no versions. -->
+      <p
+        v-else-if="workspace.snapshotsLoaded"
+        class="text-sm text-muted-foreground"
+        data-testid="snapshot-empty"
+      >
         No versions yet. Generate an app and this is where its versions appear.
       </p>
     </SheetContent>
