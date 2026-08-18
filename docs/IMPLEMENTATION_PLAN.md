@@ -26,14 +26,16 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 | 8 — HighLevel API proxy | ✅ merged to `main` |
 | 9 — HighLevel knowledge injection | ✅ merged to `main` |
 | 10 | not started |
-| 11 — Snapshots & restore | 🔵 building on `slice/11-snapshots-restore` |
+| 11 — Snapshots & restore | ✅ built, reviewed, PR open from `slice/11-snapshots-restore` |
 | 12–13 | not started |
 
 **Slice 8 ran ahead of 7**, which §4's dependency line permits: it depends on 2 alone,
-and 2 merged on day 1. Nothing in 7 is owed to it. **Slice 11 runs ahead of 9 and 10**
-for the same reason: §4 makes it depend on 6 alone. It adds no frame to the SSE protocol,
-nothing to the system prompt and nothing to the preview, so neither of the slices it passes
-is owed anything by it either.
+and 2 merged on day 1. Nothing in 7 is owed to it. **Slice 11 ran ahead of 10** for the
+same reason: §4 makes it depend on 6 alone. It adds no frame to the SSE protocol, nothing
+to the system prompt and nothing to the preview, so the slice it passes is owed nothing by
+it either. It was cut against `main` before Slice 9 merged and rebased onto it at ship
+time; the two overlap in `functions/src/files/handlers.ts`, `generate.ts` and the fake
+LLM, and that rebase is written up below.
 
 **Slices from here run unattended.** `scripts/autopilot.sh` drives the five-stage loop
 one slice at a time — a fresh session per stage, the suite run by the orchestrator rather
@@ -47,9 +49,30 @@ been red since Slice 1: `vite.config.ts` threw at config load on any checkout wi
 8080 — the *development* emulator — so off CI it "passed" by finding a dev session, loading
 its rules over that session's and calling `clearFirestore()` on it.
 
-**Suite, re-run in full on `slice/09-highlevel-knowledge` at ship time, rebased on `main`
-(2026-08-18):** typecheck 0 · lint 0 · **1,858 unit** (1,051 functions · 786 frontend ·
-21 scripts) · **38 rules** · **329 integration** · **16 e2e**. All six green — 2,241 cases.
+**Suite, re-run in full on `slice/11-snapshots-restore` at ship time, rebased on `main`
+(2026-08-18):** typecheck 0 · lint 0 · **2,005 unit** (1,136 functions · 848 frontend ·
+21 scripts) · **52 rules** · **378 integration** · **17 e2e**. All six green — 2,452 cases.
+
+Slice 11 added 85 functions unit cases, 62 frontend unit cases, 14 rules cases, 49
+integration cases and 1 e2e walk. The rules count moving is the point: two new collections
+(`snapshots` and its `files` subcollection) ship with a deny block each and L3 tests that
+prove the denial for the owner, another verified user and an anonymous client — including
+the nested path, which rules do not cascade into.
+
+**The Slice 11 rebase needed six conflict resolutions and one of them was substantive.**
+Slice 9 gave `files/handlers.ts` a second content-carrying read, `readProjectFiles`, for the
+prompt's project-state block; Slice 11 independently turned the write path's `readFilePaths`
+into `readStoredFiles`, which is also content-carrying. Both survive the rebase because they
+answer different questions on different paths, but they are now near-duplicates
+(`orderBy('path').limit(FILE_LIMIT)`, differing only in the caller), and `generate.spec.ts`'s
+`fakeFilesDb` can no longer tell them apart by call shape — its `rejectProjectFiles` option
+now fails whichever read runs, and what still makes it prove Slice 9's AC-28 is the *order*,
+which the helper's comment now says. **Consolidating the two reads is the first thing to do
+in whichever slice next opens that file.**
+
+**Prior run, `slice/09-highlevel-knowledge` at ship time (2026-08-18):** typecheck 0 ·
+lint 0 · **1,858 unit** (1,051 functions · 786 frontend · 21 scripts) · **38 rules** ·
+**329 integration** · **16 e2e** — 2,241 cases.
 
 Slice 9 added 129 functions unit cases and 4 integration cases, and **nothing anywhere
 else**: no frontend file, no route, no collection, no rules block, no new dependency. It is
