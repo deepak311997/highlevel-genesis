@@ -54,6 +54,14 @@ collapsible rail **beside** it, grouped by kind — paths are flat by constructi
 file *is* is the only real hierarchy there is — and the three panels now open at 25 / 40 / 35
 rather than 20 / 30 / 50.
 
+Two smaller API changes rode along and are worth stating because they are behaviour a client
+can see: `POST /api/projects` and `PATCH` refuse a name one of the caller's other live
+projects already holds, `409 duplicate_name`, compared case-folded with runs of whitespace
+collapsed — a comparison key, never a stored value; and the workspace header's connection
+badge asks the *connection* rather than the `locationId` snapshotted into the project at
+creation, which used to make a project older than the connection say "Not connected" for ever
+while the dashboard said the opposite about the same account.
+
 **Slice 8 ran ahead of 7**, which §4's dependency line permits: it depends on 2 alone,
 and 2 merged on day 1. Nothing in 7 is owed to it. **Slice 11 ran ahead of 10** for the
 same reason: §4 makes it depend on 6 alone. It adds no frame to the SSE protocol and nothing
@@ -940,6 +948,14 @@ is the live status.
 | Functions region | `asia-south1` — pinned in `setGlobalOptions()` and both Hosting rewrites |
 | Local secrets | `frontend/.env`, `functions/.env`, `functions/.secret.local` — all gitignored |
 | Deployed secrets | Secret Manager (`firebase functions:secrets:set`), never plain env vars |
+
+**The documents, and which of them a check reads.** `README.md` is held true by
+`scripts/check-readme.mjs`, the two deliverable documents by `scripts/check-deliverables.mjs`,
+and `.env.example` by `scripts/check-secrets.mjs`. `docs/genesis-architecture.html` and
+`docs/deploy-pipeline.html` are read by nothing and linked from nothing — which is how the
+first of them went on describing client-direct Firestore, `onSnapshot`, VueFire and a
+`minInstances` of 1 for eight slices after Slice 2b reversed all four. They are corrected now;
+the standing risk is that only a human re-reading them can catch the next drift.
 
 `scripts/bootstrap-github.sh` did its job and was **deleted in Slice 13**: it bootstrapped a
 repository that now exists, and a script whose preconditions can never recur again is not
