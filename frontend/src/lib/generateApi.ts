@@ -188,7 +188,30 @@ export async function* streamGeneration(
   const decoder = new TextDecoder()
 
   for (;;) {
-    const { done, value } = await reader.read()
+    /*
+     * AC-8. Only the read is wrapped, and deliberately so.
+     *
+     * The opening `fetch`'s failure is already mapped above; this is the other
+     * half — a connection lost *after* the headers flushed, which rejects here
+     * instead. Left unwrapped it reached the screen as whatever the browser
+     * called it: `Failed to fetch` in Chrome, `NetworkError when attempting to
+     * fetch resource.` in Firefox. Two browsers, two strings, neither ours.
+     *
+     * An abort rethrows untouched: a user who left the project did not lose
+     * their connection, and telling them to check it would be a lie.
+     *
+     * The frame loop below stays outside the `try`, so a bug in `sse.ts` is
+     * reported as itself rather than laundered into a connection message.
+     */
+    let chunk: Awaited<ReturnType<typeof reader.read>>
+    try {
+      chunk = await reader.read()
+    } catch (err) {
+      if (signal.aborted) throw err
+      throw new ApiError('Something went wrong. Check your connection and try again.', 0)
+    }
+
+    const { done, value } = chunk
     if (done) break
 
     for (const frame of parser.push(decoder.decode(value, { stream: true }))) {
