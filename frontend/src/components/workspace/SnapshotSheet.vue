@@ -80,7 +80,7 @@ function onOpenChange(next: boolean): void {
 }
 
 /**
- * The two notices this app has, and both are here (D3, D4).
+ * The two notices this app has, and both are here (Slice 12, D3 and D4).
  *
  * A restore is the one action in the workspace whose outcome leaves nothing on
  * screen to read. It succeeded and the files were already rendered; or it
@@ -93,7 +93,7 @@ function onOpenChange(next: boolean): void {
  * error that disappears after four seconds is an error the user cannot act on;
  * a refusal is a button that was already disabled. That is D4, and it is why
  * this file and the region's own component are the only two that name the
- * toast library at all.
+ * toast library at all. (Slice 12, D4.)
  *
  * The copy goes through `versionLabel`, the same helper the row's heading uses,
  * so the sheet and the notice cannot come to disagree about what a version is

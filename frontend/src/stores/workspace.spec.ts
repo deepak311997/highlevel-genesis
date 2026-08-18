@@ -3510,7 +3510,7 @@ describe('restoreSnapshot — the preview’s signals', () => {
  * to go looking for afterwards.
  *
  * Four outcomes, and the caller decides what each is worth: `'restored'` and
- * `'unchanged'` are the two the user is told about, `'blocked'` and `'failed'`
+ * `'unchanged'` are the two the user is told about, `'skipped'` and `'failed'`
  * are the two they are not. A failure already renders in `restoreError` and must
  * stay there (D4), and a refusal is a button the sheet had already disabled.
  */
@@ -3569,7 +3569,7 @@ describe('restoreSnapshot — what it reports', () => {
     })
     fetchMock.mockClear()
 
-    expect(await store.restoreSnapshot('snap-1')).toBe('blocked')
+    expect(await store.restoreSnapshot('snap-1')).toBe('skipped')
     expect(requests()).toEqual([])
 
     stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }))

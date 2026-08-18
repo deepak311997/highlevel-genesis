@@ -65,7 +65,9 @@ function sourceFiles(dir: string): string[] {
     const path = join(dir, entry.name)
     if (entry.isDirectory()) return sourceFiles(path)
     if (entry.name === SELF) return []
-    return /\.(ts|vue)$/.test(entry.name) ? [path] : []
+    // `.css` as well as `.ts`/`.vue`: `@apply animate-pulse` in a stylesheet is
+    // the same twentieth copy by another route, and `style.css` is under `src`.
+    return /\.(ts|vue|css)$/.test(entry.name) ? [path] : []
   })
 }
 

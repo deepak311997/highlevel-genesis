@@ -29,7 +29,7 @@ export function apiUrl(path: string): string {
  * diagnosing a HighLevel call, that is the difference between a shrug and a
  * fix. The preview is unchanged by this: its failure banner still shows
  * `message` alone and its wire shape to the frame stays
- * `{ message, status, code? }` (AC-21).
+ * `{ message, status, code? }` (Slice 10, AC-21).
  *
  * Both are declared `string | undefined` rather than optional (`?:`): under
  * `exactOptionalPropertyTypes` an optional property and one that may hold
