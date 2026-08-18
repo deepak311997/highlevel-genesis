@@ -1,25 +1,14 @@
 /**
- * How much context one generation may spend, and in what unit (D12, D13).
+ * How much context one generation may spend, and in what unit.
  *
- * ## Two budgets, never one pool
+ * **Two budgets, never one pool.** A pooled budget makes a long conversation able
+ * to evict the project's code, which is precisely the context this exists to
+ * preserve — and it makes every failure mode global where two make each one local.
  *
- * The project's files and the chat transcript are measured separately. A single
- * pooled budget makes a long conversation able to evict the code, which is
- * precisely the context F3.2 exists to preserve — and it makes every failure
- * mode global, where two budgets make each one local and each test independent.
- *
- * ## Characters, because tokens cost a round trip
- *
- * An exact token count needs `messages.count_tokens`: a network call to
- * Anthropic and a charge, on **every** generation, to decide something a
- * conservative estimate already decides safely. Four characters per token is the
- * documented rule of thumb for English and for code, and {@link estimateTokens}
- * rounds up so the estimate never understates.
- *
- * The numbers are exported constants rather than literals at the two call sites,
- * so a re-tune is one edit and a test — and `budget.spec.ts` states each of them
- * in both units, so a re-tune cannot silently change what the PRD claims the
- * budget costs.
+ * **Characters, because tokens cost a round trip.** An exact count needs a network
+ * call and a charge on every generation to decide what a conservative estimate
+ * already decides safely. Four characters per token is the documented rule of
+ * thumb, and {@link estimateTokens} rounds up so the estimate never understates.
  */
 
 /** The rule of thumb. Not the tokenizer, and deliberately not pretending to be. */
@@ -31,25 +20,19 @@ export function estimateTokens(text: string): number {
 }
 
 /**
- * 120,000 characters — about 30,000 tokens — of project files.
- *
- * The pathological case is `FILE_LIMIT` × `FILE_BYTES_MAX` = 20 × 100 KB, some
- * 500,000 tokens. A realistic generated app is three to six files totalling
- * 20–120 KB, so this truncates only the pathological ones.
+ * 120,000 characters — about 30,000 tokens — of project files. The pathological
+ * case is 20 × 100 KB, some 500,000 tokens; a realistic generated app is three to
+ * six files totalling 20–120 KB.
  */
 export const PROJECT_FILE_BUDGET = 120_000
 
 /**
- * 80,000 characters — about 20,000 tokens — of transcript.
+ * 80,000 characters — about 20,000 tokens — of transcript, which is at least
+ * twenty full-length prompts.
  *
- * `CONTENT_MAX` caps a *user* turn at 4,000 characters, so this is at least
- * twenty full-length prompts, against a collection hard-capped at 200 messages.
- *
- * **It does not bound an assistant turn.** `storedMessageSchema` deliberately
- * carries no maximum on `content` (Slice 6 D11 — the echo of a 4,000-character
- * prompt is longer than 4,000 characters), so a reply is bounded only by
- * `MAX_OUTPUT_BYTES`, at 800,000. One long generation can therefore consume this
- * whole budget by itself, which is what makes `context.ts`'s D16 floor a path
- * that really runs rather than a theoretical guard.
+ * **It does not bound an assistant turn**: the stored schema carries no maximum on
+ * content, so a reply is bounded only by the 800,000-byte output cap. One long
+ * generation can consume this whole budget by itself, which is what makes
+ * `context.ts`'s floor a path that really runs.
  */
 export const TRANSCRIPT_BUDGET = 80_000
