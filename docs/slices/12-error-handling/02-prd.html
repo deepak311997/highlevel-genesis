@@ -1,0 +1,816 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Way Out — Slice 12 design companion</title>
+
+<style>
+  /* ---------------------------------------------------------------
+     Identity: an evacuation plan.
+
+     Each companion takes its shape from the slice's own idea. Slice 3
+     was a card index; Slice 4 a transcript with a gutter; Slice 5 a
+     tape; Slice 8 a permit desk; Slice 10 a sealed room seen through
+     glass. This slice's idea is the sign on the wall: WHEN THIS GOES
+     WRONG, HERE IS THE WAY OUT — and the only failure worth calling a
+     defect is the one with no door on it.
+
+     So the page is a floor plan. Every figure is one entrance and its
+     exits; the routes are drawn, the doors are labelled with what the
+     person actually ends up looking at, and the single place where the
+     plan currently has no door is drawn in the one colour reserved
+     for it.
+
+     Colour is doing exactly one job: WHAT DOES THE USER DO NEXT.
+       wait     — no answer yet; a placeholder, not a failure
+       recover  — they stay where they are and can act: retry, reload,
+                  reconnect
+       reroute  — the app moves them somewhere else and brings them back
+       quiet    — a transient notice about something already finished
+       dead     — stranded: told something true, given nothing to do
+                  about it. Reserved for the BEFORE side of the one
+                  hazard on this page, and used nowhere else.
+     Every stroke and fill is a token, so both themes come from one set
+     of values.
+     ------------------------------------------------------------ */
+  :root {
+    --paper:      #f1f0ec;
+    --surface:    #fbfaf7;
+    --surface-2:  #e6e4dd;
+    --ink:        #14130f;
+    --ink-soft:   #55524a;
+    --ink-faint:  #857f74;
+    --rule:       #cdc9be;
+    --rule-soft:  #ddd9d0;
+
+    --wait:       #4a5a72;
+    --wait-wash:  #e2e6ee;
+    --recover:    #16695a;
+    --recover-wash:#d6ece6;
+    --reroute:    #5a3fa8;
+    --reroute-wash:#e5dffa;
+    --quiet:      #8a5b0d;
+    --quiet-wash: #f8ecd4;
+    --dead:       #a8202f;
+    --dead-wash:  #fadfe2;
+
+    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --pad: clamp(1rem, 4vw, 3rem);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0f0e0c;
+      --surface:    #181713;
+      --surface-2:  #22201b;
+      --ink:        #f0eee8;
+      --ink-soft:   #b0aa9d;
+      --ink-faint:  #7d776b;
+      --rule:       #34312a;
+      --rule-soft:  #26241e;
+
+      --wait:       #9fb0cc;
+      --wait-wash:  #1b2230;
+      --recover:    #4bc4ac;
+      --recover-wash:#08312a;
+      --reroute:    #b49bf5;
+      --reroute-wash:#221740;
+      --quiet:      #e2b45f;
+      --quiet-wash: #33240a;
+      --dead:       #f18490;
+      --dead-wash:  #3b1117;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  html { color-scheme: light dark; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 60rem; margin: 0 auto; padding: var(--pad); }
+
+  header.masthead {
+    border-bottom: 3px double var(--rule);
+    padding-bottom: 1.5rem;
+    margin-bottom: 2.5rem;
+  }
+  .kicker {
+    font-family: var(--font-mono);
+    font-size: .72rem;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 .5rem;
+  }
+  h1 {
+    font-size: clamp(1.9rem, 5vw, 2.9rem);
+    line-height: 1.08;
+    margin: 0 0 .6rem;
+    letter-spacing: -.02em;
+  }
+  .standfirst { margin: 0; color: var(--ink-soft); font-size: 1.05rem; max-width: 44rem; }
+
+  h2 {
+    font-size: 1.35rem;
+    margin: 3rem 0 .4rem;
+    letter-spacing: -.01em;
+    padding-top: 1.4rem;
+    border-top: 1px solid var(--rule-soft);
+  }
+  h2:first-of-type { border-top: 0; padding-top: 0; }
+  h3 { font-size: 1rem; margin: 1.8rem 0 .4rem; }
+  p { max-width: 44rem; }
+  .lede { color: var(--ink-soft); max-width: 44rem; }
+
+  code, .mono { font-family: var(--font-mono); font-size: .87em; }
+  code {
+    background: var(--surface-2);
+    padding: .08em .34em;
+    border-radius: 3px;
+  }
+
+  figure {
+    margin: 1.8rem 0 2.2rem;
+    padding: 0;
+  }
+  .scroller { overflow-x: auto; }
+  figure svg { display: block; max-width: 100%; height: auto; }
+  figcaption {
+    margin-top: .7rem;
+    font-size: .84rem;
+    color: var(--ink-soft);
+    border-left: 3px solid var(--rule);
+    padding-left: .8rem;
+    max-width: 44rem;
+  }
+
+  /* SVG tokens ------------------------------------------------- */
+  .s-fill-surface { fill: var(--surface); }
+  .s-fill-surface2 { fill: var(--surface-2); }
+  .s-rule { stroke: var(--rule); fill: none; }
+  .s-rule-soft { stroke: var(--rule-soft); fill: none; }
+  .s-ink { fill: var(--ink); }
+  .s-ink-soft { fill: var(--ink-soft); }
+  .s-ink-faint { fill: var(--ink-faint); }
+
+  .t-title { font: 600 14px var(--font-body); }
+  .t-body  { font: 400 13px var(--font-body); }
+  .t-small { font: 400 11.5px var(--font-body); }
+  .t-mono  { font: 400 12px var(--font-mono); }
+  .t-mono-s{ font: 400 10.5px var(--font-mono); letter-spacing: .06em; }
+  .t-cap   { font: 600 10px var(--font-mono); letter-spacing: .14em; }
+
+  .k-wait    { --k: var(--wait);    --kw: var(--wait-wash); }
+  .k-recover { --k: var(--recover); --kw: var(--recover-wash); }
+  .k-reroute { --k: var(--reroute); --kw: var(--reroute-wash); }
+  .k-quiet   { --k: var(--quiet);   --kw: var(--quiet-wash); }
+  .k-dead    { --k: var(--dead);    --kw: var(--dead-wash); }
+
+  .box  { fill: var(--kw); stroke: var(--k); stroke-width: 1.5; }
+  .line { stroke: var(--k); stroke-width: 1.6; fill: none; }
+  .line-dash { stroke: var(--k); stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+  .label { fill: var(--k); }
+  .cap-on-wash { fill: var(--k); }
+
+  /* one marker per colour: context-stroke renders black where it is
+     unsupported, which is invisible on light paper and wrong on dark */
+  .head-wait    { fill: var(--wait); }
+  .head-recover { fill: var(--recover); }
+  .head-reroute { fill: var(--reroute); }
+  .head-quiet   { fill: var(--quiet); }
+  .head-dead    { fill: var(--dead); }
+  .head-rule    { fill: var(--rule); }
+
+  /* prose furniture -------------------------------------------- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+    gap: .8rem;
+    margin: 1.6rem 0 2rem;
+    padding: 0;
+    list-style: none;
+  }
+  .stats li {
+    background: var(--surface);
+    border: 1px solid var(--rule-soft);
+    border-top: 3px solid var(--k, var(--rule));
+    padding: .8rem .9rem;
+  }
+  .stats .n { display: block; font: 600 1.6rem/1.1 var(--font-body); letter-spacing: -.02em; }
+  .stats .l { display: block; font-size: .78rem; color: var(--ink-soft); margin-top: .2rem; }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: 1rem;
+    margin: 1.4rem 0 2rem;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--rule-soft);
+    border-left: 3px solid var(--k, var(--rule));
+    padding: .9rem 1rem;
+  }
+  .card h4 {
+    margin: 0 0 .45rem;
+    font: 600 .78rem/1.3 var(--font-mono);
+    letter-spacing: .06em;
+    color: var(--k, var(--ink));
+  }
+  .card p { margin: 0 0 .4rem; font-size: .87rem; color: var(--ink-soft); max-width: none; }
+  .card dl { margin: 0; font-size: .82rem; }
+  .card dt {
+    font-family: var(--font-mono);
+    font-size: .74rem;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-top: .5rem;
+  }
+  .card dd { margin: .05rem 0 0; color: var(--ink); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.2rem 0 2rem;
+    font-size: .87rem;
+  }
+  caption {
+    text-align: left;
+    font: 600 .72rem/1.4 var(--font-mono);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    padding-bottom: .5rem;
+  }
+  th, td {
+    text-align: left;
+    vertical-align: top;
+    padding: .55rem .7rem;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  thead th {
+    border-bottom: 1.5px solid var(--rule);
+    font-size: .75rem;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  tbody tr:hover { background: var(--surface); }
+  td.rid { font-family: var(--font-mono); font-size: .78rem; color: var(--ink-faint); white-space: nowrap; }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem .9rem;
+    list-style: none;
+    padding: 0;
+    margin: 1rem 0 0;
+    font-size: .78rem;
+    color: var(--ink-soft);
+  }
+  .legend li { display: flex; align-items: center; gap: .4rem; }
+  .legend .sw {
+    width: .8rem; height: .8rem; border-radius: 2px;
+    background: var(--kw); border: 1.5px solid var(--k);
+    flex: none;
+  }
+
+  footer.colophon {
+    margin-top: 3.5rem;
+    padding-top: 1.2rem;
+    border-top: 3px double var(--rule);
+    font-size: .8rem;
+    color: var(--ink-faint);
+  }
+  footer.colophon a { color: inherit; }
+</style>
+</head>
+
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <p class="kicker">Genesis · Slice 12 · design companion to 02-prd.md</p>
+  <h1>The way out</h1>
+  <p class="standfirst">
+    Eleven slices each built their own loading, empty and error states. Read together for the
+    first time, they are almost all there — so this slice is not about covering failures. It is
+    about the two places the plan still has no door on it, and about saying the same thing in
+    one voice everywhere else.
+  </p>
+</header>
+
+<p class="lede">
+  The acceptance criteria, the decisions and the test matrix live in
+  <code>02-prd.md</code>, which is the contract. This page draws the four things prose makes
+  you assemble in your head: <strong>every exit from a failed call</strong>, <strong>the one
+  hazard that has no exit today</strong>, <strong>which surface a notice is allowed to
+  use</strong>, and <strong>where this slice's risk is tested</strong>.
+</p>
+
+<ul class="stats">
+  <li class="k-wait"><span class="n">19</span><span class="l">surfaces audited, each for loading, empty and error</span></li>
+  <li class="k-recover"><span class="n">0</span><span class="l">missing states found — the definition-of-done line is already met</span></li>
+  <li class="k-quiet"><span class="n">19</span><span class="l">hand-rolled placeholders across 10 components, becoming one primitive</span></li>
+  <li class="k-dead"><span class="n">2</span><span class="l">failures that still speak in a language that is not ours</span></li>
+</ul>
+
+<h2>The failure fan</h2>
+
+<p>
+  One entrance — any authenticated call the SPA makes — and every exit it can take. The
+  question each door answers is not <em>what went wrong</em> but <em>what does the person
+  looking at the screen do next</em>, which is the only question F8 actually asks. Eight of
+  these doors are already hung. Two are this slice's work.
+</p>
+
+<figure>
+  <div class="scroller">
+  <svg viewBox="0 0 900 640" role="img"
+       aria-label="One entrance, nine exits. An authenticated API call fans out to nine outcomes. Seven already end in a message the user can act on where they stand. A dropped connection mid-stream currently ends in the browser's own wording, and an expired session currently ends nowhere at all — those two are this slice's work."
+       xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="a-recover" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" class="head-recover"/>
+      </marker>
+      <marker id="a-reroute" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" class="head-reroute"/>
+      </marker>
+      <marker id="a-dead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" class="head-dead"/>
+      </marker>
+      <marker id="a-wait" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" class="head-wait"/>
+      </marker>
+    </defs>
+
+    <!-- entrance -->
+    <g class="k-wait">
+      <rect x="8" y="256" width="176" height="92" rx="4" class="box"/>
+      <text x="24" y="284" class="t-cap cap-on-wash">ENTRANCE</text>
+      <text x="24" y="306" class="t-mono s-ink">request(path)</text>
+      <text x="24" y="324" class="t-small s-ink-soft">the one authenticated fetch,</text>
+      <text x="24" y="338" class="t-small s-ink-soft">shared by seven typed clients</text>
+    </g>
+    <path d="M 184 302 L 214 302" class="k-wait line" marker-end="url(#a-wait)"/>
+    <path d="M 214 40 L 214 604" class="s-rule" stroke-width="1.5"/>
+
+    <!-- rows -->
+    <g class="k-recover">
+      <path d="M 214 52 L 246 52" class="line" marker-end="url(#a-recover)"/>
+      <rect x="252" y="34" width="214" height="36" rx="3" class="box"/>
+      <text x="264" y="57" class="t-mono s-ink">fetch throws</text>
+      <text x="486" y="50" class="t-body s-ink">“Check your connection and try again.”</text>
+      <text x="486" y="66" class="t-small s-ink-faint">stays put · Retry · shipped in Slice 5</text>
+    </g>
+
+    <g class="k-dead">
+      <path d="M 214 114 L 246 114" class="line" marker-end="url(#a-dead)"/>
+      <rect x="252" y="96" width="214" height="36" rx="3" class="box"/>
+      <text x="264" y="119" class="t-mono s-ink">reader rejects mid-stream</text>
+      <text x="486" y="112" class="t-body s-ink">“Failed to fetch” — the browser's words</text>
+      <text x="486" y="128" class="t-small label">NO DOOR · this slice, D6 · AC-8</text>
+    </g>
+
+    <g class="k-dead">
+      <path d="M 214 176 L 246 176" class="line" marker-end="url(#a-dead)"/>
+      <rect x="252" y="158" width="214" height="36" rx="3" class="box"/>
+      <text x="264" y="181" class="t-mono s-ink">401 unauthenticated</text>
+      <text x="486" y="174" class="t-body s-ink">“Sign in and try again.” on a screen with</text>
+      <text x="486" y="190" class="t-body s-ink">no way to sign in</text>
+      <text x="486" y="206" class="t-small label">NO DOOR · this slice, D7 · AC-10…12</text>
+    </g>
+
+    <g class="k-recover">
+      <path d="M 214 252 L 246 252" class="line" marker-end="url(#a-recover)"/>
+      <rect x="252" y="234" width="214" height="36" rx="3" class="box"/>
+      <text x="264" y="257" class="t-mono s-ink">401 app_check_failed</text>
+      <text x="486" y="250" class="t-body s-ink">“Reload the page and try again.”</text>
+      <text x="486" y="266" class="t-small s-ink-faint">stays signed in — and must (D8) · AC-13</text>
+    </g>
+
+    <g class="k-recover">
+      <path d="M 214 314 L 246 314" class="line" marker-end="url(#a-recover)"/>
+      <rect x="252" y="296" width="214" height="36" rx="3" class="box"/>
+      <text x="264" y="319" class="t-mono s-ink">403 email_unverified</text>
+      <text x="486" y="312" class="t-body s-ink">the panel's message, then the gate on the</text>
+      <text x="486" y="328" class="t-body s-ink">next navigation</text>
+      <text x="486" y="344" class="t-small s-ink-faint">the router owns this one (D9) · AC-14</text>
+    </g>
+
+    <g class="k-recover">
+      <path d="M 214 390 L 246 390" class="line" marker-end="url(#a-recover)"/>
+      <rect x="252" y="372" width="214" height="36" rx="3" class="box"/>
+      <text x="264" y="395" class="t-mono s-ink">409 hl_reconnect_required</text>
+      <text x="486" y="388" class="t-body s-ink">“Your HighLevel connection expired.”</text>
+      <text x="486" y="404" class="t-small s-ink-faint">+ Reconnect HighLevel · Slices 2, 8, 10</text>
+    </g>
+
+    <g class="k-recover">
+      <path d="M 214 452 L 246 452" class="line" marker-end="url(#a-recover)"/>
+      <rect x="252" y="434" width="214" height="36" rx="3" class="box"/>
+      <text x="264" y="457" class="t-mono s-ink">429 throttled</text>
+      <text x="486" y="450" class="t-body s-ink">“Too many attempts. Try again in a few minutes.”</text>
+      <text x="486" y="466" class="t-small s-ink-faint">the one message that overrides the server's</text>
+    </g>
+
+    <g class="k-recover">
+      <path d="M 214 514 L 246 514" class="line" marker-end="url(#a-recover)"/>
+      <rect x="252" y="496" width="214" height="36" rx="3" class="box"/>
+      <text x="264" y="519" class="t-mono s-ink">4xx / 5xx with an envelope</text>
+      <text x="486" y="512" class="t-body s-ink">the server's own sentence, inline, with a retry</text>
+      <text x="486" y="528" class="t-small s-ink-faint">+ HighLevel's detail, where there is one · AC-17</text>
+    </g>
+
+    <g class="k-recover">
+      <path d="M 214 576 L 246 576" class="line" marker-end="url(#a-recover)"/>
+      <rect x="252" y="558" width="214" height="36" rx="3" class="box"/>
+      <text x="264" y="581" class="t-mono s-ink">200, but text/html</text>
+      <text x="486" y="574" class="t-body s-ink">“…check that the emulators are running.”</text>
+      <text x="486" y="590" class="t-small s-ink-faint">the request never reached a function</text>
+    </g>
+  </svg>
+  </div>
+  <figcaption>
+    <strong>Figure 1.</strong> Nine exits from one entrance. Seven are already hung and this
+    slice does not touch them; the two in red are the whole of its behavioural work. Note what
+    the fourth row costs if the branch is written on the status instead of the code: an App
+    Check hiccup and a dead session are both <code>401</code>, and treating them alike would
+    sign a user out — losing their unsaved editor buffers — for a failure a reload fixes.
+  </figcaption>
+</figure>
+
+<ul class="legend">
+  <li class="k-wait"><span class="sw"></span>no answer yet</li>
+  <li class="k-recover"><span class="sw"></span>they stay, and can act</li>
+  <li class="k-reroute"><span class="sw"></span>the app moves them, and brings them back</li>
+  <li class="k-quiet"><span class="sw"></span>transient notice, nothing to act on</li>
+  <li class="k-dead"><span class="sw"></span>stranded — told something true, given nothing to do</li>
+</ul>
+
+<h2>The hazard: a session that ends while the tab is open</h2>
+
+<p>
+  This is the one failure in the app with no exit, and it is worth drawing as a comparison
+  because the <em>before</em> side does not look like a bug. Every panel says something true.
+  Every panel offers a <strong>Try again</strong>. The user is simply on a merry-go-round: each
+  retry mints the same dead token, gets the same 401, and prints the same sentence. Nothing on
+  screen ever mentions signing in, and nothing navigates.
+</p>
+
+<figure>
+  <div class="scroller">
+  <svg viewBox="0 0 900 396" role="img"
+       aria-label="A comparison. Without the mitigation, three panels each show 'Sign in and try again' and each Try again button re-issues a call that fails identically, forever, with no navigation. With the mitigation, the first 401 carrying the code 'unauthenticated' signs the user out once, stores their path, and lands them on the sign-in screen, which explains the expiry and returns them to the workspace they were on."
+       xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="b-dead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" class="head-dead"/>
+      </marker>
+      <marker id="b-reroute" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" class="head-reroute"/>
+      </marker>
+    </defs>
+
+    <!-- WITHOUT -->
+    <g class="k-dead">
+      <text x="8" y="20" class="t-cap label">WITHOUT — TODAY ON MAIN</text>
+      <rect x="8" y="32" width="420" height="348" rx="5" class="s-rule-soft" stroke-width="1.5" fill="none"/>
+
+      <rect x="28" y="56" width="180" height="46" rx="3" class="box"/>
+      <text x="40" y="76" class="t-body s-ink">Account card</text>
+      <text x="40" y="93" class="t-small s-ink-soft">“Sign in and try again.”</text>
+
+      <rect x="228" y="56" width="180" height="46" rx="3" class="box"/>
+      <text x="240" y="76" class="t-body s-ink">Projects card</text>
+      <text x="240" y="93" class="t-small s-ink-soft">“Sign in and try again.”</text>
+
+      <rect x="28" y="118" width="180" height="46" rx="3" class="box"/>
+      <text x="40" y="138" class="t-body s-ink">Connection panel</text>
+      <text x="40" y="155" class="t-small s-ink-soft">“Sign in and try again.”</text>
+
+      <rect x="228" y="118" width="180" height="46" rx="3" class="box"/>
+      <text x="240" y="138" class="t-body s-ink">File tree</text>
+      <text x="240" y="155" class="t-small s-ink-soft">“Sign in and try again.”</text>
+
+      <rect x="88" y="204" width="260" height="42" rx="3" class="s-fill-surface s-rule" stroke-width="1.5"/>
+      <text x="218" y="230" text-anchor="middle" class="t-body s-ink">Try again  ·  Try again  ·  Try again</text>
+
+      <path d="M 218 164 L 218 200" class="line" marker-end="url(#b-dead)"/>
+      <path d="M 348 225 C 400 225 400 120 372 108" class="line" marker-end="url(#b-dead)"/>
+      <path d="M 88 225 C 40 225 40 120 64 108" class="line" marker-end="url(#b-dead)"/>
+
+      <text x="218" y="284" text-anchor="middle" class="t-title label">the same dead token, again</text>
+      <text x="218" y="304" text-anchor="middle" class="t-small s-ink-soft">no navigation · no mention of signing in</text>
+      <text x="218" y="322" text-anchor="middle" class="t-small s-ink-soft">the only way out is knowing to reload</text>
+      <text x="218" y="352" text-anchor="middle" class="t-mono-s s-ink-faint">EVERY MESSAGE IS TRUE. NONE IS A DOOR.</text>
+    </g>
+
+    <!-- WITH -->
+    <g class="k-reroute">
+      <text x="472" y="20" class="t-cap label">WITH — THIS SLICE</text>
+      <rect x="472" y="32" width="420" height="348" rx="5" class="s-rule-soft" stroke-width="1.5" fill="none"/>
+
+      <rect x="496" y="56" width="372" height="44" rx="3" class="box"/>
+      <text x="510" y="76" class="t-mono s-ink">401 · code: "unauthenticated"</text>
+      <text x="510" y="92" class="t-small s-ink-soft">the first one to arrive — later ones find the hook spent (AC-15)</text>
+
+      <path d="M 682 100 L 682 124" class="line" marker-end="url(#b-reroute)"/>
+
+      <rect x="496" y="128" width="372" height="44" rx="3" class="box"/>
+      <text x="510" y="148" class="t-body s-ink">store the path · sign out · replace the route</text>
+      <text x="510" y="164" class="t-small s-ink-soft">one hook, registered once in main.ts — not seven call sites (D10)</text>
+
+      <path d="M 682 172 L 682 196" class="line" marker-end="url(#b-reroute)"/>
+
+      <rect x="496" y="200" width="372" height="58" rx="3" class="box"/>
+      <text x="510" y="220" class="t-mono s-ink">/signin?redirect=%2Fworkspace%2Fp1</text>
+      <text x="510" y="236" class="t-mono s-ink">        &amp;reason=session_expired</text>
+      <text x="510" y="252" class="t-small s-ink-soft">“Your session expired. Sign in again.”</text>
+
+      <path d="M 682 258 L 682 282" class="line" marker-end="url(#b-reroute)"/>
+
+      <rect x="496" y="286" width="372" height="44" rx="3" class="box"/>
+      <text x="510" y="306" class="t-body s-ink">back on the workspace they were reading</text>
+      <text x="510" y="322" class="t-small s-ink-soft">Slice 1's safeRedirect decides the target — an open redirect here</text>
+
+      <text x="682" y="356" text-anchor="middle" class="t-mono-s s-ink-faint">ONE MESSAGE. ONE DOOR. IT LEADS BACK.</text>
+    </g>
+  </svg>
+  </div>
+  <figcaption>
+    <strong>Figure 2.</strong> The mitigation is small — one hook and a query parameter — and
+    the reason it is small is that Slice 1 already built the hard half: <code>safeRedirect</code>
+    refuses a tampered target, and <code>SignInView</code> already honours <code>?redirect=</code>.
+    What the right-hand column adds is a <em>reason</em> to be on that screen. The
+    <em>once</em> in the second row matters: the dashboard fans out three calls in parallel,
+    and three sign-outs would be three navigations over each other.
+  </figcaption>
+</figure>
+
+<h2>Which surface may say what</h2>
+
+<p>
+  Adopting <code>sonner</code> is the decision most likely to spread, so it ships with a rule
+  rather than with taste. Two questions decide the surface, and they are the only two:
+  <strong>is there an answer yet</strong>, and <strong>must the user do something about
+  it</strong>. The rule is what makes a new runtime dependency a two-call-site change instead
+  of a rewrite of eighteen error surfaces.
+</p>
+
+<figure>
+  <div class="scroller">
+  <svg viewBox="0 0 820 372" role="img"
+       aria-label="A two-by-two placement. Skeleton occupies the no-answer-yet state. An inline Alert holds anything the user must act on. A toast holds a finished outcome with nothing to act on. The forbidden cell — an error placed in a toast — is crossed out, because a message that disappears after four seconds cannot be acted on."
+       xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="c-rule" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" class="head-rule"/>
+      </marker>
+    </defs>
+
+    <!-- axes -->
+    <path d="M 168 300 L 780 300" class="s-rule" stroke-width="1.5" marker-end="url(#c-rule)"/>
+    <path d="M 168 300 L 168 40" class="s-rule" stroke-width="1.5" marker-end="url(#c-rule)"/>
+    <text x="474" y="330" text-anchor="middle" class="t-small s-ink-faint">is there an answer yet?</text>
+    <text x="270" y="318" class="t-small s-ink-faint">no</text>
+    <text x="700" y="318" class="t-small s-ink-faint">yes</text>
+    <text x="150" y="180" text-anchor="end" class="t-small s-ink-faint" transform="rotate(-90 150 180)">must the user act on it?</text>
+    <text x="156" y="70" text-anchor="end" class="t-small s-ink-faint">yes</text>
+    <text x="156" y="286" text-anchor="end" class="t-small s-ink-faint">no</text>
+
+    <!-- cells -->
+    <g class="k-wait">
+      <rect x="190" y="186" width="230" height="96" rx="4" class="box"/>
+      <text x="206" y="210" class="t-cap cap-on-wash">SKELETON</text>
+      <text x="206" y="232" class="t-body s-ink">no answer yet</text>
+      <text x="206" y="250" class="t-small s-ink-soft">19 hand-rolled copies today,</text>
+      <text x="206" y="266" class="t-small s-ink-soft">one primitive after (D2, AC-2)</text>
+    </g>
+
+    <g class="k-recover">
+      <rect x="470" y="46" width="290" height="112" rx="4" class="box"/>
+      <text x="486" y="70" class="t-cap cap-on-wash">INLINE ALERT — role="alert"</text>
+      <text x="486" y="92" class="t-body s-ink">a failure, and it stays until it is fixed</text>
+      <text x="486" y="110" class="t-small s-ink-soft">every error surface in the app is already one</text>
+      <text x="486" y="126" class="t-small s-ink-soft">of these, and none moves in this slice — shadcn's</text>
+      <text x="486" y="142" class="t-small s-ink-soft">Alert already takes its role from its variant</text>
+    </g>
+
+    <g class="k-quiet">
+      <rect x="470" y="186" width="290" height="96" rx="4" class="box"/>
+      <text x="486" y="210" class="t-cap cap-on-wash">TOAST — sonner</text>
+      <text x="486" y="232" class="t-body s-ink">it is finished, and nothing is on screen</text>
+      <text x="486" y="248" class="t-body s-ink">to read the outcome from</text>
+      <text x="486" y="268" class="t-small s-ink-soft">exactly two: restore done · restore was a no-op</text>
+    </g>
+
+    <g class="k-dead">
+      <rect x="190" y="46" width="230" height="112" rx="4" class="s-fill-surface2 s-rule-soft" stroke-width="1.5" stroke-dasharray="5 4"/>
+      <path d="M 190 46 L 420 158" class="line" stroke-width="1.2"/>
+      <path d="M 420 46 L 190 158" class="line" stroke-width="1.2"/>
+      <text x="305" y="184" text-anchor="middle" class="t-small label">an error in a toast is an error</text>
+      <text x="305" y="198" text-anchor="middle" class="t-small label">the user cannot act on (D4, AC-6)</text>
+    </g>
+  </svg>
+  </div>
+  <figcaption>
+    <strong>Figure 3.</strong> The empty top-left cell is the point. A toast is defined by
+    disappearing, so putting anything actionable in one contradicts the primitive; and the
+    reason a “file saved” toast is <em>also</em> out (D5) is that saving already clears the
+    tab's dirty dot — the answer is on screen where the action was, so the bottom-right cell
+    does not apply either.
+  </figcaption>
+</figure>
+
+<h2>The one new URL, and the four fields it turns on</h2>
+
+<p>
+  This slice adds no endpoint, no collection and no rule. What it adds is a <em>reader</em>
+  for parts of the error envelope the frontend has been parsing and discarding, and one query
+  parameter on a route that already exists.
+</p>
+
+<div class="cards">
+  <div class="card k-reroute">
+    <h4>GET /signin</h4>
+    <p>The existing route, with one parameter added.</p>
+    <dl>
+      <dt>query</dt>
+      <dd><code>redirect</code> — where to return, run through Slice 1's <code>safeRedirect</code></dd>
+      <dd><code>reason</code> — <code>session_expired</code>, and nothing else is recognised</dd>
+      <dt>renders</dt>
+      <dd>“Your session expired. Sign in again.” · an absent or unknown <code>reason</code> renders nothing</dd>
+      <dt>ac</dt>
+      <dd>AC-11, AC-12</dd>
+    </dl>
+  </div>
+
+  <div class="card k-dead">
+    <h4>401 · code unauthenticated</h4>
+    <p>Emitted by <code>auth/requireUser.ts</code> for an absent, malformed or expired token.</p>
+    <dl>
+      <dt>reader after this slice</dt>
+      <dd>the <code>apiClient</code> hook — sign out, store the path, navigate</dd>
+      <dt>fires</dt>
+      <dd>once per session, however many calls are in flight</dd>
+      <dt>ac</dt>
+      <dd>AC-10, AC-15, AC-16, AC-20</dd>
+    </dl>
+  </div>
+
+  <div class="card k-recover">
+    <h4>401 · code app_check_failed</h4>
+    <p>Emitted by <code>auth/appCheck.ts</code>. Same status, unrelated problem.</p>
+    <dl>
+      <dt>reader after this slice</dt>
+      <dd>none — deliberately. The caller's own error surface already says “reload”</dd>
+      <dt>ac</dt>
+      <dd>AC-13</dd>
+    </dl>
+  </div>
+
+  <div class="card k-recover">
+    <h4>detail</h4>
+    <p>HighLevel's own text about the request, carried through the proxy since Slice 8 and read by nobody since.</p>
+    <dl>
+      <dt>reader after this slice</dt>
+      <dd><code>stores/hl.ts</code> → the Data access row: “Contacts: could not read (Invalid JWT)”</dd>
+      <dt>unchanged</dt>
+      <dd>the preview's frame-side wire shape, <code>{ message, status, code? }</code></dd>
+      <dt>ac</dt>
+      <dd>AC-17</dd>
+    </dl>
+  </div>
+</div>
+
+<h2>Where the risk is tested</h2>
+
+<p>
+  Twenty acceptance criteria, twenty-four test rows, and two empty levels. The emptiness is a
+  claim rather than an omission: this slice adds no collection and touches no Cloud Function,
+  so an L3 or L4 row would mean something had been added that the decision said would not be.
+  The definition of done makes <code>git diff main…HEAD --stat</code> prove it.
+</p>
+
+<figure>
+  <div class="scroller">
+  <svg viewBox="0 0 820 232" role="img"
+       aria-label="Test rows by level: eleven at L1 unit, twelve at L2 component, one at L5 end-to-end, and zero at both L3 rules and L4 integration. The two empty levels are the slice's claim that it touches no server code."
+       xmlns="http://www.w3.org/2000/svg">
+    <g class="k-wait">
+      <text x="8" y="26" class="t-cap s-ink-faint">L1 · UNIT — pure mapping: which code, which copy, how many times</text>
+      <rect x="8" y="34" width="440" height="26" rx="3" class="box"/>
+      <text x="460" y="53" class="t-title s-ink">11</text>
+    </g>
+    <g class="k-recover">
+      <text x="8" y="92" class="t-cap s-ink-faint">L2 · COMPONENT — what is on screen, and what is announced</text>
+      <rect x="8" y="100" width="480" height="26" rx="3" class="box"/>
+      <text x="500" y="119" class="t-title s-ink">12</text>
+    </g>
+    <g class="k-reroute">
+      <text x="8" y="158" class="t-cap s-ink-faint">L5 · E2E — the session-expiry walk, and the return</text>
+      <rect x="8" y="166" width="40" height="26" rx="3" class="box"/>
+      <text x="60" y="185" class="t-title s-ink">1</text>
+    </g>
+    <g>
+      <text x="8" y="220" class="t-cap s-ink-faint">L3 · RULES</text>
+      <rect x="104" y="206" width="70" height="18" rx="3" class="s-fill-surface2 s-rule-soft" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="139" y="219" text-anchor="middle" class="t-mono-s s-ink-faint">0</text>
+      <text x="196" y="220" class="t-cap s-ink-faint">L4 · INTEGRATION</text>
+      <text x="336" y="220" class="t-mono-s s-ink-faint">0</text>
+      <rect x="360" y="206" width="70" height="18" rx="3" class="s-fill-surface2 s-rule-soft" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="450" y="220" class="t-small s-ink-faint">— no collection, no route, no server file (D14)</text>
+    </g>
+  </svg>
+  </div>
+  <figcaption>
+    <strong>Figure 4.</strong> The weight sits at L1 and L2 because the slice's risk is
+    <em>which branch runs</em> and <em>what appears</em>, and both are cheap to pin at those
+    levels. The single L5 walk is spent on the only behaviour no lower level can prove end to
+    end: that a dead session lands on the sign-in screen and that signing in comes back to the
+    same workspace.
+  </figcaption>
+</figure>
+
+<h2>Risks</h2>
+
+<table>
+  <caption>Carried from 02-prd.md, where each has its mitigation in full</caption>
+  <thead>
+    <tr><th style="width:3rem">#</th><th>Risk</th><th style="width:38%">What holds it</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="rid">R1</td>
+      <td><code>vue-sonner</code> needs its stylesheet imported, and a missed import ships an invisible toast that every test still passes — the tests assert the call, not the pixels.</td>
+      <td>The definition of done includes seeing a toast with human eyes during the manual walk.</td>
+    </tr>
+    <tr>
+      <td class="rid">R2</td>
+      <td>Swapping nineteen placeholders is nineteen chances to change a layout. Monaco is the sharp one: its height chain is flex the whole way down since Slice 7, and it measures its container.</td>
+      <td>Sizing utilities are kept element for element; only the pulse and colour classes change. Slice 7's “real height at both layouts” e2e is the backstop.</td>
+    </tr>
+    <tr>
+      <td class="rid">R3</td>
+      <td>The sign-out hook is a global side effect on a shared module. A wrong branch signs users out on a transient failure.</td>
+      <td>Figure 1's fourth row: the branch is on <code>code</code>, never on status. AC-13, AC-14 and AC-15 exist to pin the three ways it could over-fire.</td>
+    </tr>
+    <tr>
+      <td class="rid">R4</td>
+      <td>The hook makes <code>apiClient</code> stateful, so a test that registers it can leak into the next.</td>
+      <td>Registered in <code>main.ts</code>, reset per test, and the unregistered default is asserted to be a no-op.</td>
+    </tr>
+    <tr>
+      <td class="rid">R5</td>
+      <td>AC-1 could balloon if the audit's L2 coverage is thinner than it reads.</td>
+      <td>The testids in the audit table were read out of the source at <code>94bcc1f</code>, not guessed. A row needing more than a test becomes an out-of-scope line.</td>
+    </tr>
+    <tr>
+      <td class="rid">R6</td>
+      <td>The e2e forces a 401 with <code>page.route</code>, not a real revocation — the Auth emulator will not invalidate an unexpired ID token.</td>
+      <td>Said plainly in the test's own comment. The server half is covered by <code>requireUser</code>'s existing tests; this walk's subject is the client's reaction.</td>
+    </tr>
+    <tr>
+      <td class="rid">R7</td>
+      <td>This is the last slice before deploy, and a regression in it is a regression on every screen at once.</td>
+      <td>It touches <code>frontend/</code> and <code>tests/e2e/</code> only, the swaps are mechanical, and the full suite is the gate.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>What this slice is not</h2>
+
+<p>
+  Nineteen items were handed forward to “Slice 12's audit” by the reviews of Slices 7, 8, 10
+  and 11. Four are in — the skeleton, the toast, the announcement, and a reader for
+  <code>detail</code>. The other fifteen are re-homed in the PRD's out-of-scope table with a reason each, and the reason
+  is nearly always the same one: a structural refactor or a security-grammar change placed
+  beside a uniformity pass makes one diff out of two changes, which is the shape a review
+  misses things in — the very argument Slice 7 used when it deferred the first of them here.
+</p>
+
+<footer class="colophon">
+  <p>
+    Slice 12 · Error handling &amp; state hardening · design companion to
+    <code>docs/slices/12-error-handling/02-prd.md</code>, which is the contract. Figures are
+    hand-authored SVG; both themes come from one set of custom properties. Read against
+    <code>main</code> at <code>94bcc1f</code>, 2026-08-18.
+  </p>
+</footer>
+
+</div>
+</body>
+</html>
