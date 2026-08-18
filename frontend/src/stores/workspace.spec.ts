@@ -2845,6 +2845,73 @@ describe('restoreSnapshot', () => {
     expect(store.restoreError).toBeNull()
   })
 
+  /*
+   * The tree's three flags move together, or the tree does not move.
+   *
+   * D12 makes the restore's response *be* the refetch, so it writes `files`
+   * directly — but `loadFiles` is the only other writer and it sets `filesLoaded`
+   * and clears `filesError` too, which is what `FileTree.vue` renders on. A
+   * project whose first `GET /files` failed therefore keeps showing "Try again"
+   * over a tree that has just been rewritten by a successful restore: the user
+   * pressed Restore, every file changed on the server, and the panel says the
+   * files could not be loaded.
+   */
+  it('clears the tree’s error state, because the response is the refetch', async () => {
+    fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ error: 'Nope' }, 500))
+    const store = useWorkspaceStore()
+    await store.open('proj-1')
+    expect(store.filesError).not.toBeNull()
+    expect(store.filesLoaded).toBe(false)
+
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW] }))
+    await store.loadSnapshots()
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE], changed: true }))
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+    await store.restoreSnapshot('snap-1')
+
+    expect(store.files).toEqual([INDEX_FILE])
+    expect(store.filesError).toBeNull()
+    expect(store.filesLoaded).toBe(true)
+  })
+
+  /*
+   * D18's interlock, in the direction it was not written for.
+   *
+   * `restoreSnapshot` refuses to start while a generation is open, because the
+   * two are writers for one set of documents. Nothing stopped the reverse: with
+   * a restore in flight the composer stays live, and a generation that commits
+   * *after* the restore's read leaves the restore holding a file list that is
+   * now a version behind. Applying it drops the file the generation just wrote
+   * out of the tree and closes the tab opened for it, while the file sits on the
+   * server — the workspace disagreeing with Firestore until something refetches.
+   */
+  it('refuses to send while a restore is in flight', async () => {
+    const store = await openedWithHistory()
+    const slow = deferred()
+    fetchMock.mockReturnValueOnce(slow.promise)
+
+    const restoring = store.restoreSnapshot('snap-1')
+    // The POST, not just the flag: `request()` awaits an ID token first, so the
+    // flag is set a tick before the call is recorded.
+    await vi.waitFor(() => {
+      expect(requests()).toEqual(['POST /api/projects/proj-1/snapshots/snap-1/restore'])
+    })
+    store.draft = 'and now generate something over it'
+    expect(store.canSend).toBe(false)
+    fetchMock.mockClear()
+    await store.send()
+
+    expect(requests()).toEqual([])
+    // The draft is kept, exactly as the `generating` guard keeps it.
+    expect(store.draft).toBe('and now generate something over it')
+
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW] }))
+    slow.settle(response({ files: [INDEX_FILE], changed: false }))
+    await restoring
+  })
+
   /** AC-24's flag: every row's Restore is disabled for the length of the request. */
   it('names the snapshot being restored for the length of the request', async () => {
     const store = await openedWithHistory()
@@ -2974,9 +3041,7 @@ describe('restoreSnapshot', () => {
     await store.selectFile('index.html')
     fetchMock.mockClear()
 
-    fetchMock.mockResolvedValueOnce(
-      response({ files: [INDEX_FILE, ABOUT_FILE], changed: true }),
-    )
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE, ABOUT_FILE], changed: true }))
     fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW] }))
     fetchMock.mockResolvedValueOnce(response({ file: storedIndex }))
     await store.restoreSnapshot('snap-1')
@@ -3010,9 +3075,7 @@ describe('restoreSnapshot', () => {
     const before = JSON.parse(JSON.stringify(store.buffers)) as unknown
     fetchMock.mockClear()
 
-    fetchMock.mockResolvedValueOnce(
-      response({ files: [INDEX_FILE, ABOUT_FILE], changed: false }),
-    )
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE, ABOUT_FILE], changed: false }))
     fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW] }))
     await store.restoreSnapshot('snap-1')
 

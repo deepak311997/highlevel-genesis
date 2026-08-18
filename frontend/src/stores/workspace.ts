@@ -7,11 +7,7 @@ import { getFile, listFiles, saveFile as putFile, type FileMeta } from '@/lib/fi
 import { streamGeneration } from '@/lib/generateApi'
 import { listMessages, sendMessage, MESSAGE_LIMIT, type Message } from '@/lib/messagesApi'
 import { getProject, type Project } from '@/lib/projectsApi'
-import {
-  listSnapshots,
-  restoreSnapshot as postRestore,
-  type Snapshot,
-} from '@/lib/snapshotsApi'
+import { listSnapshots, restoreSnapshot as postRestore, type Snapshot } from '@/lib/snapshotsApi'
 
 /**
  * One project and its conversation, as far as the browser can see it.
@@ -368,7 +364,16 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
 
   const atLimit = computed(() => messages.value.length >= MESSAGE_LIMIT)
   const canSend = computed(
-    () => draft.value.trim() !== '' && !sending.value && !generating.value && !atLimit.value,
+    () =>
+      draft.value.trim() !== '' &&
+      !sending.value &&
+      !generating.value &&
+      // D18's interlock, both ways round. `restoreSnapshot` refuses to start
+      // while a generation is open; this is the same rule from the other side,
+      // because a generation committing during a restore leaves the restore
+      // holding a file list one version out of date.
+      restoringId.value === null &&
+      !atLimit.value,
   )
 
   /**
@@ -922,7 +927,15 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     try {
       const result = await postRestore(id, snapshotId)
       if (!current(gen)) return
+      /*
+       * All three, not just the list. `loadFiles` is the tree's other writer and
+       * it sets every one of them, which is what `FileTree.vue` renders on — so
+       * a project whose first `GET /files` failed would otherwise keep showing
+       * **Try again** over a tree the restore has just rewritten.
+       */
       files.value = result.files
+      filesLoaded.value = true
+      filesError.value = null
       await loadSnapshots()
       if (!current(gen)) return
       /*
@@ -1182,8 +1195,16 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
      * `runGeneration`'s abort of the first then lands on the second one's state:
      * `generating` cleared and an error raised for a request that is still
      * running. The draft is left alone, so the guard costs the user nothing.
+     *
+     * `restoringId` is D18's interlock in the direction it was not written for.
+     * A restore in flight is a second writer for the same file documents, and
+     * the one that commits second silently wins — but the damage here is on the
+     * client: the restore's response is a file list read *before* the
+     * generation, so applying it drops the file the generation just wrote out of
+     * the tree and closes the tab opened for it, while the file sits on the
+     * server. The restore settles in a moment; the send is not lost, only held.
      */
-    if (id === null || content === '' || generating.value) return
+    if (id === null || content === '' || generating.value || restoringId.value !== null) return
 
     const gen = generation
     sending.value = true
