@@ -180,3 +180,60 @@ mutating `node_modules` underneath four lanes running Vitest is a race with noth
   The manual walk in the definition of done is the only proof, and it is listed there for
   exactly this reason.
 - 4 tests green; `eslint src/components/ui/sonner --max-warnings 0` clean.
+
+### T15 — exactly one `Toaster` (AC-7) · lane L-TOAST-APP
+
+- **Red:** `App.spec.ts` — `mounts exactly one Toaster`, looping over both layouts through the
+  file's existing `mountAt(path)` helper. `expected [] to have a length of 1 but got +0`, with
+  the other four tests still passing in the same run — the right red.
+- **Green:** `<Toaster />` as the last child of the root `div`, a sibling **after** `</main>`.
+  Outside `<main>` it is untouched by the `contained`/`full` class binding, and outside
+  `RouterView` it does not unmount on navigation — so a toast fired during a route change
+  survives instead of dying mid-fade.
+- The plan's jsdom stub fallback was **not** needed; the real `vue-sonner` `Toaster` mounts
+  cleanly, so the assertion counts the real component.
+- **Deviation:** none.
+
+### T12 — `detail` gets a reader (AC-17, L1) · lane L-HL
+
+- **Red:** in `hl.spec.ts` — `withDetail` directly (`composes the message and upstream's own
+  words`, plus an `it.each` over *no detail* / *an empty detail* / *a detail that only repeats
+  the message*, each also asserting `not.toContain('(')` so a stray separator fails), and
+  through the store (`carries upstream's own words about the request into the row`).
+  5 failures: 4 × `withDetail is not a function`, and
+  `expected 'Could not read contacts.' to be 'Could not read contacts. (Invalid JWT)'` —
+  proof `failureFor` was dropping `detail` on the floor.
+- **Green:** `withDetail` exported with the pinned signature; `failureFor`'s `error` becomes the
+  pinned three-branch ternary. `reconnect`/`status` untouched. The pre-existing
+  `keeps the other two counts when one surface fails` still asserts the bare message for a
+  detail-less `ApiError` and still passes — the regression proof for E10.
+- **Refactor:** `lib/api.ts`'s doc comment, which said *"`detail` has no reader yet"* and named
+  this slice as the decision point, now names `withDetail` as the reader and keeps the note that
+  the preview's frame-side wire shape is unchanged. **Comment only; no code changed in that file.**
+- **Deviation:** none.
+
+### T13 — the Data access section, perceivable (AC-17 L2, AC-18, AC-19) · lane L-HL
+
+- **Red:** `renders the composed failure in the row`; `titles the section with a heading`
+  (`expected undefined to be defined` — it was a styled `<p>`); `announces its results
+  politely — %s` over **all four** probe states (`expected false to be true` on all four — the
+  region did not exist at all, idle included); `labels the check button off the probe state — %s`
+  over four states plus `disabled`.
+- **An honest note, worth recording rather than glossing.** `renders the composed failure in the
+  row` **passed on the red run**. `describe()` already returns `probe.error` verbatim, so at L2
+  this is a characterisation test pinning AC-17 at the render layer; the behaviour change for
+  AC-17 lives entirely in T12, which was genuinely red. The test is kept as a lock rather than
+  contrived into failing. Likewise only the `loading` case of the label matrix was red — the old
+  `hl.probeResult === null` ternary produces the right words for idle/ready/error and lies
+  precisely mid-probe, which is the bug; the three green cases are the regression lock.
+- **Green:** the title becomes an `h4`; the loading block, the `<dl>` and the `data-access-error`
+  alert are wrapped in an **unconditional** `<div data-testid="data-access-results"
+  aria-live="polite">` — no `v-if`, so it is mounted and observable before any counts land; and
+  `const CHECK_LABELS: Record<ProbeState, string>` with `computed(() => CHECK_LABELS[hl.probe])`
+  replaces the ternary. A `Record` rather than an if-chain so a fifth probe state is a compile
+  error here rather than a blank button. Every existing testid keeps its element; the check and
+  reconnect buttons stay **outside** the live region, being controls rather than results.
+- **Deviations, both cosmetic:** `it.each` for the two state matrices rather than eight
+  hand-written tests (same coverage, the state is in the test name); and the disabled assertion
+  is written so the non-loading states positively assert *enabled* rather than only checking
+  loading.
