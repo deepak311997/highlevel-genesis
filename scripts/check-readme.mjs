@@ -172,3 +172,92 @@ export function pathsNamed(text) {
 export function missingPaths(text, exists = (path) => existsSync(join(ROOT, path))) {
   return pathsNamed(text).filter((path) => !exists(path))
 }
+
+/**
+ * The live URLs, derived from `.firebaserc` and `firebase.json`.
+ *
+ * Derived, not matched literally, because the project id is committed in exactly
+ * one place — `.firebaserc` — and the deploy, the OAuth redirect URI and these
+ * two URLs all descend from it. A test that compared the README against a string
+ * written into the test would pass forever: rename the project and the check
+ * still agrees with itself while every link in the file is dead. Reading the
+ * same file the deploy reads is what makes the README's Live URLs table a
+ * consequence of the configuration rather than a claim about it.
+ *
+ * Throws unless the rewrites name exactly one region. Picking the first would be
+ * a guess about which function a reader will call, and a base URL that is right
+ * for one of two functions is not a base URL.
+ */
+export function liveUrls(firebasercText, firebaseJsonText) {
+  const project = JSON.parse(firebasercText).projects?.default
+  if (typeof project !== 'string' || project === '') {
+    throw new Error('.firebaserc names no default project')
+  }
+
+  const regions = [
+    ...new Set(
+      (JSON.parse(firebaseJsonText).hosting?.rewrites ?? [])
+        .map((rewrite) => rewrite.function?.region)
+        .filter((region) => typeof region === 'string'),
+    ),
+  ]
+
+  if (regions.length !== 1) {
+    throw new Error(
+      `firebase.json's hosting rewrites must pin exactly one region, found ${String(regions.length)}: ${regions.join(', ')}`,
+    )
+  }
+
+  const [region] = regions
+
+  return {
+    project,
+    region,
+    hosting: `https://${project}.web.app`,
+    functionsBase: `https://${region}-${project}.cloudfunctions.net`,
+  }
+}
+
+/** Derived URLs the README's Live URLs section does not carry (AC-7). */
+export function liveUrlProblems(text, firebasercText, firebaseJsonText) {
+  const { hosting, functionsBase } = liveUrls(firebasercText, firebaseJsonText)
+  const body = sectionBody(text, 'Live URLs')
+
+  return [hosting, functionsBase]
+    .filter((url) => !body.includes(url))
+    .map((url) => `Live URLs: does not carry ${url}`)
+}
+
+/** The command a package.json declares for a script. `''` if there is none. */
+export function scriptCommand(prefix, script, root = ROOT) {
+  const path = join(root, prefix ?? '.', 'package.json')
+  if (!existsSync(path)) return ''
+
+  const { scripts } = JSON.parse(readFileSync(path, 'utf8'))
+
+  return scripts?.[script] ?? ''
+}
+
+/**
+ * Ways the local-setup section stops being runnable from a fresh clone (AC-8).
+ *
+ * Two halves, because the brief names the emulator explicitly and the README
+ * tells a reader to type something else. The section must name
+ * `firebase emulators:start`, and the command it does tell them to type —
+ * `npm run dev` — must still be the one that wraps the emulators. Checking only
+ * the prose would let the `dev` script quietly become plain `vite` and leave the
+ * README describing an emulator that no longer starts.
+ */
+export function localSetupProblems(text, command = scriptCommand) {
+  const body = sectionBody(text, 'Local setup')
+
+  const named = ['firebase emulators:start', 'npm run dev']
+    .filter((phrase) => !body.includes(phrase))
+    .map((phrase) => `Local setup: does not name \`${phrase}\``)
+
+  const wrapped = command(null, 'dev').includes('emulators:exec')
+    ? []
+    : ['the root `dev` script no longer contains `emulators:exec`']
+
+  return [...named, ...wrapped]
+}

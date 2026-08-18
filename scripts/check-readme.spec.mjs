@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
@@ -6,10 +7,15 @@ import {
   BULLET_CAPS,
   README,
   REQUIRED_SECTIONS,
+  ROOT,
+  liveUrlProblems,
+  liveUrls,
+  localSetupProblems,
   missingPaths,
   npmScriptsNamed,
   orderedItemCount,
   pathsNamed,
+  scriptCommand,
   scriptsOf,
   sectionBody,
   sectionProblems,
@@ -37,6 +43,8 @@ import {
  */
 
 const readme = readFileSync(README, 'utf8')
+const firebaserc = readFileSync(join(ROOT, '.firebaserc'), 'utf8')
+const firebaseJson = readFileSync(join(ROOT, 'firebase.json'), 'utf8')
 
 /** A README-shaped document: every required section, with the given bodies. */
 function readmeFixture(bodies = {}) {
@@ -225,5 +233,79 @@ describe('path existence — AC-4', () => {
     ].join('\n')
 
     expect(missingPaths(fixture)).toEqual([])
+  })
+})
+
+describe('liveUrls', () => {
+  it('derives both URLs from the real `.firebaserc` and `firebase.json`', () => {
+    expect(liveUrls(firebaserc, firebaseJson)).toEqual({
+      project: 'hl-genesis-app',
+      region: 'asia-south1',
+      hosting: 'https://hl-genesis-app.web.app',
+      functionsBase: 'https://asia-south1-hl-genesis-app.cloudfunctions.net',
+    })
+  })
+
+  it('throws when the rewrites name two regions, rather than picking one', () => {
+    const twoRegions = JSON.stringify({
+      hosting: {
+        rewrites: [
+          { source: '/api/**', function: { functionId: 'api', region: 'asia-south1' } },
+          { source: '/generate', function: { functionId: 'generate', region: 'us-central1' } },
+        ],
+      },
+    })
+
+    expect(() => liveUrls(firebaserc, twoRegions)).toThrow(/asia-south1.*us-central1/s)
+  })
+})
+
+describe('live URLs are derived — AC-7', () => {
+  it('the real README carries both derived URLs in its Live URLs section', () => {
+    const { hosting, functionsBase } = liveUrls(firebaserc, firebaseJson)
+
+    expect(sectionBody(readme, 'Live URLs')).toContain(hosting)
+    expect(sectionBody(readme, 'Live URLs')).toContain(functionsBase)
+    expect(liveUrlProblems(readme, firebaserc, firebaseJson)).toEqual([])
+  })
+
+  it('fails when `.firebaserc` alone names a different project', () => {
+    const renamed = JSON.stringify({ projects: { default: 'other-project' } })
+
+    expect(liveUrlProblems(readme, renamed, firebaseJson)).toEqual([
+      'Live URLs: does not carry https://other-project.web.app',
+      'Live URLs: does not carry https://asia-south1-other-project.cloudfunctions.net',
+    ])
+  })
+})
+
+describe('scriptCommand', () => {
+  it('returns what the root package.json declares for a script', () => {
+    expect(scriptCommand(null, 'dev')).toContain('emulators:exec')
+    expect(scriptCommand(null, 'nope')).toBe('')
+  })
+})
+
+describe('local setup names the emulator — AC-8', () => {
+  it('the real README names `firebase emulators:start` and `npm run dev`', () => {
+    expect(sectionBody(readme, 'Local setup')).toContain('firebase emulators:start')
+    expect(sectionBody(readme, 'Local setup')).toContain('npm run dev')
+    expect(localSetupProblems(readme)).toEqual([])
+  })
+
+  it('fails when local setup never names the emulator', () => {
+    const fixture = readmeFixture({ 'Local setup': 'Run `npm run dev` and open the app.\n' })
+
+    expect(localSetupProblems(fixture)).toEqual([
+      'Local setup: does not name `firebase emulators:start`',
+    ])
+  })
+
+  it('fails when the root `dev` script stops wrapping the emulators', () => {
+    const command = () => 'vite'
+
+    expect(localSetupProblems(readme, command)).toEqual([
+      'the root `dev` script no longer contains `emulators:exec`',
+    ])
   })
 })
