@@ -723,6 +723,28 @@ const frame = (event: string, data: unknown): string =>
   `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
 
 /** A whole stream, delivered as one canned body. */
+/**
+ * A `Response` whose stream delivers its frames and then **drops** — a
+ * connection lost after the headers flushed (AC-8, AC-9).
+ *
+ * Distinct from `cannedStream` closing cleanly and from `fetchMock` rejecting:
+ * this is the case where the request succeeded, tokens arrived, and the
+ * transport died underneath the reader.
+ */
+function droppingStream(...frames: string[]): Response {
+  const encoder = new TextEncoder()
+  return {
+    ok: true,
+    status: 200,
+    body: new ReadableStream<Uint8Array>({
+      start(controller) {
+        if (frames.length > 0) controller.enqueue(encoder.encode(frames.join('')))
+        controller.error(new TypeError('Failed to fetch'))
+      },
+    }),
+  } as unknown as Response
+}
+
 function cannedStream(...frames: string[]): Response {
   const encoder = new TextEncoder()
   return {
@@ -3536,5 +3558,46 @@ describe('restoreSnapshot — what it reports', () => {
 
     expect(await store.restoreSnapshot('snap-1')).toBe('failed')
     expect(store.restoreError).toBe('That version could not be restored. Try again.')
+  })
+})
+
+/**
+ * AC-9. What survives a connection dropping mid-reply.
+ *
+ * F8.2 asks that the user can retry, and a retry is only worth offering if the
+ * prompt it would resend is still there. The store commits the user's message
+ * before the stream opens, so this is the assertion that a *client-side* drop
+ * does not undo that — and that the sentence the user reads is the app's own,
+ * not whatever the browser called the failure.
+ */
+describe('a connection that drops mid-reply', () => {
+  it('keeps the prompt and reopens the stream after a mid-stream drop', async () => {
+    const store = await opened()
+    fetchMock.mockResolvedValueOnce(response({ messages: [USER_MESSAGE] }, 201))
+    fetchMock.mockResolvedValueOnce(droppingStream(frame('token', { text: 'Here' })))
+    store.draft = 'build a contact dashboard'
+
+    await store.send()
+
+    // The prompt is still in the transcript, which is what makes Retry worth offering.
+    expect(store.messages).toEqual([USER_MESSAGE])
+    expect(store.generateError).toBe(
+      'Something went wrong. Check your connection and try again.',
+    )
+    expect(store.generateError).not.toContain('Failed to fetch')
+    expect(store.generating).toBe(false)
+
+    // And Retry opens a second stream rather than reporting the first one again.
+    fetchMock.mockResolvedValueOnce(cannedStream(frame('done', { message: ASSISTANT_MESSAGE })))
+
+    await store.retryGeneration()
+
+    expect(requests()).toEqual([
+      'POST /api/projects/proj-1/messages',
+      'POST /generate',
+      'POST /generate',
+    ])
+    expect(store.generateError).toBeNull()
+    expect(store.messages).toEqual([USER_MESSAGE, ASSISTANT_MESSAGE])
   })
 })

@@ -428,6 +428,30 @@ describe('ChatPanel — the generation error', () => {
   })
 
   /*
+   * AC-8, at the level the user actually meets it.
+   *
+   * `generateApi` maps a dropped read to this sentence and its L1 spec pins the
+   * mapping; this is the other end of that claim — the panel renders the app's
+   * own line, and the browser's word for it appears nowhere on screen. The
+   * negative assertion is on the whole panel rather than on the alert, because
+   * "the raw message is not visible" is the claim, not "it is not in that one
+   * element".
+   */
+  it("renders the app's own line when the stream dies mid-reply", () => {
+    store.messagesLoaded = true
+    store.messages = [USER]
+    store.generateError = 'Something went wrong. Check your connection and try again.'
+
+    const wrapper = mount(ChatPanel, MOUNT)
+
+    expect(wrapper.find('[data-testid="generate-error"]').text()).toContain(
+      'Something went wrong. Check your connection and try again.',
+    )
+    expect(wrapper.text()).not.toContain('Failed to fetch')
+    expect(wrapper.find('[data-testid="generate-retry"]').exists()).toBe(true)
+  })
+
+  /*
    * The transcript stays on screen beside the error. A failed generation does not
    * invalidate the conversation, and hiding it would lose the partial the server
    * just persisted — which is the thing F8.2 exists to preserve.

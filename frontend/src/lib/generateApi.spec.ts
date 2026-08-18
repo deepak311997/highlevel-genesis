@@ -78,6 +78,32 @@ function bodiless(): Response {
   return { ok: true, status: 200, body: null } as unknown as Response
 }
 
+/**
+ * A `Response` whose stream delivers the given chunks and then **drops**.
+ *
+ * The shape of a connection lost after the headers flushed: the reader resolves
+ * normally for a while and then rejects, which is a different failure from the
+ * opening `fetch` throwing and is why it needs its own handling.
+ */
+function dropping(chunks: readonly string[], reason: Error): Response {
+  const encoder = new TextEncoder()
+  let index = 0
+
+  return {
+    ok: true,
+    status: 200,
+    body: {
+      getReader: () => ({
+        read: () =>
+          index < chunks.length
+            ? Promise.resolve({ done: false, value: encoder.encode(chunks[index++]) })
+            : Promise.reject(reason),
+        cancel: () => Promise.resolve(),
+      }),
+    },
+  } as unknown as Response
+}
+
 let fetchMock: ReturnType<typeof vi.fn>
 
 function lastCall(): [string, RequestInit] {
@@ -444,5 +470,58 @@ describe('the file events', () => {
     fetchMock.mockResolvedValue(streaming([frame('file_chunk', { path: 'app.js', text: '' })]))
 
     expect(await collect()).toEqual([{ type: 'file_chunk', path: 'app.js', text: '' }])
+  })
+})
+
+/**
+ * AC-8. A connection that drops **after** the stream opened speaks our language.
+ *
+ * The opening `fetch`'s own failure was already mapped to `ApiError(…, 0)`; the
+ * read loop's was not, so whatever the browser called it went straight to the
+ * screen — `Failed to fetch` in Chrome, `NetworkError when attempting to fetch
+ * resource.` in Firefox. Two browsers, two strings, neither ours, and F8.2 asks
+ * for a retry the user understands the need for.
+ */
+describe('streamGeneration — a connection that drops mid-stream', () => {
+  it('maps a mid-stream read failure to a message the user can act on', async () => {
+    fetchMock.mockResolvedValue(
+      dropping([frame('token', { text: 'Here' })], new TypeError('Failed to fetch')),
+    )
+
+    const seen: unknown[] = []
+    const walk = (async () => {
+      for await (const event of streamGeneration('proj-1', new AbortController().signal)) {
+        seen.push(event)
+      }
+    })()
+
+    await expect(walk).rejects.toMatchObject({
+      status: 0,
+      message: 'Something went wrong. Check your connection and try again.',
+    })
+    await expect(walk).rejects.toBeInstanceOf(ApiError)
+
+    // The events that did arrive are still the caller's — the partial reply is
+    // what the transcript keeps and what Retry is offered under.
+    expect(seen).toEqual([{ type: 'token', text: 'Here' }])
+  })
+
+  it('says nothing about what the browser called it', async () => {
+    fetchMock.mockResolvedValue(dropping([], new TypeError('Failed to fetch')))
+
+    await expect(collect()).rejects.not.toThrow(/Failed to fetch/)
+  })
+
+  /*
+   * A user who left the project is not a user whose connection dropped, and
+   * telling them to check it would be a lie. The original rejection propagates.
+   */
+  it('rethrows a cancellation unchanged', async () => {
+    const controller = new AbortController()
+    const cancelled = new DOMException('The operation was aborted.', 'AbortError')
+    fetchMock.mockResolvedValue(dropping([], cancelled))
+    controller.abort()
+
+    await expect(collect(controller.signal)).rejects.toBe(cancelled)
   })
 })
