@@ -144,3 +144,39 @@ The plan pins the lanes (§ Lanes) and the build follows them exactly:
 - **Green:** 8/8 in the scan. Full frontend suite **70 files / 983 tests**, typecheck and lint
   clean (zero warnings).
 - **Barrier closed.** L-SESSION, L-HL, L-TOAST and L-AC1 may now run concurrently.
+
+## Post-barrier fan-out
+
+Lanes dispatched concurrently, exactly as the plan's § Lanes pins them, with two
+build-stage coordination changes recorded below under *Deviations from the plan's lane split*.
+
+### T19 — the audit table's one unchecked row (AC-1) · lane L-AC1
+
+- **Red/Green:** one assertion added to the existing `offers Reconnect HighLevel for %s` case in
+  `PreviewPanel.spec.ts`: `expect(link.attributes('data-testid')).toBe('preview-reconnect')`.
+  `RouterLinkStub` does forward non-prop attributes, so the plan's fallback form
+  (`wrapper.find('[data-testid=…]')`) was not needed — and the form used is the better claim,
+  because it pins the testid to the *same* element already proved to carry `to === '/dashboard'`
+  and the text `Reconnect HighLevel`, rather than asserting the testid exists somewhere.
+- No change to `PreviewPanel.vue` was needed; the testid renders at line 138 as the plan says.
+  22 tests in that file green. **AC-1 now holds for all 61 audit rows.**
+
+### T14 — vendor `sonner` (AC-7, dependency) · kept by the lead
+
+Kept out of the lane split deliberately: it is the only task that runs `npm install`, and
+mutating `node_modules` underneath four lanes running Vitest is a race with nothing to gain.
+
+- **Red:** `deps.spec.ts` gained `'vue-sonner'` to `EXPECTED` — failed on the whole-set
+  assertion (`expected [ …(14) ] to deeply equal [ …(15) ]`), which is what makes "one new
+  dependency" a claim with a test behind it. `Sonner.spec.ts` failed to resolve `./index`.
+- **Green:** `npm install vue-sonner` (^2.0.9). `Sonner.vue` written by hand rather than taken
+  from `npx shadcn-vue@latest add sonner`: upstream themes off `@vueuse/core`'s `useColorMode`,
+  and this project already owns `useDarkClass()`, which *observes* the `dark` class that
+  `useTheme` and the pre-paint script in `index.html` both write. A second derivation of the
+  theme is what `useDarkClass`'s own doc comment exists to prevent.
+- `style.css` gained `@import 'vue-sonner/style.css';` after the two `@fontsource` imports and
+  after `@import 'tailwindcss'`, which stays first. **R1 stands: no automated test can see this
+  import.** Without it the Toaster mounts, all four tests still pass, and nothing is visible.
+  The manual walk in the definition of done is the only proof, and it is listed there for
+  exactly this reason.
+- 4 tests green; `eslint src/components/ui/sonner --max-warnings 0` clean.
