@@ -8,6 +8,12 @@ interface ImportMetaEnv {
   readonly VITE_FIREBASE_APP_ID?: string
   readonly VITE_FUNCTIONS_BASE_URL?: string
   /**
+   * The `generate` function's own URL, which takes the streaming turn off the
+   * Hosting rewrite — see `lib/api.ts` for why it has to. Blank keeps it
+   * same-origin.
+   */
+  readonly VITE_GENERATE_URL?: string
+  /**
    * reCAPTCHA v3 **site** key for App Check. Public by design — it ships in the
    * bundle. The matching secret key must never appear in this file; anything
    * prefixed VITE_ is compiled into assets any visitor can read.

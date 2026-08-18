@@ -25,6 +25,13 @@ const EMULATOR_ENV: Record<string, string> = {
   // Blank: requests stay same-origin and go through the proxy below, exactly
   // as the Hosting rewrite does in production.
   VITE_FUNCTIONS_BASE_URL: '',
+  /*
+   * Blank for the same reason, and load-bearing rather than tidy: `.env` is
+   * loaded whatever the mode, so without this pin an emulator run and the unit
+   * suite would both read the *production* generate url and send their turns to
+   * the live function.
+   */
+  VITE_GENERATE_URL: '',
   // The suites move the emulators to a second port set so they do not have to
   // stop a development session; the SPA has to follow them there.
   VITE_AUTH_EMULATOR_PORT: process.env['AUTH_EMULATOR_PORT'] ?? '9099',

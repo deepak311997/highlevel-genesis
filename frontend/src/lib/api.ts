@@ -12,6 +12,31 @@ export function apiUrl(path: string): string {
 }
 
 /**
+ * Where `POST /generate` goes, which is deliberately **not** where everything
+ * else goes.
+ *
+ * Hosting fronts a rewrite with a CDN that buffers the whole response before it
+ * sends a byte, and gives up on the origin at sixty seconds. A generation runs to
+ * two minutes: the browser got a 502 while the function ran on, finished, and
+ * stored the reply — so the turn "failed" and the answer was there on the next
+ * reload, and nothing ever streamed, it arrived in one piece at the end.
+ * Measured 0.35s to first byte direct, against 11.8s through the rewrite.
+ *
+ * Set `VITE_GENERATE_URL` to the function's own URL and Hosting is out of this
+ * one request's path. The rest of the API stays same-origin, where the rewrite
+ * costs nothing — those calls are short.
+ *
+ * The whole URL rather than a base: nothing is joined onto it, so there is no way
+ * to configure `…/generate/generate` by accident. Blank means same-origin, which
+ * is what development, the emulator and the test suite all want.
+ */
+const GENERATE_URL = (import.meta.env.VITE_GENERATE_URL ?? '').trim()
+
+export function generateUrl(): string {
+  return GENERATE_URL === '' ? apiUrl('/generate') : GENERATE_URL
+}
+
+/**
  * A failed API call, as the app's own error type.
  *
  * `code` and `detail` mirror the server's error envelope: `code` is the

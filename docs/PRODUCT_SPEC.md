@@ -38,8 +38,9 @@ Browser — Vue 3 SPA (shadcn-vue · Monaco · sandboxed iframe preview)
    │  Firebase Auth ID token, browserLocalPersistence
    │  Firestore reads/writes authorised by SECURITY RULES, never by client code
    │
-   ├── same-origin fetch, resolved by Firebase Hosting rewrites:
+   ├── same-origin fetch, resolved by a Firebase Hosting rewrite:
    │        /api/**    →  function `api`       (asia-south1)  Express router
+   ├── cross-origin fetch, straight to the function, Hosting bypassed:
    │        /generate  →  function `generate`  (asia-south1)  SSE, unbuffered
    ▼
 Cloud Functions v2 · Node 22 · region asia-south1
@@ -59,14 +60,20 @@ Firestore — NAMED database `hl-genesis` (not `(default)`)
 **Three architecture facts that are easy to get wrong and are already settled:**
 
 1. **Region is `asia-south1`** everywhere — `setGlobalOptions()` in functions, the Hosting
-   rewrite targets, and the dev-server proxy in `vite.config.ts` all name it. Slice 0
-   proved Cloud Functions v2 streams unbuffered from this region through a Hosting rewrite,
-   which was §6.3's open risk.
+   rewrite target, and the dev-server proxy in `vite.config.ts` all name it. Cloud Functions
+   v2 streams unbuffered from this region, which was §6.3's open risk — but only when the
+   browser reaches the function *directly*. See fact 3.
 2. **Firestore is a named database.** `getFirestore(app)` silently connects to `(default)`,
    which is empty. The id is passed explicitly on both sides and mirrored by
    `FIRESTORE_DATABASE_ID` / `VITE_FIREBASE_DATABASE_ID`.
-3. **Functions are reached same-origin through Hosting rewrites**, not via
-   `cloudfunctions.net`. CORS is defence in depth (an origin allowlist), not the mechanism.
+3. **`/api/**` is reached same-origin through a Hosting rewrite; `/generate` is not.**
+   Hosting fronts a rewrite with a CDN that buffers the whole response before sending a byte
+   and drops the origin at 60 seconds. Those are the two things a two-minute SSE turn cannot
+   survive: measured against the live project, a generation took 11.8s to first byte through
+   the rewrite and 0.35s direct, and anything past a minute came back as a 502 while the
+   function ran on, finished, and stored the reply. So the streaming turn goes straight to the
+   function's own url (`VITE_GENERATE_URL`), and for that one call CORS is the mechanism, not
+   just defence in depth. Every other call is short and stays behind the rewrite.
 
 **Why a HighLevel proxy function matters:** generated apps run in a sandboxed iframe and can't hold OAuth tokens or call HL APIs directly (CORS + secret exposure). The generated code calls one `hl()` function, which posts to the page hosting it; the SPA calls the proxy, and the proxy attaches the user's token, handles refresh, and forwards to HighLevel. The frame itself never fetches — a sandbox without `allow-same-origin` has an opaque origin, so it can carry neither the ID token nor an App Check one. This is what makes "real data in the preview" achievable safely.
 

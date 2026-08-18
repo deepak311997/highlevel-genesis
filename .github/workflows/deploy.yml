@@ -174,6 +174,19 @@ jobs:
             exit 1
           fi
 
+          # Blank here is not a missing nicety, it is the 502.
+          #
+          # Left unset, the SPA sends the streaming turn through the Hosting
+          # rewrite, whose CDN buffers the whole response before it sends a byte
+          # and drops the origin at 60 seconds: a generation longer than a minute
+          # reaches the browser as a 502 while the function finishes and stores
+          # the reply, and no reply ever streams. It ships looking fine and fails
+          # only on the long turns, so it is caught here rather than in use.
+          if ! grep -q '^VITE_GENERATE_URL=.' frontend/.env; then
+            echo "::error::FRONTEND_ENV has no VITE_GENERATE_URL — see frontend/.env.example. Update the secret: gcloud secrets versions add FRONTEND_ENV --data-file=frontend/.env" >&2
+            exit 1
+          fi
+
       # One line, derived above. Everything else the functions need is a
       # `defineSecret` — the two credentials and the four configuration values
       # that used to live here — so there is nothing left for this file to carry

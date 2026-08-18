@@ -161,6 +161,7 @@ beforeEach(() => {
 afterEach(() => {
   registerSessionExpiredHook(null)
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
 })
 
 describe('streamGeneration — the request', () => {
@@ -172,6 +173,28 @@ describe('streamGeneration — the request', () => {
     expect(url).toContain('/generate')
     expect(init.method).toBe('POST')
     expect(init.body).toBe('{"projectId":"proj-1","content":"Build a contacts view"}')
+  })
+
+  /*
+   * The wiring, not just the helper.
+   *
+   * This request is the one that leaves the Hosting rewrite behind — its CDN
+   * buffers the whole response and drops the origin at sixty seconds, which is
+   * how a two-minute generation reached the browser as a 502 while the function
+   * finished and stored the reply. An import that quietly went back to
+   * `apiUrl('/generate')` would pass every other assertion in this file, because
+   * the suite runs with the variable unset.
+   */
+  it('sends the turn to the configured generate URL', async () => {
+    vi.stubEnv('VITE_GENERATE_URL', 'https://generate-abc.a.run.app')
+    vi.resetModules()
+
+    const { streamGeneration: configured } = await import('./generateApi')
+    for await (const event of configured('proj-1', TURN, new AbortController().signal)) {
+      void event
+    }
+
+    expect(lastCall()[0]).toBe('https://generate-abc.a.run.app')
   })
 
   it('sends both credentials and a JSON content type', async () => {
