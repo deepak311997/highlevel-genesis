@@ -192,9 +192,22 @@ export function pathsNamed(text) {
   return [...new Set(trimmed.filter((path) => path !== ''))]
 }
 
-/** Those `pathsNamed` returns that are not on disk. */
+/**
+ * Those `pathsNamed` returns that are not on disk.
+ *
+ * **A committed `<path>.example` counts as presence**, and that exemption is
+ * this repository's own convention rather than a list to maintain.
+ * `functions/.secret.local` and `frontend/.env` are gitignored by design — they
+ * are created by the developer from the example beside them — so they never
+ * exist in a fresh clone, which is the state this check runs in on CI. A README
+ * that could not name them could not say where an API key goes.
+ *
+ * It stays a real check because the exemption is narrow: a path that is simply
+ * stale, or misspelled, has no `.example` next to it either and is still
+ * reported.
+ */
 export function missingPaths(text, exists = (path) => existsSync(join(ROOT, path))) {
-  return pathsNamed(text).filter((path) => !exists(path))
+  return pathsNamed(text).filter((path) => !exists(path) && !exists(`${path}.example`))
 }
 
 /**

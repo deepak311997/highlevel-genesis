@@ -4,7 +4,8 @@
   "private": true,
   "description": "Genesis — AI-powered HighLevel app builder",
   "scripts": {
-    "dev": "node scripts/ensure-secret-local.mjs && npm --prefix functions run build && FIRESTORE_DATABASE_ID=hl-genesis firebase emulators:exec --project demo-genesis --only auth,firestore,functions --import=./.emulator-data --export-on-exit=./.emulator-data \"npm --prefix frontend run dev:emulator\"",
+    "dev": "node scripts/ensure-secret-local.mjs && npm --prefix functions run build && FIRESTORE_DATABASE_ID=hl-genesis GENESIS_LOCAL_REAL_LLM=1 firebase emulators:exec --project demo-genesis --only auth,firestore,functions --import=./.emulator-data --export-on-exit=./.emulator-data \"npm --prefix frontend run dev:emulator\"",
+  "dev:stub": "node scripts/ensure-secret-local.mjs && npm --prefix functions run build && FIRESTORE_DATABASE_ID=hl-genesis firebase emulators:exec --project demo-genesis --only auth,firestore,functions --import=./.emulator-data --export-on-exit=./.emulator-data \"npm --prefix frontend run dev:emulator\"",
     "dev:cloud": "npm --prefix frontend run dev",
     "build": "npm --prefix functions run build && npm --prefix frontend run build",
     "typecheck": "npm --prefix functions run typecheck && npm --prefix frontend run typecheck && tsc --noEmit",

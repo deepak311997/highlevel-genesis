@@ -22,6 +22,13 @@ const store = reactive({
   messagesError: null as string | null,
   generating: false,
   streamingText: '',
+  /*
+   * Read by `StreamingStatus` and `MessageBody`, which the placeholder now
+   * mounts. Present on the real store since Slice 6; absent here only because
+   * this stand-in predates the components that use them.
+   */
+  streamingFiles: {},
+  selectFile: vi.fn(),
   generateError: null as string | null,
   generateFileError: null as string | null,
   loadMessages: vi.fn(),
@@ -316,9 +323,48 @@ describe('ChatPanel', () => {
  * thinking means the first token can be seconds away, and a labelled wait is a
  * different experience from a frozen screen.
  */
+describe('bubble elevation', () => {
+  /*
+   * **No drop shadow on a bubble**, and this is a regression guard rather than a
+   * preference.
+   *
+   * The dark palette puts `--card` at `hsl(240 5% 6%)` on a `4%` page and defines
+   * `--sh-1` as a *black* shadow. A black shadow on a near-black ground cannot
+   * darken anything — it only blurs the boundary, so an elevated bubble reads as
+   * a smudge with a halo rather than as a raised surface. Elevation in this
+   * palette comes from the surface and the border (`Card.vue` uses
+   * `from-raised to-card`), which is what these bubbles do now.
+   *
+   * Asserted on the class list because that is where the mistake recurs: the
+   * utility is one convenient copy-paste away and nothing else would fail.
+   */
+  it('gives the assistant bubble a defined edge instead of a shadow', () => {
+    store.messages = [ASSISTANT]
+    store.messagesLoaded = true
+
+    const wrapper = mount(ChatPanel)
+    const bubble = wrapper.get('[data-testid="message-bubble"]')
+
+    expect(bubble.classes().some((name) => name.startsWith('shadow-'))).toBe(false)
+    expect(bubble.classes()).toContain('border-border-strong')
+  })
+
+  it('gives the streaming placeholder the same treatment', () => {
+    store.messages = []
+    store.messagesLoaded = true
+    store.generating = true
+
+    const wrapper = mount(ChatPanel)
+    const bubble = wrapper.get('[data-testid="streaming-bubble"]')
+
+    expect(bubble.classes().some((name) => name.startsWith('shadow-'))).toBe(false)
+    expect(bubble.classes()).toContain('border-border-strong')
+  })
+})
+
 describe('ChatPanel while a stream is open', () => {
   /** AC-38. */
-  it('shows a Generating… badge and a bubble carrying the accumulated text', () => {
+  it('shows a live status line and a bubble carrying the accumulated text', () => {
     store.messagesLoaded = true
     store.messages = [USER]
     store.generating = true
@@ -326,7 +372,14 @@ describe('ChatPanel while a stream is open', () => {
 
     const wrapper = mount(ChatPanel, MOUNT)
 
-    expect(wrapper.text()).toContain('Generating…')
+    /*
+     * `Generating…` was one fixed string for the whole turn. It is now three
+     * states — thinking, writing prose, writing a named file — so the assertion
+     * is that the status line is present and says which; `StreamingStatus.spec.ts`
+     * owns the choice between them.
+     */
+    expect(wrapper.find('[data-testid="streaming-status"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="streaming-status"]').text()).toContain('Writing')
     const bubble = wrapper.find('[data-testid="streaming-bubble"]')
     expect(bubble.exists()).toBe(true)
     expect(bubble.text()).toContain('Here is a cont')
@@ -371,7 +424,7 @@ describe('ChatPanel while a stream is open', () => {
 
     const wrapper = mount(ChatPanel, MOUNT)
 
-    expect(wrapper.text()).not.toContain('Generating…')
+    expect(wrapper.find('[data-testid="streaming-status"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="streaming-bubble"]').exists()).toBe(false)
   })
 })

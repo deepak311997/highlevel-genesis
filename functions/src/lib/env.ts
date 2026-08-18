@@ -162,6 +162,27 @@ export function emulatorOverride(name: string): string | undefined {
  * busy loop and a timeout of -1 aborts before it starts, so a fat-fingered value
  * degrades to the default rather than to a hang.
  */
+/**
+ * The same override, as a boolean switch.
+ *
+ * Built on {@link emulatorOverride} so it inherits the property that matters: the
+ * name appears in no `.env` file, so a value exported in a shell survives the
+ * emulator's own precedence, and no deploy can reach it however its environment
+ * is set. That is what makes a flag of our own acceptable here at all — the
+ * objection recorded in `llm/client.ts` and `llm/fake.ts` is to a *remotely
+ * settable* switch, and this is not one.
+ *
+ * **`1` and `true` only, and the negatives are asserted rather than assumed.**
+ * The obvious alternative — `emulatorOverride(name) !== undefined` at the call
+ * site — reads `GENESIS_LOCAL_REAL_LLM=0` as *on*, which is the exact spelling
+ * somebody reaches for when they mean off. A switch whose off position turns it
+ * on is worse than no switch.
+ */
+export function emulatorFlag(name: string): boolean {
+  const value = emulatorOverride(name)?.toLowerCase()
+  return value === '1' || value === 'true'
+}
+
 export function emulatorNumber(name: string, fallback: number): number {
   const raw = Number(emulatorOverride(name) ?? '')
   return Number.isFinite(raw) && raw > 0 ? raw : fallback

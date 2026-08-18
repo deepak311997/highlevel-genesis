@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ANTHROPIC_API_KEY, openStream } from './client'
+import { ANTHROPIC_API_KEY, LOCAL_REAL_LLM, openStream, PLACEHOLDER_KEY } from './client'
 
 /**
  * Which stream `openStream` opens, and what happens when the key is missing.
@@ -20,6 +23,7 @@ import { ANTHROPIC_API_KEY, openStream } from './client'
 
 const REAL_EMULATOR = process.env['FUNCTIONS_EMULATOR']
 const REAL_KEY = process.env['ANTHROPIC_API_KEY']
+const REAL_LOCAL_LLM = process.env['GENESIS_LOCAL_REAL_LLM']
 
 const PARAMS = {
   model: 'claude-opus-5',
@@ -29,7 +33,7 @@ const PARAMS = {
 
 /** Narrow, so `delete` names a literal key rather than a computed one. */
 function restore(
-  name: 'FUNCTIONS_EMULATOR' | 'ANTHROPIC_API_KEY',
+  name: 'FUNCTIONS_EMULATOR' | 'ANTHROPIC_API_KEY' | 'GENESIS_LOCAL_REAL_LLM',
   value: string | undefined,
 ): void {
   if (value !== undefined) {
@@ -39,18 +43,24 @@ function restore(
   // Literal keys in brackets: `noPropertyAccessFromIndexSignature` requires the
   // brackets, and `no-dynamic-delete` requires the literal.
   if (name === 'FUNCTIONS_EMULATOR') delete process.env['FUNCTIONS_EMULATOR']
-  else delete process.env['ANTHROPIC_API_KEY']
+  else if (name === 'ANTHROPIC_API_KEY') delete process.env['ANTHROPIC_API_KEY']
+  else delete process.env['GENESIS_LOCAL_REAL_LLM']
 }
 
 beforeEach(() => {
   // `SecretParam.value()` logs a warning for an unset secret, which is correct
   // behaviour and noise in a suite that is asserting on exactly that case.
   vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  // Every existing case predates the opt-in and assumes it is off. Cleared here
+  // rather than in each test, so a developer who exports it in their own shell
+  // does not turn this suite green for the wrong reason.
+  delete process.env['GENESIS_LOCAL_REAL_LLM']
 })
 
 afterEach(() => {
   restore('FUNCTIONS_EMULATOR', REAL_EMULATOR)
   restore('ANTHROPIC_API_KEY', REAL_KEY)
+  restore('GENESIS_LOCAL_REAL_LLM', REAL_LOCAL_LLM)
   vi.restoreAllMocks()
 })
 
@@ -87,6 +97,95 @@ describe('openStream', () => {
     delete process.env['ANTHROPIC_API_KEY']
 
     await expect(openStream(PARAMS)).rejects.toThrow(/functions:secrets:set/)
+  })
+})
+
+describe('openStream — the local real-model opt-in', () => {
+  /*
+   * The whole point of the switch: under the emulator, with it on, the fake is
+   * *not* taken. The real branch cannot be exercised here — it would call
+   * Anthropic, which the testing rule forbids — so the assertion is that control
+   * reaches the key check in front of it, which with no key is a refusal naming
+   * the secret. A fake stream would have resolved instead.
+   */
+  it('skips the fake under the emulator when the opt-in is on', async () => {
+    process.env['FUNCTIONS_EMULATOR'] = 'true'
+    process.env[LOCAL_REAL_LLM] = '1'
+    delete process.env['ANTHROPIC_API_KEY']
+
+    await expect(openStream(PARAMS)).rejects.toThrow(/ANTHROPIC_API_KEY/)
+  })
+
+  /*
+   * The default is what every automated suite runs under, and it must stay the
+   * fake however the rest of the environment looks — CLAUDE.md's "the LLM is
+   * always stubbed in automated tests" is this assertion.
+   */
+  it.each([undefined, '0', 'false'])('keeps the fake when the opt-in is %o', async (value) => {
+    process.env['FUNCTIONS_EMULATOR'] = 'true'
+    if (value === undefined) delete process.env['GENESIS_LOCAL_REAL_LLM']
+    else process.env[LOCAL_REAL_LLM] = value
+    delete process.env['ANTHROPIC_API_KEY']
+
+    const stream = await openStream(PARAMS)
+
+    expect(typeof stream.abort).toBe('function')
+  })
+
+  /*
+   * D20 survives the new switch. `emulatorFlag` is honoured only under
+   * FUNCTIONS_EMULATOR, so a deployed build with this variable set behaves
+   * exactly as it did before — which is the property that made a flag of our own
+   * acceptable here at all.
+   */
+  it('changes nothing outside the emulator', async () => {
+    delete process.env['FUNCTIONS_EMULATOR']
+    process.env[LOCAL_REAL_LLM] = '1'
+    delete process.env['ANTHROPIC_API_KEY']
+
+    await expect(openStream(PARAMS)).rejects.toThrow(/ANTHROPIC_API_KEY/)
+  })
+
+  /*
+   * The failure this switch would otherwise create. `.secret.local` ships from
+   * its committed example carrying a placeholder, so the first thing a developer
+   * who flips the switch has is a non-blank key that Anthropic answers 401 to —
+   * an opaque mid-stream failure a long way from the file that caused it.
+   */
+  it('refuses the shipped placeholder by name', async () => {
+    process.env['FUNCTIONS_EMULATOR'] = 'true'
+    process.env[LOCAL_REAL_LLM] = '1'
+    process.env['ANTHROPIC_API_KEY'] = PLACEHOLDER_KEY
+
+    await expect(openStream(PARAMS)).rejects.toThrow(/\.secret\.local/)
+  })
+
+  it('says the placeholder is a placeholder, not that the key is missing', async () => {
+    process.env['FUNCTIONS_EMULATOR'] = 'true'
+    process.env[LOCAL_REAL_LLM] = '1'
+    process.env['ANTHROPIC_API_KEY'] = PLACEHOLDER_KEY
+
+    await expect(openStream(PARAMS)).rejects.toThrow(/placeholder/i)
+  })
+})
+
+describe('PLACEHOLDER_KEY', () => {
+  /*
+   * A regression guard, not an argument. The constant is only useful while it
+   * equals what `functions/.secret.local.example` actually ships — and the two
+   * live in different files, in different languages, edited for different
+   * reasons. Drift would be silent: the refusal simply stops firing, and the
+   * placeholder goes to Anthropic as a key again, which is the exact 401 this
+   * whole check exists to prevent.
+   */
+  it('is the value functions/.secret.local.example ships', () => {
+    const example = readFileSync(
+      resolve(__dirname, '..', '..', '.secret.local.example'),
+      'utf8',
+    )
+    const assigned = /^ANTHROPIC_API_KEY=(.*)$/m.exec(example)?.[1]?.trim()
+
+    expect(assigned).toBe(PLACEHOLDER_KEY)
   })
 })
 

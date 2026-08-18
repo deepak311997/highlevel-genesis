@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   baseUrl,
+  emulatorFlag,
   emulatorNumber,
   emulatorOverride,
   isEmulator,
@@ -220,5 +221,40 @@ describe('emulatorNumber', () => {
     vi.stubEnv('FUNCTIONS_EMULATOR', 'true')
     vi.stubEnv('GENESIS_TEST_MS', value)
     expect(emulatorNumber('GENESIS_TEST_MS', 15_000)).toBe(15_000)
+  })
+})
+
+describe('emulatorFlag', () => {
+  /*
+   * The switch that lets a *human* dev session reach the real model while every
+   * automated suite keeps the fake. It is built on `emulatorOverride` for that
+   * primitive's reason: the name appears in no `.env` file, so a shell value
+   * survives the emulator's own precedence, and no deploy can reach it however
+   * its environment is set.
+   */
+  it.each(['1', 'true', 'TRUE', 'True'])('is true for %o under the emulator', (value) => {
+    vi.stubEnv('FUNCTIONS_EMULATOR', 'true')
+    vi.stubEnv('GENESIS_TEST_FLAG', value)
+    expect(emulatorFlag('GENESIS_TEST_FLAG')).toBe(true)
+  })
+
+  /*
+   * `0` and `no` are the shapes somebody writes when they mean *off*, and a
+   * presence check would read every one of them as on. That is the whole reason
+   * this is not `emulatorOverride(name) !== undefined` at the call site.
+   */
+  it.each([undefined, '', '   ', '0', 'no', 'false', 'yes'])(
+    'is false for %o under the emulator',
+    (value) => {
+      vi.stubEnv('FUNCTIONS_EMULATOR', 'true')
+      vi.stubEnv('GENESIS_TEST_FLAG', value)
+      expect(emulatorFlag('GENESIS_TEST_FLAG')).toBe(false)
+    },
+  )
+
+  it('is false outside the emulator, however the variable is set', () => {
+    vi.stubEnv('FUNCTIONS_EMULATOR', undefined)
+    vi.stubEnv('GENESIS_TEST_FLAG', 'true')
+    expect(emulatorFlag('GENESIS_TEST_FLAG')).toBe(false)
   })
 })
