@@ -12,6 +12,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
+import { Skeleton } from '@/components/ui/skeleton'
 import { formatDay, formatTime } from '@/lib/date'
 import { originLabel, snapshotSubtitle, versionLabel } from '@/lib/snapshots'
 import type { Snapshot } from '@/lib/snapshotsApi'
@@ -165,8 +166,8 @@ function confirmRestore(snapshotId: string): void {
         class="flex flex-col gap-2"
         data-testid="snapshot-loading"
       >
-        <div class="h-14 animate-pulse rounded-md bg-secondary" />
-        <div class="h-14 w-5/6 animate-pulse rounded-md bg-secondary" />
+        <Skeleton class="h-14 rounded-md" />
+        <Skeleton class="h-14 w-5/6 rounded-md" />
       </div>
 
       <ul v-else-if="rows.length > 0" class="flex flex-col gap-2">

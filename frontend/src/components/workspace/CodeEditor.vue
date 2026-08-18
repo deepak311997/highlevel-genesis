@@ -4,6 +4,7 @@ import type { editor as monacoEditor } from 'monaco-editor'
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useDarkClass } from '@/composables/useDarkClass'
 import { editorEdit } from '@/lib/editorContent'
 import { editorLanguage } from '@/lib/editorLanguage'
@@ -271,9 +272,9 @@ onBeforeUnmount(() => {
       data-testid="code-editor-loading"
       class="absolute inset-0 flex flex-col gap-2 bg-background p-3"
     >
-      <div class="h-4 w-2/3 animate-pulse rounded bg-secondary" />
-      <div class="h-4 w-1/2 animate-pulse rounded bg-secondary" />
-      <div class="h-4 w-3/4 animate-pulse rounded bg-secondary" />
+      <Skeleton class="h-4 w-2/3 rounded" />
+      <Skeleton class="h-4 w-1/2 rounded" />
+      <Skeleton class="h-4 w-3/4 rounded" />
     </div>
 
     <div

@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
 import { formatTime } from '@/lib/date'
 import { useWorkspaceStore } from '@/stores/workspace'
 
@@ -146,8 +147,8 @@ function retry(): void {
       data-testid="chat-loading"
       class="flex flex-col gap-3 p-4"
     >
-      <div class="h-10 w-2/3 animate-pulse rounded-md bg-secondary" />
-      <div class="h-10 w-1/2 animate-pulse self-end rounded-md bg-secondary" />
+      <Skeleton class="h-10 w-2/3 rounded-md" />
+      <Skeleton class="h-10 w-1/2 self-end rounded-md" />
     </div>
 
     <template v-else>

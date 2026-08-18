@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useWorkspaceStore } from '@/stores/workspace'
 
@@ -61,7 +62,7 @@ watch(
       data-testid="workspace-loading"
       class="mx-auto w-full max-w-5xl px-6 py-10"
     >
-      <div class="h-6 w-56 animate-pulse rounded bg-secondary" />
+      <Skeleton class="h-6 w-56 rounded" />
     </div>
 
     <!--

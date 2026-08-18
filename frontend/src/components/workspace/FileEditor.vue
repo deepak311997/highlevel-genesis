@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import CodeEditor from '@/components/workspace/CodeEditor.vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { utf8Bytes } from '@/lib/files'
 import { FILE_BYTES_MAX } from '@/lib/filesApi'
 import { useWorkspaceStore } from '@/stores/workspace'
@@ -145,7 +146,7 @@ function save(): void {
           data-testid="file-editor-loading"
           class="absolute inset-0 bg-background p-3"
         >
-          <div class="h-40 w-full animate-pulse rounded-md bg-secondary" />
+          <Skeleton class="h-40 w-full rounded-md" />
         </div>
       </div>
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useWorkspaceStore } from '@/stores/workspace'
 
 /**
@@ -48,8 +49,8 @@ const workspace = useWorkspaceStore()
       data-testid="file-tree-loading"
       class="flex flex-col gap-2 p-3"
     >
-      <div class="h-6 w-2/3 animate-pulse rounded-md bg-secondary" />
-      <div class="h-6 w-1/2 animate-pulse rounded-md bg-secondary" />
+      <Skeleton class="h-6 w-2/3 rounded-md" />
+      <Skeleton class="h-6 w-1/2 rounded-md" />
     </div>
 
     <!-- No scroller of its own: the panel caps this tree's height and therefore
