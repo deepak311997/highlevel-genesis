@@ -1,15 +1,31 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import {
   APPOINTMENT_COUNT,
+  CONTACTS_VERSION,
+  CALENDARS_VERSION,
   CONTACT_COUNT,
+  DEFAULT_API_BASE,
   SeedConfigError,
+  exitCodeFor,
   isoWithOffset,
   parseArgs,
   plannedContacts,
   readConfig,
   seed,
 } from './seed-sandbox.mjs'
+
+const ROOT = join(import.meta.dirname, '..')
+
+/** The recorded HighLevel responses. Read as JSON, asserted against as data. */
+const fixture = (name) =>
+  JSON.parse(readFileSync(join(ROOT, 'tests/fixtures/highlevel', `${name}.json`), 'utf8'))
+
+const CONTACT_CREATED = fixture('contact-create')
+const APPOINTMENT_CREATED = fixture('appointment-create')
 
 /**
  * AC-11 … AC-16 — the sandbox seeder.
@@ -267,5 +283,132 @@ describe('seed --dry-run — AC-11', () => {
       expect(at).toBeGreaterThan(NOW.getTime())
       expect(at).toBeLessThanOrEqual(NOW.getTime() + 14 * 24 * 60 * 60 * 1000)
     }
+  })
+})
+
+/**
+ * A run against a stub that answers every create with success.
+ *
+ * Both ids are passed, so no resolution request is issued and the call log is
+ * exactly the 28 creates AC-12 counts.
+ */
+async function successfulRun() {
+  const { fetchImpl, calls } = stubFetch((url) =>
+    url.endsWith('/contacts/') ? json(201, CONTACT_CREATED) : json(200, APPOINTMENT_CREATED),
+  )
+  const { out, errors } = collector()
+
+  const summary = await seed({
+    env: ENV,
+    argv: ['--calendar-id=cal1', '--assigned-user-id=usr1'],
+    fetchImpl,
+    now,
+    out,
+  })
+
+  return { summary, calls, errors }
+}
+
+const contactCalls = (calls) => calls.filter((c) => c.url.endsWith('/contacts/'))
+const appointmentCalls = (calls) =>
+  calls.filter((c) => c.url.endsWith('/calendars/events/appointments'))
+
+describe('seed — creating contacts and appointments (AC-12)', () => {
+  it('issues exactly 28 requests: 20 contact creates and 8 appointment creates', async () => {
+    const { summary, calls } = await successfulRun()
+
+    expect(calls).toHaveLength(CONTACT_COUNT + APPOINTMENT_COUNT)
+    expect(summary.requests).toBe(28)
+
+    expect(contactCalls(calls)).toHaveLength(CONTACT_COUNT)
+    expect(appointmentCalls(calls)).toHaveLength(APPOINTMENT_COUNT)
+
+    for (const call of contactCalls(calls)) {
+      expect(call.method).toBe('POST')
+      expect(call.url).toBe(`${DEFAULT_API_BASE}/contacts/`)
+    }
+    for (const call of appointmentCalls(calls)) {
+      expect(call.method).toBe('POST')
+      expect(call.url).toBe(`${DEFAULT_API_BASE}/calendars/events/appointments`)
+    }
+  })
+
+  it('creates the contacts before the appointments they belong to', async () => {
+    const { calls } = await successfulRun()
+    const kinds = calls.map((c) => (c.url.endsWith('/contacts/') ? 'contact' : 'appointment'))
+
+    expect(kinds.indexOf('appointment')).toBe(CONTACT_COUNT)
+  })
+
+  it('carries the bearer token, Accept and the row Version on every request', async () => {
+    const { calls } = await successfulRun()
+
+    for (const call of calls) {
+      expect(call.headers.Authorization).toBe(`Bearer ${ENV.HL_SEED_TOKEN}`)
+      expect(call.headers.Accept).toBe('application/json')
+    }
+    for (const call of contactCalls(calls)) {
+      expect(call.headers.Version).toBe(CONTACTS_VERSION)
+      expect(CONTACTS_VERSION).toBe('2021-07-28')
+    }
+    for (const call of appointmentCalls(calls)) {
+      expect(call.headers.Version).toBe(CALENDARS_VERSION)
+      expect(CALENDARS_VERSION).toBe('2021-04-15')
+    }
+  })
+
+  it('carries the seed location id in every body', async () => {
+    const { calls } = await successfulRun()
+
+    for (const call of calls) {
+      expect(call.body.locationId).toBe(ENV.HL_SEED_LOCATION_ID)
+    }
+  })
+
+  it('posts the planned contacts, unchanged and in order', async () => {
+    const { calls } = await successfulRun()
+
+    expect(contactCalls(calls).map((c) => c.body)).toEqual(plannedContacts(ENV.HL_SEED_LOCATION_ID))
+  })
+
+  it('posts each appointment against the given calendar, assignee and a created contact', async () => {
+    const { calls } = await successfulRun()
+
+    for (const call of appointmentCalls(calls)) {
+      expect(call.body.calendarId).toBe('cal1')
+      expect(call.body.assignedUserId).toBe('usr1')
+      expect(call.body.contactId).toBe(CONTACT_CREATED.contact.id)
+      expect(call.body.title).toMatch(/\S/)
+    }
+  })
+
+  it('schedules every appointment inside the next 14 days, ISO 8601 with an offset', async () => {
+    const { calls } = await successfulRun()
+
+    for (const call of appointmentCalls(calls)) {
+      for (const value of [call.body.startTime, call.body.endTime]) {
+        expect(value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/)
+        const at = new Date(value).getTime()
+        expect(Number.isNaN(at)).toBe(false)
+        expect(at).toBeGreaterThan(NOW.getTime())
+        expect(at).toBeLessThanOrEqual(NOW.getTime() + 14 * 24 * 60 * 60 * 1000)
+      }
+      expect(new Date(call.body.endTime).getTime()).toBeGreaterThan(
+        new Date(call.body.startTime).getTime(),
+      )
+    }
+  })
+
+  it('counts what it created and exits 0', async () => {
+    const { summary, errors } = await successfulRun()
+
+    expect(summary).toMatchObject({
+      dryRun: false,
+      contacts: { created: CONTACT_COUNT, existing: 0, failed: 0 },
+      appointments: { created: APPOINTMENT_COUNT, failed: 0 },
+      failures: [],
+    })
+    expect(exitCodeFor(summary)).toBe(0)
+    expect(errors).toEqual([])
   })
 })

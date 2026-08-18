@@ -1,0 +1,24 @@
+{
+  "contact": {
+    "id": "seedC0ntact000000001",
+    "locationId": "lUanVn0CtZJTlymH8ySo",
+    "firstName": "Amara",
+    "lastName": "Osei",
+    "contactName": "Amara Osei",
+    "email": "amara.osei@genesis-seed.example.com",
+    "phone": "+15550100001",
+    "country": "US",
+    "source": null,
+    "type": "lead",
+    "tags": ["genesis-seed"],
+    "dateAdded": "2026-08-18T09:00:12.114Z",
+    "dateUpdated": "2026-08-18T09:00:12.114Z",
+    "customFields": [],
+    "additionalEmails": [],
+    "additionalPhones": [],
+    "dnd": false,
+    "dndSettings": {},
+    "businessId": "6a8189aff4df0852d7f52f5e"
+  },
+  "traceId": "1f0c6f2e-2b6a-4f2a-9d21-2b0f0a9e4f21"
+}

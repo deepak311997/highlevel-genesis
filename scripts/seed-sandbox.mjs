@@ -275,6 +275,39 @@ function printPlan({ config, calendarId, assignedUserId, contacts, appointments,
   })
 }
 
+/**
+ * One create, sent and read.
+ *
+ * Returns the status alongside the parsed body whatever the status is, rather
+ * than throwing on a non-2xx: HighLevel's duplicate refusal is a `400` whose
+ * body is the most useful thing in the whole run (D10), so the caller decides
+ * what a status means. A body that is not JSON becomes `null` — a create that
+ * answers HTML is a failure with a status, not a crash mid-run.
+ */
+async function postJson(fetchImpl, url, version, token, body) {
+  const response = await fetchImpl(url, {
+    method: 'POST',
+    headers: headersFor(version, token),
+    body: JSON.stringify(body),
+  })
+
+  const text = await response.text()
+  let parsed = null
+  try {
+    parsed = text === '' ? null : JSON.parse(text)
+  } catch {
+    parsed = null
+  }
+
+  return { status: response.status, body: parsed }
+}
+
+/** The id HighLevel gives a created contact back under. */
+function contactIdOf(body) {
+  const id = body?.contact?.id ?? body?.id
+  return typeof id === 'string' && id !== '' ? id : null
+}
+
 function emptySummary(dryRun) {
   return {
     dryRun,
@@ -322,6 +355,47 @@ export async function seed({
     })
 
     return summary
+  }
+
+  // Every request the run issues goes through here, so `requests` counts what
+  // actually went out rather than what the loops meant to send.
+  const counted = (url, init) => {
+    summary.requests += 1
+    return fetchImpl(url, init)
+  }
+
+  const contactIds = []
+  for (const contact of contacts) {
+    const { body } = await postJson(
+      counted,
+      `${config.apiBase}/contacts/`,
+      CONTACTS_VERSION,
+      config.token,
+      contact,
+    )
+
+    summary.contacts.created += 1
+    contactIds.push(contactIdOf(body))
+  }
+
+  const appointments = plannedAppointments({
+    locationId: config.locationId,
+    calendarId: args.calendarId,
+    assignedUserId: args.assignedUserId,
+    contactIds,
+    now: now(),
+  })
+
+  for (const appointment of appointments) {
+    await postJson(
+      counted,
+      `${config.apiBase}/calendars/events/appointments`,
+      CALENDARS_VERSION,
+      config.token,
+      appointment,
+    )
+
+    summary.appointments.created += 1
   }
 
   return summary
