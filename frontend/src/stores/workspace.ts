@@ -4,8 +4,8 @@ import { computed, ref, type ComputedRef, type Ref } from 'vue'
 import { ApiError } from '@/lib/api'
 import { mergeFileTree, type FileRow } from '@/lib/files'
 import { getFile, listFiles, saveFile as putFile, type FileMeta } from '@/lib/filesApi'
-import { streamGeneration } from '@/lib/generateApi'
-import { listMessages, sendMessage, MESSAGE_LIMIT, type Message } from '@/lib/messagesApi'
+import { streamGeneration, type GenerateTurn } from '@/lib/generateApi'
+import { listMessages, MESSAGE_LIMIT, type Message } from '@/lib/messagesApi'
 import { getProject, type Project } from '@/lib/projectsApi'
 import { listSnapshots, restoreSnapshot as postRestore, type Snapshot } from '@/lib/snapshotsApi'
 
@@ -237,6 +237,28 @@ export interface WorkspaceStore {
   retryGeneration: () => Promise<void>
   /** Forget everything fetched for the session that just ended. */
   reset: () => void
+}
+
+/**
+ * The id a prompt wears for the moment between hitting send and the server
+ * saying what it stored.
+ *
+ * A real Firestore id is 20 characters of base62, so this cannot collide with
+ * one — and it is checked for by equality rather than by prefix, so a stored
+ * message that happened to look like it still would not be mistaken for the
+ * placeholder.
+ */
+const PENDING_ID = 'pending-user-message'
+
+function pendingUserMessage(content: string): Message {
+  return {
+    id: PENDING_ID,
+    role: 'user',
+    content,
+    createdAt: new Date().toISOString(),
+    truncated: false,
+    error: null,
+  }
 }
 
 export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => {
@@ -1144,7 +1166,7 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
    * both guarded by `current(gen)`, so a stream belonging to a project the user
    * has since left cannot re-enable the composer of the one they are looking at.
    */
-  async function runGeneration(): Promise<void> {
+  async function runGeneration(turn: GenerateTurn): Promise<void> {
     const id = projectId.value
     if (id === null) return
 
@@ -1165,8 +1187,19 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     autoSelected = null
 
     try {
-      for await (const event of streamGeneration(id, ours.signal)) {
+      for await (const event of streamGeneration(id, turn, ours.signal)) {
         if (!current(gen)) return
+
+        /*
+         * The prompt as stored. The bubble was drawn the moment the user hit
+         * send — waiting for a round trip to show their own words is a lag they
+         * did not cause — so this replaces that placeholder with the document,
+         * which is what makes its id and timestamp real rather than guessed.
+         */
+        if (event.type === 'user') {
+          messages.value = [...messages.value.filter((m) => m.id !== PENDING_ID), event.message]
+          continue
+        }
 
         if (event.type === 'token') {
           // Re-assigned, not pushed to (D31). One reactive write per token.
@@ -1238,8 +1271,46 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
        * connection. Both reach the same state as a mid-stream `error` event, so
        * the panel has one error to render and one Retry to offer.
        */
-      generateError.value =
-        err instanceof Error ? err.message : 'Could not generate a reply. Try again.'
+      const reason = err instanceof Error ? err.message : 'Could not generate a reply. Try again.'
+
+      /*
+       * **Two failures, told apart by whether anything was stored.**
+       *
+       * The server writes the prompt before it flushes headers, so a `user`
+       * frame having arrived means the turn exists and the only thing that
+       * failed is the reply — that is `generateError`, rendered with a Retry,
+       * because retrying is exactly what will help.
+       *
+       * A throw with the placeholder still on screen means the request never got
+       * that far: a 409 at the cap, a 400, a connection that failed to open.
+       * Nothing is stored, so the bubble comes back out and the words go back in
+       * the composer, and the composer is where the reason belongs — offering
+       * Retry for a project at its message cap would be offering to fail again.
+       */
+      /*
+       * **Rolled back only when the server said no.**
+       *
+       * A **status** means the server answered and refused — a 409 at the cap, a
+       * 400, a 404 — and the prompt is written after those checks, so nothing
+       * was stored and taking the bubble back is the truth.
+       *
+       * A connection failure is an `ApiError` too, carrying status 0, and it is
+       * emphatically not that: the request may have reached the server and the
+       * prompt may be sitting in Firestore. Discarding the bubble would hide a
+       * turn that exists, and the next load would surprise the user with it. So
+       * the bubble stays, Retry is offered, and the transcript reconciles itself
+       * on the way back in.
+       */
+      const pending = messages.value.find((message) => message.id === PENDING_ID)
+      const refused = err instanceof ApiError && err.status > 0
+      if (pending === undefined || !refused) {
+        generateError.value = reason
+      } else {
+        messages.value = messages.value.filter((message) => message.id !== PENDING_ID)
+        // Only if the user has not started typing the next one.
+        if (draft.value === '') draft.value = pending.content
+        sendError.value = reason
+      }
     } finally {
       if (current(gen)) {
         streamingText.value = ''
@@ -1263,7 +1334,7 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
   }
 
   /**
-   * Send the draft, then generate a reply — two requests, in that order (D3).
+   * Send the draft and generate the reply — **one request**.
    *
    * The message write comes first and the stream only opens if it succeeded, so
    * the user's prompt is durable before the expensive, failure-prone half
@@ -1299,35 +1370,30 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
      */
     if (id === null || content === '' || generating.value || restoringId.value !== null) return
 
-    const gen = generation
+    /*
+     * **One request.** The prompt and the reply are the same call now, so a turn
+     * cannot half-happen: there is no window between "stored" and "asked for an
+     * answer" for a dead tab or a failed second request to fall into. The
+     * durability the old two-call shape bought is still there — `/generate`
+     * writes the prompt before it opens the stream — it is just no longer the
+     * browser's job to sequence it.
+     *
+     * The bubble is drawn immediately under a placeholder id, because making
+     * someone wait on a round trip to see their own words is a lag they did not
+     * cause. The stream's first frame replaces it with the stored document.
+     */
+    messages.value = [...messages.value, pendingUserMessage(content)]
+    // Cleared with the append, so the composer is empty the instant the bubble
+    // appears; the failure path below puts it back if nothing was stored.
+    draft.value = ''
+
     sending.value = true
     sendError.value = null
     try {
-      const message = await sendMessage(id, content)
-      // The turn belongs to the project it was sent to. If the route has moved on it
-      // is already stored and will be read back on the way in — appending it here
-      // would put one conversation's messages inside another's.
-      if (!current(gen)) return
-      messages.value = [...messages.value, message]
-      // Cleared only on success, and only after the append, so a failure leaves
-      // the textarea exactly as the user left it.
-      draft.value = ''
-    } catch (err) {
-      if (!current(gen)) return
-      sendError.value = err instanceof Error ? err.message : 'Could not send that message.'
-      // No stream: there is nothing stored to generate from (AC-33).
-      return
+      await runGeneration({ content })
     } finally {
-      /*
-       * Unconditionally, unlike the loading flags above: there is only ever one send
-       * in flight — `canSend` is false while this is true — so nothing newer owns
-       * this flag, and leaving it set would disable the composer of whatever project
-       * the user landed on until a reload.
-       */
       sending.value = false
     }
-
-    await runGeneration()
   }
 
   function reset(): void {
@@ -1409,7 +1475,7 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     reloadFile,
     saveFile,
     send,
-    retryGeneration: runGeneration,
+    retryGeneration: () => runGeneration({ retry: true }),
     reset,
   }
 })

@@ -102,6 +102,21 @@ export const storedMessageSchema = z.object({
    * `truncated: 'yes'` is a bug somewhere, not an old document.
    */
   truncated: z.boolean().default(false),
+
+  /**
+   * Why the turn failed, or `null` for one that did not.
+   *
+   * A failed generation used to persist nothing at all — the reply was written
+   * only when it had prose, so an upstream error before the first token left a
+   * transcript ending on a prompt, and the only trace was an in-memory flag
+   * that a refresh cleared. The chat could not show what happened because
+   * nothing had been written down.
+   *
+   * Defaulted rather than required, for `truncated`'s reason: every message
+   * written before this field existed lacks it, and a required field would make
+   * those documents unreadable and silently empty the transcript.
+   */
+  error: z.string().nullable().default(null),
 })
 
 export type StoredMessage = z.infer<typeof storedMessageSchema>
@@ -121,6 +136,8 @@ export interface Message {
   content: string
   createdAt: string
   truncated: boolean
+  /** Why the turn failed, or `null`. See the stored schema. */
+  error: string | null
 }
 
 export function toMessage(id: string, stored: StoredMessage): Message {
@@ -130,5 +147,6 @@ export function toMessage(id: string, stored: StoredMessage): Message {
     content: stored.content,
     createdAt: stored.createdAt.toDate().toISOString(),
     truncated: stored.truncated,
+    error: stored.error,
   }
 }

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import type { Message } from '../messages/schema'
+import { CONTENT_MAX, type Message } from '../messages/schema'
 import { projectIdSchema } from '../projects/schema'
 
 /**
@@ -21,7 +21,36 @@ import { projectIdSchema } from '../projects/schema'
  * malformed id and a stranger's id genuinely are the same answer, and `parseBody`
  * surfaces `issues[0].message` as the 400's body.
  */
-export const generateBodySchema = z.object({ projectId: projectIdSchema }).strict()
+/**
+ * One turn, in one request.
+ *
+ * **`content` is the prompt; `retry: true` re-runs the turn already stored.**
+ * Exactly one of them, enforced by the refine rather than left to the handler —
+ * a body carrying both is a caller that has not decided what it wants, and a
+ * body carrying neither would silently generate a second reply to whatever the
+ * transcript happens to end with.
+ *
+ * The prompt travels here rather than through a separate
+ * `POST /api/projects/:id/messages` because a turn that takes two requests can
+ * fail between them: the message lands, the client dies, and the transcript
+ * keeps a prompt no reply is coming for. The property that split was protecting
+ * — the prompt is durable before the expensive half starts — is preserved by
+ * *ordering inside this handler*, not by the extra round trip: the user turn is
+ * written before the stream opens.
+ *
+ * `content` is validated exactly as the message route validated it, from the
+ * same constant, so there is one definition of "too long" rather than two.
+ */
+export const generateBodySchema = z
+  .object({
+    projectId: projectIdSchema,
+    content: z.string().trim().min(1).max(CONTENT_MAX).optional(),
+    retry: z.literal(true).optional(),
+  })
+  .strict()
+  .refine((body) => (body.content === undefined) !== (body.retry === undefined), {
+    message: 'Send either content or retry, and not both.',
+  })
 
 export type GenerateBody = z.infer<typeof generateBodySchema>
 
@@ -82,6 +111,21 @@ export interface DonePayload {
   message: Message
   files: string[]
   fileError: string | null
+}
+
+/**
+ * `event: user` — the prompt, as it was stored.
+ *
+ * Emitted once, immediately after the headers, and only for a turn that carried
+ * one; a retry re-runs what is already in the transcript and emits nothing.
+ *
+ * It exists because the prompt is now written by this handler rather than by a
+ * separate request the client could read the response of. Without it the browser
+ * would have to invent an id and a timestamp for the bubble it just drew, and be
+ * wrong about both until the next refetch.
+ */
+export interface UserPayload {
+  message: Message
 }
 
 /**

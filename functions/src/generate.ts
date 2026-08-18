@@ -27,7 +27,7 @@ import {
 } from './llm'
 import { planFileWrites, readProjectFiles } from './files/handlers'
 import { fileErrorCopy } from './files/schema'
-import { appendAssistantMessage, readTranscript } from './messages/handlers'
+import { appendAssistantMessage, appendUserMessage, readTranscript } from './messages/handlers'
 import { MESSAGE_LIMIT } from './messages/schema'
 import { notFound, readProject } from './projects/handlers'
 import { planSnapshot } from './snapshots/handlers'
@@ -257,34 +257,59 @@ export const generate = onRequest(
  * Only then do headers go out.
  */
 export async function handleGenerate(req: Request, res: Response, uid: string): Promise<void> {
-  const { projectId } = parseBody(generateBodySchema, req)
+  const { projectId, content } = parseBody(generateBodySchema, req)
 
   if ((await readProject(uid, projectId)) === null) throw notFound()
 
-  const transcript = await readTranscript(uid, projectId)
+  /*
+   * **The prompt is written before anything expensive starts**, and that
+   * ordering is the whole reason one request is safe here.
+   *
+   * A turn used to take two: `POST …/messages` then `POST /generate`. That made
+   * the prompt durable before the stream opened, but it put the sequencing in
+   * the browser — and a client that died between them left a transcript ending
+   * on a prompt no reply was ever coming for, with nothing on screen to say so.
+   *
+   * Doing both here keeps the durability and removes the window: there is one
+   * request, so there is no "between". `appendUserMessage` carries the 409 with
+   * it, so a project at the cap is refused before a token is bought, and any
+   * failure from here on has a stored prompt to be attached to.
+   *
+   * `content` absent means `retry: true` — the turn is already in the
+   * transcript, so nothing is written and the model reads what is there.
+   */
+  const stored = await readTranscript(uid, projectId)
 
   /*
-   * The cap, honoured by the endpoint that also writes into the collection.
+   * The cap, checked against the transcript this handler already holds.
    *
-   * `POST /api/projects/:projectId/messages` refuses at 199 so the reply it is
-   * about to trigger has room — but this route writes an assistant message
-   * without going through that one, and Retry re-opens it with no new user
-   * message at all (D26). Left unchecked, a transcript at the cap grows past it
-   * once per Retry, and `transcriptQuery`'s own `limit(MESSAGE_LIMIT)` then
-   * hides every document beyond the two-hundredth: the reply arrives on screen
-   * and is gone on the next load. D34 leans on this cap to bound a project's
-   * spend absolutely, so the endpoint that spends the money enforces it too.
+   * **A new turn needs room for two documents, a retry for one.** The prompt and
+   * the reply are written by this same request now, so refusing a new turn at
+   * 199 is what stops a transcript ending on a prompt with nowhere to put its
+   * answer — the rule the message route used to carry, moved to the handler
+   * that now does both writes. A retry adds no prompt, so it only needs room
+   * for the reply, and refusing it at 200 is what stops `transcriptQuery`'s own
+   * `limit(MESSAGE_LIMIT)` hiding the reply that just arrived on screen.
    *
-   * Same status, code and copy as the message route, because it is the same
-   * limit — a caller should not have to learn two ways to be told one thing.
+   * D34 leans on this cap to bound a project's spend absolutely, so the check
+   * happens before a token is bought and before the prompt is stored.
    */
-  if (transcript.length >= MESSAGE_LIMIT) {
+  const needed = content === undefined ? 1 : 2
+  if (stored.length + needed > MESSAGE_LIMIT) {
     throw new HttpError(
       409,
       `This project has reached its limit of ${String(MESSAGE_LIMIT)} messages.`,
       'message_limit',
     )
   }
+
+  /*
+   * Only now is anything written, and the prompt goes down before the stream
+   * opens — the property the old two-request shape bought with a round trip.
+   */
+  const userMessage =
+    content === undefined ? null : await appendUserMessage(uid, projectId, content)
+  const transcript = userMessage === null ? stored : [...stored, userMessage]
 
   const context = buildContext(transcript)
   if (context.length === 0) {
@@ -357,6 +382,10 @@ export async function handleGenerate(req: Request, res: Response, uid: string): 
   // One comment straight away, so the client sees bytes — and therefore knows
   // the request was accepted — before the model has thought of anything.
   res.write(encodeSseComment())
+
+  // The prompt as stored, so the bubble the browser drew optimistically can be
+  // replaced by the real document rather than guessing at its id and timestamp.
+  if (userMessage !== null) res.write(encodeSse('user', { message: userMessage }))
 
   /*
    * D28. Adaptive thinking (D14) means the first token can be seconds away, and
@@ -539,12 +568,30 @@ async function finishTurn(
    * The snapshot is *planned* here and *staged* by `appendAssistantMessage`, on
    * the batch it already owns. It is never committed separately (R5).
    */
+  /*
+   * Why the turn failed, persisted with it.
+   *
+   * This is what lets the chat show a failure at all. Before it, a generation
+   * that produced no prose wrote nothing, so an upstream error before the first
+   * token left a transcript ending on a prompt and a footer alert that a
+   * refresh cleared — the user reloaded into a conversation that had simply
+   * swallowed their turn.
+   */
+  const failure = event.kind === 'error' ? event.code : null
+
+  /*
+   * A turn with nothing to say **and** nothing to report still writes nothing:
+   * that is the empty-prose rule, narrowed rather than dropped. The snapshot
+   * read it was protecting is still skipped either way, because a failed turn
+   * stores no files and `plan.writes.length` is then zero.
+   */
   const message =
-    collected.messageText === ''
+    collected.messageText === '' && failure === null
       ? null
       : await appendAssistantMessage(uid, projectId, {
           content: collected.messageText,
           truncated,
+          error: failure,
           fileWrites: plan.writes,
           snapshot:
             plan.writes.length > 0

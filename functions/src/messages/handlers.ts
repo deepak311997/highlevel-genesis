@@ -6,11 +6,9 @@ import { stageFileWrites, type FileWritePlan } from '../files/handlers'
 import { HttpError } from '../lib/errors'
 import { getDb } from '../lib/firebase'
 import { logAuthEvent } from '../lib/log'
-import { parseBody } from '../lib/parse'
 import { notFound, readProject, requireProjectId } from '../projects/handlers'
 import { stageSnapshot, type SnapshotPlan } from '../snapshots/handlers'
 import {
-  createMessageBodySchema,
   MESSAGE_LIMIT,
   messagesPath,
   storedMessageSchema,
@@ -167,6 +165,12 @@ function readBackOrFail(snapshot: DocumentSnapshot, detail: string): Message {
 export interface AssistantTurn {
   content: string
   truncated: boolean
+  /**
+   * Why the turn failed, or `null`. Typed as a plain string rather than
+   * `GenerateErrorCode` on purpose: `llm/schema` imports this module, so naming
+   * its type here would close the cycle.
+   */
+  error: string | null
   fileWrites: readonly FileWritePlan[]
   /**
    * The turn's snapshot, or `null` when it stored no files (D2, D4).
@@ -195,6 +199,7 @@ export async function appendAssistantMessage(
     seq: ASSISTANT_SEQ,
     createdAt: FieldValue.serverTimestamp(),
     truncated: turn.truncated,
+    error: turn.error,
   })
 
   stageFileWrites(batch, uid, projectId, turn.fileWrites)
@@ -208,79 +213,37 @@ export async function appendAssistantMessage(
 }
 
 /**
- * How many messages the project already holds, up to the cap.
+ * Write the user's half of a turn, and hand back what was stored.
  *
- * `select()` with no arguments asks for document references and no field data, so
- * this is ~200 refs rather than ~200 documents. `liveProjectCount`'s shape, and
- * deliberately not `count()` for the same reason: the aggregation buys nothing
- * here and adds a question about emulator support.
- */
-async function messageCount(uid: string, projectId: string): Promise<number> {
-  const snapshot = await getDb()
-    .collection(messagesPath(uid, projectId))
-    .limit(MESSAGE_LIMIT)
-    .select()
-    .get()
-
-  return snapshot.size
-}
-
-/**
- * Write the user's turn, and answer with it.
+ * `/generate` calls this inside the same request that streams the reply, before
+ * it opens the stream — which is what preserves the property the old
+ * two-request shape bought with a round trip: the prompt is durable before the
+ * expensive, failure-prone half begins. What it no longer costs is a window
+ * between the two calls for a dying client to strand a prompt in.
  *
- * In order: the id, then the body, then the project, then the count, then one
- * write. **Parsing before reading** is `handleCreateProject`'s rule and it is
- * load-bearing twice over — a refused body costs no Firestore call, and a body
- * carrying `role` is refused before anything could have acted on it (D5).
- *
- * **One document, and the reply is somebody else's job now** (D3). Slice 4 wrote
- * the pair in one `WriteBatch` so a prompt could never be stranded without its
- * echo; the reply is now a real generation, and it is written by `/generate` at
- * the stream's terminal event. Splitting the turn across two requests is what
- * gives F8.2 its property: the user's prompt is durable *before* the expensive,
- * failure-prone half begins, so a generation that dies before producing a byte
- * still leaves a transcript the user recognises and a Retry that works.
- *
- * The response keeps the array shape with one element in it (D4), so the store's
- * append is unchanged.
+ * **The cap is the caller's.** `/generate` reads the transcript anyway, so
+ * counting again here would be a second query for a number it already holds.
  *
  * The project document is deliberately **not** touched (D15). `updatedAt` means
  * "the project's own fields changed", which is what the dashboard's ordering and
  * its "Updated" line both claim.
  */
-export async function handleCreateMessage(req: Request, res: Response, uid: string): Promise<void> {
-  const projectId = requireProjectId(req)
-  const body = parseBody(createMessageBodySchema, req)
-
-  if ((await readProject(uid, projectId)) === null) throw notFound()
-
-  /*
-   * **Still `+ 2`, even though only one document is written here** (D4). The
-   * refusal is about the *pair*: the reply this `POST` is about to make the user
-   * trigger needs room, and refusing at 199 is what stops a transcript ending on
-   * a prompt with nowhere to put its answer. Read immediately before the write
-   * and not transactional, as `liveProjectCount` is — two simultaneous sends at
-   * 198 can both land, which is a guard-rail missing by one rather than a
-   * boundary being crossed.
-   */
-  if ((await messageCount(uid, projectId)) + 2 > MESSAGE_LIMIT) {
-    throw new HttpError(
-      409,
-      `This project has reached its limit of ${String(MESSAGE_LIMIT)} messages.`,
-      'message_limit',
-    )
-  }
-
+export async function appendUserMessage(
+  uid: string,
+  projectId: string,
+  content: string,
+): Promise<Message> {
   // Auto-id, minted locally: nothing is read to get it.
   const ref = getDb().collection(messagesPath(uid, projectId)).doc()
 
   await ref.set({
     role: 'user',
-    content: body.content,
+    content,
     seq: USER_SEQ,
     createdAt: FieldValue.serverTimestamp(),
     truncated: false,
+    error: null,
   })
 
-  res.status(201).json({ messages: [readBackOrFail(await ref.get(), 'after create')] })
+  return readBackOrFail(await ref.get(), 'after create')
 }

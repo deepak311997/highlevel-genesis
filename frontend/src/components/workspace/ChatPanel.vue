@@ -107,6 +107,19 @@ const showComposer = computed(
  * trailing-assistant drop exists for, since an interrupted turn leaves the
  * transcript ending on an assistant message.
  */
+/**
+ * What a stored failure says out loud.
+ *
+ * The wire carries a code rather than a sentence, because the sentence is a
+ * product decision and the code is a fact — and because a transcript written
+ * today should still read correctly after the copy is rewritten tomorrow.
+ */
+function failureCopy(code: string): string {
+  if (code === 'refused') return 'The model declined to answer that.'
+  if (code === 'upstream') return 'The reply was interrupted. Try again.'
+  return 'Something went wrong generating that reply.'
+}
+
 function retry(): void {
   void workspace.retryGeneration()
 }
@@ -165,12 +178,47 @@ function retry(): void {
               :key="message.id"
               data-testid="message-bubble"
               :data-role="message.role"
-              class="flex max-w-[85%] flex-col gap-1 rounded-md border border-border-strong px-3 py-2"
-              :class="message.role === 'user' ? 'self-end bg-secondary' : 'self-start bg-raised'"
+              class="flex max-w-[85%] flex-col gap-1 rounded-md border px-3 py-2"
+              :class="[
+                message.role === 'user' ? 'self-end bg-secondary' : 'self-start bg-raised',
+                message.error !== null
+                  ? 'border-destructive/40 bg-destructive/5'
+                  : 'border-border-strong',
+              ]"
             >
               <!-- Prose and chips, never code (D6, D29). The same component the
                    placeholder below uses, because they render the same string. -->
-              <MessageBody :content="message.content" />
+              <MessageBody v-if="message.content !== ''" :content="message.content" />
+
+              <!--
+                **The failure, in the transcript rather than beside it.**
+
+                A turn that failed is now written down, carrying why, so it
+                survives a refresh and reads in order with everything else. It
+                used to exist only as a flag in memory: the reply vanished, a
+                banner appeared under the panel, and reloading swallowed the
+                whole turn as if the user had never spoken.
+
+                The Retry sits on the message it belongs to, so a transcript with
+                two failures in it offers two, each attached to what it would
+                re-run.
+              -->
+              <div
+                v-if="message.error !== null"
+                data-testid="message-failure"
+                class="flex flex-col items-start gap-2"
+              >
+                <p class="text-sm text-destructive">{{ failureCopy(message.error) }}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="message-retry"
+                  :disabled="workspace.generating"
+                  @click="retry()"
+                >
+                  Retry
+                </Button>
+              </div>
               <div class="flex items-center gap-2">
                 <!-- A timestamp that will not parse yields no line at all (D29). -->
                 <span
