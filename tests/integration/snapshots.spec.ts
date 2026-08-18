@@ -39,7 +39,11 @@ let bobToken: string
 
 const auth = (token: string): Record<string, string> => ({ Authorization: `Bearer ${token}` })
 
-async function seedProject(uid: string, id: string, deletedAt: Timestamp | null = null): Promise<void> {
+async function seedProject(
+  uid: string,
+  id: string,
+  deletedAt: Timestamp | null = null,
+): Promise<void> {
   await adminDb()
     .doc(`users/${uid}/projects/${id}`)
     .set({
@@ -89,7 +93,10 @@ async function storedSnapshots(uid: string, projectId: string): Promise<StoredSn
     .orderBy('seq', 'asc')
     .get()
 
-  return snapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() as Omit<StoredSnapshotDoc, 'id'>) }))
+  return snapshot.docs.map((doc) => ({
+    id: doc.id,
+    ...(doc.data() as Omit<StoredSnapshotDoc, 'id'>),
+  }))
 }
 
 interface CopiedFile {
@@ -357,6 +364,59 @@ describe('a project already holding the cap (AC-10)', () => {
     const snapshots = await storedSnapshots(aliceUid, 'gap')
     expect(snapshots.map((snapshot) => snapshot.seq)).toEqual([2, 5, 9, 10])
   })
+
+  /**
+   * R4 reached from the direction `PrunedSnapshot` does not cover, and the one
+   * case only the emulator can prove.
+   *
+   * A snapshot document with **no `seq` field at all** is omitted by any query
+   * that orders on `seq` — Firestore's rule, not ours. While the head read
+   * carried `orderBy('seq')` such a document was invisible to it, so it was never
+   * counted toward the prune's excess, never selected, never listed by the route,
+   * and it and its file documents were paid for forever. No unit fake can show
+   * that: the exclusion happens inside Firestore.
+   *
+   * The count is read with `listDocuments()` rather than `storedSnapshots`,
+   * because that helper orders by `seq` too and would hide the very document
+   * under test.
+   */
+  it('prunes a version whose seq is gone, which no ordered read can see', async () => {
+    await seedProject(aliceUid, 'orphaned')
+    const collection = adminDb().collection(`users/${aliceUid}/projects/orphaned/snapshots`)
+
+    for (let seq = 1; seq <= LIMIT; seq += 1) {
+      await collection.doc(`seed-${String(seq).padStart(2, '0')}`).set({
+        seq,
+        createdAt: Timestamp.fromMillis(1_700_000_000_000 + seq * 1000),
+        origin: 'generation',
+        fileCount: 1,
+        totalBytes: 3,
+      })
+    }
+    // The head with nothing to name it, and one file document hanging off it.
+    await collection.doc('no-seq').set({
+      createdAt: Timestamp.fromMillis(1_700_000_000_000),
+      origin: 'generation',
+      fileCount: 1,
+      totalBytes: 3,
+    })
+    await collection
+      .doc('no-seq')
+      .collection('files')
+      .doc('index.html')
+      .set({ path: 'index.html', content: 'old', size: 3 })
+
+    await turn('orphaned', 'build a contact dashboard')
+
+    const ids = (await collection.listDocuments()).map((ref) => ref.id)
+    // 21 heads + the new one, capped back to 20: the seq-less head goes first,
+    // and `seed-01` with it.
+    expect(ids).toHaveLength(LIMIT)
+    expect(ids).not.toContain('no-seq')
+    expect(ids).not.toContain('seed-01')
+    // And its copies go with it, rather than outliving the version they belong to.
+    expect(await snapshotFiles(aliceUid, 'orphaned', 'no-seq')).toEqual([])
+  })
 })
 
 /** One version, as the list route answers it. */
@@ -519,8 +579,9 @@ describe('GET /api/projects/:projectId/snapshots (AC-11)', () => {
     expect(res.status).toBe(404)
     expect((res.body as { code: string }).code).toBe('not_found')
     expect(await storedSnapshots(bobUid, 'bobs')).toHaveLength(1)
-    expect(((await listSnapshots('bobs', bobToken)).body as { snapshots: unknown[] }).snapshots)
-      .toHaveLength(1)
+    expect(
+      ((await listSnapshots('bobs', bobToken)).body as { snapshots: unknown[] }).snapshots,
+    ).toHaveLength(1)
   })
 
   it('answers 404 for a soft-deleted project', async () => {
@@ -651,6 +712,7 @@ describe('the safety snapshot (AC-13)', () => {
 
   it('restores back to the later version when the safety snapshot is restored', async () => {
     const versions = await twoVersions('undo')
+    const before = await storedFiles(aliceUid, 'undo')
     await restore('undo', versions[0]?.id ?? '')
     const safety = (await storedSnapshots(aliceUid, 'undo')).slice(-1)[0]
 
@@ -663,6 +725,15 @@ describe('the safety snapshot (AC-13)', () => {
       'index.html',
       'styles.css',
     ])
+    /*
+     * The paths alone are the weaker half: a round trip that put the files back
+     * under the right names with the wrong bytes would satisfy them. The undo of
+     * the undo has to be byte-identical to what the first restore replaced, or
+     * the safety snapshot is not a way back.
+     */
+    expect(live.map((file) => [file.path, file.content])).toEqual(
+      before.map((file) => [file.path, file.content]),
+    )
   })
 })
 
@@ -758,12 +829,17 @@ describe('a version that cannot be read whole (AC-16)', () => {
       .doc(`users/${aliceUid}/projects/corrupted/snapshots/${target}/files/app.js`)
       .set({ path: 'app.js', size: 3 })
     const before = await storedFiles(aliceUid, 'corrupted')
+    const snapshotsBefore = await storedSnapshots(aliceUid, 'corrupted')
 
     const res = await restore('corrupted', target)
 
     expect(res.status).toBe(409)
     expect(codeOf(res)).toBe('snapshot_unreadable')
     expect(await storedFiles(aliceUid, 'corrupted')).toEqual(before)
+    // The safety snapshot is not minted either — "nothing was written" is the
+    // whole of the refusal, and a parse failure must reach it by the same road a
+    // missing document does.
+    expect(await storedSnapshots(aliceUid, 'corrupted')).toHaveLength(snapshotsBefore.length)
   })
 
   it('says nothing was changed, in so many words', async () => {
@@ -864,13 +940,15 @@ describe('a full restore over a full project (AC-18)', () => {
     })
     for (let index = 0; index < 20; index += 1) {
       const path = `old-${String(index).padStart(2, '0')}.js`
-      await adminDb().doc(`users/${aliceUid}/projects/twenty/files/${path}`).set({
-        path,
-        content: 'x',
-        size: 1,
-        createdAt: Timestamp.fromMillis(1_700_000_000_000),
-        updatedAt: Timestamp.fromMillis(1_700_000_000_000),
-      })
+      await adminDb()
+        .doc(`users/${aliceUid}/projects/twenty/files/${path}`)
+        .set({
+          path,
+          content: 'x',
+          size: 1,
+          createdAt: Timestamp.fromMillis(1_700_000_000_000),
+          updatedAt: Timestamp.fromMillis(1_700_000_000_000),
+        })
       const copied = `new-${String(index).padStart(2, '0')}.js`
       await snapshotRef.collection('files').doc(copied).set({ path: copied, content: 'y', size: 1 })
     }

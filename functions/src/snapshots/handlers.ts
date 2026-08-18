@@ -5,7 +5,7 @@ import { z } from 'zod'
 
 import { HttpError } from '../lib/errors'
 import { getDb } from '../lib/firebase'
-import { logAuthEvent } from '../lib/log'
+import { describeError, logAuthEvent } from '../lib/log'
 import { parseBody } from '../lib/parse'
 import { notFound, readProject, requireProjectId } from '../projects/handlers'
 import { readFileList, readStoredFiles, stageFileWrites } from '../files/handlers'
@@ -14,8 +14,10 @@ import { filesEqual, planSnapshotPrune, planSnapshotSeq, type SnapshotHead } fro
 import {
   SNAPSHOT_FILES,
   SNAPSHOT_LIMIT,
+  RESTORE_FAILED,
   SNAPSHOT_MISSING,
   SNAPSHOT_UNREADABLE,
+  snapshotFilesPath,
   snapshotIdSchema,
   snapshotsPath,
   storedSnapshotFileSchema,
@@ -113,16 +115,22 @@ export function parseSnapshotFile(snapshot: DocumentSnapshot): StoredSnapshotFil
  * A document whose `seq` is missing or not a number is read as `0`, which sorts
  * it to the front of the prune: a head nothing can name is a version nothing can
  * restore, so removing it first is the right outcome rather than a lost one.
+ *
+ * **And no `orderBy('seq')` either, which is the same rule stated the other way.**
+ * Firestore omits a document that does not carry the ordered field at all, so an
+ * `orderBy('seq')` here would hide exactly the head the paragraph above says to
+ * prune first — it would be invisible to this read *and* to `readSnapshotList`,
+ * never listed, never counted toward the excess, never pruned, and its up to
+ * twenty file documents paid for forever. That is R4's orphan, reached from the
+ * one direction `PrunedSnapshot` does not cover. Neither consumer needs the
+ * order: `planSnapshotSeq` takes a maximum and `planSnapshotPrune` sorts what it
+ * is given.
  */
 async function readSnapshotHeads(
   uid: string,
   projectId: string,
 ): Promise<(SnapshotHead & { ref: DocumentReference })[]> {
-  const snapshot = await getDb()
-    .collection(snapshotsPath(uid, projectId))
-    .orderBy('seq', 'asc')
-    .select('seq')
-    .get()
+  const snapshot = await getDb().collection(snapshotsPath(uid, projectId)).select('seq').get()
 
   return snapshot.docs.map((doc) => {
     const seq: unknown = doc.get('seq')
@@ -260,11 +268,7 @@ export async function readSnapshotList(uid: string, projectId: string): Promise<
  * to read past this — and the path is composed from the token's uid, so another
  * user's versions are not addressable by a request rather than merely refused.
  */
-export async function handleListSnapshots(
-  req: Request,
-  res: Response,
-  uid: string,
-): Promise<void> {
+export async function handleListSnapshots(req: Request, res: Response, uid: string): Promise<void> {
   const projectId = requireProjectId(req)
 
   if ((await readProject(uid, projectId)) === null) throw notFound()
@@ -321,7 +325,7 @@ export async function readSnapshotFiles(
   fileCount: number,
 ): Promise<FileWrite[] | null> {
   const snapshot = await getDb()
-    .collection(`${snapshotsPath(uid, projectId)}/${snapshotId}/${SNAPSHOT_FILES}`)
+    .collection(snapshotFilesPath(uid, projectId, snapshotId))
     .get()
 
   const files = snapshot.docs
@@ -331,13 +335,22 @@ export async function readSnapshotFiles(
   return files.length === fileCount ? files : null
 }
 
-/** A version's own document, parsed — or `null`, which is the whole of "gone". */
+/**
+ * A version's own document, parsed — or `null`, which is the whole of "gone".
+ *
+ * Narrowed to `fileCount` because that is the only field the restore uses it
+ * for: D8's integrity check, the count the subcollection must match. The
+ * version's `seq` names it in the *list*; nothing about rolling a project back
+ * needs the name.
+ */
 async function readSnapshot(
   uid: string,
   projectId: string,
   snapshotId: string,
-): Promise<{ seq: number; fileCount: number } | null> {
-  const doc = await getDb().doc(`${snapshotsPath(uid, projectId)}/${snapshotId}`).get()
+): Promise<{ fileCount: number } | null> {
+  const doc = await getDb()
+    .doc(`${snapshotsPath(uid, projectId)}/${snapshotId}`)
+    .get()
   if (!doc.exists) return null
 
   const parsed = storedSnapshotSchema.safeParse(doc.data())
@@ -346,7 +359,7 @@ async function readSnapshot(
     return null
   }
 
-  return { seq: parsed.data.seq, fileCount: parsed.data.fileCount }
+  return { fileCount: parsed.data.fileCount }
 }
 
 /**
@@ -428,8 +441,7 @@ export async function handleRestoreSnapshot(
    * files, because a safety snapshot of nothing is a version nothing can restore
    * to (and `fileCount` has a floor of 1, so it could not even be written).
    */
-  const safety =
-    current.length > 0 ? await planSnapshot(uid, projectId, current, 'restore') : null
+  const safety = current.length > 0 ? await planSnapshot(uid, projectId, current, 'restore') : null
 
   const batch = getDb().batch()
   if (safety !== null) stageSnapshot(batch, safety)
@@ -451,7 +463,20 @@ export async function handleRestoreSnapshot(
     if (!restored.has(path)) batch.delete(getDb().doc(`${filesPath(uid, projectId)}/${path}`))
   }
 
-  await batch.commit()
+  /*
+   * The PRD's copy for this state, rather than the `Internal error` an uncaught
+   * rejection would produce. The batch is all-or-nothing, so the one thing worth
+   * telling the caller is that **nothing was written** and pressing Restore again
+   * is safe — which is what the sentence says and what a generic 500 does not.
+   * The cause still reaches the log, redacted the way `errorHandler` redacts it,
+   * because a Firebase error carries the failing request on the object.
+   */
+  try {
+    await batch.commit()
+  } catch (err) {
+    console.error('snapshot.restore_failed', describeError(err))
+    throw new HttpError(500, RESTORE_FAILED, 'internal')
+  }
 
   // Re-read, because `serverTimestamp()` is a sentinel until it commits.
   res.json({ files: await readFileList(uid, projectId), changed: true })
