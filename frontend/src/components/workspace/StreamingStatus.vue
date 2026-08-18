@@ -75,11 +75,7 @@ const label = computed(() => {
       currentFile
     }}</code>
 
-    <span
-      v-if="paths.length > 0"
-      data-testid="streaming-file-count"
-      class="ml-auto tabular-nums"
-    >
+    <span v-if="paths.length > 0" data-testid="streaming-file-count" class="ml-auto tabular-nums">
       {{ paths.length }} {{ paths.length === 1 ? 'file' : 'files' }}
     </span>
   </div>

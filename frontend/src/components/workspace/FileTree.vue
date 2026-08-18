@@ -10,48 +10,32 @@ import { groupFileTree, type FileKind } from '@/lib/files'
 import { useWorkspaceStore } from '@/stores/workspace'
 
 /**
- * The project's files — four states, all shipped: loading, rows, empty, error.
+ * The project's files — four states: loading, rows, empty, error.
  *
- * It **reflects** the store rather than deciding anything. The order, the union
- * of stored and streaming paths, and now the grouping are all `lib/files.ts`'s,
- * with their own L1 tests; sorting or partitioning again in the template would
- * be a second implementation of one rule, free to drift.
+ * It **reflects** the store rather than deciding anything: the order, the union of
+ * stored and streaming paths, and the grouping are all `lib/files.ts`'s.
  *
- * **Sections by kind, because a flat namespace has no other hierarchy.**
- * `filePathSchema` refuses slashes outright, so there are no directories to draw
- * — every generated path is a bare filename. What a file *is* is the real
- * grouping that remains, and at the twenty-file cap it is the difference between
- * a list you scan and a list you read. The headings are `label-micro`, the
- * language's own device for naming a region, so a group of one costs a 11px line
- * rather than a row.
+ * **Sections by kind, because a flat namespace has no other hierarchy.** The server
+ * refuses slashes outright, so there are no directories to draw. The headings are
+ * `label-micro`, so a group of one costs an 11px line rather than a row.
  *
- * **Plain `ul`/`li` with buttons, not `role="tree"`.** A real tree widget owes
- * the user roving tabindex, arrow-key traversal and typeahead; half of that is
- * worse than none, because the role promises keyboard behaviour the component
- * would not have. `aria-expanded` on a `<button>` is valid on its own and native
- * tabbing already reaches every row, so the semantics here are the ones actually
- * implemented.
+ * **Plain `ul`/`li` with buttons, not `role="tree"`.** A real tree widget owes the
+ * user roving tabindex, arrow-key traversal and typeahead, and half of that is
+ * worse than none — the role would promise keyboard behaviour this does not have.
  *
- * The branches are ordered **error first**, `ProjectsCard`'s rule and for its
- * reason: a failed first request leaves `filesLoaded` false, so a loading branch
- * ahead of the error would render a skeleton forever and never show the failure.
- *
- * The rows key off `fileTree` rather than off `files`, which is what lets a
- * generation streaming into a brand-new project replace the empty state instead
- * of rendering beside it.
+ * **Error first**: a failed first request leaves `filesLoaded` false, so a loading
+ * branch ahead of it would render a skeleton forever. The rows key off `fileTree`
+ * rather than `files`, which is what lets a generation streaming into a new project
+ * replace the empty state instead of rendering beside it.
  */
 const workspace = useWorkspaceStore()
 
 const groups = computed(() => groupFileTree(workspace.fileTree))
 
 /**
- * Which sections are folded, held as the *exception* rather than the state.
- *
- * Everything is open on arrival — a project's files are the point of the panel —
- * so a set of what the user closed is empty in the common case and needs no
- * seeding when a generation introduces a kind the project did not have before. A
- * `collapsed` map keyed by kind would have to answer for `data` the first time a
- * `.json` file appears; this one already does.
+ * Which sections are folded, held as the *exception* rather than the state: a set
+ * of what the user closed is empty in the common case and needs no seeding when a
+ * generation introduces a kind the project did not have before.
  */
 const collapsed = ref(new Set<FileKind>())
 
@@ -94,17 +78,15 @@ function toggle(kind: FileKind): void {
       <Skeleton class="h-5 w-1/2 rounded-md" />
     </div>
 
-    <!-- No scroller of its own: the panel's explorer rail is the box with a
-         bounded height and therefore the box that scrolls (`EditorPanel.vue`). A
-         second one here would sit in a container the height of its own content
-         and could never overflow. -->
+    <!-- No scroller of its own: the explorer rail is the box with a bounded height
+         and therefore the box that scrolls. A second one here would sit in a
+         container the height of its own content and could never overflow. -->
     <div v-else-if="groups.length > 0" class="min-h-0 flex-1 py-1.5">
       <ul class="flex flex-col">
         <li v-for="group in groups" :key="group.kind">
-          <!-- The heading is a control, so the twenty-file cap can be folded down
-               to the kind you are working in. `aria-expanded` on a button is the
-               whole of the disclosure semantics — see the header on why this is
-               not a `role="tree"`. -->
+          <!-- The heading is a control, so the twenty-file cap can be folded down to
+               the kind you are working in. `aria-expanded` on a button is the whole
+               of the disclosure semantics. -->
           <button
             type="button"
             data-testid="file-group"
@@ -141,16 +123,12 @@ function toggle(kind: FileKind): void {
                 @click="workspace.selectFile(row.path)"
               >
                 <FileIcon :path="row.path" class="size-3.5 opacity-70" />
-                <!-- Mono, because a filename is machine output and the language
-                     says so: a path in the tree and the same path in the tab
-                     strip are set in the same face. -->
+                <!-- Mono, because a filename is machine output: a path here and the
+                     same path in the tab strip are set in the same face. -->
                 <span class="truncate font-mono text-xs">{{ row.path }}</span>
-                <!--
-                  The marker is the whole of "the tree fills in as the reply streams".
-                  Without it a file whose bytes are still arriving is indistinguishable
-                  from one that is stored, which is the wrong thing to say about
-                  content that is not saved yet.
-                -->
+                <!-- The marker is the whole of "the tree fills in as the reply
+                     streams": without it a file whose bytes are still arriving is
+                     indistinguishable from one that is stored. -->
                 <span
                   v-if="row.writing"
                   class="label-micro ml-auto shrink-0 text-primary"
