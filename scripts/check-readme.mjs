@@ -53,7 +53,7 @@ export const FIRESTORE_CLAIMS = ['onSnapshot', 'getDoc', 'setDoc', 'subscribes t
 export const BULLET_CAPS = { 'Architecture decisions': 10, 'What I would improve': 5 }
 
 /** Top-level directories a repo-relative path reference may start with. */
-export const PATH_ROOTS = ['scripts', 'docs', 'functions', 'frontend', 'tests', 'brand']
+export const PATH_ROOTS = ['scripts', 'docs', 'functions', 'frontend', 'tests']
 
 /** The `## ` headings, in document order. */
 export function sectionsOf(text) {

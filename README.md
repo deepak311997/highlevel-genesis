@@ -1,4 +1,4 @@
-<img src="brand/genesis-seed.svg" width="56" alt="">
+<img src="frontend/public/genesis-mark.svg" width="56" alt="">
 
 # Genesis — AI-Powered HighLevel App Builder
 
@@ -422,7 +422,6 @@ tests/integration/  Cloud Functions against the emulators (L4)
 tests/e2e/          Playwright end-to-end walks (L5)
 tests/fixtures/     recorded HighLevel and LLM responses — never live calls
 scripts/            repo checks and operator scripts — every .mjs one with a spec beside it
-brand/              logo and identity assets
 docs/               PRODUCT_SPEC · HIGHLEVEL_PLATFORM · IMPLEMENTATION_PLAN
 docs/slices/        per-slice PRD, plan, build log and review
 firebase.json       hosting, functions, firestore, emulators
