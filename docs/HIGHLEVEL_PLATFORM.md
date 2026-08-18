@@ -124,7 +124,6 @@ https://marketplace.gohighlevel.com/v2/oauth/chooselocation
   ?response_type=code
   &redirect_uri=https://<your-project>.web.app/api/oauth/callback
   &client_id=<CLIENT_ID>
-  &version_id=<APP_ID>
   &scope=<space-separated scopes, URL-encoded>
 ```
 ✅ **Corrected 2026-08-16, measured against a live app.** This section previously
@@ -140,9 +139,18 @@ or stale `client_id` — the natural response is to regenerate the client keys, 
 nothing, because the client id was never the problem. The app is real; the v1 path simply
 cannot resolve it.
 
-`version_id` is the app **version** id. Today it equals the segment of `client_id` before
-the hyphen, but treat that as a coincidence rather than a contract and configure it
-separately (`HL_VERSION_ID`).
+⚠️ **`version_id` was removed on 2026-08-18, deliberately and without verification.** The
+portal's generated install link carries it, and it is the app **version** id — which is the
+problem: it pins the consent screen to one published version, so a stale value goes on
+installing that old version for ever. It is no longer sent, and `HL_VERSION_ID` is gone
+from the code, the env files and the deploy script.
+
+**What was measured and what was not.** The `No integration found` failure above was the
+**v1 path without `version_id`**. Whether **v2** tolerates the absence has never been tested
+against the live marketplace — this change assumes it does. If Connect starts answering
+`No integration found with the id: <app id>`, that assumption is wrong and this parameter
+is the first thing to restore: re-add it to `buildAuthorizeUrl`, and put `HL_VERSION_ID`
+back as a `defineSecret` bound to `api`.
 
 **The authoritative source is the developer portal's own generated install link** — My Apps
 → your app → the share/install URL. When the portal and this document disagree, the portal
@@ -486,12 +494,12 @@ Do all of this **before writing any Genesis code.** Every item is something that
 
 ```bash
 # 0. Set these once
-export CID='...' CSEC='...' VID='...' REDIRECT='https://<project>.web.app/api/oauth/callback'
+export CID='...' CSEC='...' REDIRECT='https://<project>.web.app/api/oauth/callback'
 
 # 1. Build the install URL, open it, install into the SANDBOX location.
-#    NOTE the /v2/ path and version_id — the v1 form fails with
-#    "No integration found with the id: <app id>". See Step 4.
-echo "https://marketplace.gohighlevel.com/v2/oauth/chooselocation?response_type=code&redirect_uri=${REDIRECT}&client_id=${CID}&version_id=${VID}&scope=locations.readonly%20contacts.readonly%20contacts.write%20conversations.readonly%20conversations%2Fmessage.readonly%20calendars.readonly%20calendars%2Fevents.readonly&loginWindowOpenMode=self"
+#    NOTE the /v2/ path. version_id is deliberately not sent — see Step 4;
+#    if this answers "No integration found", add &version_id=<APP_ID> back.
+echo "https://marketplace.gohighlevel.com/v2/oauth/chooselocation?response_type=code&redirect_uri=${REDIRECT}&client_id=${CID}&scope=locations.readonly%20contacts.readonly%20contacts.write%20conversations.readonly%20conversations%2Fmessage.readonly%20calendars.readonly%20calendars%2Fevents.readonly&loginWindowOpenMode=self"
 
 # 2. Exchange the code  → NOTE: form-urlencoded, no Version header
 curl -sS -X POST https://services.leadconnectorhq.com/oauth/token \
