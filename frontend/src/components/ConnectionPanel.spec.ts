@@ -105,6 +105,21 @@ describe('ConnectionPanel', () => {
     expect(wrapper.find('[data-testid="connection-connect"]').exists()).toBe(false)
   })
 
+  /*
+   * AC-2. The loading state's placeholders are the shared `Skeleton`, not a
+   * hand-rolled `animate-pulse` div — the testid still resolves to the same
+   * element, and what it holds carries the primitive's slot attribute.
+   */
+  it('renders Skeleton placeholders while loading', () => {
+    store.loading = true
+
+    const wrapper = mount(ConnectionPanel)
+
+    const loading = wrapper.find('[data-testid="connection-loading"]')
+    expect(loading.exists()).toBe(true)
+    expect(loading.findAll('[data-slot="skeleton"]')).toHaveLength(2)
+  })
+
   it('shows the empty state with a Connect button when not connected', () => {
     const wrapper = mount(ConnectionPanel)
 
@@ -262,6 +277,18 @@ describe('ConnectionPanel — data access', () => {
 
     expect(wrapper.find('[data-testid="data-access-loading"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="data-access-check"]').attributes('disabled')).toBeDefined()
+  })
+
+  /* AC-2, the probe's own placeholders — one per surface, so three. */
+  it('renders Skeleton placeholders while the probe runs', () => {
+    store.isConnected = true
+    store.probe = 'loading'
+
+    const wrapper = mount(ConnectionPanel)
+
+    const loading = wrapper.find('[data-testid="data-access-loading"]')
+    expect(loading.exists()).toBe(true)
+    expect(loading.findAll('[data-slot="skeleton"]')).toHaveLength(3)
   })
 
   it('renders one row per surface with its count', () => {
