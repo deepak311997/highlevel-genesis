@@ -59,6 +59,11 @@ function endpointOf(fn: unknown): DeployedEndpoint {
   return endpoint
 }
 
+/** The secret names a deployed function is granted, as plain strings. */
+function secretsOf(fn: unknown): string[] {
+  return (endpointOf(fn).secretEnvironmentVariables ?? []).map((entry) => entry.key)
+}
+
 describe('the generate function’s deployment surface', () => {
   /*
    * D19. The key lives in Secret Manager and is bound to this function alone —
@@ -90,8 +95,52 @@ describe('the generate function’s deployment surface', () => {
   it('leaves the api function short and small', () => {
     expect(endpointOf(deployed.api).timeoutSeconds).toBe(60)
     expect(endpointOf(deployed.api).availableMemoryMb).toBe(256)
-    expect(endpointOf(deployed.api).secretEnvironmentVariables ?? []).toEqual([])
   })
+
+  /*
+   * The model key is bound to `generate` and to nothing else. `api` never opens
+   * a stream, so granting it the key would widen the blast radius of a bug in
+   * any of a dozen CRUD routes to include the one credential that spends money.
+   */
+  it('does not grant the api function the model key', () => {
+    expect(secretsOf(deployed.api)).not.toContain('ANTHROPIC_API_KEY')
+  })
+})
+
+/**
+ * `api`'s two secrets, and why they are secrets rather than environment.
+ *
+ * Both were read straight from `process.env` until the deploy pipeline was
+ * written, which meant both were carried in `functions/.env` — and everything in
+ * that file is uploaded as a plain environment variable on the Cloud Run service,
+ * readable by anyone holding Viewer on the project. That is the disclosure
+ * property D19 rejected for the model key, and neither of these is less
+ * sensitive than that one: `HL_CLIENT_SECRET` is half of the marketplace app's
+ * credentials and is displayed exactly once at creation, and `OAUTH_STATE_SECRET`
+ * is the key the OAuth `state` is sealed under — recover it and the uid a
+ * callback carries becomes forgeable.
+ *
+ * Structural, and it has to be: `SecretParam.value()` reads `process.env` at
+ * runtime, so under the emulator — where `functions/.env.local` supplies both —
+ * a binding that was never declared behaves exactly like one that was. The
+ * difference appears only in the deployed endpoint, which is what this reads.
+ */
+describe('the api function\u2019s secret bindings', () => {
+  it.each(['HL_CLIENT_SECRET', 'OAUTH_STATE_SECRET'])('binds %s as a secret', (key) => {
+    expect(secretsOf(deployed.api)).toContain(key)
+  })
+
+  /*
+   * Least privilege in the other direction. `generate` builds the system prompt
+   * and streams the model; it never exchanges an authorization code and never
+   * seals a state parameter, so it has no business holding either value.
+   */
+  it.each(['HL_CLIENT_SECRET', 'OAUTH_STATE_SECRET'])(
+    'does not grant %s to the generate function',
+    (key) => {
+      expect(secretsOf(deployed.generate)).not.toContain(key)
+    },
+  )
 })
 
 /**

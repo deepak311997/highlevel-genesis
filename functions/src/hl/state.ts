@@ -1,5 +1,7 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto'
 
+import { defineSecret } from 'firebase-functions/params'
+
 /**
  * The OAuth `state` parameter — an encrypted, stateless token.
  *
@@ -64,11 +66,34 @@ export class InvalidStateError extends Error {
  */
 const keyCache = new Map<string, Buffer>()
 
+/**
+ * The key material, from Secret Manager.
+ *
+ * `defineSecret` rather than a plain environment variable, for the reason
+ * `ANTHROPIC_API_KEY` is one (D19): `functions/.env` is uploaded as plain Cloud
+ * Run environment and is readable by anyone with Viewer on the project. What
+ * that would disclose here is the key every `state` is sealed under — and since
+ * `state` is the *only* thing tying an unauthenticated callback back to a user,
+ * whoever holds this key can mint a state naming any uid they like and have the
+ * callback attach a HighLevel location to that account. It is the single value
+ * in this file whose disclosure defeats everything the file is for.
+ *
+ * Bound to `api` alone in `index.ts`; nothing else seals or opens a state.
+ */
+export const OAUTH_STATE_SECRET = defineSecret('OAUTH_STATE_SECRET')
+
 function getKey(): Buffer {
-  const secret = process.env['OAUTH_STATE_SECRET']?.trim()
-  if (secret === undefined || secret === '') {
+  /*
+   * Validated explicitly: `SecretParam.value()` answers `''` for a secret the
+   * function was not granted, with only a `warn`. Unchecked, HKDF would happily
+   * derive a key from the empty string — a *working* cipher under a key an
+   * attacker can guess, which is far worse than the throw.
+   */
+  const secret = OAUTH_STATE_SECRET.value().trim()
+  if (secret === '') {
     throw new Error(
-      'Missing OAUTH_STATE_SECRET. Set it in functions/.env — see functions/.env.example.',
+      'Missing OAUTH_STATE_SECRET. Set it with `firebase functions:secrets:set ' +
+        'OAUTH_STATE_SECRET` — see functions/.env.example.',
     )
   }
 

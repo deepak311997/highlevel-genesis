@@ -4,6 +4,8 @@ import { onSchedule } from 'firebase-functions/v2/scheduler'
 
 import { createApiApp } from './api'
 import { deleteExpiredUnverifiedUsers } from './auth/cleanup'
+import { HL_CLIENT_SECRET } from './hl/config'
+import { OAUTH_STATE_SECRET } from './hl/state'
 
 setGlobalOptions({ region: 'asia-south1', maxInstances: 10 })
 
@@ -20,6 +22,19 @@ export const api = onRequest(
     // so an allowlist inside it never gets a say. Turned off here so the
     // allowlist in ./api is the only thing answering.
     cors: false,
+    /*
+     * Both of the OAuth flow's secrets, and only they.
+     *
+     * Declared here rather than beside their readers, which is the opposite of
+     * `ANTHROPIC_API_KEY`'s rule and deliberate: a `defineSecret` binds nothing
+     * by itself — it is this list that grants the function access — and `api` is
+     * one function assembled from a dozen routers, so the grant has to be stated
+     * where the function is, not once per module that happens to read one.
+     * `index.spec.ts` asserts both, and asserts `generate` has neither, because
+     * the emulator resolves a secret from `process.env` whether it was granted
+     * or not and so cannot tell a bound one from an unbound one.
+     */
+    secrets: [HL_CLIENT_SECRET, OAUTH_STATE_SECRET],
   },
   createApiApp(),
 )

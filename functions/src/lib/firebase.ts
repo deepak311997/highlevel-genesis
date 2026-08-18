@@ -3,6 +3,8 @@ import { getAppCheck, type AppCheck } from 'firebase-admin/app-check'
 import { getAuth, type Auth } from 'firebase-admin/auth'
 import { getFirestore, type Firestore } from 'firebase-admin/firestore'
 
+import { required } from './env'
+
 /**
  * Initialise the Admin SDK exactly once per container.
  *
@@ -57,13 +59,6 @@ export function getAppCheckService(): AppCheck {
 export function getDb(): Firestore {
   if (cached) return cached
 
-  const databaseId = process.env['FIRESTORE_DATABASE_ID']?.trim()
-  if (databaseId === undefined || databaseId === '') {
-    throw new Error(
-      'Missing FIRESTORE_DATABASE_ID. Set it in functions/.env — see functions/.env.example.',
-    )
-  }
-
-  cached = getFirestore(databaseId)
+  cached = getFirestore(required('FIRESTORE_DATABASE_ID'))
   return cached
 }

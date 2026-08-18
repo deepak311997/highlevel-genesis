@@ -1,4 +1,6 @@
-import { isEmulator } from '../lib/env'
+import { defineSecret } from 'firebase-functions/params'
+
+import { baseUrl, emulatorNumber, emulatorOverride, required, requiredSecret } from '../lib/env'
 
 /**
  * HighLevel configuration, resolved per call rather than at module scope.
@@ -46,40 +48,6 @@ export const HL_SCOPES = [
   'calendars/events.write',
 ] as const
 
-/**
- * A value the *test scripts* can force, which `.env` cannot overrule.
- *
- * The functions emulator loads `.env` and `.env.local` into the runtime and
- * those values **beat anything the shell exported** — which is the precedence
- * that once sent the local OAuth flow to the deployed site. It has a sharper
- * consequence for the suite: `.env.local` can be switched to the real
- * HighLevel for manual checks, and if tests inherited that they would exchange
- * real authorization codes against the live API with real credentials.
- *
- * These names appear in neither `.env` nor `.env.local`, so a shell value
- * survives, and they are honoured only under the emulator. That makes the suite
- * independent of whatever mode a developer happens to be in.
- */
-function emulatorOverride(name: string): string | undefined {
-  if (!isEmulator()) return undefined
-  const value = process.env[name]?.trim()
-  return value === undefined || value === '' ? undefined : value
-}
-
-function required(name: string): string {
-  const value = process.env[name]?.trim()
-  if (value === undefined || value === '') {
-    throw new Error(`Missing ${name}. Set it in functions/.env — see functions/.env.example.`)
-  }
-  return value
-}
-
-/** Trailing slashes are stripped so callers can always join with a leading one. */
-function baseUrl(name: string, fallback: string): string {
-  const value = process.env[name]?.trim()
-  return (value === undefined || value === '' ? fallback : value).replace(/\/+$/, '')
-}
-
 export function hlClientId(): string {
   return required('HL_CLIENT_ID')
 }
@@ -100,8 +68,28 @@ export function hlVersionId(): string {
   return required('HL_VERSION_ID')
 }
 
+/**
+ * The marketplace app's client secret, from Secret Manager.
+ *
+ * `defineSecret` rather than `required()`, for the reason `ANTHROPIC_API_KEY` is
+ * one (D19): everything left in `functions/.env` is uploaded as a plain
+ * environment variable on the Cloud Run service and is readable by anyone with
+ * Viewer on the project. This is half of the app's credentials and HighLevel
+ * displays it exactly once, at creation — so a leak here is not a rotation, it is
+ * a re-issue.
+ *
+ * Bound to `api` alone in `index.ts`. `generate` never exchanges an
+ * authorization code, so it is never granted this.
+ *
+ * Under the emulator `SecretParam.value()` reads `process.env`, which
+ * `functions/.env.local` populates with a fake — so the whole suite is unaffected
+ * by the move, and only the deployed endpoint can tell the difference. That is
+ * why `index.spec.ts` asserts the binding structurally.
+ */
+export const HL_CLIENT_SECRET = defineSecret('HL_CLIENT_SECRET')
+
 export function hlClientSecret(): string {
-  return required('HL_CLIENT_SECRET')
+  return requiredSecret(HL_CLIENT_SECRET, 'HL_CLIENT_SECRET')
 }
 
 /**
@@ -140,6 +128,5 @@ export const UPSTREAM_TIMEOUT_MS = 20_000
  * outright, so no deploy can shorten the real timeout.
  */
 export function hlUpstreamTimeoutMs(): number {
-  const raw = Number(emulatorOverride('HL_TEST_UPSTREAM_TIMEOUT_MS') ?? '')
-  return Number.isFinite(raw) && raw > 0 ? raw : UPSTREAM_TIMEOUT_MS
+  return emulatorNumber('HL_TEST_UPSTREAM_TIMEOUT_MS', UPSTREAM_TIMEOUT_MS)
 }
