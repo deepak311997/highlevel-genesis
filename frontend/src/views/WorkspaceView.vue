@@ -19,16 +19,14 @@ import { useWorkspaceStore } from '@/stores/workspace'
 /**
  * The three-panel workspace: chat, code and preview.
  *
- * **The project is fetched before the transcript, not beside it** (D25). The 404 is
- * the reason: fetched in parallel, a deleted project produces two failures and this
- * view has to decide which of them it is rendering, and a request goes out for a
- * transcript that cannot exist. In sequence there is one answer. The store owns that
- * order; this view only says which project.
+ * **The project is fetched before the transcript, not beside it.** Fetched in
+ * parallel, a deleted project produces two failures and this view has to decide
+ * which it is rendering; in sequence there is one answer.
  *
- * **The layout switch is a `v-if`, not Tailwind's `hidden lg:*`** (D16). CSS-only
- * visibility would leave both trees mounted at once, which makes "all three panels
- * are present" and "one panel is shown at a time" simultaneously true of the same
- * DOM — AC-23 and AC-24 would both pass against a broken screen. Mounting one tree at
+ * **The layout switch is a `v-if`, not Tailwind's `hidden lg:*`.** CSS-only
+ * visibility would leave both trees mounted at once, so "all three panels are
+ * present" and "one panel is shown at a time" would both be true of the same
+ * DOM. Mounting one tree at
  * a time also means one chat panel, so the composer's store-held draft (D17) is the
  * only thing that has to survive the swap.
  *
@@ -44,19 +42,12 @@ const route = useRoute()
 const isWide = useMediaQuery('(min-width: 1024px)')
 
 /**
- * The loading placeholder's code lines, as widths.
- *
- * Ragged on purpose — a stack of identical full-width bars reads as a table, and
- * the thing behind it is source. The array is the whole of the variation, so
- * nothing here needs a random number that would change on every render.
+ * The loading placeholder's code lines, as widths — ragged on purpose, since a
+ * stack of identical bars reads as a table and the thing behind it is source.
  */
 const CODE_LINES = ['w-3/4', 'w-full', 'w-5/6', 'w-1/2', 'w-11/12', 'w-2/3', 'w-4/5'] as const
 
-/**
- * The explorer rail's rows, same idea — shorter, and fewer, because a filename
- * is not a line of code and a list of seven equal bars beside seven other equal
- * bars reads as a table rather than as two different things.
- */
+/** The explorer rail's rows, same idea — shorter, and fewer. */
 const FILE_ROWS = ['w-2/3', 'w-5/6', 'w-1/2', 'w-3/4'] as const
 
 watch(
@@ -71,16 +62,13 @@ watch(
 /**
  * The header badge, from the connection itself.
  *
- * **This used to read the project's stored `locationId`** — a value snapshotted
- * when the project was created — which meant a project made before the account
- * was connected said "Not connected" for ever, while the dashboard said the
- * opposite about the same account. One connection cannot have two answers, so
- * the badge asks the thing that knows. `locationId` keeps its real job: which
- * location this project targets.
+ * It used to read the project's stored `locationId`, snapshotted at creation — so a
+ * project made before the account was connected said "Not connected" for ever while
+ * the dashboard said the opposite. One connection cannot have two answers.
  *
  * Red for missing and for expired alike: neither can read your CRM, and both are
- * fixed by the same button on the dashboard. Nothing is claimed while the status
- * request is in flight or after it failed — the badge would otherwise tell a
+ * fixed by the same button. Nothing is claimed while the status request is in
+ * flight or after it failed — the badge would otherwise tell a
  * connected user they are not connected.
  */
 const connection = computed<{ label: string; variant: 'good' | 'bad' } | null>(() => {
@@ -103,18 +91,14 @@ onMounted(() => {
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <!--
-      No answer yet.
-
-      **Still no panels** — AC-20, and three *mounted* panels during a load are
+      No answer yet, and **still no panels**: three mounted panels during a load are
       three components firing their own requests and rendering their own empty
-      states, which is three things that look broken. Drawing the space they will
-      occupy is a different claim, and the one a placeholder is for: this is the
-      workspace's own geometry — full-bleed, header rail, 25/40/35 columns —
-      rather than a lone bar in a centred column, which is the shape of no screen
-      in this app and turned every load into a layout shift.
+      states. Drawing the space they will occupy is a different claim — the
+      workspace's own geometry, rather than a lone bar in a centred column that
+      turned every load into a layout shift.
 
-      It follows the same `isWide` switch as the real thing, so the skeleton
-      never promises three columns to a viewport that is about to get tabs.
+      It follows the same `isWide` switch as the real thing, so the skeleton never
+      promises three columns to a viewport that is about to get tabs.
     -->
     <div
       v-if="workspace.projectLoading"
