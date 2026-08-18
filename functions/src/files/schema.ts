@@ -135,10 +135,20 @@ export type FileRejection =
   | { reason: 'unterminated'; path: string }
   | { reason: 'incomplete' }
   | { reason: 'write-failed' }
+  // A located change that could not be placed. The anchor is the model's claim
+  // about what it is changing, and these are the ways that claim fails.
+  | { reason: 'edit-unknown-file'; path: string }
+  | { reason: 'edit-no-match'; path: string }
+  | { reason: 'edit-ambiguous'; path: string }
+  | { reason: 'edit-malformed'; path: string }
+  | { reason: 'edit-stale'; path: string }
 
 /** The lead-in every set-level refusal shares, so the seven lines cannot drift. */
 const REFUSED = 'Genesis could not save the generated files:'
 const UNCHANGED = 'Nothing was changed.'
+
+/** The lead-in the located-change refusals share. */
+const CHANGE_REFUSED = 'Genesis could not apply the change'
 
 /**
  * The user-facing sentence for a refusal, and the only thing they are told.
@@ -163,6 +173,16 @@ export function fileErrorCopy(rejection: FileRejection): string {
       return 'The reply was cut short, so no files were saved. Try again.'
     case 'write-failed':
       return 'The generated files could not be saved. Try again.'
+    case 'edit-unknown-file':
+      return `${CHANGE_REFUSED}: "${displayPath(rejection.path)}" is not a file in this project. ${UNCHANGED}`
+    case 'edit-no-match':
+      return `${CHANGE_REFUSED} to "${displayPath(rejection.path)}": the text it was changing is no longer in the file. ${UNCHANGED}`
+    case 'edit-ambiguous':
+      return `${CHANGE_REFUSED} to "${displayPath(rejection.path)}": the text it was changing appears more than once, so Genesis could not tell which one to change. ${UNCHANGED}`
+    case 'edit-malformed':
+      return `${CHANGE_REFUSED} to "${displayPath(rejection.path)}": it was written in a form Genesis could not read. ${UNCHANGED}`
+    case 'edit-stale':
+      return `${CHANGE_REFUSED} to "${displayPath(rejection.path)}": the file changed while Genesis was writing. ${UNCHANGED}`
   }
 }
 
