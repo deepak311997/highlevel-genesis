@@ -1,5 +1,5 @@
 import { ApiError, apiUrl, errorForResponse } from './api'
-import { authHeaders } from './apiClient'
+import { authHeaders, noteApiError, noteSessionAlive } from './apiClient'
 import type { Message } from './messagesApi'
 import { createSseParser } from './sse'
 
@@ -161,8 +161,20 @@ export async function* streamGeneration(
     throw new ApiError('Something went wrong. Check your connection and try again.', 0)
   }
 
-  // Before a single event is yielded (AC-31).
-  if (!res.ok) throw await errorForResponse(res)
+  // Before a single event is yielded (AC-31) — and through `noteApiError`, so
+  // that a session which died while this tab sat open signs the user out from
+  // here too (AC-16). This is the only call in the app that does not go through
+  // `request`, so without these three lines it would be the one hole in the
+  // hook, on the call a long-open tab is most likely to make.
+  if (!res.ok) {
+    const err = await errorForResponse(res)
+    noteApiError(err)
+    throw err
+  }
+
+  // The stream opened, which is proof the session is alive: the same latch
+  // `request` clears, cleared from the same evidence.
+  noteSessionAlive()
 
   const reader = res.body?.getReader()
   if (reader === undefined) {
