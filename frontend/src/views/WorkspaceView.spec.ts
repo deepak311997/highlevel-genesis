@@ -63,6 +63,8 @@ vi.mock('vue-router', async () => {
 })
 
 const WorkspaceView = (await import('./WorkspaceView.vue')).default
+// The real component, so findAllComponents cannot silently match nothing.
+const { ResizablePanel } = await import('@/components/ui/resizable')
 
 /**
  * The workspace route — its three states, and the layout switch.
@@ -388,6 +390,44 @@ describe('WorkspaceView', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="workspace-connection"]').text()).toBe(label)
+  })
+
+  /*
+   * The wide layout's split, which is a product decision rather than a
+   * cosmetic one: the preview is the thing being demonstrated, so it gets half
+   * the width, and the chat gives up the space because a prompt is short.
+   *
+   * The min-sizes matter as much as the defaults — reka clamps a default that
+   * falls below its own minimum, so a chat min-size above 20 would silently
+   * undo this.
+   */
+  it('opens wide at 20 / 30 / 50, chat to preview', async () => {
+    // The three-panel layout is behind a media query, and jsdom reports no
+    // matchMedia at all — so without this the wide branch never renders and the
+    // assertion below passes vacuously against an empty list.
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+    }))
+    store.project = PROJECT
+
+    const wrapper = mount(WorkspaceView, MOUNT)
+    await flushPromises()
+
+    const panels = wrapper.findAllComponents(ResizablePanel)
+    expect(panels).toHaveLength(3)
+    expect(panels.map((panel) => panel.props('defaultSize'))).toEqual([20, 30, 50])
+    for (const panel of panels) {
+      expect(Number(panel.props('minSize'))).toBeLessThanOrEqual(
+        Number(panel.props('defaultSize')),
+      )
+    }
   })
 
   it('shows the project name and a link back to the dashboard in the header', async () => {

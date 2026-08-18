@@ -181,7 +181,16 @@ declare global {
   interface Window {
     monaco?: {
       editor: {
-        getEditors: () => { getModel: () => { getValue: () => string } | null }[]
+        // Only the surface the suite actually touches: an exact read of the
+        // text, and a selection set through the model rather than the view.
+        getEditors: () => {
+          getModel: () => {
+            getValue: () => string
+            getFullModelRange: () => unknown
+          } | null
+          setSelection: (range: unknown) => void
+          focus: () => void
+        }[]
       }
     }
   }
@@ -251,36 +260,41 @@ export async function setEditorContent(page: Page, text: string): Promise<void> 
 }
 
 /**
- * Select the whole document, **without a `Cmd`/`Ctrl` chord**.
+ * Select the whole document, **without a `Cmd`/`Ctrl` chord and without
+ * counting lines**.
  *
  * Measured against the running editor rather than guessed at. With the editor
  * focused (`hasTextFocus()` true, caret placed by the click), pressing
  * `ControlOrMeta+a` leaves `getSelection()` **completely unchanged** — as does
- * `ControlOrMeta+ArrowDown`. `Shift+ArrowDown` on its own moves it correctly. So
- * Monaco's keybindings work fine under Playwright; the modified chords are what
- * never arrive, which is why `Cmd+A` "select all" silently did nothing and the
- * following `Delete` fell through to the textarea's own native forward-delete,
- * removing exactly one character.
+ * `ControlOrMeta+ArrowDown`. So Monaco's keybindings work fine under Playwright;
+ * the modified chords are what never arrive, which is why `Cmd+A` "select all"
+ * silently did nothing and the following `Delete` fell through to the textarea's
+ * own native forward-delete, removing exactly one character.
  *
  * A corner-to-corner drag was tried instead and is worse: Monaco clamps the
  * endpoint to the last rendered line, leaving the tail of the file behind.
  *
- * So the selection is built out of the keys that do arrive, and **without
- * assuming where the caret starts**: the editor may be scrolled — a tab that was
- * streamed into has its view state restored at the tail — so the click's landing
- * line is not line 1. `ArrowUp` once per line reaches the top from anywhere,
- * `Home` pins the column, then `Shift+ArrowDown` once per line reaches the bottom
- * and `Shift+End` takes the last line's tail. Overshooting is harmless at both
- * ends: the cursor clamps.
+ * **This used to walk the document with `ArrowUp` / `Shift+ArrowDown`, once per
+ * newline, and that was wrong in a way only a layout change exposed.** Those
+ * keys move by *visual* line; the count was of *logical* lines. With word wrap
+ * on they are the same number only while nothing wraps — so the helper worked
+ * until the editor panel narrowed from 35% to 30% of the workspace, at which
+ * point the fixture wrapped, both loops fell short, and the first line survived
+ * the replace. The test that caught it read `<!doctype html>` twice.
+ *
+ * The selection is now set through the model, which has no visual dimension at
+ * all and so cannot be wrong at any width. The destructive half stays on the
+ * keyboard, because *that* is the part the test is pretending a person does.
  */
 export async function selectAllInEditor(page: Page): Promise<void> {
   await focusEditor(page)
-  const lines = ((await editorText(page)) ?? '').split('\n').length
-
-  for (let line = 0; line < lines; line += 1) await page.keyboard.press('ArrowUp')
-  await page.keyboard.press('Home')
-  for (let line = 0; line < lines; line += 1) await page.keyboard.press('Shift+ArrowDown')
-  await page.keyboard.press('Shift+End')
+  await page.evaluate(() => {
+    const editor = window.monaco?.editor.getEditors()[0]
+    const model = editor?.getModel()
+    if (editor === undefined || model === null || model === undefined) return
+    editor.setSelection(model.getFullModelRange())
+    editor.focus()
+  })
 }
 
 /** Put the caret in the editor, the way a person does — see `SURFACE`. */
