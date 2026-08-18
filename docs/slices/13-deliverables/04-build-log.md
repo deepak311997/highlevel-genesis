@@ -450,3 +450,74 @@ Empty. No screen, no rule, no index, no rules test changed — measured, not ass
 - `docs/slices/02-highlevel-connection/02-prd.md` and `docs/slices/08-highlevel-proxy/02-prd.md`
   still name `scripts/seed-sandbox.ts`. Left alone deliberately — see T17.
 
+## Acceptance criteria — the test that proves each
+
+Every criterion is L1. D15 settles the absence of an L5 walk: the slice adds no user-facing
+path, and the existing e2e suite is the regression gate.
+
+| AC | Test file | The `it(...)` that proves it |
+|---|---|---|
+| AC-1 | `scripts/check-secrets.spec.mjs` | `every variable in a package example is in the root example` (real files) · `names the variable and the file that has it` (fixture) |
+| AC-2 | `scripts/check-secrets.spec.mjs` | `declares exactly seven secrets, every one documented in the root example` · `writes no defineSecret name into functions/.env — only FIRESTORE_DATABASE_ID` · `reports a workflow line that writes a secret into functions/.env` · `throws on a heredoc redirect into functions/.env rather than reading nothing` |
+| AC-3 | `scripts/check-readme.spec.mjs` | `every `npm run` the real README names resolves` · `reports `npm run dev:emulator` at the root — the brief's own failing example` · `accepts the same script under `npm --prefix frontend`` |
+| AC-4 | `scripts/check-readme.spec.mjs` | `every path the real README names exists on disk` · `reports a script that no longer exists` · `reports a markdown link to a document that is not there` · `reports nothing for an external URL, an anchor, or an API route` |
+| AC-5 | `scripts/check-readme.spec.mjs` | `the real README carries all seven brief-named sections` · `names the section a README is missing` |
+| AC-6 | `scripts/check-readme.spec.mjs` | `the real README stays inside both caps` · `names the section and the count when an eleventh decision is added` · `…when a sixth improvement is added` |
+| AC-7 | `scripts/check-readme.spec.mjs` | `the real README carries both derived URLs in its Live URLs section` · `fails when `.firebaserc` alone names a different project` · `derives both URLs from the real .firebaserc and firebase.json` · `throws when the rewrites name two regions, rather than picking one` |
+| AC-8 | `scripts/check-readme.spec.mjs` | `the real README names `firebase emulators:start` and `npm run dev`` · `fails when local setup never names the emulator` · `fails when the root `dev` script stops wrapping the emulators` |
+| AC-9 | `functions/src/hl/readme.spec.ts` | `finds no difference between the README and HL_ROUTES`, plus nine mutations — added route, drifted `Version`, drifted scope, flag lost in either direction, row rendered twice, forgotten, invented, and no table at all |
+| AC-10 | `scripts/check-readme.spec.mjs` | `the real README makes none of them` · `reports an SDK call named in prose` · `reports the architecture decision the README carried on `main`` · `reports every claim a fixture makes, not just the first` |
+| AC-11 | `scripts/seed-sandbox.spec.mjs` | `prints 20 contact lines and 8 appointment lines and issues zero requests` · `needs no calendar — it prints <resolved at run time> for an omitted id` · `plans every appointment inside the next 14 days` |
+| AC-12 | `scripts/seed-sandbox.spec.mjs` | `issues exactly 28 requests: 20 contact creates and 8 appointment creates` · `carries the bearer token, Accept and the row Version on every request` · `carries the seed location id in every body` · `schedules every appointment inside the next 14 days, ISO 8601 with an offset` · `counts what it created and exits 0` |
+| AC-13 | `scripts/seed-sandbox.spec.mjs` | `counts every duplicate refusal as existing, not as a failure, and exits 0` · `still creates the 8 appointments, against the ids the refusals carried` |
+| AC-14 | `scripts/seed-sandbox.spec.mjs` | `rejects with SeedConfigError naming HL_SEED_TOKEN and issues zero requests` · `…naming HL_SEED_LOCATION_ID and issues zero requests` · `names the root .env.example, so the operator knows where the variable belongs` |
+| AC-15 | `scripts/seed-sandbox.spec.mjs` | `attempts the other 19 contacts when the third fails, and names it` · `records a network rejection exactly as it records a 5xx` · `records a failed appointment against a stable item string too` |
+| AC-16 | `scripts/seed-sandbox.spec.mjs` | `finds none of them in scripts/seed-sandbox.mjs` · `reports a mention wherever it is — an import, a URL, or a comment` · `imports nothing but Node built-ins` · `guards its CLI, so importing this module seeds nothing` |
+| AC-17 | `scripts/check-deliverables.spec.mjs` | `reports nothing for the real loom-script.md` · `is the brief golden path, in the brief order` · `spends the pinned budget on the nine beats, in order` · `leaves ten seconds of headroom under the budget` · plus four fixtures that make it fail |
+| AC-18 | `scripts/check-deliverables.spec.mjs` | `reports nothing for the real release-checklist.md` · `carries D2's three owners: 2 automated, 6 this PR, 11 human` · `names the line when an item has no owner tag` · `…carries two owner tags` · `…when the only tag is on a continuation line` |
+
+**No AC is unmapped, and every named test passes.** T6, T10 and T17 close no AC on their own,
+as the plan says: T6 is the calendar-resolution edge AC-12 depends on, T10 is the deliverable
+the checks hold true, T17 is D17 and the ledger.
+
+## Deviations from the plan
+
+| # | What | Why |
+|---|---|---|
+| D-B1 | One commit per task rather than a `test:` commit then a `feat:` one | The lanes' tasks grow the same two files, so the only states that exist are the green ones. A `test:` commit split out of a snapshot would be a red commit, which the skill forbids. Recorded above under *How this build was run*. |
+| D-B2 | Six exported names beyond the pinned interfaces — `printSummary` in `seed-sandbox.mjs`; `README`, `sectionProblems`, `liveUrlProblems`, `localSetupProblems`, `scriptCommand` in `check-readme.mjs` | All additive; no pinned name or shape was varied. Each exists because the plan's red step demands a failure message naming a specific thing, and the CLI must print the same string — formatting it in the spec would leave every line the CLI prints untested. |
+| D-B3 | `parseArgs` throws on an unknown flag rather than ignoring it | Unspecified either way. A silently-dropped `--calender-id` typo would seed against whichever calendar HighLevel lists first, which is the outcome the flag exists to prevent. |
+| D-B4 | `readConfig` reads `HL_API_BASE` as an optional override of the default base | Introduces no new variable — `HL_API_BASE` is already documented, and the operator block still needs only the two. It is what lets every seed test point at a stub without a global fetch mock. |
+| D-B5 | Two README corrections after T10, in `dd55da0` | Found by the fresh-clone walk, which is in the definition of done precisely to find claims no test reaches. Written up under *Manual verification*. |
+| C2 (plan) | AC-17 and AC-18 live in `check-deliverables.spec.mjs`, not `check-readme.spec.mjs` as the PRD's test matrix says | The plan took this deliberately, for lane disjointness and because a module should be named for what it checks. Same level, same suite, same assertions. |
+
+## Deferred
+
+Nothing from the plan's task list. Everything the slice cannot close from an unattended
+session is in `release-checklist.md` with an owner and a procedure — eleven human items,
+including the two hand-checks §9 owes (the server-side SSE disconnect, F6.5, and the
+client-disconnect partial persistence, F8.2).
+
+Out of scope and named as such: the live seed run, the Loom recording, registering the
+deployed redirect URI, and reading the Cloud Run environment by hand.
+
+## Final suite
+
+Run at `dd55da0`, on the branch, after every task:
+
+| Suite | Result |
+|---|---|
+| `npm run typecheck` | pass |
+| `npm run lint` | pass, zero warnings |
+| `functions` unit | 48 files, **1197** tests passed |
+| `frontend` unit | 73 files, **1062** tests passed |
+| `scripts` unit (`test:scripts`) | 7 files, **143** tests passed |
+| `test:rules` | 1 file, **52** tests passed |
+| `test:integration` | 17 files, **378** tests passed |
+| `npm test` | exit **0** |
+| `npm run test:e2e` | **19** passed, exit **0** |
+
+Baseline was 47 / 73 / 3 files and 1187 / 1062 / 25 tests, so this slice adds **1 functions
+spec file, 4 scripts spec files, and 128 tests**, and changes no existing one.
+
+<!-- build-complete -->
