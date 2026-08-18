@@ -1,6 +1,7 @@
 import { DOMWrapper, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
+import { toast } from 'vue-sonner'
 
 import type { Snapshot } from '@/lib/snapshotsApi'
 
@@ -29,6 +30,16 @@ const store = reactive({
 })
 
 vi.mock('@/stores/workspace', () => ({ useWorkspaceStore: () => store }))
+
+/**
+ * The toast region is mounted once at the app root, so the notice never renders
+ * inside this component's tree — what is asserted here is the call, which is the
+ * whole of the sheet's part in it. The bare `toast` is a function *and* the
+ * namespace its variants hang off, so the double is both.
+ */
+vi.mock('vue-sonner', () => ({
+  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
+}))
 
 const SnapshotSheet = (await import('./SnapshotSheet.vue')).default
 
@@ -91,7 +102,7 @@ beforeEach(() => {
   store.generating = false
   vi.clearAllMocks()
   store.loadSnapshots.mockResolvedValue(undefined)
-  store.restoreSnapshot.mockResolvedValue(undefined)
+  store.restoreSnapshot.mockResolvedValue('restored')
 })
 
 afterEach(() => {
@@ -378,5 +389,97 @@ describe('restoring', () => {
       expect(button.attributes('disabled')).toBeDefined()
     }
     expect(must('snapshot-generating').text()).not.toBe('')
+  })
+  /**
+   * AC-4 — a restore that worked says so, and **the sheet stays open**.
+   *
+   * Nothing on screen reports a successful restore: the files were already
+   * rendered, the row does not change, and the version the project is on is not
+   * written anywhere. The outcome is transient and leaves nothing to read, which
+   * is the one thing D4 lets a toast carry.
+   *
+   * The sheet staying open is the other half. A restore is the sort of thing a
+   * user does twice — try one version, read it, try the one before — and closing
+   * the history on them would make the second attempt a re-open and a re-fetch.
+   */
+  it('confirms a successful restore with a toast naming the version', async () => {
+    store.restoreSnapshot.mockResolvedValue('restored')
+    await openWithTwo()
+
+    await must('snapshot-restore').trigger('click')
+    await must('snapshot-confirm').trigger('click')
+    await flushPromises()
+
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith(expect.stringContaining('Version 2'))
+    expect(el('snapshot-sheet')).not.toBeNull()
+  })
+
+  /**
+   * AC-5, E8 — the restore of the version the project already is.
+   *
+   * The silent case Slice 11 shipped: the request went out, the server wrote
+   * nothing because there was nothing to write, and the sheet looked exactly as
+   * it does when a restore rewrote every file. It is not a failure — there is no
+   * error surface for it and there should not be one — so it is told the same
+   * way the success is, and it names the version so the user knows *which*
+   * version they are already on.
+   */
+  it('says so when the restore changed nothing', async () => {
+    store.restoreSnapshot.mockResolvedValue('unchanged')
+    await openWithTwo()
+
+    await must('snapshot-restore').trigger('click')
+    await must('snapshot-confirm').trigger('click')
+    await flushPromises()
+
+    expect(vi.mocked(toast)).toHaveBeenCalledWith(expect.stringContaining('Version 2'))
+    expect(vi.mocked(toast)).toHaveBeenCalledWith(expect.stringContaining('Nothing changed'))
+    expect(el('snapshot-restore-error')).toBeNull()
+  })
+
+  /**
+   * The seq is read from the row the user confirmed and never sent to the store.
+   *
+   * The toast needs the version's *number* and the store needs its *id*, and the
+   * cheap way to have both is to widen the call. That would give the restore
+   * route a second, redundant identifier for the thing it is already looking up
+   * — one the client could get wrong — so the number stays where it was read.
+   */
+  it('still calls the store with the snapshot id alone', async () => {
+    await openWithTwo()
+
+    await must('snapshot-restore').trigger('click')
+    await must('snapshot-confirm').trigger('click')
+    await flushPromises()
+
+    expect(store.restoreSnapshot).toHaveBeenCalledTimes(1)
+    expect(store.restoreSnapshot).toHaveBeenCalledWith('snap-2')
+  })
+  /**
+   * AC-6, E9, D4 — a failure stays where it can be read.
+   *
+   * The restore is the app's one transient notice, and it is deliberately not
+   * symmetric: success and the no-op leave nothing on screen, while a failure
+   * has a banner of its own inside this sheet, with the list still under it. A
+   * toast for it would give the user four seconds to read the server's reason
+   * and no way to get it back — and it would be raised over the banner saying
+   * the same thing, which is the duplication that makes people stop reading
+   * both.
+   */
+  it('renders a failed restore inline and toasts nothing', async () => {
+    store.restoreSnapshot.mockImplementation(() => {
+      store.restoreError = 'That version could not be restored. Try again.'
+      return Promise.resolve('failed')
+    })
+    await openWithTwo()
+
+    await must('snapshot-restore').trigger('click')
+    await must('snapshot-confirm').trigger('click')
+    await flushPromises()
+
+    expect(must('snapshot-restore-error').text()).toContain('could not be restored')
+    expect(vi.mocked(toast)).not.toHaveBeenCalled()
+    expect(vi.mocked(toast.success)).not.toHaveBeenCalled()
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled()
   })
 })
