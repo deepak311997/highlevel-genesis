@@ -220,27 +220,35 @@ jobs:
           echo "GET $SITE/api/health"
 
           # Retried: a fresh Cloud Run revision can take a few seconds to accept
-          # its first request, and a cold start is not a failed deploy.
+          # its first request, and a cold start is not a failed deploy. The `if`
+          # is doing real work — under `bash -e`, `body=$(curl) && break` leans on
+          # the AND-list exemption to keep looping, which is a subtlety no one
+          # should have to recall while reading a deploy gate.
+          body=""
           for attempt in 1 2 3 4 5; do
-            body=$(curl -fsS --max-time 30 "$SITE/api/health") && break
+            if body=$(curl -fsS --max-time 30 "$SITE/api/health"); then
+              break
+            fi
+            body=""
             echo "attempt $attempt failed; retrying in 10s"
             sleep 10
           done
 
-          if [ -z "${body:-}" ]; then
+          if [ -z "$body" ]; then
             echo "::error::/api/health never answered. The deploy uploaded; the service did not come up." >&2
             exit 1
           fi
 
           echo "$body"
-          node -e '
-            const body = JSON.parse(process.argv[1])
-            if (body.ok !== true) {
-              console.error("::error::/api/health answered without ok:true")
-              process.exit(1)
-            }
-            console.log(`round trip ${body.roundTripMs}ms (write ${body.writeMs}ms, read ${body.readMs}ms)`)
-          ' "$body"
+
+          # `jq -e` sets the exit status from the result, so a body that parses
+          # but says ok:false fails here rather than being printed and ignored.
+          if ! echo "$body" | jq -e '.ok == true' > /dev/null; then
+            echo "::error::/api/health answered, but not with ok:true" >&2
+            exit 1
+          fi
+
+          echo "$body" | jq -r '"round trip \(.roundTripMs)ms (write \(.writeMs)ms, read \(.readMs)ms)"'
 
       - name: Summary
         if: always()
