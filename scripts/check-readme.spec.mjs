@@ -6,10 +6,13 @@ import {
   BULLET_CAPS,
   README,
   REQUIRED_SECTIONS,
+  npmScriptsNamed,
   orderedItemCount,
+  scriptsOf,
   sectionBody,
   sectionProblems,
   sectionsOf,
+  unresolvedNpmScripts,
 } from './check-readme.mjs'
 
 /**
@@ -109,5 +112,54 @@ describe('bullet caps — AC-6', () => {
     const fixture = readmeFixture({ 'What I would improve': numbered(6) })
 
     expect(sectionProblems(fixture)).toEqual(['What I would improve: 6 numbered items, cap is 5'])
+  })
+})
+
+describe('npmScriptsNamed', () => {
+  it('reads the script and its `--prefix`, inside fences and in prose alike', () => {
+    const text = [
+      '```bash',
+      'npm run install:all      # root + frontend + functions',
+      'npm --prefix frontend run dev:emulator',
+      '```',
+      '',
+      'Run `npm run test:e2e` afterwards. `npm test` is not an `npm run`.',
+    ].join('\n')
+
+    expect(npmScriptsNamed(text)).toEqual([
+      { script: 'install:all', prefix: null },
+      { script: 'dev:emulator', prefix: 'frontend' },
+      { script: 'test:e2e', prefix: null },
+    ])
+  })
+})
+
+describe('scriptsOf', () => {
+  it('reads the root package when there is no prefix, and the prefixed one otherwise', () => {
+    expect(scriptsOf(null)).toContain('install:all')
+    expect(scriptsOf(null)).not.toContain('dev:emulator')
+    expect(scriptsOf('frontend')).toContain('dev:emulator')
+  })
+
+  it('is empty for a prefix with no package.json, so the script cannot resolve', () => {
+    expect(scriptsOf('nope')).toEqual([])
+  })
+})
+
+describe('npm run resolution — AC-3', () => {
+  it('every `npm run` the real README names resolves', () => {
+    expect(unresolvedNpmScripts(readme)).toEqual([])
+  })
+
+  it("reports `npm run dev:emulator` at the root — the brief's own failing example", () => {
+    const fixture = 'Then run `npm run dev:emulator` in a second terminal.\n'
+
+    expect(unresolvedNpmScripts(fixture)).toEqual([{ script: 'dev:emulator', prefix: null }])
+  })
+
+  it('accepts the same script under `npm --prefix frontend`', () => {
+    const fixture = 'Then run `npm --prefix frontend run dev:emulator` in a second terminal.\n'
+
+    expect(unresolvedNpmScripts(fixture)).toEqual([])
   })
 })

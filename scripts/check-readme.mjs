@@ -25,6 +25,7 @@
  *
  *   node scripts/check-readme.mjs
  */
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -89,4 +90,44 @@ export function sectionProblems(text) {
   })
 
   return [...missing, ...over]
+}
+
+/**
+ * Every `npm [--prefix P] run X` named anywhere in the text, fences included.
+ *
+ * Fences included on purpose: a command inside a ```bash block is the one a
+ * reader copies, so it is the one most worth checking.
+ */
+export function npmScriptsNamed(text) {
+  const pattern = /npm\s+(?:--prefix\s+(\S+)\s+)?run\s+([\w:.\-]+)/g
+
+  return [...text.matchAll(pattern)].map((match) => ({
+    script: match[2],
+    prefix: match[1] ?? null,
+  }))
+}
+
+/** Scripts declared by a package.json. `prefix` null => the root package. */
+export function scriptsOf(prefix, root = ROOT) {
+  const path = join(root, prefix ?? '.', 'package.json')
+  if (!existsSync(path)) return []
+
+  const { scripts } = JSON.parse(readFileSync(path, 'utf8'))
+
+  return Object.keys(scripts ?? {})
+}
+
+/**
+ * Those that do not resolve, under the prefix-aware rule.
+ *
+ * A bare `npm run X` resolves against the **root** package alone; `npm --prefix
+ * P run X` against P's. That distinction is the whole check. AC-3's own failing
+ * example is `npm run dev:emulator`, which the README on `main` told a reader to
+ * type at the repo root — and `dev:emulator` does exist, in
+ * `frontend/package.json`. Under a rule that pooled all three package files it
+ * would resolve, and the line that actually broke a fresh clone would pass. The
+ * prefix is not decoration; it is which package.json the command reaches.
+ */
+export function unresolvedNpmScripts(text, resolve = scriptsOf) {
+  return npmScriptsNamed(text).filter(({ script, prefix }) => !resolve(prefix).includes(script))
 }
