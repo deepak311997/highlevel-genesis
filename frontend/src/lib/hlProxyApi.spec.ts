@@ -23,10 +23,11 @@ const { ApiError } = await import('./api')
 /**
  * The browser's half of the proxy.
  *
- * Thin on purpose: the argument order is `HIGHLEVEL_PLATFORM.md` §8's `hl()` convention, so the
- * string Slice 9 teaches the model, the string Slice 10's shim receives and the string in the
- * URL are all the same string. Anything clever here — a per-surface method, a re-shaped response
- * — would be a translation table with nothing on the other side of it.
+ * Thin on purpose: the argument order is the `hl()` convention Slice 9 teaches
+ * the model and Slice 10's shim receives. The path is a stable Genesis CRM
+ * endpoint; the server owns the HighLevel mapping. Anything clever here — a
+ * per-surface method, a re-shaped response — would create a second client-side
+ * API surface to keep in sync.
  */
 
 let fetchMock: ReturnType<typeof vi.fn>
@@ -152,7 +153,7 @@ describe('hlProxy', () => {
     ['a query smuggled into the path', '/contacts/search?locationId=theirs'],
     ['an encoded separator', '/contacts/%2E%2E%2Foauth'],
   ])('refuses %s without issuing a request', async (_name, path) => {
-    await expect(hlProxy('GET', path)).rejects.toThrow(/HighLevel path/i)
+    await expect(hlProxy('GET', path)).rejects.toThrow(/Genesis CRM route/i)
     expect(fetchMock).not.toHaveBeenCalled()
   })
 

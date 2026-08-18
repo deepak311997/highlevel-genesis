@@ -6,13 +6,11 @@ import { request } from './apiClient'
  *
  * ## Why the signature looks like this
  *
- * `hlProxy('POST', '/contacts/search', { pageLimit: 1 })` is
- * `HIGHLEVEL_PLATFORM.md` §8's `hl()` convention, argument for argument, and
- * that is the point rather than a coincidence. Slice 9 teaches the model that
- * exact string; Slice 10's `srcdoc` shim will mirror it so generated code can
- * call `hl(...)` unchanged; and the URL it produces is `/api/hl/proxy` plus the
- * same path. There is no translation table between the string in the system
- * prompt and the string on the wire, because there is nothing to translate.
+ * `hlProxy('POST', '/contacts/search', { pageLimit: 1 })` is the same
+ * `hl()` convention Slice 9 teaches the model and Slice 10's `srcdoc` shim
+ * mirrors, so generated code can call `hl(...)` unchanged. The path is a stable
+ * Genesis CRM endpoint; the server maps it to whichever HighLevel endpoint backs
+ * it today.
  *
  * ## What it deliberately does not do
  *
@@ -45,8 +43,8 @@ const PROXY_BASE = '/api/hl/proxy'
  *
  * Segments of `[A-Za-z0-9_-]`, a leading slash, and an optional trailing one:
  * `routes.ts`'s `PARAM` rule, so this refuses exactly what `matchRoute` would
- * and nothing a legal HighLevel path needs. `.`, `%`, `:`, `?` and `//` are all
- * excluded by construction rather than searched for.
+ * and nothing a legal Genesis CRM route needs. `.`, `%`, `:`, `?` and `//` are
+ * all excluded by construction rather than searched for.
  */
 const HL_PATH = /^\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]*$/
 
@@ -62,7 +60,7 @@ export function hlProxy<T>(method: HlMethod, path: string, payload?: unknown): P
     // A rejection rather than a throw, so a caller awaiting three of these
     // sees one failed surface rather than one synchronous explosion — and an
     // `ApiError` so the store's existing failure handling renders it.
-    return Promise.reject(new ApiError('That is not a HighLevel path Genesis can call.', 400))
+    return Promise.reject(new ApiError('That is not a Genesis CRM route this app can call.', 400))
   }
 
   if (method === 'GET') {

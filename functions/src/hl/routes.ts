@@ -1,17 +1,20 @@
 import { hlApiBase } from './config'
 
 /**
- * The HighLevel allowlist — one table, three consumers.
+ * The Genesis-to-HighLevel endpoint map — one table, three consumers.
  *
- * The rows are **data**, not a `switch`: the proxy matches against them, the
- * system prompt's cheat-sheet renders them, and the README renders them again. A
- * table that is data can be rendered three ways.
+ * The rows are **data**, not a `switch`: the proxy matches generated apps
+ * against the stable Genesis endpoint in `pattern`, forwards through the
+ * HighLevel template in `upstreamPattern`, and the system prompt's cheat-sheet
+ * renders only the stable Genesis endpoints. A HighLevel API migration should
+ * change the backend mapping here, not the apps people already generated.
  *
  * **A generated app reaches HighLevel only through this file**, and the property
  * is stronger than filtering: the upstream URL is assembled by substituting
- * validated parameters into the matched row's **own pattern**, so no substring of
- * the caller's raw path can appear in it. `..`, `%2F`, `//`, an absolute URL and
- * an `@` userinfo trick are not rejected — they are unrepresentable.
+ * validated parameters into the matched row's **own upstreamPattern**, so no
+ * substring of the caller's raw path can appear in it. `..`, `%2F`, `//`, an
+ * absolute URL and an `@` userinfo trick are not rejected — they are
+ * unrepresentable.
  *
  * Two consequences, implemented below: parameters are validated **undecoded** (a
  * legal HighLevel id contains no `%`, so `%2E%2E%2F` fails the grammar as written
@@ -21,11 +24,13 @@ import { hlApiBase } from './config'
  * would be correct only by the order somebody typed them in.
  */
 
-/** A row of the allowlist. `:name` marks a path parameter. */
+/** A row of the endpoint map. `:name` marks a path parameter. */
 export interface HlRoute {
   method: 'GET' | 'POST' | 'PUT'
-  /** The HighLevel path, exactly as sent upstream. */
+  /** The stable Genesis proxy path generated apps call. */
   pattern: string
+  /** The HighLevel path template, exactly as sent upstream after substitution. */
+  upstreamPattern: string
   version: '2021-07-28' | '2021-04-15'
   scope: string
   /** Where the connection's `locationId` is injected, if anywhere. */
@@ -46,7 +51,8 @@ export type RouteMatch =
   | { kind: 'invalid_path' }
 
 /**
- * The rows, mapped onto the platform doc's verified paths.
+ * The rows, mapped from Genesis's stable endpoints to the platform doc's
+ * verified HighLevel paths.
  *
  * `locationIn` is per row because HighLevel is not consistent about it and the
  * inconsistency is load-bearing: `/contacts/search` with `locationId` in the
@@ -62,6 +68,7 @@ export const HL_ROUTES: readonly HlRoute[] = [
   {
     method: 'POST',
     pattern: '/contacts/search',
+    upstreamPattern: '/contacts/search',
     version: '2021-07-28',
     scope: 'contacts.readonly',
     locationIn: 'body',
@@ -69,6 +76,7 @@ export const HL_ROUTES: readonly HlRoute[] = [
   {
     method: 'GET',
     pattern: '/contacts/:contactId',
+    upstreamPattern: '/contacts/:contactId',
     version: '2021-07-28',
     scope: 'contacts.readonly',
     locationIn: null,
@@ -76,6 +84,7 @@ export const HL_ROUTES: readonly HlRoute[] = [
   {
     method: 'POST',
     pattern: '/contacts/',
+    upstreamPattern: '/contacts/',
     version: '2021-07-28',
     scope: 'contacts.write',
     locationIn: 'body',
@@ -85,6 +94,7 @@ export const HL_ROUTES: readonly HlRoute[] = [
   {
     method: 'PUT',
     pattern: '/contacts/:contactId',
+    upstreamPattern: '/contacts/:contactId',
     version: '2021-07-28',
     scope: 'contacts.write',
     locationIn: null,
@@ -92,6 +102,7 @@ export const HL_ROUTES: readonly HlRoute[] = [
   {
     method: 'GET',
     pattern: '/conversations/search',
+    upstreamPattern: '/conversations/search',
     version: '2021-04-15',
     scope: 'conversations.readonly',
     locationIn: 'query',
@@ -99,6 +110,7 @@ export const HL_ROUTES: readonly HlRoute[] = [
   {
     method: 'GET',
     pattern: '/conversations/:conversationId',
+    upstreamPattern: '/conversations/:conversationId',
     version: '2021-04-15',
     scope: 'conversations.readonly',
     locationIn: null,
@@ -106,6 +118,7 @@ export const HL_ROUTES: readonly HlRoute[] = [
   {
     method: 'GET',
     pattern: '/conversations/:conversationId/messages',
+    upstreamPattern: '/conversations/:conversationId/messages',
     version: '2021-04-15',
     scope: 'conversations/message.readonly',
     locationIn: null,
@@ -118,6 +131,7 @@ export const HL_ROUTES: readonly HlRoute[] = [
   {
     method: 'POST',
     pattern: '/conversations/messages',
+    upstreamPattern: '/conversations/messages',
     version: '2021-04-15',
     scope: 'conversations/message.write',
     locationIn: null,
@@ -126,6 +140,7 @@ export const HL_ROUTES: readonly HlRoute[] = [
   {
     method: 'GET',
     pattern: '/calendars/',
+    upstreamPattern: '/calendars/',
     version: '2021-04-15',
     scope: 'calendars.readonly',
     locationIn: 'query',
@@ -133,6 +148,7 @@ export const HL_ROUTES: readonly HlRoute[] = [
   {
     method: 'GET',
     pattern: '/calendars/:calendarId',
+    upstreamPattern: '/calendars/:calendarId',
     version: '2021-04-15',
     scope: 'calendars.readonly',
     locationIn: null,
@@ -140,6 +156,7 @@ export const HL_ROUTES: readonly HlRoute[] = [
   {
     method: 'GET',
     pattern: '/calendars/events',
+    upstreamPattern: '/calendars/events',
     version: '2021-04-15',
     scope: 'calendars/events.readonly',
     locationIn: 'query',
@@ -147,6 +164,7 @@ export const HL_ROUTES: readonly HlRoute[] = [
   {
     method: 'GET',
     pattern: '/calendars/events/appointments/:eventId',
+    upstreamPattern: '/calendars/events/appointments/:eventId',
     version: '2021-04-15',
     scope: 'calendars/events.readonly',
     locationIn: null,
@@ -154,6 +172,7 @@ export const HL_ROUTES: readonly HlRoute[] = [
   {
     method: 'GET',
     pattern: '/calendars/:calendarId/free-slots',
+    upstreamPattern: '/calendars/:calendarId/free-slots',
     version: '2021-04-15',
     scope: 'calendars.readonly',
     locationIn: null,
@@ -286,10 +305,10 @@ function isLocationKey(name: string): boolean {
 /**
  * The upstream URL, assembled from **the matched row** and never from a string.
  *
- * The signature is the argument: it takes an `HlRoute`, which only
- * {@link matchRoute} produces, plus parameters it re-checks against the grammar.
- * There is no overload accepting a path, so "the caller's path was concatenated
- * onto the base" is not a mistake this module can make.
+ * The signature is the argument: it takes an `HlRoute`, plus parameters it
+ * re-checks against the grammar. There is no overload accepting the caller's
+ * path, so "the caller's path was concatenated onto the base" is not a mistake
+ * this module can make.
  *
  * The re-check is not redundant: a claim that holds only because today's one
  * caller is careful is not a structural claim.
@@ -304,7 +323,7 @@ export function buildUpstreamUrl(
   rawQuery: string,
   locationId: string,
 ): URL {
-  const pathname = row.pattern.replace(/:(\w+)/g, (_match, name: string) => {
+  const pathname = row.upstreamPattern.replace(/:(\w+)/g, (_match, name: string) => {
     const value = params[name]
     if (value === undefined || !isLegalParam(value)) {
       throw new Error(`Refusing to build an upstream URL from an illegal ${name}`)

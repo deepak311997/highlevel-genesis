@@ -204,6 +204,7 @@ function withExtraRoute(table: readonly HlRoute[]): HlRoute[] {
     {
       method: 'POST',
       pattern: '/contacts/upsert',
+      upstreamPattern: '/contacts/upsert',
       version: '2021-07-28',
       scope: 'contacts.write',
       locationIn: 'body',
@@ -237,6 +238,7 @@ function withoutFlags(table: readonly HlRoute[]): HlRoute[] {
   return table.map((route): HlRoute => ({
     method: route.method,
     pattern: route.pattern,
+    upstreamPattern: route.upstreamPattern,
     version: route.version,
     scope: route.scope,
     locationIn: route.locationIn,
