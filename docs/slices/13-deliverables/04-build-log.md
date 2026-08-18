@@ -43,3 +43,39 @@ a state where that task's tests passed. No subagent ran git.
 
 ## Tasks
 
+### T1 — Root `.env.example` parity → AC-1 · `78c8e80`
+
+- **Red:** `it('every variable in a package example is in the root example')` in
+  `scripts/check-secrets.spec.mjs`, run over the **real** root, `frontend` and `functions`
+  example files. It failed naming exactly the four the root had drifted behind on —
+  `HL_VERSION_ID`, `HL_AUTHORIZE_BASE`, `HL_API_BASE`, `HL_ALLOW_MESSAGE_SEND`.
+- **Green:** `declaredVars(text)` and `missingFromRoot(rootText, packages)`; the four
+  variables added to the root file's functions block with the gloss each package file gives,
+  plus an **Operator scripts** block (`HL_SEED_TOKEN`, `HL_SEED_LOCATION_ID`) documented as
+  read by `scripts/seed-sandbox.mjs` and by nothing that deploys.
+- **Refactor:** the root file's header now records that parity is checked and that the check
+  is one-directional — the root may carry more, which is where the operator variables live.
+- **Tests:** 4 — `reads NAME= at the start of a line only, deduped, in order` ·
+  `names the variable and the file that has it` (temp-file fixture pair) ·
+  `does not complain that the root carries more than the packages` ·
+  `every variable in a package example is in the root example` (real files).
+- Failure path sanity-checked by removing `HL_API_BASE` from the root file in a scratch edit:
+  exit `1`, `HL_API_BASE is documented in functions/.env.example but not in .env.example.`
+
+### T2 — Secrets are Secret Manager's, not the deploy's → AC-2 · `1f14075`
+
+- **Red:** five tests, of which the one that mattered was C5's heredoc — with
+  `plainEnvVarsInDeploy` reading line-wise, `cat <<EOF > functions/.env` yields `[]`, and
+  `[]` is this check's word for *the deploy writes no secrets*. `expected [Function] to throw`.
+- **Green:** `definedSecrets(dir)` (walks `functions/src`, skips `*.spec.ts`, sorted uniques)
+  and `plainEnvVarsInDeploy(text)`, which now throws on a heredoc redirect naming the line
+  and the readable form. Guarded CLI `main` added.
+- **Refactor:** one docblock naming the seven secrets with the function each binds to, and
+  `FIRESTORE_DATABASE_ID` as the only plain variable the deploy writes.
+- **Tests:** 5 more — all seven `defineSecret` names asserted literally, so the list is
+  visible in the test; declarations read rather than the specs that mention them; the real
+  `deploy.yml` writes no secret; a fixture workflow line writing `ANTHROPIC_API_KEY=` is
+  reported; the heredoc throws.
+- **Measured today:** 7 secrets, 1 plain variable, empty intersection. `node
+  scripts/check-secrets.mjs` exits `0` printing all three findings.
+
