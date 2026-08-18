@@ -1,184 +1,125 @@
-<img src="brand/genesis-seed.svg" width="56" alt="">
+<img src="frontend/public/genesis-mark.svg" width="56" alt="">
 
 # Genesis — AI-Powered HighLevel App Builder
 
 Describe an app in chat; an LLM generates working code that calls **real HighLevel APIs**,
 streamed token-by-token into an editor, with a live preview rendering real CRM data.
 
-> **Status: twelve slices merged, one pull request each; this is the thirteenth.** Sign up
-> and verify, connect a HighLevel sub-account over OAuth, create a project, prompt it, watch
-> Claude stream files into Monaco, see the generated app render real contacts and
-> appointments through the server-side proxy, edit a file, and restore any earlier version.
-> The slice-by-slice record is [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md);
-> what each one had to prove is [`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md).
+Vue 3 · TypeScript · Vite · Tailwind · Pinia · Firebase (Auth, Firestore, Functions v2,
+Hosting) · Monaco · Claude via `@anthropic-ai/sdk`, always streaming.
+
+Sign up and verify, connect a HighLevel sub-account over OAuth, create a project, prompt it,
+watch Claude stream files into the editor, see the generated app render real contacts and
+appointments through the server-side proxy, edit a file, restore an earlier version. Built as
+fourteen vertical slices, one pull request each — the record is
+[`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md), the spec is
+[`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md).
 
 ---
 
 ## Live URLs
 
-|                             | URL                                                                                                                    |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Frontend (Firebase Hosting) | https://hl-genesis-app.web.app                                                                                         |
-| Cloud Functions base        | https://asia-south1-hl-genesis-app.cloudfunctions.net/api                                                              |
-| Health check                | https://hl-genesis-app.web.app/api/health                                                                              |
-| Loom walkthrough            | _pending — see [`docs/slices/13-deliverables/release-checklist.md`](docs/slices/13-deliverables/release-checklist.md)_ |
+| | |
+| --- | --- |
+| Frontend | https://hl-genesis-app.web.app |
+| Cloud Functions base | https://asia-south1-hl-genesis-app.cloudfunctions.net/api |
+| Generation endpoint | https://generate-aitsgtnk5a-el.a.run.app |
+| Health check | https://hl-genesis-app.web.app/api/health |
 
-Both origins are deployed continuously: `.github/workflows/deploy.yml` runs on every green CI
-run against `main` and smoke-tests `/api/health` afterwards. In production the SPA and the API
-are same-origin — Hosting rewrites `/api/**` and `/generate` to the two functions — so the
-`cloudfunctions.net` base URL above is the same code reached directly.
+Deployed on every green CI run against `main`.
 
-Neither URL is hard-coded in this file's tests: `scripts/check-readme.mjs` derives them from
-`.firebaserc`'s project id and the region pinned in `firebase.json`, so changing the project
-fails the suite rather than leaving a stale link here.
+`/api/**` reaches the `api` function through a Hosting rewrite, so those calls are
+same-origin. `/generate` deliberately does not: Hosting's CDN buffers a response to completion
+and drops the origin at 60 seconds, so a two-minute generation came back as a `502` and
+nothing ever streamed. It calls the function's own URL instead. Decision 9 has the numbers.
 
 ---
 
 ## Local setup
 
-Everything below runs against the Firebase emulators. **No Firebase project, no `.env`, and no
-credentials are needed** — the emulator build's configuration lives in
-`frontend/vite.config.ts` and the functions' fake HighLevel credentials in the committed
-`functions/.env.local`.
+Runs entirely on the Firebase emulators. No Firebase project, no `.env` and no credentials
+are needed.
 
-**Prerequisites**
-
-- Node.js 22 or newer
-- **A Java runtime** — the Firestore emulator needs it. `brew install --cask temurin` (macOS)
-  or any JDK 21 or newer: firebase-tools 14 warns below 21 and will stop supporting it. Without
-  a JDK at all, `firebase emulators:start` fails on Firestore.
-- No global `firebase` install is needed — `firebase-tools` is a root devDependency, so
-  `npm run install:all` brings it.
-
-**Three commands**
+**Prerequisites:** Node.js 22+, and a JDK 21+ for the Firestore emulator
+(`brew install --cask temurin`). No global `firebase` install — `firebase-tools` is a
+devDependency.
 
 ```bash
-git clone <this repo> && cd highlevel-genesis
 npm run install:all      # root + frontend + functions
 npm run dev              # emulators + Vite, one command
 ```
 
-`npm run dev` calls the **real** model, so it needs a real Anthropic key. Put one in
-`functions/.secret.local` — it is gitignored, and `scripts/ensure-secret-local.mjs` creates
-the file from its committed example on every run:
+Then open **http://localhost:5173**.
+
+`npm run dev` calls the real model, so it needs an Anthropic key in `functions/.secret.local`
+(gitignored, created from its example on every run):
 
 ```
 ANTHROPIC_API_KEY=sk-ant-…
 ```
 
-Until you do, the first generation refuses with a message naming that file rather than
-sending the example's placeholder to Anthropic and getting an opaque 401 back.
+No key, or offline? `npm run dev:stub` is the same loop against the fixture LLM.
 
-**No key, or offline?** `npm run dev:stub` is the same loop with the fixture LLM
-(`functions/src/llm/fake.ts`) instead — it costs nothing and needs no network, but it answers
-every prompt with the same canned reply, so it is for exercising the app rather than for
-watching a generation.
-
-Then open **http://localhost:5173**. Sign up with any address: the Auth emulator issues the
-verification link instead of sending mail, and serves it from its own endpoint —
+Sign up with any address. The Auth emulator issues the verification link instead of mailing
+it — open the `oobLink` from the newest entry:
 
 ```bash
 curl http://localhost:9099/emulator/v1/projects/demo-genesis/oobCodes
 ```
 
-Open the `oobLink` from the newest entry and the account is verified. Use `localhost`, not
-`127.0.0.1`, for the app: the Vite dev server binds IPv6 by default.
-
-`npm run dev` wraps `firebase emulators:exec` around the Vite server, so one Ctrl-C stops
-both and the emulator data is exported to `.emulator-data` on the way out. To run the
-emulators on their own — `firebase emulators:start` under the hood, with the functions built
-first — use:
-
-```bash
-npm run emulators                        # auth + firestore + functions, project demo-genesis
-npm --prefix frontend run dev:emulator   # in a second terminal, Vite wired to them
-```
-
-| Surface        | URL                                                |
-| -------------- | -------------------------------------------------- |
-| App (Vite dev) | http://localhost:5173                              |
-| Functions      | http://localhost:5001/demo-genesis/asia-south1/api |
-| Auth emulator  | http://localhost:9099                              |
-| Emulator UI    | http://localhost:4000 — `npm run emulators` only   |
-
-The Emulator UI is the one thing the two commands differ on: `emulators:start` serves it,
-`emulators:exec` — which is what `npm run dev` wraps around Vite — does not. Everything the
-UI would show is on the endpoints above, which is why the verification link is fetched from
-`oobCodes` rather than clicked out of a console.
-
-The emulators run under the throwaway project id `demo-genesis`, which keeps everything local
-and offline — with one deliberate exception under `npm run dev`, which reaches Anthropic. Auth,
-Firestore and HighLevel all stay faked; only the model is real, and only in that script.
-
-**Which model a local run gets, and why it is a switch rather than a default.** `openStream`
-(`functions/src/llm/client.ts`) takes the fake path under `FUNCTIONS_EMULATOR` *unless*
-`GENESIS_LOCAL_REAL_LLM=1`, which `npm run dev` sets and nothing else does. The direction of
-that default is load-bearing: `test:unit`, `test:integration` and `test:e2e` all run under the
-emulator and inherit the stub by construction, so CLAUDE.md's "the LLM is always stubbed in
-automated tests" holds for a suite nobody has written yet. The variable is read through
-`emulatorFlag`, so it appears in no `.env` file and a deployed build cannot reach it however
-its environment is set.
-
-**Running against real Firebase instead.** `npm run dev:cloud` points the SPA at whatever
-project is configured beside `frontend/.env.example` (copy it, then fill it in). The emulator
-wiring is selected by Vite **build mode**, not by a runtime flag, so a production bundle
-cannot reach an emulator even if something asked it to — which is why these are two commands
-rather than one with a switch.
+To run the emulators on their own (`firebase emulators:start` under the hood, functions built
+first) use `npm run emulators`, then `npm --prefix frontend run dev:emulator` in a second
+terminal. `npm run dev:cloud` points the SPA at real Firebase instead; copy
+`frontend/.env.example` first.
 
 **Tests**
 
 ```bash
 npm run typecheck         # vue-tsc + tsc
 npm run lint              # eslint, zero warnings tolerated
-npm run test:unit         # Vitest — pure logic, Vue components, and the repo's own scripts
-npm run test:rules        # Firestore security rules against the emulator
-npm run test:integration  # Cloud Functions end to end against the emulators
-npm run test:e2e          # Playwright — starts the emulators itself
-npm run test:scripts      # just the specs under scripts/
+npm run test:unit         # Vitest — logic, Vue components, the repo's own scripts
+npm run test:rules        # Firestore security rules
+npm run test:integration  # Cloud Functions against the emulators
+npm run test:e2e          # Playwright
 npm test                  # typecheck + lint + unit + rules + integration
 ```
 
-`test:rules`, `test:integration` and `test:e2e` start their own emulators and pass their own
-configuration inline, so all of them run from a fresh clone with nothing configured; the unit
-suites need neither. HighLevel and the LLM are always stubbed,
-from `tests/fixtures/`.
+The last four start their own emulators, so they run from a fresh clone with nothing
+configured. HighLevel and the LLM are always stubbed, from `tests/fixtures/`.
 
 ---
 
 ## HighLevel setup
 
-Only needed to run against a real sub-account; the emulator path fakes the whole OAuth loop.
+Only needed to run against a real sub-account — the emulator path fakes the whole OAuth loop.
 
-1. **Developer account** — sign up at
-   [marketplace.gohighlevel.com](https://marketplace.gohighlevel.com/), verify phone and email.
-2. **Create the app** — My Apps → Create App:
-   - **App Type:** Private (no marketplace review, no approval wait)
-   - **Target User:** Sub-account — this returns a **Location token directly**, so the
-     agency→location exchange never happens
-   - **Who Can Install:** Both Agency & Sub-account
+1. **Developer account** at [marketplace.gohighlevel.com](https://marketplace.gohighlevel.com/).
+2. **Create the app** — My Apps → Create App. Type **Private** (no review queue), Target User
+   **Sub-account**, which returns a Location token directly so the agency→location exchange
+   never happens.
 3. **Advanced Settings → Auth**
-   - **Redirect URL**, byte-identical to the one the OAuth request sends. For this deployment
-     that is **`https://hl-genesis-app.web.app/api/oauth/callback`**.
-     HighLevel rejects a redirect URL containing the string `highlevel`, which is why the
-     project id is `hl-genesis-app`; the project id is immutable, so pick a compliant one
-     before creating the Firebase project.
-   - **Scopes** — take all nine up front, because adding one later forces every existing
-     install to re-authorize: `locations.readonly`, `contacts.readonly`, `contacts.write`,
-     `conversations.readonly`, `conversations/message.readonly`,
-     `conversations/message.write`, `calendars.readonly`, `calendars/events.readonly`,
-     `calendars/events.write`. They are declared once, in
+   - **Redirect URL**, byte-identical to the one the OAuth request sends:
+     `https://hl-genesis-app.web.app/api/oauth/callback`. HighLevel rejects a redirect URL
+     containing the string `highlevel`, which is why the project id is `hl-genesis-app` — and
+     a project id is immutable, so choose a compliant one before creating the project.
+   - **Scopes** — take all nine up front; adding one later forces every existing install to
+     re-authorize. They are declared in
      [`functions/src/hl/config.ts`](functions/src/hl/config.ts).
-   - **Secrets → Client Keys → Add** generates the Client ID and Client Secret.
-     ⚠️ **The client secret is shown exactly once.** Put it straight into Secret Manager.
-4. **Version id** — the v2 authorize endpoint needs `version_id`, which the portal only shows
-   inside its own generated install link. Omit it and HighLevel answers with
-   `No integration found with the id: <app id>` — which names the app id, so it reads like a
-   bad client id and is not.
-5. **Sandbox account** — Developer Portal → Testing → _Create App Test Account_. Provisioned
-   instantly, valid for six months. This is the demo's data source; seed it below.
+   - **Client secret is shown exactly once.** Put it straight into Secret Manager.
+4. **Version id** — the v2 authorize endpoint needs `version_id`, and the portal only shows it
+   inside its own generated install link. Omit it and HighLevel answers `No integration found
+   with the id: <app id>`, which names the app id and so reads like a bad client id.
+5. **Sandbox account** — Developer Portal → Testing → *Create App Test Account*. Instant,
+   valid for six months. Seed it, after creating one calendar in its UI
+   (`calendars.write` is a scope this app deliberately does not request):
 
-Full research notes — verified request shapes, API versions and the gotchas that cost time —
-are in [`docs/HIGHLEVEL_PLATFORM.md`](docs/HIGHLEVEL_PLATFORM.md).
+   ```bash
+   export HL_SEED_TOKEN=<private integration token>
+   export HL_SEED_LOCATION_ID=<sandbox location id>
+
+   node scripts/seed-sandbox.mjs --dry-run   # prints the plan, issues zero requests
+   node scripts/seed-sandbox.mjs
+   ```
 
 ### HighLevel API allowlist
 
@@ -209,108 +150,62 @@ validated parameters into the matched row's own `upstreamPattern`, so a HighLeve
 upgrade changes the backend map rather than generated apps, and no substring of a caller's raw
 path can reach HighLevel.
 
-### Seeding the sandbox
-
-A fresh sandbox is empty, and the demo renders real records.
-[`scripts/seed-sandbox.mjs`](scripts/seed-sandbox.mjs) creates 20 contacts and 8 appointments —
-two per business day at 10:00 and 15:00 **UTC**, so the next four business days. It calls
-HighLevel directly — the proxy deliberately does not
-allowlist appointment creation — and authenticates with a Private Integration Token or an
-OAuth access token; the API is identical either way.
-
-```bash
-export HL_SEED_TOKEN=<private integration token>
-export HL_SEED_LOCATION_ID=<sandbox location id>
-
-node scripts/seed-sandbox.mjs --dry-run   # prints the plan, issues zero requests
-node scripts/seed-sandbox.mjs             # for real
-```
-
-Create the calendar once in the sandbox UI first — `calendars.write` is a scope this app
-deliberately does not request. The script picks the first calendar and its first team member
-unless `--calendar-id` and `--assigned-user-id` say otherwise, and a re-run is safe: HighLevel
-refuses a duplicate contact with the existing record's id, which the script counts as
-`existing` and carries into the appointment step.
-
----
-
-## Auth setup
-
-Sign-up runs through a Cloud Function rather than the Firebase client SDK, so the response
-cannot reveal whether an address is already registered. Everything else — sign-in,
-verification email, password reset — is the client SDK, because Firebase already sends those
-and does not disclose either.
-
-**Needed to run locally:** nothing. The Auth emulator generates the verification links itself,
-and the e2e suite reads them from `/emulator/v1/projects/demo-genesis/oobCodes`.
-
-**Needed to deploy:** no mail provider and no secret. Firebase sends from
-`noreply@<project>.firebaseapp.com`. Two console settings are worth making, neither of which
-needs a domain: customise the action URL to `https://hl-genesis-app.web.app/auth/action` so
-verification and reset links land on our own page, and set the sender name and subject.
-
-Two settings no test can verify, because the emulator enforces neither: **email enumeration
-protection** (sign-in and password reset go browser-to-Identity-Toolkit directly, so only this
-closes them — currently enabled) and the **password policy** (passwords are set through
-Identity Toolkit, so client-side validation alone is bypassable;
-`functions/src/auth/schema.ts` and `frontend/src/lib/password.ts` mirror it).
+Verified request shapes, API versions and the gotchas that cost time are in
+[`docs/HIGHLEVEL_PLATFORM.md`](docs/HIGHLEVEL_PLATFORM.md).
 
 ---
 
 ## Architecture decisions
 
-1. **`srcdoc` plus a runtime shim, not Sandpack.** The preview writes the generated app into a
-   sandboxed iframe with `allow-scripts` but deliberately **no** `allow-same-origin`, so the
-   frame has an opaque origin and cannot reach `/api/**` or read the session at all. The shim
-   inlines the project's own assets and exposes `hl(method, path, payload)`, which brokers
-   every HighLevel call to the host page over `postMessage`; the host calls the proxy. Under a
-   five-day clock that bought full control of the boundary; a real bundler runtime is the
-   follow-up.
-2. **Files are Firestore documents, not Cloud Storage objects.** They are small text blobs, and
-   documents make snapshot-and-restore a copy on one batch rather than a bucket-manifest
-   problem.
-3. **The generated app never holds a credential — the proxy is the confused-deputy fix.** It
-   calls `/api/hl/proxy/**`; the server attaches the HighLevel token and injects the
-   connection's `locationId`. A token inside the iframe would be readable in page source, and
-   the browser's own CORS would reject the call regardless.
-4. **Token refresh happens inside a Firestore transaction.** HighLevel rotates the refresh
-   token on use, so two concurrent requests refreshing the same connection would race one
-   rotation and invalidate the other. The transaction re-reads and short-circuits.
-5. **HighLevel API versions are date-pinned per route**, in the same table that authorises the
-   route, because `2021-07-28` and `2021-04-15` disagree about response shapes. Migrating to
-   their `v3` line is a known follow-up.
-6. **Data access is API-only; Firestore rules are the deny-all backstop.** The SPA holds no
-   Firestore handle at all — every read and write is a Cloud Function route that verifies the
-   ID token, checks `email_verified`, parses with Zod and scopes the query by the uid inside
-   the token. The rules deny every client outright, so a mistake in a route is a bug rather
-   than a breach, and three checks (an ESLint rule, a source scan, and a scan of the built
-   bundle) keep the SDK out.
-7. **A `<genesis:file>` tag pair, not fenced code blocks.** File boundaries are emitted as the
-   reply streams, so the editor can open a tab and fill it live; a fenced block only tells you
-   where a file ended once it has. Zod validates the whole set after the stream closes, and
-   nothing is written until it does.
-8. **The HighLevel cheat-sheet sits behind a `cache_control` breakpoint.** It is byte-identical
-   on every generation, so it should be a cache read rather than a re-send.
-9. **Two functions, not one.** `generate` carries a 540-second timeout and 512 MiB for
-   streaming; `api` stays at the default 60 seconds and 256 MiB. Merging them would make every
-   CRUD request pay the streaming function's runtime profile.
-10. **Vertical slices, one pull request each.** Every slice ships UI, API, data and tests
-    together and is demoable when it merges — no branch accumulates a backend with no screen.
+1. **Email verification is a gate on every request, not a prompt at signup.** Registration is
+   a server route that creates the account unverified, and every authenticated route re-reads
+   `email_verified` out of the decoded ID token.
+2. **Data access is API-only; Firestore rules are the deny-all backstop.** The SPA holds no
+   Firestore handle — every read and write is a Cloud Function route that verifies the ID
+   token, parses with Zod and scopes the query by the uid *inside the token*, never by a path
+   segment. A mistake in a route is then a bug rather than a breach.
+3. **OAuth runs inside a Cloud Function, on an encrypted `state` that expires in five minutes.**
+   AES-256-GCM over the uid and an expiry — encrypted rather than signed, because this value
+   travels through another company's logs and the browser's history. Binding the uid into it
+   is the CSRF defence. The browser never sees a client id, a secret or a token.
+4. **HighLevel tokens are parsed on arrival and sealed at rest.** A discriminated union on
+   `userType` means a `Company` token is never mistaken for a location-scoped one; both tokens
+   are then AES-256-GCM-sealed under their own secret, so a leaked Firestore read is no longer
+   a live token. Refresh runs in a transaction, because HighLevel rotates the refresh token on
+   use and two concurrent requests would race one rotation.
+5. **The generated app never holds a credential — the proxy is the confused-deputy fix.** It
+   calls `/api/hl/proxy/**`; the server attaches the token and injects the connection's
+   `locationId`, so the app needs nothing but the signed-in user's session.
+6. **That proxy is a stable API surface, not a passthrough.** Generated apps call thirteen
+   fixed Genesis routes; the upstream URL and the date-pinned API version live in a table on
+   the server, so when HighLevel moves an endpoint the map changes and apps generated months
+   ago keep working. Anything off the table answers `403 route_not_allowed`.
+7. **A `<genesis:file>` tag pair, not fenced code blocks — and four edit verbs beside it.**
+   Tags let the editor open a tab and fill it live, where a fenced block only tells you where a
+   file ended once it has. `append`, `after`, `before` and `edit` resolve to a line range on the
+   server, so a follow-up prompt patches a file instead of re-emitting it: about 400 output
+   tokens where a rewrite costs 3,500.
+8. **The HighLevel cheat-sheet sits behind a `cache_control` breakpoint.** It is the largest
+   byte-stable part of the prompt, so it is a cache read at a tenth of the input price — and it
+   comes off the time to first token, which is what the user watches.
+9. **Two functions, not one — and the streaming one bypasses Hosting.** `generate` gets 540
+    seconds and 512 MiB; `api` stays at 60 seconds and 256 MiB. Hosting's CDN buffers a
+    response to completion and drops the origin at 60 seconds, which turned every long
+    generation into a `502` and meant nothing had ever really streamed — 11.8s to first byte
+    through it against 0.35s direct.
 
 ---
 
 ## What I would improve
 
-1. **Iterative refinement and generation cancellation.** The two bonus items that most change
-   how the product feels; both were scoped out to protect the core path.
-2. **A real preview runtime** — Sandpack or WebContainers — so a generated app can use npm
-   packages instead of what the shim provides.
-3. **Per-user rate limiting and cost accounting on `generate`.** A loop in a generated app can
-   run up an Anthropic bill with nothing in front of it.
-4. **Migrate the HighLevel version pin from the date-based headers to `v3`**, which is where
-   their documentation is moving.
-5. **Recorded LLM fixtures for the whole golden path**, so the e2e suite could assert on
-   generated output without spending tokens or depending on model nondeterminism.
+1. **A structural pass over the code.** Shipping one vertical slice at a time kept every merge
+   demoable but left the seams uneven; route wiring, the HighLevel client and the frontend
+   stores each want a deliberate refactor.
+2. **Usage and billing.** Tokens consumed per generation, a cost per app, a running total on
+   the dashboard — and a per-user rate limit in front of `generate`, which today has nothing
+   between it and the model.
+3. **Export the generated app back into HighLevel.** These belong as a custom menu view inside
+   the sub-account's own CRM, so an agency builds a view here and then uses it where it works.
 
 ---
 
@@ -319,13 +214,11 @@ Identity Toolkit, so client-side validation alone is bypassable;
 Production deploys run from GitHub Actions —
 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
 
-**On every merge to `main`**, once CI has gone green on that exact commit. The deploy is
-triggered by CI's completion rather than by the push, so it can read the SHA that was
-verified: a `push` trigger would race CI and could put an untested commit in front of users. A
-red CI means no deploy.
+**On every merge to `main`**, once CI is green on that exact commit. The deploy is triggered
+by CI's completion rather than by the push, so it deploys the SHA that was verified. A red CI
+means no deploy.
 
-**On demand**, from the Actions tab or the CLI — for a redeploy, a configuration change that
-needs no commit, or a way back after a bad one:
+**On demand**, for a redeploy, a config change that needs no commit, or a way back:
 
 ```bash
 gh workflow run deploy.yml                                   # everything, from main
@@ -333,102 +226,59 @@ gh workflow run deploy.yml -f targets=hosting                # just the SPA
 gh workflow run deploy.yml -f targets=functions -f ref=<sha> # roll back the API
 ```
 
-A default run builds the SPA, re-runs the bundle's no-Firestore-SDK check, deploys functions,
-Hosting and the Firestore rules and indexes, and then **smoke-tests the result**: it calls the
-deployed `/api/health`, which writes a Firestore document, reads it back and deletes it. A 200
-there proves the Hosting rewrite reaches the function, the function booted, its configuration
-arrived, and the Admin SDK can reach the named database — four things a successful upload
-proves nothing about.
+A run builds the SPA, deploys functions, Hosting and the Firestore rules and indexes, then
+smoke-tests the deployed `/api/health` — which writes a document, reads it back and deletes
+it, proving the function booted and its configuration arrived.
 
-### Configuration, and where each value lives
-
-**GitHub holds exactly one secret**, the service account key. Everything else is either in
-Secret Manager or already committed — GitHub prints a step's `env:` block into the run log and
-masks a secret but not a variable, and this repository is public, so a repository variable was
-a published value.
-
-|                                   | Where it lives                     | Why                                                                                  |
-| --------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------ |
-| `FIREBASE_SERVICE_ACCOUNT`        | GitHub secret                      | The one credential the workflow itself needs                                         |
-| Project id, Firestore database id | `.firebaserc`, `firebase.json`     | Already committed; the workflow reads them rather than keeping a second copy         |
-| `FRONTEND_ENV`                    | Secret Manager                     | The SPA's `.env`, fetched straight to disk at deploy time, never through a variable  |
-| Seven function values             | Secret Manager, as `defineSecret`s | Attached to the Cloud Run revision as `secretKeyRef`s and resolved at instance start |
-
-The seven are `ANTHROPIC_API_KEY`, `OAUTH_STATE_SECRET`, `HL_CLIENT_ID`, `HL_CLIENT_SECRET`,
-`HL_VERSION_ID`, `HL_REDIRECT_URI` and `ALLOWED_ORIGINS`. The **only** plain environment
-variable the deploy writes into the functions' `.env` is `FIRESTORE_DATABASE_ID`, which it
-reads out of `firebase.json`. That split is not a convention anyone has to remember:
+**Configuration.** GitHub holds exactly one secret, the service account key; a repository
+variable would be printed into the run log, and this repo is public. Everything else is in
+Secret Manager — `FRONTEND_ENV` (the SPA's `.env`, fetched straight to disk at build time) and
+eight `defineSecret` values — or already committed, in `.firebaserc` and `firebase.json`. The
+`VITE_*` values are not secret; Vite compiles them into the bundle. Secret Manager just keeps
+configuration in one place and out of the deploy log.
 [`scripts/check-secrets.mjs`](scripts/check-secrets.mjs) fails the suite if a `defineSecret`
-name is undocumented in [`.env.example`](.env.example) or if the workflow writes one into the
-functions' `.env`.
+is undocumented in [`.env.example`](.env.example) or written into the functions' `.env`.
 
-To be clear about what Secret Manager does and does not buy here: the `VITE_*` values are
-**not secret**. Vite compiles them into the bundle, which is served to every visitor. What
-changes is that configuration has one home instead of two, and the deploy log is no longer one
-of the places it appears.
+`HL_TOKEN_SECRET` is the key the stored HighLevel tokens are sealed under, and the deploy
+fails without it — `firebase functions:secrets:set HL_TOKEN_SECRET`. Firestore's own
+encryption at rest protects the disks; this protects against anything holding a Firestore
+*read*, which is the more likely way a token leaks.
 
-### One-time setup
+`FRONTEND_ENV` must carry `VITE_GENERATE_URL`, and the deploy stops if it does not: blank, the
+SPA sends the streaming turn back through the Hosting rewrite, which ships looking correct and
+fails only on generations past a minute. After editing the file:
+
+```bash
+gcloud secrets versions add FRONTEND_ENV --data-file=frontend/.env
+```
+
+**One-time setup.** [`scripts/setup-deploy.sh`](scripts/setup-deploy.sh) creates the
+`github-deployer` service account, grants only the roles a `firebase deploy` needs, puts a key
+in the `FIREBASE_SERVICE_ACCOUNT` repository secret and pushes every configured value into
+Secret Manager. Idempotent — re-run it whenever a value changes.
 
 ```bash
 gcloud auth login          # as an owner of the Firebase project
 scripts/setup-deploy.sh    # --dry-run first, if you like
 ```
 
-That creates the `github-deployer` service account, grants it the roles a `firebase deploy`
-actually needs — enumerated in the script, each with the failure it prevents, never
-`roles/owner` — puts a key in the `FIREBASE_SERVICE_ACCOUNT` repository secret, and pushes
-every configured value into Secret Manager. It is idempotent; re-run it whenever a value
-changes.
-
-### Notes
-
-- Deploying by hand still works — `npm run build` then `npx firebase deploy` — and is the
-  right move when you are debugging the deploy itself rather than shipping.
-- After the first deploy, register the deployed callback URL on the HighLevel marketplace app.
-  It must match the OAuth request exactly.
-- Hosting rewrites `/api/**` → `api` and `/generate` → `generate`, so the SPA and the API are
-  same-origin in production and CORS never enters the picture.
-- CI runs typecheck, lint and all five test levels on every pull request and on `main`.
-- What is left in human hands after this branch merges — registering the redirect URI, seeding
-  the sandbox for real, recording the Loom — is listed with its procedure in
-  [`docs/slices/13-deliverables/release-checklist.md`](docs/slices/13-deliverables/release-checklist.md).
+**Manual steps.** Register the deployed callback URL on the HighLevel marketplace app after
+the first deploy; it must match the OAuth request exactly. Deploying by hand still works —
+`npm run build`, then `npx firebase deploy` — and is the right move when debugging the deploy
+itself. Hosting's `/generate` rewrite stays in `firebase.json` so a browser holding a stale
+bundle keeps working rather than 404ing.
 
 ---
 
 ## Repository layout
 
 ```
-frontend/           Vue 3 + TypeScript + Vite + Tailwind + shadcn-vue
-  src/views/          screens — auth, dashboard, workspace
-  src/components/     workspace panels, editor, preview, snapshots
-  src/stores/         Pinia — session, projects, files, generation
-  src/router/         routes and the access guard
-  src/composables/    shared reactive helpers
-  src/lib/            API client, validation, formatting, the preview shim
-functions/          Firebase Cloud Functions (TypeScript)
-  src/api/            express app assembly — CORS allowlist, router mounts, health
-  src/auth/           server-side registration
-  src/users/          the profile route
-  src/hl/             OAuth, callback, token store, the allowlist and the proxy
-  src/llm/            Claude client, prompt assembly, stream parsing
-  src/projects/       projects
-  src/files/          project files
-  src/messages/       chat transcript
-  src/snapshots/      versions, and restore
-  src/lib/            env, logging, error envelopes, Zod parsing helpers
-  src/generate.ts     SSE streaming endpoint
-tests/rules/        Firestore security rules tests (L3)
-tests/integration/  Cloud Functions against the emulators (L4)
-tests/e2e/          Playwright end-to-end walks (L5)
-tests/fixtures/     recorded HighLevel and LLM responses — never live calls
-scripts/            repo checks and operator scripts — every .mjs one with a spec beside it
-brand/              logo and identity assets
-docs/               PRODUCT_SPEC · HIGHLEVEL_PLATFORM · IMPLEMENTATION_PLAN
-docs/slices/        per-slice PRD, plan, build log and review
-firebase.json       hosting, functions, firestore, emulators
-firestore.rules     security rules — deny by default, for every client
-.env.example        every environment variable in the project, documented
+frontend/     Vue 3 SPA — views, workspace panels, Pinia stores, router, API client
+functions/    Cloud Functions — auth, HighLevel OAuth and proxy, projects, files,
+              messages, snapshots, the LLM client, and generate.ts (the SSE endpoint)
+tests/        rules (L3), integration (L4), e2e (L5), and recorded fixtures
+scripts/      repo checks and operator scripts — every .mjs one with a spec beside it
+docs/         PRODUCT_SPEC · HIGHLEVEL_PLATFORM · IMPLEMENTATION_PLAN · docs/slices/
 ```
 
-Working conventions live in [`CLAUDE.md`](CLAUDE.md); the slice-by-slice plan lives in
-[`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
+Unit tests (L1, L2) sit beside the code they cover, as `*.spec.ts`.

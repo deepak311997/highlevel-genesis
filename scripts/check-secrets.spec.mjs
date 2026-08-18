@@ -106,11 +106,11 @@ describe('missingFromRoot', () => {
  *
  * Everything `.github/workflows/deploy.yml` writes into `functions/.env` is uploaded as a plain
  * environment variable on the Cloud Run service, where anyone with Viewer on the project can
- * read it. The seven `defineSecret` declarations exist so those values are fetched at runtime
+ * read it. The eight `defineSecret` declarations exist so those values are fetched at runtime
  * instead; this pair of checks is what keeps one from quietly moving back into the file.
  */
 describe('definedSecrets', () => {
-  it('declares exactly seven secrets, every one documented in the root example', () => {
+  it('declares exactly eight secrets, every one documented in the root example', () => {
     const secrets = definedSecrets()
 
     expect(secrets).toEqual([
@@ -119,6 +119,7 @@ describe('definedSecrets', () => {
       'HL_CLIENT_ID',
       'HL_CLIENT_SECRET',
       'HL_REDIRECT_URI',
+      'HL_TOKEN_SECRET',
       'HL_VERSION_ID',
       'OAUTH_STATE_SECRET',
     ])

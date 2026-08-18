@@ -10,6 +10,7 @@ import {
   resetEmulators,
   seedUser,
 } from './helpers'
+import { isSealed, openToken } from '../../functions/src/hl/tokenCrypto'
 
 /**
  * The token rotation, and the hazard it carries.
@@ -59,7 +60,21 @@ async function seedConnection(expiresInMs: number, refreshToken = SEEDED_REFRESH
     })
 }
 
+/**
+ * The connection, with its tokens **opened** — so every assertion below reads in
+ * plaintext, as it did before the tokens were sealed at rest.
+ *
+ * `seedConnection` deliberately writes them bare, which is not a shortcut: it is
+ * the connection that existed before sealing did, and every test here that starts
+ * from a seed is therefore also exercising the legacy read path.
+ */
 async function stored(): Promise<StoredConnection> {
+  const raw = await storedRaw()
+  return { ...raw, accessToken: openToken(raw.accessToken), refreshToken: openToken(raw.refreshToken) }
+}
+
+/** The document exactly as Firestore holds it — for asserting what is at rest. */
+async function storedRaw(): Promise<StoredConnection> {
   const snapshot = await adminDb().doc(`hlConnections/${aliceUid}`).get()
   return snapshot.data() as unknown as StoredConnection
 }
@@ -120,6 +135,34 @@ describe('the transactional refresh', () => {
     // A successful rotation says nothing about the connection being dead, and
     // writing it here would strand the user behind a Reconnect button.
     expect(after.needsReconnect).toBe(false)
+  })
+
+  /*
+   * The sealing, asserted where it has to be true: in Firestore, not in a unit.
+   *
+   * One test covers both halves of the migration. `seedConnection` writes bare
+   * tokens — a connection made before sealing existed — and the call still
+   * authorises, which is the legacy read. The rotation that same call triggers
+   * writes the replacements back sealed, which is how the plaintext leaves
+   * without anyone being asked to reconnect.
+   */
+  it('reads a legacy plaintext token and writes the rotation back sealed', async () => {
+    await seedConnection(INSIDE_SKEW_MS)
+
+    const before = await storedRaw()
+    expect(isSealed(before.accessToken)).toBe(false)
+
+    const res = await postJson('/api/hl/proxy/contacts/search', { pageLimit: 1 }, auth())
+    expect(res.status).toBe(200)
+
+    const raw = await storedRaw()
+    expect(isSealed(raw.accessToken)).toBe(true)
+    expect(isSealed(raw.refreshToken)).toBe(true)
+    // Not merely prefixed — the token itself is not sitting in the document.
+    expect(raw.accessToken).not.toContain(SEEDED_ACCESS)
+    expect(raw.refreshToken).not.toContain(SEEDED_REFRESH)
+    // And it still opens to the grant the refresh issued.
+    expect(openToken(raw.accessToken)).toBe((await stored()).accessToken)
   })
 
   /* The short-circuit, proved deterministically. */

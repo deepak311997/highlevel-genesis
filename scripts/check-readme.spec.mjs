@@ -199,14 +199,14 @@ describe('pathsNamed', () => {
   it('takes bare `<root>/…` tokens, trimming backticks and trailing punctuation', () => {
     const text = [
       'It calls `scripts/seed-sandbox.mjs`, then reads docs/PRODUCT_SPEC.md.',
-      '<img src="brand/genesis-seed.svg" alt="">',
+      '<img src="frontend/public/genesis-mark.svg" alt="">',
       'Fixtures live in `tests/fixtures/`.',
     ].join('\n')
 
     expect(pathsNamed(text)).toEqual([
       'scripts/seed-sandbox.mjs',
       'docs/PRODUCT_SPEC.md',
-      'brand/genesis-seed.svg',
+      'frontend/public/genesis-mark.svg',
       'tests/fixtures/',
     ])
   })

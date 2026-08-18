@@ -58,7 +58,7 @@ ROLES=(
   roles/artifactregistry.admin            # the build pushes a container image
   roles/cloudbuild.builds.editor          # ...and Cloud Build is what builds it
   roles/iam.serviceAccountUser            # actAs the functions' runtime service account
-  roles/secretmanager.admin               # bind ANTHROPIC_API_KEY, HL_CLIENT_SECRET, OAUTH_STATE_SECRET
+  roles/secretmanager.admin               # bind ANTHROPIC_API_KEY, HL_CLIENT_SECRET, OAUTH_STATE_SECRET, HL_TOKEN_SECRET
   roles/cloudscheduler.admin              # the onSchedule sweep needs a Scheduler job
   roles/serviceusage.serviceUsageConsumer # quota project for every API call above
   roles/eventarc.admin                    # v2 triggers are wired through Eventarc
@@ -223,7 +223,7 @@ put_secret() { # name, value
 }
 
 # The four that the `api` function declares with defineSecret. The credentials it
-# also declares — HL_CLIENT_SECRET, OAUTH_STATE_SECRET, ANTHROPIC_API_KEY — are
+# also declares — HL_CLIENT_SECRET, OAUTH_STATE_SECRET, HL_TOKEN_SECRET, ANTHROPIC_API_KEY — are
 # checked below rather than written, because this script never handles a value a
 # human has not already put somewhere deliberate.
 for key in HL_CLIENT_ID HL_VERSION_ID HL_REDIRECT_URI ALLOWED_ORIGINS; do
@@ -277,7 +277,7 @@ echo "  keeping FIREBASE_SERVICE_ACCOUNT"
 # which it deliberately never does.
 say "7. Secret Manager — the credentials"
 MISSING=()
-for secret in ANTHROPIC_API_KEY HL_CLIENT_SECRET OAUTH_STATE_SECRET; do
+for secret in ANTHROPIC_API_KEY HL_CLIENT_SECRET OAUTH_STATE_SECRET HL_TOKEN_SECRET; do
   if gcloud secrets describe "$secret" --project "$PROJECT_ID" >/dev/null 2>&1; then
     echo "  $secret exists"
   else
