@@ -2,26 +2,19 @@
 /**
  * Seed a HighLevel sandbox location with demo data — 20 contacts, 8 appointments.
  *
- * The demo the assignment is graded on renders real CRM data, and an empty
- * sandbox renders nothing. This fills one, from the operator's own token:
+ * The demo the assignment is graded on renders real CRM data, and an empty sandbox renders
+ * nothing. This fills one, from the operator's own token:
  *
  *   HL_SEED_TOKEN=… HL_SEED_LOCATION_ID=… node scripts/seed-sandbox.mjs --dry-run
  *   HL_SEED_TOKEN=… HL_SEED_LOCATION_ID=… node scripts/seed-sandbox.mjs
  *
- * `--dry-run` first, always: it prints every row it would create and issues zero
- * requests, so the first real run costs nothing to preview.
+ * `--dry-run` first, always: it prints every row it would create and issues zero requests. A
+ * re-run is not an error either — HighLevel refuses a duplicate contact with a 400 carrying the
+ * existing id, which is read as success with that id carried forward.
  *
- * It talks to HighLevel directly, with the operator's Private Integration Token
- * or OAuth access token — the API is identical for both. It is an operator
- * chore, not a product path: it is not part of the deployed application, it
- * holds no user's credential, and it stores nothing anywhere but HighLevel.
- * `seed-sandbox.spec.mjs` names the surfaces this file must never touch and
- * proves it never does, by scanning this whole file including its comments —
- * which is why the list lives there and not here.
- *
- * A re-run is not an error. HighLevel refuses a duplicate contact with a `400`
- * that carries the existing contact's id, and that refusal is read as success
- * with the id carried forward (D10), so seeding twice is safe and cheap.
+ * It is an operator chore, not a product path: not part of the deployed application, holding no
+ * user's credential, and storing nothing anywhere but HighLevel. `seed-sandbox.spec.mjs` names
+ * the surfaces it must never touch and proves it never does, by scanning this whole file.
  */
 import { pathToFileURL } from 'node:url'
 
@@ -50,10 +43,9 @@ const APPOINTMENT_MINUTES = 30
 /**
  * The twenty names, frozen.
  *
- * A table rather than a generator so the plan is the same on every run and on
- * every machine: the operator can diff two dry runs, and a contact that failed
- * is at the same row number the next time. `seed-sandbox.spec.mjs` leans on
- * that — the third row is the one it fails on purpose.
+ * A table rather than a generator so the plan is the same on every run and on every machine: the
+ * operator can diff two dry runs, and a contact that failed is at the same row number the next
+ * time. `seed-sandbox.spec.mjs` leans on that — the third row is the one it fails on purpose.
  */
 const SEED_NAMES = Object.freeze([
   ['Amara', 'Osei'],
@@ -94,10 +86,9 @@ const VALUE_FLAGS = new Map([
 /**
  * Supports both `--flag value` and `--flag=value`.
  *
- * An unknown flag throws rather than being ignored: a mistyped
- * `--calender-id` that is silently dropped would send the run at whatever
- * calendar `GET /calendars/` happens to list first, which is the one outcome
- * the operator was trying to avoid by passing the flag.
+ * An unknown flag throws rather than being ignored: a mistyped `--calender-id` that is silently
+ * dropped would send the run at whatever calendar `GET /calendars/` happens to list first, which
+ * is the one outcome the operator was trying to avoid by passing the flag.
  */
 export function parseArgs(argv) {
   const parsed = { dryRun: false, calendarId: null, assignedUserId: null }
@@ -153,13 +144,12 @@ function required(env, name) {
 /**
  * Throws `SeedConfigError` naming the missing variable, before any request.
  *
- * `HL_API_BASE` is read too, but is not required: it defaults to the public
- * host and exists so a run can be pointed at a stand-in without editing code.
- * **Blank counts as unset**, as it does for the two variables above — it is a
- * documented, blank-by-default line in both `.env.example` files, so an
- * operator who sources one arrives here with `''`, and an empty base makes
- * every URL relative and every one of the 28 requests fail on a message that
- * reads like HighLevel's fault.
+ * `HL_API_BASE` is read too, but is not required: it defaults to the public host and exists so a
+ * run can be pointed at a stand-in without editing code. **Blank counts as unset**, as it does
+ * for the two variables above — it is a documented, blank-by-default line in both `.env.example`
+ * files, so an operator who sources one arrives here with `''`, and an empty base makes every
+ * URL relative and every one of the 28 requests fail on a message that reads like HighLevel's
+ * fault.
  */
 export function readConfig(env) {
   const apiBase = (env.HL_API_BASE ?? '').trim()
@@ -295,11 +285,10 @@ function printPlan({ config, calendarId, assignedUserId, contacts, appointments,
 /**
  * One create, sent and read.
  *
- * Returns the status alongside the parsed body whatever the status is, rather
- * than throwing on a non-2xx: HighLevel's duplicate refusal is a `400` whose
- * body is the most useful thing in the whole run (D10), so the caller decides
- * what a status means. A body that is not JSON becomes `null` — a create that
- * answers HTML is a failure with a status, not a crash mid-run.
+ * Returns the status alongside the parsed body whatever the status is, rather than throwing on a
+ * non-2xx: HighLevel's duplicate refusal is a `400` whose body is the most useful thing in the
+ * whole run, so the caller decides what a status means. A body that is not JSON becomes `null` —
+ * a create that answers HTML is a failure with a status, not a crash mid-run.
  */
 async function postJson(fetchImpl, url, version, token, body) {
   const response = await fetchImpl(url, {
@@ -328,14 +317,11 @@ function contactIdOf(body) {
 /**
  * HighLevel's duplicate refusal, or null. Accepts `meta.contactId` and `contactId`.
  *
- * This is the whole of the script's idempotency (D10). A location that refuses
- * duplicates answers a second seed with `400` and the *existing* contact's id,
- * which is exactly what the appointment step needs — so the refusal is read as
- * success and the id carried forward. The alternative, `POST /contacts/search`,
- * would hang a re-run's correctness on the least-verified call in the platform
- * (`docs/HIGHLEVEL_PLATFORM.md` §6.1).
- *
- * Only a `400` counts: an id echoed back on any other status is not a refusal.
+ * This is the whole of the script's idempotency. A location that refuses duplicates answers a
+ * second seed with `400` and the *existing* contact's id, which is exactly what the appointment
+ * step needs — so the refusal is read as success and the id carried forward. The alternative,
+ * `POST /contacts/search`, would hang a re-run's correctness on the least-verified call in the
+ * platform (`docs/HIGHLEVEL_PLATFORM.md` §6.1).
  */
 export function duplicateContactId(status, body) {
   if (status !== 400) return null
@@ -364,11 +350,10 @@ class SeedRequestError extends Error {
 /**
  * `GET /calendars/?locationId=` when either id is missing. Throws, naming the fix.
  *
- * The script creates no calendar, deliberately: `calendars.write` is a scope we
- * chose not to request (`docs/HIGHLEVEL_PLATFORM.md` §4), so a location with no
- * calendar is a thing only a human can fix in the sandbox UI — and saying so is
- * more use than a 4xx echoed back. Each of the three ways this can fail names
- * the exact flag or step that fixes it.
+ * The script creates no calendar, deliberately: `calendars.write` is a scope we chose not to
+ * request (`docs/HIGHLEVEL_PLATFORM.md` §4), so a location with no calendar is a thing only a
+ * human can fix in the sandbox UI — and saying so is more use than a 4xx echoed back. Each of
+ * the three ways this can fail names the exact flag or step that fixes it.
  */
 export async function resolveCalendar({ fetchImpl, config, calendarId, assignedUserId }) {
   // Nothing to resolve, nothing to ask. The 28-request run depends on this.
@@ -399,14 +384,7 @@ export async function resolveCalendar({ fetchImpl, config, calendarId, assignedU
   const named =
     calendarId === null ? undefined : calendars.find((entry) => entry?.id === calendarId)
 
-  /*
-   * A --calendar-id the location does not have is a typo, not a preference.
-   * Falling through to `calendars[0]` here would pair the id the operator typed
-   * with a *different* calendar's team member — precisely the "seed against
-   * whichever calendar HighLevel lists first" outcome the flag exists to
-   * prevent — and the run would only discover it after creating twenty real
-   * contacts, when all eight appointments failed.
-   */
+  /* A --calendar-id the location does not have is a typo, not a preference. */
   if (calendarId !== null && named === undefined) {
     throw new SeedConfigError(
       `No calendar ${calendarId} in location ${config.locationId}. It lists ` +
@@ -503,15 +481,7 @@ export async function seed({
     assignedUserId: args.assignedUserId,
   })
 
-  /*
-   * Per item, not per run.
-   *
-   * One contact HighLevel dislikes must not cost the other nineteen: the loop
-   * records what failed and carries on, and the run's exit code — not its
-   * control flow — is what reports it (AC-15). A rejected promise (DNS, a reset
-   * socket) is recorded exactly as a 5xx is, with a null status because there
-   * was no response to read one from.
-   */
+  /* Per item, not per run. */
   const record = (bucket, item, err) => {
     bucket.failed += 1
     summary.failures.push({

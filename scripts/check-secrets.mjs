@@ -2,44 +2,12 @@
 /**
  * Assert the project's configuration is where it says it is.
  *
- * Two claims, both of which have been wrong before and neither of which a human
- * can be asked to re-verify on every commit:
+ * Two claims, both of which have been wrong before and neither of which a human can be asked to
+ * re-verify on every commit:
  *
- *   1. The root `.env.example` is a MAP of every variable the project reads. A
- *      variable documented in `frontend/.env.example` or `functions/.env.example`
- *      and nowhere else answers "where is this configured?" wrongly, which is the
- *      one job the root file has.
- *
- *   2. Credentials come from Secret Manager, not from the deploy. Anything the
- *      deploy writes into `functions/.env` is uploaded as a plain environment
- *      variable on the Cloud Run service and is readable by anyone with Viewer
- *      on the project.
- *
- * What the second claim means concretely, and the shape the checks assert:
- *
- *   Secret Manager, seven, each a `defineSecret` under functions/src —
- *     ANTHROPIC_API_KEY   generate; the LLM credential
- *     OAUTH_STATE_SECRET  api; whoever holds it can mint a state naming any uid
- *     HL_CLIENT_ID        api ┐ the marketplace app's four values. Not all of
- *     HL_CLIENT_SECRET    api │ them are credentials — the redirect URI is
- *     HL_VERSION_ID       api │ public — but functions/.env is synthesised by
- *     HL_REDIRECT_URI     api ┘ the deploy, on a public repository.
- *     ALLOWED_ORIGINS     api and generate
- *
- *   functions/.env, one, written by the deploy —
- *     FIRESTORE_DATABASE_ID  derived from firebase.json, and not a secret: it
- *                            names a database that security rules protect.
- *
- * So the two sets must stay disjoint, and every one of the seven must still be
- * documented at the root — Secret Manager holds the value, and the example file
- * is the only place a reader learns the name exists at all.
- *
- * D4 chose this over a `gcloud run services describe` by hand: that verifies
- * today and nothing tomorrow, while a read of the two files that decide it
- * verifies every commit. The console reading stays in the release checklist as a
- * one-time confirmation, not as the mechanism.
- *
- *   node scripts/check-secrets.mjs
+ * 1. The root `.env.example` is a MAP of every variable the project reads. A variable documented
+ * in `frontend/.env.example` or `functions/.env.example` and nowhere else answers "where is this
+ * configured?" wrongly, which is the one job the root file has.
  */
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -51,14 +19,10 @@ export const ROOT = join(import.meta.dirname, '..')
 /**
  * The only variables the deploy may write into `functions/.env` as plain values.
  *
- * An allowlist, not a denylist. Comparing what the deploy writes against the
- * `defineSecret` *names* proves only that no secret is written under its own
- * name — `echo "ANTHROPIC_KEY=$ANTHROPIC_API_KEY" > functions/.env` passes that
- * comparison and uploads the key anyway. Naming what may be plain leaves
- * nothing for a rename to hide behind.
- *
- * `FIRESTORE_DATABASE_ID` is not a secret: it names a database that security
- * rules protect, and the deploy reads it out of the committed `firebase.json`.
+ * An allowlist, not a denylist. Comparing what the deploy writes against the `defineSecret`
+ * *names* proves only that no secret is written under its own name — `echo
+ * "ANTHROPIC_KEY=$ANTHROPIC_API_KEY" > functions/.env` passes that comparison and uploads the
+ * key anyway. Naming what may be plain leaves nothing for a rename to hide behind.
  */
 export const ALLOWED_PLAIN_VARS = ['FIRESTORE_DATABASE_ID']
 
@@ -69,10 +33,9 @@ export const DEPLOY_WORKFLOW = '.github/workflows/deploy.yml'
 /**
  * Every `NAME=` declared at the start of a line. Order preserved, deduped.
  *
- * Anchored at column zero with no leading whitespace allowed, because both
- * example files quote variable names inside their comments — `#   HL_VERSION_ID`
- * is documentation, and counting it as a declaration would let a variable
- * "exist" in a file that never sets it.
+ * Anchored at column zero with no leading whitespace allowed, because both example files quote
+ * variable names inside their comments — `# HL_VERSION_ID` is documentation, and counting it as
+ * a declaration would let a variable "exist" in a file that never sets it.
  */
 export function declaredVars(text) {
   const names = text.matchAll(/^([A-Z_][A-Z0-9_]*)=/gm)
@@ -97,13 +60,12 @@ export function missingFromRoot(rootText, packages) {
 /**
  * Every `defineSecret('NAME')` under functions/src, excluding *.spec.ts.
  *
- * Either quote is read, and a call whose name is **not** a quoted literal
- * throws. This list feeds both halves of the check, so a declaration it cannot
- * see is invisible twice over: the name is never required in `.env.example`,
- * and it drops out of the comparison against what the deploy writes — which
- * would leave the deploy free to write that very name as a plain variable with
- * this check reporting nothing. Same rule as `plainEnvVarsInDeploy`: a form it
- * cannot read is a failure, not a pass.
+ * Either quote is read, and a call whose name is **not** a quoted literal throws. This list
+ * feeds both halves of the check, so a declaration it cannot see is invisible twice over: the
+ * name is never required in `.env.example`, and it drops out of the comparison against what the
+ * deploy writes — which would leave the deploy free to write that very name as a plain variable
+ * with this check reporting nothing. Same rule as `plainEnvVarsInDeploy`: a form it cannot read
+ * is a failure, not a pass.
  */
 export function definedSecrets(dir = join(ROOT, 'functions/src')) {
   const walk = (current) =>
@@ -139,10 +101,9 @@ const ENV_FILE = String.raw`functions\/\.env(?![.\w])`
 const MENTIONS_ENV_FILE = new RegExp(ENV_FILE)
 
 /**
- * Puts content *into* it, in any form — a redirect, a heredoc, or a command
- * that writes its destination as an argument. `cat functions/.env` and
- * `- name: Write functions/.env` mention the file without filling it, and are
- * left alone.
+ * Puts content *into* it, in any form — a redirect, a heredoc, or a command that writes its
+ * destination as an argument. `cat functions/.env` and `- name: Write functions/.env` mention
+ * the file without filling it, and are left alone.
  */
 const FILLS_ENV_FILE = new RegExp(String.raw`>|<<|\b(?:tee|cp|mv|dd|rsync|install)\b`)
 
@@ -154,23 +115,14 @@ const READABLE_REDIRECT = new RegExp(String.raw`(>>?)\s*${ENV_FILE}`)
  *
  * Read line-wise, because that is the form the deploy uses:
  *
- *   echo "FIRESTORE_DATABASE_ID=$DATABASE" > functions/.env
+ * echo "FIRESTORE_DATABASE_ID=$DATABASE" > functions/.env
  *
- * **A form this cannot read throws.** That is the whole design of this
- * function, and the default is inverted for it: a line-wise reader answers `[]`
- * for a heredoc, for `cp x functions/.env`, for `… | tee functions/.env`, for a
- * quoted or path-prefixed redirect target, and for
- * `gcloud secrets versions access … > functions/.env` — and `[]` is this
- * check's word for "the deploy writes no secrets". Silence that reads as an
- * all-clear is the one answer it must never give, so "I could not read this"
- * and "there is nothing here" are kept apart.
- *
- * The last of those forms is not hypothetical: `deploy.yml` already fetches the
- * SPA's whole `.env` out of Secret Manager that way, and giving the functions'
- * configuration the same single home is the obvious next change. Appended
- * *beside* the readable line rather than replacing it, it would have uploaded
- * all seven `defineSecret` values as plain Cloud Run environment variables with
- * the suite still green.
+ * **A form this cannot read throws.** That is the whole design of this function, and the default
+ * is inverted for it: a line-wise reader answers `[]` for a heredoc, for `cp x functions/.env`,
+ * for `… | tee functions/.env`, for a quoted or path-prefixed redirect target, and for `gcloud
+ * secrets versions access … > functions/.env` — and `[]` is this check's word for "the deploy
+ * writes no secrets". Silence that reads as an all-clear is the one answer it must never give,
+ * so "I could not read this" and "there is nothing here" are kept apart.
  */
 export function plainEnvVarsInDeploy(text) {
   const written = text.split('\n').flatMap((line) => {

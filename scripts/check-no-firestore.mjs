@@ -2,18 +2,10 @@
 /**
  * Assert the built frontend contains no Firestore SDK.
  *
- * The frontend never talks to Firestore: every read and write goes through a
- * Cloud Function route that verifies the ID token and scopes the query by the
- * uid inside it, and `firestore.rules` denies every client outright. That is
- * enforced in three places, and this is the last of them.
- *
- * The other two — the ESLint rule and the `frontend/src` source scan — read our
- * own code, so neither can see a *transitive* pull: a dependency that imports
- * Firestore on our behalf would put the SDK in the bundle with nothing in `src`
- * to point at. Only the built artefact can answer that, which is why this runs
- * in CI after `npm run build`.
- *
- *   node scripts/check-no-firestore.mjs [dir]     # default: frontend/dist
+ * The frontend never talks to Firestore: every read and write goes through a Cloud Function
+ * route that verifies the ID token and scopes the query by the uid inside it, and
+ * `firestore.rules` denies every client outright. That is enforced in three places, and this is
+ * the last of them.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
@@ -32,13 +24,7 @@ const DEFAULT_DIR = join('frontend', 'dist')
 
 /** Paths, relative to `dir`, of every file whose bytes contain the marker. */
 export function filesContainingMarker(dir) {
-  /*
-   * A missing directory is a failure, not a pass.
-   *
-   * Returning `[]` here would make the CI step report success loudest exactly
-   * when the build did not run — a check that passes on the absence of evidence
-   * is worse than no check, because it is believed.
-   */
+  /* A missing directory is a failure, not a pass. */
   let stats
   try {
     stats = statSync(dir)

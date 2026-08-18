@@ -3,17 +3,13 @@ import { expect, type Page } from '@playwright/test'
 import { latestCodeFor } from '../integration/helpers'
 
 /**
- * Getting an account to the dashboard — the one thing every e2e spec needs
- * before it can test anything of its own.
+ * Getting an account to the dashboard — the one thing every e2e spec needs before it can test
+ * anything of its own.
  *
- * Extracted because three suites had begun to need it and two already carried
- * byte-identical copies. A third copy is where they start to drift: the moment
- * one of them learns something the others do not, the ones that did not become
- * quietly wrong about what a signed-up account looks like.
- *
- * No mail provider is involved. Firebase sends the verification email itself and
- * the Auth emulator exposes the code it generated, so the test can follow the
- * link without a mailbox.
+ * Extracted because three suites had begun to need it and two already carried byte-identical
+ * copies. A third copy is where they start to drift: the moment one of them learns something the
+ * others do not, the ones that did not become quietly wrong about what a signed-up account looks
+ * like.
  */
 
 export const PASSWORD = 'Correct-Horse-9'
@@ -21,25 +17,17 @@ export const PASSWORD = 'Correct-Horse-9'
 /**
  * How long the sign-up confirmation gets to appear.
  *
- * Every spec funnels through `signUpAndVerify`, so `POST /auth/register` is the
- * most-repeated server round trip in the suite — and on Playwright's 5-second
- * default it was the *only* wait that ever failed. Four consecutive runs of the
- * full suite failed three times, on this assertion every time, at a different
- * test each time: first `auth.spec.ts`, then the last two of `workspace.spec.ts`,
- * then one in the middle of `projects.spec.ts`.
+ * Every spec funnels through `signUpAndVerify`, so `POST /auth/register` is the most-repeated
+ * server round trip in the suite — and on Playwright's 5-second default it was the *only* wait
+ * that ever failed. Four consecutive runs of the full suite failed three times, on this
+ * assertion every time, at a different test each time: first `auth.spec.ts`, then the last two
+ * of `workspace.spec.ts`, then one in the middle of `projects.spec.ts`.
  *
- * It is not the endpoint being slow. The emulator logs the handler finishing in
- * 10–134ms in every observed case including the failing ones, and in the worst
- * of them no invocation is logged at all before the 5 seconds are up — the
- * request had not yet left the dev server. The stall is the machine descheduling
- * a single-threaded Vite process, and it lands here because this is where the
- * suite waits on a round trip with the least headroom.
- *
- * 15 seconds, matching what the two waits immediately below already carry for
- * the same reason — the verification headline and the action page. Sign-up's
- * confirmation is the one step of that flow that never got the same treatment.
- * The assertion is unchanged and nothing here asserts a latency budget: the
- * claim is still that submitting the form produces the confirmation screen.
+ * It is not the endpoint being slow: the emulator logs the handler finishing in 10–134 ms every
+ * time, and in the worst runs no invocation is logged at all before the 5 seconds are up — the
+ * request had not left the dev server. The stall is the machine descheduling a single-threaded
+ * Vite process, and it lands here because this is where the suite waits on a round trip with the
+ * least headroom. 15 seconds matches what the two waits below already carry.
  */
 export const REGISTER_TIMEOUT_MS = 15_000
 
@@ -51,10 +39,9 @@ export function freshEmail(prefix = 'e2e'): string {
 /**
  * The verification link, pointed at *our* action route.
  *
- * The emulator's own link targets its built-in handler; in production the
- * equivalent is the custom action URL configured on the email template. Either
- * way the oobCode is the payload, so this rebuilds the URL the deployed app
- * would receive.
+ * The emulator's own link targets its built-in handler; in production the equivalent is the
+ * custom action URL configured on the email template. Either way the oobCode is the payload, so
+ * this rebuilds the URL the deployed app would receive.
  */
 export async function activationLinkFor(email: string): Promise<string> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -111,11 +98,10 @@ export async function assertEmulatorBuild(page: Page): Promise<void> {
 /**
  * Create a project and open its workspace.
  *
- * Extracted for the reason `signUpAndVerify` was: a second suite needs it, and a
- * second copy is where two specs start to disagree about what an open workspace
- * looks like. It waits on the chat panel's empty state rather than on the URL,
- * so callers start from a workspace that has finished loading rather than one
- * that has merely been navigated to.
+ * Extracted for the reason `signUpAndVerify` was: a second suite needs it, and a second copy is
+ * where two specs start to disagree about what an open workspace looks like. It waits on the
+ * chat panel's empty state rather than on the URL, so callers start from a workspace that has
+ * finished loading rather than one that has merely been navigated to.
  */
 export async function openNewProject(page: Page, name = 'Contact dashboard'): Promise<void> {
   await page.getByTestId('projects-new').click()
@@ -130,16 +116,12 @@ export async function openNewProject(page: Page, name = 'Contact dashboard'): Pr
 /**
  * Connect the fake HighLevel location, and see its name on the dashboard.
  *
- * Extracted for the reason `openNewProject` was: a second suite needs it, and a
- * second copy is where two specs start to disagree — here, about what a connected
- * account looks like. It spans the handshake and nothing else: from the Connect
- * button, out to the fake authorize page, back through the callback, to the
- * location's name on screen. What a caller checks before it (the empty state) or
- * after it (that a reload survives, that disconnect works) stays with the caller,
- * because those are the caller's claims rather than this one's.
- *
- * The two 15-second waits are the two redirects — out to the fake and back
- * through the callback — each a full server round trip rather than a render.
+ * Extracted for the reason `openNewProject` was: a second suite needs it, and a second copy is
+ * where two specs start to disagree — here, about what a connected account looks like. It spans
+ * the handshake and nothing else: from the Connect button, out to the fake authorize page, back
+ * through the callback, to the location's name on screen. What a caller checks before it (the
+ * empty state) or after it (that a reload survives, that disconnect works) stays with the
+ * caller, because those are the caller's claims rather than this one's.
  */
 export async function connectHighLevel(page: Page): Promise<void> {
   await page.getByTestId('connection-connect').click()
@@ -157,16 +139,12 @@ export async function connectHighLevel(page: Page): Promise<void> {
 }
 
 /**
- * Reading and writing Monaco from a test (Slice 7, D24, P3).
+ * Reading and writing Monaco from a test.
  *
- * `fill()` and `toHaveValue()` both stop working the moment the textarea is gone,
- * and Monaco **virtualises its lines** — only what is on screen is in the DOM —
- * so scraping `.view-lines` is neither exact nor stable: it would miss the tail
- * of a long file and drop the trailing newline of a short one.
- *
- * So reads go through the model and writes go through the widget. That split is
- * deliberate: the read has to be exact for the assertions to mean anything, and
- * the write has to be real for the test to prove a user can type.
+ * `fill()` and `toHaveValue()` both stop working the moment the textarea is gone, and Monaco
+ * **virtualises its lines** — only what is on screen is in the DOM — so scraping `.view-lines`
+ * is neither exact nor stable: it would miss the tail of a long file and drop the trailing
+ * newline of a short one.
  */
 
 /**
@@ -199,58 +177,40 @@ declare global {
 /**
  * The editor's visible surface — **the only thing that can be clicked**.
  *
- * Monaco's input is a zero-size `textarea.inputarea` sitting under `.view-lines`,
- * which intercepts pointer events, so a click on the textarea never lands and
- * Playwright retries until the test times out. Focusing it directly does not work
- * either, and fails in a much nastier way: the textarea holds only a small window
- * of text around the cursor, so a browser-level `Cmd+A` inside it selects that
- * fragment rather than reaching Monaco's own select-all — and the following
- * `Delete` removes **one character** of the document. Clicking the surface is
- * what puts Monaco itself into a focused state, after which its keybindings run.
+ * Monaco's input is a zero-size `textarea.inputarea` sitting under `.view-lines`, which
+ * intercepts pointer events, so a click on the textarea never lands and Playwright retries until
+ * the test times out. Focusing it directly does not work either, and fails in a much nastier
+ * way: the textarea holds only a small window of text around the cursor, so a browser-level
+ * `Cmd+A` inside it selects that fragment rather than reaching Monaco's own select-all — and the
+ * following `Delete` removes **one character** of the document. Clicking the surface is what
+ * puts Monaco itself into a focused state, after which its keybindings run.
  */
 const SURFACE = '.monaco-editor .view-lines'
 
 /**
  * The active editor's text, read from its model.
  *
- * **Parity, not a test hook.** `@monaco-editor/loader`'s CDN path publishes
- * `window.monaco` as a matter of course and its `init()` explicitly looks for it;
- * the locally bundled path was the odd one out, and `lib/monacoSetup.ts` sets it
- * for that reason. What this buys the suite is an *exact* read, which is what
- * lets `files.spec.ts` keep asserting the same strings it did over a textarea —
- * trailing newline included.
+ * **Parity, not a test hook.** `@monaco-editor/loader`'s CDN path publishes `window.monaco` as a
+ * matter of course and its `init()` explicitly looks for it; the locally bundled path was the
+ * odd one out, and `lib/monacoSetup.ts` sets it for that reason. What this buys the suite is an
+ * *exact* read, which is what lets `files.spec.ts` keep asserting the same strings it did over a
+ * textarea — trailing newline included.
  */
 export async function editorText(page: Page): Promise<string | null> {
   return page.evaluate(() => window.monaco?.editor.getEditors()[0]?.getModel()?.getValue() ?? null)
 }
 
 /**
- * Replace the editor's content the way a person would: focus, select all, delete,
- * type.
+ * Replace the editor's content the way a person would: focus, select all, delete, type.
  *
- * `insertText` rather than `type()` — it delivers the whole string as **one**
- * input event, so Monaco's auto-closing brackets cannot rewrite what the test
- * meant to write. Typing `<title>` character by character produces `<title>>`.
+ * `insertText` rather than `type()` — it delivers the whole string as **one** input event, so
+ * Monaco's auto-closing brackets cannot rewrite what the test meant to write. Typing `<title>`
+ * character by character produces `<title>>`.
  */
 export async function setEditorContent(page: Page, text: string): Promise<void> {
   await selectAllInEditor(page)
 
-  /*
-   * **Clear first, then write into an empty document with no selection.**
-   *
-   * Writing straight over the selection does not work, and the reason is
-   * `autoSurround`: typing an opening bracket while text is selected wraps that
-   * text rather than replacing it. Measured — `'<!doctype html>'` came back as
-   * `'<!doctype html>>'` and `'<title>x</title>\n'` as `'<title>x</title>\n>'`,
-   * while `'abc\n'` was untouched. The leading `<` surrounded the whole document
-   * (`<` + old + `>`), the rest of the insert then replaced the old text inside
-   * it, and the `>` was left at the end. That is correct editor behaviour, not a
-   * bug to switch off in the product to suit a test.
-   *
-   * With nothing selected there is nothing to surround, and a multi-character
-   * insert does not auto-close either — Monaco only runs those interceptors for
-   * single-character types.
-   */
+  /* **Clear first, then write into an empty document with no selection.** */
   await page.keyboard.press('Backspace')
   await page.keyboard.insertText(text)
 
@@ -260,31 +220,14 @@ export async function setEditorContent(page: Page, text: string): Promise<void> 
 }
 
 /**
- * Select the whole document, **without a `Cmd`/`Ctrl` chord and without
- * counting lines**.
+ * Select the whole document, **without a `Cmd`/`Ctrl` chord and without counting lines**.
  *
- * Measured against the running editor rather than guessed at. With the editor
- * focused (`hasTextFocus()` true, caret placed by the click), pressing
- * `ControlOrMeta+a` leaves `getSelection()` **completely unchanged** — as does
- * `ControlOrMeta+ArrowDown`. So Monaco's keybindings work fine under Playwright;
- * the modified chords are what never arrive, which is why `Cmd+A` "select all"
- * silently did nothing and the following `Delete` fell through to the textarea's
- * own native forward-delete, removing exactly one character.
- *
- * A corner-to-corner drag was tried instead and is worse: Monaco clamps the
- * endpoint to the last rendered line, leaving the tail of the file behind.
- *
- * **This used to walk the document with `ArrowUp` / `Shift+ArrowDown`, once per
- * newline, and that was wrong in a way only a layout change exposed.** Those
- * keys move by *visual* line; the count was of *logical* lines. With word wrap
- * on they are the same number only while nothing wraps — so the helper worked
- * until the editor panel narrowed from 35% to 30% of the workspace, at which
- * point the fixture wrapped, both loops fell short, and the first line survived
- * the replace. The test that caught it read `<!doctype html>` twice.
- *
- * The selection is now set through the model, which has no visual dimension at
- * all and so cannot be wrong at any width. The destructive half stays on the
- * keyboard, because *that* is the part the test is pretending a person does.
+ * Measured against the running editor rather than guessed at. With the editor focused
+ * (`hasTextFocus()` true, caret placed by the click), pressing `ControlOrMeta+a` leaves
+ * `getSelection()` **completely unchanged** — as does `ControlOrMeta+ArrowDown`. So Monaco's
+ * keybindings work fine under Playwright; the modified chords are what never arrive, which is
+ * why `Cmd+A` "select all" silently did nothing and the following `Delete` fell through to the
+ * textarea's own native forward-delete, removing exactly one character.
  */
 export async function selectAllInEditor(page: Page): Promise<void> {
   await focusEditor(page)

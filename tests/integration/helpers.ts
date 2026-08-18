@@ -15,10 +15,9 @@ import { getFirestore, type Firestore } from 'firebase-admin/firestore'
 /**
  * L4 harness — Cloud Functions end to end against the emulators.
  *
- * No third-party mail provider is involved: Firebase sends verification and
- * reset email itself, and the Auth emulator exposes the codes it generates at
- * `/emulator/v1/projects/{id}/oobCodes`. That endpoint is how these tests read
- * a verification link without a mailbox.
+ * No third-party mail provider is involved: Firebase sends verification and reset email itself,
+ * and the Auth emulator exposes the codes it generates at `/emulator/v1/projects/{id}/oobCodes`.
+ * That endpoint is how these tests read a verification link without a mailbox.
  */
 
 export const PROJECT_ID = 'demo-genesis'
@@ -40,12 +39,11 @@ const FUNCTIONS_PORT = process.env['FUNCTIONS_EMULATOR_PORT'] ?? '5001'
 export const API_BASE = `http://127.0.0.1:${FUNCTIONS_PORT}/${PROJECT_ID}/${REGION}/api`
 
 /**
- * `/generate` is its **own function**, not a route on `api` (D1).
+ * `/generate` is its **own function**, not a route on `api`.
  *
- * It needs a 540-second timeout and 512 MiB, which the CRUD endpoints must not
- * pay for, so it is reached at `.../generate` rather than `.../api/generate`.
- * Pointing this at `API_BASE` would 404 against `api`'s terminal catch-all and
- * the failure would read like a missing route.
+ * It needs a 540-second timeout and 512 MiB, which the CRUD endpoints must not pay for, so it is
+ * reached at `.../generate` rather than `.../api/generate`. Pointing this at `API_BASE` would
+ * 404 against `api`'s terminal catch-all and the failure would read like a missing route.
  */
 export const GENERATE_URL = `http://127.0.0.1:${FUNCTIONS_PORT}/${PROJECT_ID}/${REGION}/generate`
 
@@ -87,9 +85,8 @@ let clientApp: FirebaseApp | undefined
 /**
  * A real client SDK pointed at the Auth emulator.
  *
- * Needed because "was the password left alone?" is only answerable by trying to
- * sign in with it — the Admin SDK exposes no way to read or compare a password,
- * which is the point of it.
+ * Needed because "was the password left alone?" is only answerable by trying to sign in with it
+ * — the Admin SDK exposes no way to read or compare a password, which is the point of it.
  */
 function clientAuth(): ClientAuth {
   clientApp ??= initClientApp({ apiKey: 'fake-api-key', projectId: PROJECT_ID }, 'integration')
@@ -159,14 +156,7 @@ export interface JsonResponse {
   body: unknown
   /** Raw text, for asserting two responses are byte-identical. */
   raw: string
-  /**
-   * Response headers, lower-cased by `fetch`.
-   *
-   * Here because the proxy's contract includes headers it did not invent —
-   * HighLevel's five `X-RateLimit-*` values are copied across (D18), and a
-   * suite that could only see the body would call that shipped without ever
-   * having looked at it.
-   */
+  /** Response headers, lower-cased by `fetch`. */
   headers: Headers
 }
 
@@ -356,11 +346,10 @@ export interface GenerateResponse {
 /**
  * `POST /generate`, read to completion.
  *
- * Both channels are returned every time, because the assertion that matters for
- * a refusal is not only the status: it is that the response is **JSON and not an
- * event stream**. Once headers are flushed the status line is spent, so a
- * handler that opened the stream too early would answer 200 with an `error`
- * frame — which a status-code assertion alone cannot see (D9, R6).
+ * Both channels are returned every time, because the assertion that matters for a refusal is not
+ * only the status: it is that the response is **JSON and not an event stream**. Once headers are
+ * flushed the status line is spent, so a handler that opened the stream too early would answer
+ * 200 with an `error` frame — which a status-code assertion alone cannot see.
  */
 export async function postGenerate(
   body: unknown,
