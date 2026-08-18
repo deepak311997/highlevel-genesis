@@ -28,7 +28,31 @@ packages the brief mandates* is `PRODUCT_SPEC.md` §7.
 | 10 — Live preview | ✅ merged to `main` |
 | 11 — Snapshots & restore | ✅ merged to `main` |
 | 12 — Error handling & state hardening | ✅ merged to `main` |
-| 13 — Deliverables | 🔨 in progress on `slice/13-deliverables` |
+| 13 — Deliverables | ✅ merged to `main` |
+
+### Since the slices — what has merged to `main` after 13
+
+| PR | What |
+|---|---|
+| #23–#25 | **The Instrument design language**: a four-stop neutral scale and one blue used as punctuation, Geist and Geist Mono, hairlines and density instead of elevation, Monaco dressed to match, and the workspace re-proportioned |
+| #26 | The dashboard redesigned, the projects list paged and filterable in memory, and the logo made the way back |
+| #27 | The chat panel: markdown parsed into **data** rather than HTML (no `v-html` anywhere), file chips, a thinking status, and a failure that is written into the transcript rather than shown beside it |
+| #28 | **One request per turn**, a file explorer beside the editor, and the L4/L5 suites brought back onto the new boundary |
+
+**#28 changed two things worth carrying forward.** `POST /api/projects/:projectId/messages`
+is **gone**: the prompt travels in `POST /generate`'s body, which writes the user turn before
+it flushes headers. That keeps the durability the two-request shape bought — the prompt is
+stored before the expensive half begins — and removes the window in which a dying client
+could strand a prompt no reply was ever coming for. A turn is refused with one 409 when the
+transcript has no room for *both* documents, and a retry, which writes no prompt, is refused
+only at the cap itself. A failed turn is now **written down**: an assistant document with no
+prose and the reason there is none, so a refusal survives a refresh instead of vanishing with
+an in-memory flag.
+
+The second is the code panel. The file tree moved from a capped band **above** the editor to a
+collapsible rail **beside** it, grouped by kind — paths are flat by construction, so what a
+file *is* is the only real hierarchy there is — and the three panels now open at 25 / 40 / 35
+rather than 20 / 30 / 50.
 
 **Slice 8 ran ahead of 7**, which §4's dependency line permits: it depends on 2 alone,
 and 2 merged on day 1. Nothing in 7 is owed to it. **Slice 11 ran ahead of 10** for the
@@ -502,8 +526,14 @@ does not change.
 **What Slice 5 changed here, as planned** (PRD D6): the assistant write moved to `/generate`'s
 terminal handler, the user write stayed in the `POST`, and the response became the user message
 alone — kept as a one-element array, so the store's append was untouched. `echoFor()`,
-`messagePair()` and the stub badge are gone. The 409 still checks `count + 2`, deliberately: the
-reply the `POST` is about to make the user trigger needs room.
+`messagePair()` and the stub badge are gone.
+
+**And what PR #28 changed after it: the `POST` route is gone entirely.** The prompt travels
+in `/generate`'s body and the handler writes both halves of the turn, in that order, so there
+is no longer a window between "the prompt is stored" and "a reply was asked for". The
+messages module keeps its `GET`, its schema and its `seq` ordering; what it lost is the write
+route and the 29 integration cases that tested it, which now test the same guarantees against
+`/generate`.
 
 ---
 
@@ -970,13 +1000,13 @@ read. `PRODUCT_SPEC.md` §7 holds the package-level version of this.
 | One HighLevel location per user | F1.3 | 2 | ✅ — falls out of Target User = Sub-account; the proxy injects that one location on every call (8, D10) |
 | Project CRUD incl. soft-delete, scoped per user by the API | F2.1–2.3 | 3 | ✅ |
 | Server-side generation: bounded context → stream → validated file ops → persist | F3.1–3.4 | 5, 6, 9 | 🟡 all four shipped — context, stream and persist in 5; **validated file ops in 6**, parsed as they stream and refused as one set. Only the HighLevel knowledge in the context is owed, in 9 |
-| SSE endpoint; protocol covers tokens, file boundaries, completion, errors | F4.1–4.3 | 5, 6 | ✅ `POST /generate` — `token`, `file_start`, `file_chunk`, `file_end`, `done` and `error` frames, both error channels, keep-alives |
-| File tree, read file, save manual edits | F5.1 | 6, 7 | ✅ shipped — three routes (list without content, read one, `PUT` an edit), a tree that fills in as the reply streams, and Monaco over it since 7 |
+| SSE endpoint; protocol covers tokens, file boundaries, completion, errors | F4.1–4.3 | 5, 6 | ✅ `POST /generate` — `user`, `token`, `file_start`, `file_chunk`, `file_end`, `done` and `error` frames, both error channels, keep-alives. The `user` frame is #28's: the prompt travels in the body now, so the stream echoes the stored document and the browser's optimistic bubble stops guessing at an id and a timestamp |
+| File tree, read file, save manual edits | F5.1 | 6, 7 | ✅ shipped — three routes (list without content, read one, `PUT` an edit), a tree that fills in as the reply streams, and Monaco beside it since 7. #28 made the tree a collapsible rail grouped by kind |
 | Snapshot per generation; list and restore | F5.2–5.3 | 11 | ✅ shipped — every turn that stores files also stores a copy of the project's **whole** file set, on the turn's own batch and in its one commit; twenty kept per project, the twenty-first pruning the oldest *and its file documents*. `GET /api/projects/:projectId/snapshots` lists them newest-first by a stored `seq` (so pruning cannot renumber a version out from under the user), and `POST …/snapshots/:snapshotId/restore` makes the file set equal that version exactly — deleting what the version does not hold — after snapshotting what was there, so the one destructive operation in the product is itself undoable. Neither path names a user |
 | shadcn-vue as the primary component library | F6.1 | 0–12 | 🟡 `button`/`input`/`label`/`card`/`alert`/`dialog`/`tabs`/`badge`/`resizable`/`scroll-area`/`separator`/`textarea`/`sheet` in — `sheet` vendored by the CLI in 11, like every other one, so its provenance stays diffable; only `skeleton`/`sonner` (12) owed |
-| Three-panel workspace: chat · editor · preview | F6.1 | 4, 6, 7 | 🟡 shell shipped — resizable at ≥1024px, tabbed below; the code panel is a real screen since 6 and Monaco since 7. Only the preview is still a labelled placeholder, until 10 |
-| Chat panel with history and input | F6.2 | 4, 5 | ✅ history, input and persistence in 4; the echo and its badge deleted in 5, replaced by a real streamed reply, a `Generating…` status, an interrupted marker and a Retry |
-| Monaco via `@guolao/vue-monaco-editor`, tabs, live tokens, read-only while streaming | F6.3 | 7 | ✅ shipped — the named package with `monaco-editor` pinned `0.52.2` and bundled locally (no CDN); a hand-rolled tab strip over one buffer per path, so an unsaved edit survives a tab switch; chunks applied as **append edits** with the view following the tail; `readOnly` with a message for the length of a stream |
+| Three-panel workspace: chat · editor · preview | F6.1 | 4, 6, 7, 10 | ✅ resizable at ≥1024px, tabbed below, and all three are real screens. The split opens at 25 / 40 / 35 since #28, which also moved the file explorer from a capped band above the editor to a collapsible rail beside it |
+| Chat panel with history and input | F6.2 | 4, 5 | ✅ history, input and persistence in 4; the echo and its badge deleted in 5, replaced by a real streamed reply, a `Generating…` status, an interrupted marker and a Retry. #27 parses the reply's markdown into **data** — no `v-html` anywhere in the codebase — and #28 writes a failed turn into the transcript, with its Retry on the message it belongs to |
+| Monaco via `@guolao/vue-monaco-editor`, tabs, live tokens, read-only while streaming | F6.3 | 7 | ✅ shipped — the named package with `monaco-editor` pinned `0.52.2` and bundled locally (no CDN); a hand-rolled tab strip over one buffer per path, so an unsaved edit survives a tab switch; chunks applied as **append edits** with the view following the tail; `readOnly` with a message for the length of a stream. #28 redrew the strip — the active tab takes the editor's own ground, the dirty dot and the ✕ share one slot, middle-click closes — and put the file tree in a rail beside it, grouped by kind |
 | iframe preview showing **real** HL data, refreshes after generation | F6.4 | 10 | ⏭ — the money shot |
 | SSE client handles all event types, survives disconnects | F6.5 | 5 | 🟡 all three event types handled and chunk-split-safe by construction (the parser is driven split at every offset); the client's own abort is proven, and the **server**-side disconnect is L1-proven but undeliverable from the emulator — a Slice 13 hand-check |
 | Snapshot history in a sheet/dialog with Restore | F6.6 | 11 | ✅ shipped — a shadcn-vue `sheet`, opened by **History** in the code panel header because versions are versions *of the files*; rows newest-first with their version number, origin (*Generation* / *Before restore*), file count, size and time. **Restore** confirms **inline in the row** rather than in a second overlay over a sheet, is disabled for the length of a stream — in the component *and* in the store, because a keyboard path does not go through the button — and open tabs reconcile behind it: re-read, or closed outright when the restore deleted the file |
