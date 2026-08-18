@@ -699,23 +699,39 @@ function pushableStream(): {
   response: Response
   push: (chunk: string) => void
   close: () => void
+  released: () => boolean
 } {
   let controller!: ReadableStreamDefaultController<Uint8Array>
   const encoder = new TextEncoder()
+  /*
+   * `released` is the client having *cancelled* the body, which
+   * `streamGeneration` now does on every exit — including the one where the
+   * store walks away from a stream belonging to a project the user has left.
+   *
+   * `push` and `close` go quiet once that has happened, because that is what
+   * the server sees: it goes on writing into a socket the client closed, and
+   * its writes land nowhere. Modelling it as a throw would make this double
+   * fail where the real thing merely stops mattering.
+   */
+  let released = false
   const body = new ReadableStream<Uint8Array>({
     start(c) {
       controller = c
+    },
+    cancel() {
+      released = true
     },
   })
 
   return {
     response: { ok: true, status: 200, body } as unknown as Response,
     push: (chunk: string) => {
-      controller.enqueue(encoder.encode(chunk))
+      if (!released) controller.enqueue(encoder.encode(chunk))
     },
     close: () => {
-      controller.close()
+      if (!released) controller.close()
     },
+    released: () => released,
   }
 }
 
@@ -1044,6 +1060,15 @@ describe('a stream that outlives the screen it was opened for', () => {
     fetchMock.mockResolvedValueOnce(response({ messages: [] }))
     fetchMock.mockResolvedValueOnce(response({ files: [] }))
     await store.open('proj-2')
+
+    /*
+     * The body was released the moment the store walked away, so the `done`
+     * below reaches nobody — which is the point, and is why `generate` is not
+     * still billing for proj-1's reply. The state assertions that follow held
+     * before that was true and still hold; this line is what makes them cheap
+     * rather than a race the counter has to win.
+     */
+    expect(stream.released()).toBe(true)
 
     stream.push(frame('done', { message: ASSISTANT_MESSAGE }))
     stream.close()
@@ -2607,6 +2632,9 @@ describe('the stream — files', () => {
     fetchMock.mockResolvedValueOnce(response({ files: [] }))
     await store.open('proj-2')
     fetchMock.mockClear()
+
+    // Released when the store left proj-1, so the `done` below arrives nowhere.
+    expect(stream.released()).toBe(true)
 
     stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: ['app.js'], fileError: null }))
     stream.close()
