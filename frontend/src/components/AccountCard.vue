@@ -17,16 +17,12 @@ import { useProfileStore } from '@/stores/profile'
  * the card's only source of truth is an endpoint, so "we could not ask" is a
  * state the card has to be able to say out loud.
  *
- * Nothing here writes. `displayName` is rendered and never edited; a profile
+ * Nothing here writes. The address is the identity this product has — there is
+ * no display name on screen, because the one the API carries was never set by
+ * anything and rendered as the address anyway, twice over. A profile
  * settings surface is out of this slice's scope.
  */
 const profile = useProfileStore()
-
-const name = computed(() => {
-  const current = profile.profile
-  if (current === null) return null
-  return current.displayName ?? current.email
-})
 
 const memberSince = computed(() => {
   const createdAt = profile.profile?.createdAt
@@ -75,10 +71,7 @@ const memberSince = computed(() => {
       </div>
 
       <div v-else-if="profile.profile" data-testid="account-loaded" class="flex flex-col gap-1">
-        <p class="font-medium" data-testid="account-name">{{ name }}</p>
-        <p class="text-sm text-muted-foreground" data-testid="dashboard-email">
-          {{ profile.profile.email }}
-        </p>
+        <p class="font-medium" data-testid="dashboard-email">{{ profile.profile.email }}</p>
         <p
           v-if="memberSince"
           class="tabular text-xs text-muted-foreground"
