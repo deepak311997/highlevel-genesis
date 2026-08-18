@@ -17,8 +17,8 @@ import {
 /**
  * AC-17 and AC-18 — the two deliverable documents, held true by a test.
  *
- * These are the slice's only artefacts that no other check can reach. The README has `check-
- * readme.mjs`, the environment has `check-secrets.mjs`; the Loom shot list and the release
+ * These are the slice's only artefacts that no other check can reach. The README has
+ * `check-readme.mjs`, the environment has `check-secrets.mjs`; the Loom shot list and the release
  * checklist are prose, and prose is exactly where a requirement goes quiet. So the two
  * mechanical claims they make get asserted: the shot list covers the brief's nine beats, in
  * order, inside five minutes; and every checklist line says who closes it.

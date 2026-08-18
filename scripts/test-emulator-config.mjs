@@ -2,19 +2,9 @@
 /**
  * Generate `firebase.test.json` — the same project, on a second set of ports.
  *
- * Without it, running the suite kills a development session: `npm run dev`
- * holds 9099, 8080 and 5001, and the emulators refuse to start a second time on
- * the same ports. That turned "run the tests" into "stop what you are doing
- * first", which is a bad trade several times an hour.
- *
- * **Generated rather than committed, on purpose.** A hand-maintained second
- * config drifts: someone edits `firestore.rules`' path, or the functions
- * codebase, or adds an emulator, and the copy silently keeps testing the old
- * shape. Deriving it means the only difference from `firebase.json` is the port
- * numbers, by construction.
- *
- * Ports are the defaults plus 100, which keeps them mentally adjacent (5001 →
- * 5101) and clear of anything else on the machine.
+ * Without it, running the suite kills a development session: `npm run dev` holds 9099, 8080 and
+ * 5001, and the emulators refuse to start a second time on the same ports. That turned "run the
+ * tests" into "stop what you are doing first", which is a bad trade several times an hour.
  */
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -23,58 +13,46 @@ import { dirname, join } from 'node:path'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 /**
- * The default band. A second checkout of this repo — an autopilot track running
- * its own slice on the same machine — needs a different one, because the ports
- * are the only thing two clones genuinely share and a constant here made them
- * share by construction: the second suite to start dies with "Could not start
- * emulator hub, port taken", which reads as a red suite and says nothing about
- * the code. `EMULATOR_PORT_OFFSET` moves the whole band; the settings below move
+ * The default band. A second checkout of this repo — an autopilot track running its own slice on
+ * the same machine — needs a different one, because the ports are the only thing two clones
+ * genuinely share and a constant here made them share by construction: the second suite to start
+ * dies with "Could not start emulator hub, port taken", which reads as a red suite and says
+ * nothing about the code. `EMULATOR_PORT_OFFSET` moves the whole band; the settings below move
  * the two ports that sit outside it.
  */
 export const OFFSET = Number(process.env['EMULATOR_PORT_OFFSET'] ?? 100)
 
 /**
- * The hub and the logging emulator are started by the CLI whether or not
- * firebase.json mentions them, so they need moving too — and not by OFFSET.
- * Their defaults are 4400 and 4500, so a +100 shift would put the hub on the
- * logging emulator's port and collide with the very session this exists to
- * avoid. They get their own range, and it is stated rather than derived: a
- * formula that looked tidy would eventually walk one checkout's band onto
- * another's, which is the exact failure this whole mechanism exists to prevent.
+ * The hub and the logging emulator are started by the CLI whether or not firebase.json mentions
+ * them, so they need moving too — and not by OFFSET. Their defaults are 4400 and 4500, so a +100
+ * shift would put the hub on the logging emulator's port and collide with the very session this
+ * exists to avoid. They get their own range, and it is stated rather than derived: a formula
+ * that looked tidy would eventually walk one checkout's band onto another's, which is the exact
+ * failure this whole mechanism exists to prevent.
  */
 export const HUB_PORT = Number(process.env['EMULATOR_HUB_PORT'] ?? 4700)
 export const LOGGING_PORT = Number(process.env['EMULATOR_LOGGING_PORT'] ?? 4800)
 
 /**
- * Eventarc and Cloud Tasks, which the CLI starts alongside `functions` whether
- * or not firebase.json names them — and which this generator forgot when hub
- * and logging were dealt with.
+ * Eventarc and Cloud Tasks, which the CLI starts alongside `functions` whether or not
+ * firebase.json names them — and which this generator forgot when hub and logging were dealt
+ * with.
  *
- * The consequence was the exact failure the band mechanism exists to prevent,
- * one layer down: two checkouts on different bands both took the CLI's own
- * defaults, 9299 and 9499, and the second suite to start died with
- * `EADDRINUSE` before a test ran.
- *
- * Settings rather than arithmetic, and here that is not a preference. Those
- * defaults sit **inside the shifted auth band** — `9299 + 300` is 9599 and
- * `9099 + 300` is 9399, so a +offset rule would eventually walk one checkout's
- * eventarc onto another's auth port, which is the precise class of bug that made
- * hub and logging settings in the first place. The values below are picked to
- * clear every emulator this repo declares, on every band anyone is likely to
- * choose.
+ * The consequence was the exact failure the band mechanism exists to prevent, one layer down:
+ * two checkouts on different bands both took the CLI's own defaults, 9299 and 9499, and the
+ * second suite to start died with `EADDRINUSE` before a test ran.
  */
 export const EVENTARC_PORT = Number(process.env['EMULATOR_EVENTARC_PORT'] ?? 4600)
 export const TASKS_PORT = Number(process.env['EMULATOR_TASKS_PORT'] ?? 4650)
 
 /**
- * Firestore serves its long-poll channel on a second socket, whose port
- * `firebase.json` does not have to declare — the CLI defaults it to 9150. That
- * default is the one port a `+100 on everything declared` rule cannot reach,
- * so the suite kept sharing it with a development session. The CLI will hunt
- * for a free port when the value is left implicit, but that hunt races: it
- * probes, finds the neighbouring port free, and hands it to a Firestore process
- * that then cannot bind it, killing the whole emulator set at startup. Naming
- * the port makes it fixed and moves it out of the dev session's way.
+ * Firestore serves its long-poll channel on a second socket, whose port `firebase.json` does not
+ * have to declare — the CLI defaults it to 9150. That default is the one port a `+100 on
+ * everything declared` rule cannot reach, so the suite kept sharing it with a development
+ * session. The CLI will hunt for a free port when the value is left implicit, but that hunt
+ * races: it probes, finds the neighbouring port free, and hands it to a Firestore process that
+ * then cannot bind it, killing the whole emulator set at startup. Naming the port makes it fixed
+ * and moves it out of the dev session's way.
  */
 export const DEFAULT_FIRESTORE_WEBSOCKET_PORT = 9150
 

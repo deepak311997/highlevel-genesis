@@ -2,28 +2,17 @@
 /**
  * Assert the README still says what is true.
  *
- * The README is the one artefact this project is graded on directly, and the one
- * artefact nothing else in the repository reads — which is how the version on
- * `main` came to name two scripts that do not exist, a root `npm run` script
- * that does not exist, live URLs described as "not deployed yet" long after both
- * answered `200`, and an architecture decision the project had already reversed.
+ * The README is the one artefact this project is graded on directly, and the one artefact
+ * nothing else in the repository reads — which is how the version on `main` came to name two
+ * scripts that do not exist, a root `npm run` script that does not exist, live URLs described as
+ * "not deployed yet" long after both answered `200`, and an architecture decision the project
+ * had already reversed.
  *
- * Prose quality stays a review judgement. Every *mechanical* claim the file
- * makes is checked here:
- *
- *   - the seven brief-named sections are present (AC-5), and the two capped
- *     lists stay inside their caps (AC-6);
- *   - every `npm run` it tells a reader to type resolves (AC-3);
- *   - every repo-relative path it names exists on disk (AC-4);
- *   - the live URLs are the ones `.firebaserc` and `firebase.json` imply (AC-7);
- *   - local setup names the emulator (AC-8);
- *   - it claims no client-side Firestore access anywhere (AC-10).
- *
- * The text checks are pure functions over the README. The five that also need
- * to resolve something — `npm run` names against a package.json, paths against
- * the filesystem — take that resolver as an injectable argument. Either way
- * `check-readme.spec.mjs` can assert twice: once over a fixture that proves the
- * check can fail, and once over the real README that proves it passes today.
+ * Prose quality stays a review judgement. Every *mechanical* claim is checked here: the seven
+ * brief-named sections are present and the two capped lists stay inside their caps; every
+ * `npm run` it tells a reader to type resolves; every repo-relative path it names exists; the
+ * live URLs are the ones `.firebaserc` and `firebase.json` imply; local setup names the
+ * emulator; and it claims no client-side Firestore access anywhere.
  *
  *   node scripts/check-readme.mjs
  */
@@ -50,14 +39,13 @@ export const REQUIRED_SECTIONS = [
 /**
  * Sentences and identifiers that would claim the browser talks to Firestore.
  *
- * The same ban `scripts/check-no-firestore.mjs` enforces over the built bundle
- * and `CLAUDE.md` states as a non-negotiable, one layer further out: over the
- * artefact that *describes* the architecture. The other two checks read code, so
- * neither can see the README claim client-side Firestore access while the code
- * does the opposite — which is exactly what happened. Decision #1 on `main` read
- * "the SPA subscribes to Firestore directly" for weeks after the API-only
- * decision reversed it, so that sentence is banned by name alongside the three
- * SDK calls it would be written with.
+ * The same ban `scripts/check-no-firestore.mjs` enforces over the built bundle and `CLAUDE.md`
+ * states as a non-negotiable, one layer further out: over the artefact that *describes* the
+ * architecture. The other two checks read code, so neither can see the README claim client-side
+ * Firestore access while the code does the opposite — which is exactly what happened. Decision
+ * #1 on `main` read "the SPA subscribes to Firestore directly" for weeks after the API-only
+ * decision reversed it, so that sentence is banned by name alongside the three SDK calls it
+ * would be written with.
  */
 export const FIRESTORE_CLAIMS = ['onSnapshot', 'getDoc', 'setDoc', 'subscribes to Firestore']
 
@@ -91,13 +79,12 @@ export function sectionBody(text, heading) {
 }
 
 /**
- * Top-level list items — numbered, dashed or starred — with no leading
- * whitespace, so nested items and continuation lines do not count.
+ * Top-level list items — numbered, dashed or starred — with no leading whitespace, so nested
+ * items and continuation lines do not count.
  *
- * Every marker, because the brief's caps are on *items* and a cap that only
- * sees `1. ` is a cap on one markdown syntax. Counting numbered lines alone,
- * the same section rewritten with dashes counted zero and both caps passed
- * silently — on fourteen decisions as readily as on none.
+ * Every marker, because the brief's caps are on *items* and a cap that only sees `1. ` is a cap
+ * on one markdown syntax. Counting numbered lines alone, the same section rewritten with dashes
+ * counted zero and both caps passed silently — on fourteen decisions as readily as on none.
  */
 export function topLevelItemCount(body) {
   return body.split('\n').filter((line) => /^(?:\d+\.|[-*])\s/.test(line)).length
@@ -147,12 +134,11 @@ export function scriptsOf(prefix, root = ROOT) {
 /**
  * Those that do not resolve, under the prefix-aware rule.
  *
- * A bare `npm run X` resolves against the **root** package alone; `npm --prefix
- * P run X` against P's. That distinction is the whole check. AC-3's own failing
- * example is `npm run dev:emulator`, which the README on `main` told a reader to
- * type at the repo root — and `dev:emulator` does exist, in
- * `frontend/package.json`. Under a rule that pooled all three package files it
- * would resolve, and the line that actually broke a fresh clone would pass. The
+ * A bare `npm run X` resolves against the **root** package alone; `npm --prefix P run X` against
+ * P's. That distinction is the whole check. AC-3's own failing example is `npm run
+ * dev:emulator`, which the README on `main` told a reader to type at the repo root — and
+ * `dev:emulator` does exist, in `frontend/package.json`. Under a rule that pooled all three
+ * package files it would resolve, and the line that actually broke a fresh clone would pass. The
  * prefix is not decoration; it is which package.json the command reaches.
  */
 export function unresolvedNpmScripts(text, resolve = scriptsOf) {
@@ -162,17 +148,8 @@ export function unresolvedNpmScripts(text, resolve = scriptsOf) {
 /**
  * Markdown link targets plus `<root>/…` tokens anywhere in the text. Deduped.
  *
- * Two passes, because the README names a path in two ways and both have gone
- * stale in the past: as a link a reader clicks, and as a filename in prose or in
- * a fenced command a reader types.
- *
- * Known limitation, recorded rather than papered over: a **bare root filename
- * with no slash** is only seen when it is a markdown link target. `CLAUDE.md` is
- * checked, because the README links it; `firestore.rules`, named in the
- * repository-layout block as prose, is not. Widening the token pass to every
- * `word.ext` would match version numbers, `2021-07-28`, `package.json` inside a
- * sentence about npm, and every `.env` variable — noise that would get the check
- * switched off. The roots are the boundary that keeps it quiet enough to keep.
+ * Two passes, because the README names a path in two ways and both have gone stale in the past:
+ * as a link a reader clicks, and as a filename in prose or in a fenced command a reader types.
  */
 export function pathsNamed(text) {
   const linked = [...text.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)]
@@ -195,16 +172,11 @@ export function pathsNamed(text) {
 /**
  * Those `pathsNamed` returns that are not on disk.
  *
- * **A committed `<path>.example` counts as presence**, and that exemption is
- * this repository's own convention rather than a list to maintain.
- * `functions/.secret.local` and `frontend/.env` are gitignored by design — they
- * are created by the developer from the example beside them — so they never
- * exist in a fresh clone, which is the state this check runs in on CI. A README
- * that could not name them could not say where an API key goes.
- *
- * It stays a real check because the exemption is narrow: a path that is simply
- * stale, or misspelled, has no `.example` next to it either and is still
- * reported.
+ * **A committed `<path>.example` counts as presence**, and that exemption is this repository's
+ * own convention rather than a list to maintain. `functions/.secret.local` and `frontend/.env`
+ * are gitignored by design — they are created by the developer from the example beside them — so
+ * they never exist in a fresh clone, which is the state this check runs in on CI. A README that
+ * could not name them could not say where an API key goes.
  */
 export function missingPaths(text, exists = (path) => existsSync(join(ROOT, path))) {
   return pathsNamed(text).filter((path) => !exists(path) && !exists(`${path}.example`))
@@ -213,17 +185,12 @@ export function missingPaths(text, exists = (path) => existsSync(join(ROOT, path
 /**
  * The live URLs, derived from `.firebaserc` and `firebase.json`.
  *
- * Derived, not matched literally, because the project id is committed in exactly
- * one place — `.firebaserc` — and the deploy, the OAuth redirect URI and these
- * two URLs all descend from it. A test that compared the README against a string
- * written into the test would pass forever: rename the project and the check
- * still agrees with itself while every link in the file is dead. Reading the
- * same file the deploy reads is what makes the README's Live URLs table a
+ * Derived, not matched literally, because the project id is committed in exactly one place —
+ * `.firebaserc` — and the deploy, the OAuth redirect URI and these two URLs all descend from it.
+ * A test that compared the README against a string written into the test would pass forever:
+ * rename the project and the check still agrees with itself while every link in the file is
+ * dead. Reading the same file the deploy reads is what makes the README's Live URLs table a
  * consequence of the configuration rather than a claim about it.
- *
- * Throws unless the rewrites name exactly one region. Picking the first would be
- * a guess about which function a reader will call, and a base URL that is right
- * for one of two functions is not a base URL.
  */
 export function liveUrls(firebasercText, firebaseJsonText) {
   const project = JSON.parse(firebasercText).projects?.default
@@ -276,14 +243,13 @@ export function scriptCommand(prefix, script, root = ROOT) {
 }
 
 /**
- * Ways the local-setup section stops being runnable from a fresh clone (AC-8).
+ * Ways the local-setup section stops being runnable from a fresh clone.
  *
- * Two halves, because the brief names the emulator explicitly and the README
- * tells a reader to type something else. The section must name
- * `firebase emulators:start`, and the command it does tell them to type —
- * `npm run dev` — must still be the one that wraps the emulators. Checking only
- * the prose would let the `dev` script quietly become plain `vite` and leave the
- * README describing an emulator that no longer starts.
+ * Two halves, because the brief names the emulator explicitly and the README tells a reader to
+ * type something else. The section must name `firebase emulators:start`, and the command it does
+ * tell them to type — `npm run dev` — must still be the one that wraps the emulators. Checking
+ * only the prose would let the `dev` script quietly become plain `vite` and leave the README
+ * describing an emulator that no longer starts.
  */
 export function localSetupProblems(text, command = scriptCommand) {
   const body = sectionBody(text, 'Local setup')
