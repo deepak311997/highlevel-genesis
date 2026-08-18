@@ -62,6 +62,7 @@ ROLES=(
   roles/cloudscheduler.admin              # the onSchedule sweep needs a Scheduler job
   roles/serviceusage.serviceUsageConsumer # quota project for every API call above
   roles/eventarc.admin                    # v2 triggers are wired through Eventarc
+  roles/billing.viewer                    # read the plan; firebase-tools checks it before deploying
 )
 
 # ─── preflight ────────────────────────────────────────────────────────────────
@@ -79,8 +80,50 @@ REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
 say "repository:     $REPO"
 echo
 
+# ─── APIs ─────────────────────────────────────────────────────────────────────
+#
+# Enabled here rather than left to the deploy, because the deploy's version of
+# this failure is bad: `firebase deploy` reports a permission error naming the
+# caller, not a disabled API, so it reads as "the service account is wrong" and
+# sends you to re-grant roles that were never the problem.
+#
+# `secretmanager` is the one that was actually off on this project — which meant
+# no secret existed, and so the deployed `generate` held no model key. Nothing
+# surfaced that: a function with an unresolvable secret deploys perfectly well
+# and answers 500 on the first real request.
+say "1. APIs"
+APIS=(
+  # Checked by firebase-tools before it will deploy a v2 function, because those
+  # require the Blaze plan. The check itself needs this API, so with it disabled
+  # the deploy dies on `Cloud Billing API has not been used in project …` after
+  # it has already uploaded rules and indexes — a half-applied deploy, and a
+  # message about billing when nothing is wrong with the billing account.
+  cloudbilling.googleapis.com     # the plan check that gates every function deploy
+  secretmanager.googleapis.com    # the three defineSecrets
+  cloudfunctions.googleapis.com   # the functions
+  run.googleapis.com              # ...which are Cloud Run services
+  cloudbuild.googleapis.com       # ...built by Cloud Build
+  artifactregistry.googleapis.com # ...into an image
+  eventarc.googleapis.com         # v2 triggers
+  cloudscheduler.googleapis.com   # the onSchedule sweep
+  firebasehosting.googleapis.com  # the SPA
+  firebaserules.googleapis.com    # Firestore rules
+  firestore.googleapis.com        # the database itself
+  iamcredentials.googleapis.com   # the service account signing its own tokens
+)
+
+ENABLED="$(gcloud services list --enabled --project "$PROJECT_ID" --format='value(config.name)')"
+for api in "${APIS[@]}"; do
+  if grep -qx "$api" <<<"$ENABLED"; then
+    echo "  $api"
+  else
+    echo "  $api — enabling"
+    run gcloud services enable "$api" --project "$PROJECT_ID" --quiet
+  fi
+done
+
 # ─── the service account ──────────────────────────────────────────────────────
-say "1. service account"
+say "2. service account"
 if gcloud iam service-accounts describe "$SA_EMAIL" --project "$PROJECT_ID" >/dev/null 2>&1; then
   echo "  $SA_EMAIL exists"
 else
@@ -91,7 +134,7 @@ else
   echo "  created $SA_EMAIL"
 fi
 
-say "2. roles"
+say "3. roles"
 for role in "${ROLES[@]}"; do
   echo "  $role"
   # `--condition=None` because without it gcloud prompts, and this runs in CI-ish
@@ -106,7 +149,7 @@ done
 
 # ─── the key ──────────────────────────────────────────────────────────────────
 if $WITH_KEY; then
-  say "3. key → FIREBASE_SERVICE_ACCOUNT"
+  say "4. key → FIREBASE_SERVICE_ACCOUNT"
   if $DRY_RUN; then
     echo "  would mint a key and pipe it to gh secret set"
   else
@@ -127,7 +170,7 @@ if $WITH_KEY; then
     echo "  set (the key file was deleted)"
   fi
 else
-  say "3. key — skipped (--no-key)"
+  say "4. key — skipped (--no-key)"
 fi
 
 # ─── variables ────────────────────────────────────────────────────────────────
@@ -136,7 +179,7 @@ fi
 # configuration is the one that was verified by hand locally. Nothing secret is
 # read: the two values that were once in functions/.env are `defineSecret`s now
 # and live in Secret Manager, which the deploy binds but never reads.
-say "4. repository variables"
+say "5. repository variables"
 
 value_of() { # file, key
   [[ -f "$1" ]] || return 0
@@ -172,7 +215,7 @@ done
 # about the binding — and that is a five-second check here against a ten-minute
 # failure in CI. Creating one would mean this script handling secret values,
 # which it deliberately never does.
-say "5. Secret Manager"
+say "6. Secret Manager"
 MISSING=()
 for secret in ANTHROPIC_API_KEY HL_CLIENT_SECRET OAUTH_STATE_SECRET; do
   if gcloud secrets describe "$secret" --project "$PROJECT_ID" >/dev/null 2>&1; then
