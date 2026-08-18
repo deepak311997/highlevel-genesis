@@ -62,10 +62,20 @@ onBeforeUnmount(() => {
   window.removeEventListener('message', onMessage)
 })
 
-/** Shared by the header's Refresh and the stale hint's — one rebuild, two doors. */
+/**
+ * Shared by the header's Refresh, the stale hint's, and the error state's Try
+ * again — one rebuild, three doors.
+ *
+ * The one branch: when the *file list* is what failed, there is nothing here to
+ * rebuild from. This panel holds no paths and has no business fetching them, so
+ * it asks the workspace for the list and the preview store builds as soon as it
+ * lands. Rebuilding regardless would re-read an empty list and settle to the
+ * empty state — announcing that a project with twenty files has no app yet.
+ */
 function rebuild(): void {
   if (workspace.generating) return
-  void preview.build()
+  if (!workspace.filesLoaded) void workspace.loadFiles()
+  else void preview.build()
 }
 </script>
 
@@ -158,7 +168,13 @@ function rebuild(): void {
       <Alert variant="destructive">
         <AlertDescription>{{ preview.error }}</AlertDescription>
       </Alert>
-      <Button variant="outline" size="sm" data-testid="preview-retry" @click="rebuild()">
+      <Button
+        variant="outline"
+        size="sm"
+        data-testid="preview-retry"
+        :disabled="workspace.generating"
+        @click="rebuild()"
+      >
         Try again
       </Button>
     </div>

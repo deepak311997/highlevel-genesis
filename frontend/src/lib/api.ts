@@ -19,10 +19,16 @@ export function apiUrl(path: string): string {
  *
  * `code` and `detail` mirror the server's error envelope
  * (`functions/src/lib/errors.ts`): `code` is the machine-readable reason a
- * caller may branch on — `hl_reconnect_required` is the one that matters — and
- * `detail` is upstream's own text about the request, which the HighLevel proxy
- * passes through so a preview can say what was actually wrong with the call
- * rather than only that something was.
+ * caller may branch on — `hl_reconnect_required` is the one that matters, and
+ * `stores/preview.ts` is what branches on it — and `detail` is upstream's own
+ * text about the request, which the HighLevel proxy passes through.
+ *
+ * **`detail` has no reader yet**, and that is deliberate rather than forgotten:
+ * the envelope carries it, so parsing it here is what keeps the boundary
+ * complete, but the preview's failure banner shows `message` alone and its wire
+ * shape to the frame is `{ message, status, code? }` (AC-21). Slice 12 either
+ * renders it or takes it out; leaving a half-parsed envelope was the worse of
+ * the two.
  *
  * Both are declared `string | undefined` rather than optional (`?:`): under
  * `exactOptionalPropertyTypes` an optional property and one that may hold
@@ -83,9 +89,10 @@ export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> 
  *
  * Prefers the server's own message, since that carries the field error a form
  * needs, and falls back to something a person can act on. It returns the error
- * rather than the message alone because the envelope's `code` and `detail` are
- * part of what a caller needs — the preview bridge reports both back to the
- * generated app, and a store branching on `hl_reconnect_required` reads `code`.
+ * rather than the message alone because the envelope's `code` is part of what a
+ * caller needs: the preview bridge reports it back to the generated app, whose
+ * `catch` branches on `hl_reconnect_required`, and the panel reads it to decide
+ * whether offering **Reconnect** would fix anything.
  *
  * The body is read **once**, before any branch: a 429 still carries an envelope
  * worth lifting even though its message is fixed, and `Response.json()` can only

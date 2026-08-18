@@ -14,9 +14,11 @@ import type { PreviewAsset } from './previewShim'
  * opaque origin may not fetch from (D6). So every reference the project holds
  * is resolved here, at assembly time, and travels inside the document as data.
  *
- * **What is injected, and in what order.** `<head>` opens with exactly two
- * elements this module wrote: the CSP `<meta>`, then the one shim `<script>`.
- * Everything the model generated follows. That order is the reading of AC-1 and
+ * **What is injected, and in what order.** The document opens with exactly two
+ * elements this module wrote — the CSP `<meta>`, then the one shim `<script>` —
+ * spliced in at the first anchor `insertionPoint` finds, which is `<head>` when
+ * the model wrote one and `<html>` or the doctype when it did not. Everything
+ * the model generated follows. That order is the reading of AC-1 and
  * AC-7 that satisfies both — a CSP meta governs only what comes after it, and
  * the shim has to precede everything generated so `hl()` exists before the
  * first line of the app runs.
@@ -161,7 +163,12 @@ export function assemblePreview(files: readonly PreviewFile[], nonce: string): A
 
   const stored = new Map(files.map((file) => [file.path, file.content]))
   const assets: PreviewAsset[] = []
-  const warnings: string[] = []
+  /*
+   * A `Set`, because the same missing file can be referenced more than once and
+   * the panel renders these in a `v-for` keyed on the sentence — a repeat is a
+   * duplicate key as well as the same complaint twice.
+   */
+  const warnings = new Set<string>()
 
   /**
    * The absolute / bare / missing decision, in exactly one place.
@@ -185,7 +192,7 @@ export function assemblePreview(files: readonly PreviewFile[], nonce: string): A
       // AC-6: dropped rather than left in, because leaving it in means the
       // frame fetches the SPA's index.html and applies HTML as a stylesheet.
       // The panel shows this sentence, so it names the file and the effect.
-      warnings.push(
+      warnings.add(
         `${name} is referenced by index.html but is not one of this project's files, so it was left out.`,
       )
       return ''
@@ -205,5 +212,5 @@ export function assemblePreview(files: readonly PreviewFile[], nonce: string): A
   const at = insertionPoint(source)
   const html = source.slice(0, at) + injection(nonce, assets) + source.slice(at)
 
-  return { ok: true, html, warnings }
+  return { ok: true, html, warnings: [...warnings] }
 }

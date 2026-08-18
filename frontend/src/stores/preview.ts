@@ -1,9 +1,11 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 
+import { ApiError } from '@/lib/api'
 import { getFile } from '@/lib/filesApi'
 import { hlProxy } from '@/lib/hlProxyApi'
 import { assemblePreview, type PreviewFile } from '@/lib/previewDocument'
+import { HL_CALL_LIMIT } from '@/lib/previewShim'
 import { handlePreviewMessage, type PreviewFailure } from '@/lib/previewBridge'
 import { useWorkspaceStore } from '@/stores/workspace'
 
@@ -15,7 +17,18 @@ import { useWorkspaceStore } from '@/stores/workspace'
  * one component tree for another, so anything held in `PreviewPanel` is destroyed
  * by a window resize — the same argument that put the composer's draft in a store
  * in Slice 4. Held here, a breakpoint swap re-renders the same document instead of
- * refetching every file and re-running the app's CRM calls.
+ * refetching every file.
+ *
+ * It does **not** save the app from re-running. A new `<iframe>` element executes
+ * its `srcdoc` from scratch, so the generated app's `hl()` calls go out again on
+ * every remount — a breakpoint crossing, and on the narrow layout every switch
+ * away from the Preview tab and back, since `Tabs` unmounts hidden content by
+ * default. What bounds that is `brokered` below: it is reset by a *build*, not by
+ * a mount, so one document spends at most `HL_CALL_LIMIT` however many times it
+ * is remounted. Keeping the frame alive across the swap is a layout change —
+ * Slice 4's two component trees, and Monaco's habit of measuring zero inside a
+ * hidden container — and is recorded in this slice's review rather than done
+ * here.
  *
  * **Not the workspace store, either.** That one is already a thousand lines and
  * owns the project, the transcript, the files and the stream; the preview has a
@@ -99,6 +112,29 @@ export const usePreviewStore = defineStore('preview', (): PreviewStore => {
   const builtRevision = ref(0)
 
   /**
+   * What this document has actually spent, counted on the host's side of the
+   * boundary (D15).
+   *
+   * The shim counts too, and under an honest generation the shim is the counter
+   * that fires — it rejects locally, so the call never leaves the frame. But the
+   * shim runs *inside* the document it restrains: its source is an inline
+   * `<script>`, so the nonce is there to be read, and anything running in the
+   * frame can post straight to the parent without going through `hl()` at all. A
+   * ceiling that exists only there bounds nothing. What it is protecting is the
+   * user's own CRM account being throttled (`HIGHLEVEL_PLATFORM.md` §5) and their
+   * function invocations being spent, so the decision of how much to spend is not
+   * the frame's to make.
+   *
+   * Reset by a **build**, not by a mount — which is also what bounds the cost of
+   * the panel being remounted (a breakpoint crossing, or a tab switch on the
+   * narrow layout): the same document re-runs, but it re-runs against the budget
+   * it has already spent, so one document costs at most this many calls in total.
+   *
+   * Not a `ref`: nothing renders it.
+   */
+  let brokered = 0
+
+  /**
    * Which build a read or a brokered call belongs to.
    *
    * The same device `workspace.ts` and `hl.ts` use, for the same reason: every
@@ -152,7 +188,22 @@ export const usePreviewStore = defineStore('preview', (): PreviewStore => {
     runtimeError.value = null
     error.value = null
 
+    // A new document is a new budget.
+    brokered = 0
+
     const paths = workspace.files.map((file) => file.path)
+
+    /*
+     * The list is what failed, so nothing at all is known about this project's
+     * files — least of all that it has none. `loadFiles` leaves the previous list
+     * alone when it fails, so an empty list plus a list error is exactly the case
+     * where the empty state would be a claim with no evidence behind it, made
+     * about a project that may well hold twenty files.
+     */
+    if (paths.length === 0 && workspace.filesError !== null) {
+      settleError(workspace.filesError)
+      return
+    }
     if (paths.length === 0) {
       settleEmpty('no_files')
       return
@@ -203,6 +254,14 @@ export const usePreviewStore = defineStore('preview', (): PreviewStore => {
     state.value = 'ready'
   }
 
+  function settleError(message: string): void {
+    state.value = 'error'
+    error.value = message
+    emptyReason.value = null
+    document.value = null
+    nonce.value = null
+  }
+
   function settleEmpty(reason: PreviewEmptyReason): void {
     state.value = 'empty'
     emptyReason.value = reason
@@ -245,10 +304,26 @@ export const usePreviewStore = defineStore('preview', (): PreviewStore => {
     await handlePreviewMessage(event, {
       nonce: built,
       frame,
-      proxy: (method, path, payload) => hlProxy(method, path, payload),
+      proxy: (method, path, payload) => {
+        if (brokered >= HL_CALL_LIMIT) {
+          // An `ApiError` so it travels the path every other failure travels:
+          // the frame gets a failure reply naming the limit, and the panel gets
+          // the banner. 429 because that is what it is — too many requests.
+          return Promise.reject(
+            new ApiError(
+              `This preview reached its limit of ${String(HL_CALL_LIMIT)} HighLevel calls.`,
+              429,
+            ),
+          )
+        }
+        brokered += 1
+        return hlProxy(method, path, payload)
+      },
       // `'*'` because an opaque origin has no name to target (D3, R6). What makes
       // that safe is D2: a reply carries a HighLevel response body or an error
-      // message, and never a token, a uid or a location id.
+      // message, and no credential and nothing identifying the Genesis account.
+      // The body does carry HighLevel's own `locationId` — see `previewBridge.ts`
+      // for why that is a tenant identifier rather than a credential.
       post: live((message: unknown) => {
         frame?.postMessage(message, '*')
       }),
@@ -283,14 +358,40 @@ export const usePreviewStore = defineStore('preview', (): PreviewStore => {
   )
 
   /*
-   * The panel cannot ask for its own first build without knowing whether the file
-   * list has arrived, and that is the store's question rather than the
-   * component's — a breakpoint swap remounts the panel and would ask again.
+   * The file list has three outcomes, and this store owes an answer to each.
+   *
+   * It is the store's question rather than the panel's because a breakpoint swap
+   * remounts the panel and would ask again, and because two of the three answers
+   * are states the panel only renders.
+   *
+   * **loaded** — build, once. `ensureBuilt`'s idle guard is what makes "once"
+   * true, and the *pending* arm is what keeps that guard honest: every path into
+   * `loaded` passes through `pending` first, so the state it finds is `idle`.
+   *
+   * **failed** — the list is the thing that failed, so the panel says so. Without
+   * this arm nothing moved at all: `filesLoaded` stays `false` on a failed load,
+   * so the panel sat on its loading skeleton indefinitely, and a Refresh pressed
+   * out of impatience read the empty list at face value and announced that the
+   * project has no app yet.
+   *
+   * **pending** — the list has been thrown away, so the document assembled from
+   * it has to go too. `workspace.open` clears the file state and refetches it,
+   * and `WorkspaceView` calls `open` with `immediate: true` on every mount — so
+   * walking to the dashboard and back re-opens the *same* project id, which the
+   * project watcher above does not fire for, because nothing about the project
+   * changed. Without this arm the panel was stranded on whatever state the empty
+   * interval left behind, until someone pressed Refresh.
    */
   watch(
-    () => workspace.filesLoaded,
-    (loaded) => {
-      if (loaded) void ensureBuilt()
+    (): 'loaded' | 'failed' | 'pending' => {
+      if (workspace.filesLoaded) return 'loaded'
+      return workspace.filesError === null ? 'pending' : 'failed'
+    },
+    (outcome) => {
+      if (outcome === 'loaded') void ensureBuilt()
+      else if (outcome === 'failed')
+        settleError(workspace.filesError ?? 'Could not read these files.')
+      else reset()
     },
     { immediate: true },
   )
@@ -299,18 +400,27 @@ export const usePreviewStore = defineStore('preview', (): PreviewStore => {
    * The demo (F6.4): a finished generation refreshes the preview with no
    * interaction at all.
    *
-   * **`flush: 'sync'` is load-bearing.** Both counters move in the same statement
-   * (D12), so with the default `'pre'` flush there is a tick in which `state` is
-   * still `'ready'` and `filesRevision` has already moved — and the stale hint
-   * would flash on screen immediately before the rebuild it exists as the
-   * alternative to.
+   * **The default `'pre'` flush, deliberately.** This ran `sync` on the argument
+   * that the stale hint would otherwise flash between `filesRevision` moving and
+   * the rebuild it triggers. It would not, and `sync` bought that non-problem at
+   * a real price. It would not, because a `'pre'` callback runs before the
+   * component update in the same flush, and `build()` reaches `state = 'loading'`
+   * before its first `await` — so no frame is ever rendered with `state` still
+   * `'ready'` and `filesRevision` already ahead, which is the only combination
+   * `stale` is true for. The price was that a `sync` callback runs *between* the
+   * two increments in `applyGenerationFiles`, so this store's correctness
+   * depended on `filesRevision` being written before `generationsApplied` in a
+   * function in another 1,100-line file, with nothing on either side saying so.
    */
   watch(
     () => workspace.generationsApplied,
-    () => {
-      void build()
+    (applied, previous) => {
+      // Only **forward**. The counter also goes back to zero when the workspace
+      // clears its file state, and a reset is not a generation: rebuilding for
+      // one would re-run the app's `hl()` calls against the account's rate-limit
+      // budget (R5) for an event the user never caused.
+      if (applied > previous) void build()
     },
-    { flush: 'sync' },
   )
 
   return {

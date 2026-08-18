@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, reactive } from 'vue'
 
 import type { FileContent, FileMeta } from '@/lib/filesApi'
+import { HL_CALL_LIMIT } from '@/lib/previewShim'
 
 /**
  * The preview's lifecycle, and the half of the broker that holds a credential.
@@ -52,12 +53,16 @@ function meta(path: string): FileMeta {
   }
 }
 
+const loadFiles = vi.fn()
+
 const workspace = reactive({
   projectId: 'proj-1',
   files: [] as FileMeta[],
   filesLoaded: false,
+  filesError: null as string | null,
   generationsApplied: 0,
   filesRevision: 0,
+  loadFiles,
 })
 
 vi.mock('@/stores/workspace', () => ({ useWorkspaceStore: () => workspace }))
@@ -123,6 +128,7 @@ beforeEach(() => {
   workspace.projectId = 'proj-1'
   workspace.files = []
   workspace.filesLoaded = false
+  workspace.filesError = null
   workspace.generationsApplied = 0
   workspace.filesRevision = 0
 })
@@ -227,23 +233,51 @@ describe('preview store — the build lifecycle', () => {
     expect(preview.document).not.toContain(String(first))
   })
 
-  /** AC-37, at the store: a rebuild starts from a clean slate. */
+  /**
+   * AC-37, at the store: a rebuild starts from a clean slate — and *starts*
+   * is the word under test.
+   *
+   * The banners belong to the document that raised them, so they have to be gone
+   * before the next one appears, not merely by the time it has finished loading.
+   * Asserting only after `build()` settles would pass just as happily against an
+   * implementation that cleared them at the end, which would leave the previous
+   * app's failure sitting over the new one for the whole length of the reads. So
+   * the reads are held open and the assertion is made *inside* that window.
+   */
   it('clears the warnings, the failure and the runtime error before it starts', async () => {
     storeFiles({ 'index.html': INDEX })
     const preview = usePreviewStore()
     await preview.build()
 
-    const frame = fakeFrame()
     preview.failure = { message: 'Nope.', status: 500, code: null }
     preview.runtimeError = 'boom'
     preview.warnings = ['missing.js']
 
-    await preview.build()
+    let release = (): void => {}
+    getFile.mockImplementation(
+      () =>
+        new Promise<FileContent>((resolve) => {
+          release = () => {
+            resolve(content('index.html', INDEX))
+          }
+        }),
+    )
 
+    const building = preview.build()
+    await nextTick()
+
+    // Mid-build: the reads have not landed, so no new document exists yet — and
+    // the last one's complaints are already gone.
+    expect(preview.state).toBe('loading')
     expect(preview.failure).toBeNull()
     expect(preview.runtimeError).toBeNull()
     expect(preview.warnings).toEqual([])
-    expect(frame.postMessage).not.toHaveBeenCalled()
+
+    release()
+    await building
+
+    expect(preview.state).toBe('ready')
+    expect(preview.failure).toBeNull()
   })
 
   it('does not write state for a build whose reads land after the project changed', async () => {
@@ -294,11 +328,160 @@ describe('preview store — the build lifecycle', () => {
     expect(preview.stale).toBe(true)
   })
 
+  /**
+   * A file list that never arrived is an error, not an empty project.
+   *
+   * `workspace.loadFiles` deliberately leaves the previous list alone when it
+   * fails, so a first load that fails leaves `files` empty and `filesLoaded`
+   * false — and `filesLoaded` is the only signal that used to reach this store.
+   * The panel therefore sat on its loading skeleton for good, and a Refresh
+   * pressed out of impatience read the empty list at face value and announced
+   * that the project has no app yet. It is a claim the store has no evidence
+   * for, about a project that may well have twenty files.
+   */
+  it('reports a failed file list as an error rather than an empty project', async () => {
+    const preview = usePreviewStore()
+    workspace.filesError = 'Could not load these files.'
+    await nextTick()
+
+    expect(preview.state).toBe('error')
+    expect(preview.error).toBe('Could not load these files.')
+
+    // And a rebuild asked for while the list is still missing says the same
+    // thing rather than falling through to the empty state.
+    await preview.build()
+    expect(preview.state).toBe('error')
+    expect(preview.emptyReason).toBeNull()
+  })
+
+  it('builds once the file list arrives on a retry', async () => {
+    const preview = usePreviewStore()
+    workspace.filesError = 'Could not load these files.'
+    await nextTick()
+    expect(preview.state).toBe('error')
+
+    // What `loadFiles` does on a retry: clear the failure, then settle the list.
+    workspace.filesError = null
+    await nextTick()
+    storeFiles({ 'index.html': INDEX })
+    workspace.filesLoaded = true
+
+    await vi.waitFor(() => {
+      expect(preview.state).toBe('ready')
+    })
+  })
+
+  /**
+   * The auto-rebuild is not stale the moment it lands — whichever order the
+   * workspace happens to move its two counters in.
+   *
+   * `applyGenerationFiles` moves both, and this store used to watch
+   * `generationsApplied` synchronously, which put its rebuild *between* the two
+   * increments. That worked only because `filesRevision` happened to be written
+   * first: a rebuild reading the revision before it moved would stamp the old one
+   * and come up stale immediately. Both orders are asserted here so the coupling
+   * cannot come back unnoticed.
+   */
+  it.each([
+    ['revision first', ['filesRevision', 'generationsApplied']],
+    ['generation first', ['generationsApplied', 'filesRevision']],
+  ] as const)('is not stale after an automatic rebuild — %s', async (_name, order) => {
+    storeFiles({ 'index.html': INDEX })
+    const preview = usePreviewStore()
+    await preview.build()
+    const before = preview.nonce
+
+    for (const counter of order) workspace[counter] += 1
+
+    await vi.waitFor(() => {
+      expect(preview.nonce).not.toBe(before)
+    })
+    expect(preview.state).toBe('ready')
+    expect(preview.stale).toBe(false)
+  })
+
   it('is not stale before anything has been built', () => {
     const preview = usePreviewStore()
     workspace.filesRevision += 1
 
     expect(preview.stale).toBe(false)
+  })
+
+  /**
+   * Re-opening the *same* project must not strand the panel on its empty state.
+   *
+   * `WorkspaceView` watches the route param with `immediate: true`, so walking
+   * to the dashboard and back calls `workspace.open` on a project id that has
+   * not changed. `open` throws the whole file state away — the list, the loaded
+   * flag and both counters — and refetches it. The project id never moves, so
+   * nothing resets this store; what it sees is `generationsApplied` dropping to
+   * zero while `files` is momentarily empty, and then the list arriving again.
+   *
+   * Two things have to hold across that. A counter going *down* is a reset and
+   * not a generation, so it may not trigger a rebuild; and a file list that has
+   * been discarded and refetched has to leave this store able to build from it.
+   */
+  it('rebuilds after the same project is re-opened and its file list is refetched', async () => {
+    const preview = usePreviewStore()
+    storeFiles({ 'index.html': INDEX })
+    workspace.filesLoaded = true
+    await vi.waitFor(() => {
+      expect(preview.state).toBe('ready')
+    })
+
+    // A generation lands, so the counter this store watches is no longer zero.
+    workspace.generationsApplied += 1
+    workspace.filesRevision += 1
+    await vi.waitFor(() => {
+      expect(preview.state).toBe('ready')
+    })
+
+    // `open` on the same id: `clearFileState`, then the refetch.
+    workspace.files = []
+    workspace.filesLoaded = false
+    workspace.generationsApplied = 0
+    workspace.filesRevision = 0
+    await nextTick()
+
+    storeFiles({ 'index.html': INDEX })
+    workspace.filesLoaded = true
+    await vi.waitFor(() => {
+      expect(preview.state).toBe('ready')
+    })
+    expect(preview.document).toContain('Hi')
+
+    // And the revision this build was made at is the refetched one, so the very
+    // next save still raises the hint rather than being swallowed by a
+    // `builtRevision` left over from before the reset.
+    workspace.filesRevision += 1
+    expect(preview.stale).toBe(true)
+  })
+
+  /**
+   * The counter reset above, on its own: a drop is not a generation.
+   *
+   * Worth its own case because the rebuild it would otherwise trigger costs the
+   * user's CRM rate-limit budget (D12, R5) — the whole reason a save gets a hint
+   * rather than a rebuild.
+   */
+  it('does not rebuild when the generation counter is reset rather than advanced', async () => {
+    storeFiles({ 'index.html': INDEX })
+    const preview = usePreviewStore()
+    await preview.build()
+
+    const before = preview.nonce
+    workspace.generationsApplied = 3
+    await vi.waitFor(() => {
+      expect(preview.nonce).not.toBe(before)
+    })
+    const built = preview.nonce
+    getFile.mockClear()
+
+    workspace.generationsApplied = 0
+    await nextTick()
+
+    expect(getFile).not.toHaveBeenCalled()
+    expect(preview.nonce).toBe(built)
   })
 })
 
@@ -401,6 +584,67 @@ describe('preview store — the broker', () => {
       code: 'hl_reconnect_required',
     })
     expect(preview.reconnectable).toBe(true)
+  })
+
+  /**
+   * D15's ceiling, enforced where it cannot be walked around.
+   *
+   * The shim counts calls too, and under an honest generation that counter is
+   * the one that fires. But the shim runs inside the document it is meant to
+   * restrain: its source is an inline `<script>`, so the nonce is readable, and
+   * any code in the frame can post straight past `hl()` to the parent. A budget
+   * that only exists on that side of the boundary bounds nothing — and what it
+   * is guarding is the user's own CRM account being throttled, and their
+   * function invocations being spent, which is not a cost the frame should get
+   * to choose. So the host keeps its own count of what it has actually brokered.
+   */
+  it('stops brokering past the call limit even when the shim is bypassed', async () => {
+    const { preview, frame, nonce } = await built()
+
+    for (let i = 0; i < HL_CALL_LIMIT; i += 1) {
+      await preview.handleMessage(
+        messageFrom(frame, hlRequest(nonce, { id: `c${String(i)}` })),
+        frame as unknown as Window,
+      )
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(HL_CALL_LIMIT)
+
+    await preview.handleMessage(
+      messageFrom(frame, hlRequest(nonce, { id: 'over' })),
+      frame as unknown as Window,
+    )
+
+    expect(fetchMock).toHaveBeenCalledTimes(HL_CALL_LIMIT)
+    const calls = frame.postMessage.mock.calls as [
+      { id: string; ok: boolean; error?: { message: string } },
+    ][]
+    const last = calls[calls.length - 1]?.[0]
+    expect(last).toMatchObject({ id: 'over', ok: false })
+    expect(last?.error?.message).toContain(String(HL_CALL_LIMIT))
+    // The panel says so too, rather than the preview simply going quiet.
+    expect(preview.failure?.message).toContain(String(HL_CALL_LIMIT))
+  })
+
+  /** A new document is a new budget — the limit is per build, as D15 says. */
+  it('gives a rebuilt document a fresh call budget', async () => {
+    const { preview, frame, nonce } = await built()
+    for (let i = 0; i <= HL_CALL_LIMIT; i += 1) {
+      await preview.handleMessage(
+        messageFrom(frame, hlRequest(nonce, { id: `c${String(i)}` })),
+        frame as unknown as Window,
+      )
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(HL_CALL_LIMIT)
+
+    await preview.build()
+    fetchMock.mockClear()
+
+    await preview.handleMessage(
+      messageFrom(frame, hlRequest(preview.nonce ?? '')),
+      frame as unknown as Window,
+    )
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('offers no reconnect for a failure that reconnecting would not fix', async () => {

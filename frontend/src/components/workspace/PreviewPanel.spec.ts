@@ -47,13 +47,17 @@ vi.mock('@/lib/filesApi', async (importOriginal) => ({
   getFile,
 }))
 
+const loadFiles = vi.fn()
+
 const workspace = reactive({
   projectId: 'proj-1',
   files: [] as FileMeta[],
   filesLoaded: false,
+  filesError: null as string | null,
   generating: false,
   generationsApplied: 0,
   filesRevision: 0,
+  loadFiles,
 })
 
 vi.mock('@/stores/workspace', () => ({ useWorkspaceStore: () => workspace }))
@@ -152,6 +156,7 @@ beforeEach(() => {
   workspace.projectId = 'proj-1'
   workspace.files = []
   workspace.filesLoaded = false
+  workspace.filesError = null
   workspace.generating = false
   workspace.generationsApplied = 0
   workspace.filesRevision = 0
@@ -224,6 +229,34 @@ describe('PreviewPanel — the four states', () => {
 
     expect(getFile).toHaveBeenCalledWith('proj-1', 'index.html')
     expect(wrapper.find('iframe').exists()).toBe(true)
+  })
+
+  /**
+   * AC-27's other cause: the *list* failed, not a read.
+   *
+   * The two are different failures with different retries. A read that failed can
+   * be re-issued from here; a list that never arrived cannot — this panel has no
+   * paths to assemble from and no business fetching them, so Try again asks the
+   * workspace for the list and the store builds when it lands. The state before
+   * that fix was worse than a missing retry: the panel sat on its loading skeleton
+   * and a Refresh announced that a project with twenty files had no app yet.
+   */
+  it('reports a failed file list and asks the workspace for it again', async () => {
+    workspace.filesError = 'Could not load these files.'
+
+    const wrapper = await panel()
+
+    const error = wrapper.find('[data-testid="preview-error"]')
+    expect(error.exists()).toBe(true)
+    expect(error.text()).toContain('Could not load these files.')
+    expect(wrapper.find('iframe').exists()).toBe(false)
+
+    await wrapper.find('[data-testid="preview-retry"]').trigger('click')
+
+    expect(loadFiles).toHaveBeenCalledTimes(1)
+    // Not this panel's job — it has no paths yet, so a read would be a request
+    // for nothing.
+    expect(getFile).not.toHaveBeenCalled()
   })
 
   /**

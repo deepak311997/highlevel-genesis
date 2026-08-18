@@ -17,8 +17,8 @@
  *
  * **The source contains no `<` character anywhere** (D7), so it can never
  * terminate the `<script>` element that carries it. The assets it embeds are
- * JSON with every `<` written as the escape `<`, which `JSON.parse`
- * restores byte-identically.
+ * JSON with every `<` written as the six-character escape `\u003c`, which
+ * `JSON.parse` restores byte-identically.
  *
  * **The error contract lives in two places.** `err.status` and `err.code` are
  * assigned onto a plain `Error` because that is precisely what Slice 9's system
@@ -49,7 +49,7 @@ export const HL_TIMEOUT_MS = 30_000
 /**
  * A JSON literal safe to embed in a `<script>` element.
  *
- * Every `<` becomes the six characters `<`, so the result cannot contain
+ * Every `<` becomes the six characters `\u003c`, so the result cannot contain
  * the one byte that could close the element early — `</script>` inside a string
  * in generated code being the case that matters. The escape is JSON's own, so
  * `JSON.parse` gives the content back unchanged, to the byte.

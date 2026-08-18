@@ -1,4 +1,5 @@
 import { ApiError } from './api'
+import type { HlMethod } from './hlProxyApi'
 
 /**
  * The host half of the preview channel.
@@ -13,8 +14,7 @@ import { ApiError } from './api'
  * `hl()` requests up to us, we verify them, we call `hlProxy` on our own
  * credentialed, same-origin page, and we post the JSON body back down.
  * **No credential ever enters the iframe** — not an ID token, not an App Check
- * token, not a location id. What crosses is a method, a path, a payload and a
- * response body.
+ * token. What crosses is a method, a path, a payload and a response body.
  *
  * ## Why origin is not the check, and the nonce is
  *
@@ -28,9 +28,15 @@ import { ApiError } from './api'
  * only to that document (AC-17).
  *
  * Replies go out with `targetOrigin: '*'`, because an opaque origin has no
- * nameable origin string to target. That is precisely why a reply must never
- * carry a token, a uid or a location id: `'*'` means any document that ends up
- * in that frame can read it.
+ * nameable origin string to target. `'*'` means any document that ends up in
+ * that frame can read the reply, so what a reply may carry is the rule that makes
+ * it safe: **no credential of any kind and nothing that identifies the Genesis
+ * account** — no ID token, no App Check token, no uid. What it does carry is
+ * HighLevel's own response body, verbatim (D17 forbids re-shaping it), and that
+ * body embeds the connected `locationId` in most records. That is a HighLevel
+ * tenant identifier, not a bearer credential, and it names data the frame is
+ * already rendering; it is called out here because the shorter phrasing "never a
+ * location id" was written elsewhere and is not true.
  *
  * ## Why a malformed message is dropped in silence
  *
@@ -47,10 +53,16 @@ export const FRAME_TAG = 'preview'
 /** Host → frame. Distinct so our own replies cannot be echoed back as requests. */
 export const HOST_TAG = 'preview-host'
 
-/** The three the proxy allowlist uses — `hlProxy`'s `HlMethod`, restated at the boundary. */
-export type PreviewMethod = 'GET' | 'POST' | 'PUT'
+/** The three the proxy allowlist uses. An alias, not a restatement — the frame's
+ * method goes straight to `hlProxy`, so a second copy could only ever drift. */
+export type PreviewMethod = HlMethod
 
-const METHODS: readonly string[] = ['GET', 'POST', 'PUT']
+const METHODS = ['GET', 'POST', 'PUT'] as const satisfies readonly PreviewMethod[]
+
+/** `satisfies` above plus a predicate here is what lets the parse narrow without a cast. */
+function isPreviewMethod(value: unknown): value is PreviewMethod {
+  return typeof value === 'string' && (METHODS as readonly string[]).includes(value)
+}
 
 /**
  * An accepted message, as a discriminated union rather than optional-field soup.
@@ -129,13 +141,13 @@ export function readPreviewMessage(data: unknown, nonce: string): PreviewMessage
   if (kind === 'hl') {
     const { id, method, path } = data
     if (typeof id !== 'string' || id === '') return null
-    if (typeof method !== 'string' || !METHODS.includes(method)) return null
+    if (!isPreviewMethod(method)) return null
     if (typeof path !== 'string') return null
 
     return {
       kind: 'hl',
       id,
-      method: method as PreviewMethod,
+      method,
       path,
       // Spread conditionally so an absent payload stays absent rather than
       // becoming an explicit `undefined` — `hlProxy` distinguishes the two on a

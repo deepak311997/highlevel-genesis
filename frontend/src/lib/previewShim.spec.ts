@@ -37,9 +37,65 @@ interface ShimHarness {
   posted: PostedMessage[]
   /** Dispatch an event to the listeners the shim registered for `type`. */
   fire: (type: string, event: unknown) => void
+  /** The loader every rewritten reference calls, by asset index. */
+  installAsset: (index: number) => void
 }
 
-function run(nonce = 'n1', assets: PreviewAsset[] = []): ShimHarness {
+/**
+ * A stand-in `document`, so the asset loader can be driven without a real one.
+ *
+ * `__genesisAsset` is the only part of the shim that touches the DOM, and what
+ * it does there is the whole of AC-2 and AC-3's "and run" — a `<style>` or a
+ * `<script>` element, built through the DOM so the HTML parser never sees the
+ * content (D7), swapped in at the position the reference occupied. A real jsdom
+ * document would execute an inserted `<script>` for real, which is a different
+ * test; this one records what was built and where it went.
+ */
+interface FakeNode {
+  tag: string
+  textContent: string
+}
+
+interface FakeDocument {
+  created: FakeNode[]
+  appended: FakeNode[]
+  replaced: { node: FakeNode; old: unknown }[]
+  as: Document
+}
+
+function fakeDocument(withCurrentScript: boolean): FakeDocument {
+  const created: FakeNode[] = []
+  const appended: FakeNode[] = []
+  const replaced: { node: FakeNode; old: unknown }[] = []
+
+  const currentScript = withCurrentScript
+    ? {
+        parentNode: {
+          replaceChild: (node: FakeNode, old: unknown) => {
+            replaced.push({ node, old })
+          },
+        },
+      }
+    : null
+
+  const doc = {
+    createElement: (tag: string): FakeNode => {
+      const node = { tag, textContent: '' }
+      created.push(node)
+      return node
+    },
+    currentScript,
+    head: {
+      appendChild: (node: FakeNode) => {
+        appended.push(node)
+      },
+    },
+  }
+
+  return { created, appended, replaced, as: doc as unknown as Document }
+}
+
+function run(nonce = 'n1', assets: PreviewAsset[] = [], doc: Document = document): ShimHarness {
   const listeners: Record<string, ((event: unknown) => void)[]> = {}
   const posted: PostedMessage[] = []
 
@@ -71,7 +127,7 @@ function run(nonce = 'n1', assets: PreviewAsset[] = []): ShimHarness {
     'parent',
     buildShim(nonce, assets),
   ) as unknown as ShimEntry
-  entry(win, document, parent)
+  entry(win, doc, parent)
 
   return {
     hl: win['hl'] as ShimHarness['hl'],
@@ -79,6 +135,7 @@ function run(nonce = 'n1', assets: PreviewAsset[] = []): ShimHarness {
     fire: (type, event) => {
       for (const fn of listeners[type] ?? []) fn(event)
     },
+    installAsset: win['__genesisAsset'] as ShimHarness['installAsset'],
   }
 }
 
@@ -138,6 +195,66 @@ describe('previewShim', () => {
 
     it('produces a literal with no "<" character at all', () => {
       expect(encodeAssets(risky)).not.toContain('<')
+    })
+  })
+
+  /**
+   * The other half of AC-2 and AC-3 — "when assembled **and run**".
+   *
+   * `previewDocument.spec.ts` proves the loader call lands where the reference
+   * was and that the content reaches the embedded payload intact. What it cannot
+   * prove is that the loader then installs anything: it asserts strings, and
+   * jsdom does not execute the document. Without these cases a `__genesisAsset`
+   * that returned early for stylesheets would leave every generated page
+   * unstyled and the whole suite green.
+   */
+  describe('the asset loader', () => {
+    const assets: PreviewAsset[] = [
+      { kind: 'css', content: 'body { color: red }' },
+      { kind: 'js', content: 'window.ran = true' },
+    ]
+
+    it('installs a stylesheet as a style element carrying the stored CSS', () => {
+      const doc = fakeDocument(true)
+      run('n1', assets, doc.as).installAsset(0)
+
+      expect(doc.created).toEqual([{ tag: 'style', textContent: 'body { color: red }' }])
+      // In place, at the position the `<link>` occupied — not appended to head,
+      // which would move a stylesheet past the rules meant to override it and a
+      // script past the element it expects to find.
+      expect(doc.replaced).toHaveLength(1)
+      expect(doc.replaced[0]?.node.tag).toBe('style')
+      expect(doc.appended).toEqual([])
+    })
+
+    it('installs a script as a script element carrying the stored JS', () => {
+      const doc = fakeDocument(true)
+      run('n1', assets, doc.as).installAsset(1)
+
+      expect(doc.created).toEqual([{ tag: 'script', textContent: 'window.ran = true' }])
+      expect(doc.replaced).toHaveLength(1)
+    })
+
+    /* No `currentScript` means no position to replace, so head is the honest
+     * fallback: the content still runs rather than being dropped in silence. */
+    it('falls back to the head when there is no script to replace', () => {
+      const doc = fakeDocument(false)
+      run('n1', assets, doc.as).installAsset(0)
+
+      expect(doc.appended).toHaveLength(1)
+      expect(doc.appended[0]?.tag).toBe('style')
+      expect(doc.replaced).toEqual([])
+    })
+
+    /* An index the payload does not hold cannot happen from an assembled
+     * document, but the loader is a global the generated app can call too. */
+    it('does nothing for an index the document does not carry', () => {
+      const doc = fakeDocument(true)
+      run('n1', assets, doc.as).installAsset(7)
+
+      expect(doc.created).toEqual([])
+      expect(doc.appended).toEqual([])
+      expect(doc.replaced).toEqual([])
     })
   })
 

@@ -266,6 +266,27 @@ describe('assemblePreview — rewriting references to stored files', () => {
     expect(assetsOf(html)).toEqual([])
   })
 
+  /**
+   * One sentence per missing file, not one per reference to it.
+   *
+   * The panel renders these in a `v-for` keyed on the sentence, so a repeat is a
+   * duplicate key — Vue's Priority A rule — as well as the same complaint twice.
+   * A page that loads a stylesheet in `<head>` and again on a media query, or one
+   * that names the same missing script twice, is ordinary generated markup.
+   */
+  it('names a missing file once however many times it is referenced', () => {
+    const { warnings } = assemble([
+      index(
+        '<html><head><link rel="stylesheet" href="gone.css">' +
+          '<link rel="stylesheet" href="gone.css"></head>' +
+          '<body><script src="gone.css"></script></body></html>',
+      ),
+    ])
+
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('gone.css')
+  })
+
   it('drops a reference to a bare filename the project does not hold, and names it', () => {
     const { html, warnings } = assemble([
       index(
