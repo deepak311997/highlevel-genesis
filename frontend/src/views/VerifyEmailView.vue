@@ -7,6 +7,7 @@ import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { consumeRedirect } from '@/lib/redirect'
+import { destinationPaths } from '@/router/guard'
 import { useAuthStore } from '@/stores/auth'
 import { useProfileStore } from '@/stores/profile'
 
@@ -72,7 +73,7 @@ async function releaseIfVerified(): Promise<boolean> {
 
   stop()
   await profile.ensure()
-  await router.push(consumeRedirect(router.getRoutes().map((r) => r.path)))
+  await router.push(consumeRedirect(destinationPaths(router.getRoutes())))
   return true
 }
 

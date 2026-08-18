@@ -11,6 +11,7 @@ import PasswordField from '@/components/PasswordField.vue'
 import { CONNECTION_MESSAGE } from '@/lib/api'
 import { recallEmail } from '@/lib/handoff'
 import { DEFAULT_REDIRECT, safeRedirect, storeRedirect } from '@/lib/redirect'
+import { destinationPaths } from '@/router/guard'
 import { SESSION_EXPIRED_REASON } from '@/lib/sessionExpiry'
 import { useAuthStore } from '@/stores/auth'
 
@@ -85,7 +86,7 @@ async function submit(): Promise<void> {
     const raw = route.query['redirect']
     const target = safeRedirect(
       typeof raw === 'string' ? raw : null,
-      router.getRoutes().map((r) => r.path),
+      destinationPaths(router.getRoutes()),
     )
     if (target !== DEFAULT_REDIRECT) storeRedirect(target)
 

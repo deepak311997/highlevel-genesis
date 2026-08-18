@@ -30,7 +30,12 @@ vi.mock('firebase/auth', () => ({ sendEmailVerification }))
 vi.mock('@/lib/redirect', () => ({ consumeRedirect }))
 
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push, getRoutes: () => [{ path: '/dashboard' }] }),
+  // `meta` included because the real router reports it, and the destination
+  // allowlist is keyed off `access` — see `destinationPaths` in `router/guard`.
+  useRouter: () => ({
+    push,
+    getRoutes: () => [{ path: '/dashboard', meta: { access: 'protected' } }],
+  }),
 }))
 
 import VerifyEmailView from './VerifyEmailView.vue'
