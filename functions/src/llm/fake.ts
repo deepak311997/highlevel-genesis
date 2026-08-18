@@ -51,6 +51,7 @@ import { MAX_OUTPUT_BYTES, type LlmStream } from './stream'
  * | `__unterminated`   | `unterminated.json` — a block that never closes |
  * | `__dup_files`      | `duplicate-files.json` — one path written twice |
  * | `__context`        | One token: the system blocks, messages and paths it was sent |
+ * | `__alt_files`      | `reply-alt.json` — a second turn: `index.html` rewritten, `about.html` added |
  * | *(none)*           | `reply.json`, a few tokens a second |
  *
  * The four file-shaped failures are **fixtures rather than L1-only inputs**
@@ -111,6 +112,7 @@ const MARKERS = [
   '__unterminated',
   '__dup_files',
   '__context',
+  '__alt_files',
 ] as const
 
 type Marker = (typeof MARKERS)[number]
@@ -313,6 +315,12 @@ function planFor(params: FakeParams): Plan {
     case '__dup_files':
       return {
         events: loadEvents('duplicate-files.json'),
+        firstDelayMs: DELTA_MS,
+        deltaDelayMs: DELTA_MS,
+      }
+    case '__alt_files':
+      return {
+        events: loadEvents('reply-alt.json'),
         firstDelayMs: DELTA_MS,
         deltaDelayMs: DELTA_MS,
       }

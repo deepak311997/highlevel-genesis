@@ -48,7 +48,9 @@ const FileEditor = (await import('./FileEditor.vue')).default
  * Two cases are the visible half of R4. The panel is **read-only while a stream
  * is open** (D9) — the one window in which a generation's batch and this editor
  * are two writers for one document — and a buffer replaced by a generation says
- * so rather than vanishing (D15, D16).
+ * so rather than vanishing (D15, D16). Slice 11's D22 leaves that notice in
+ * place and makes its copy origin-neutral (P8), because a restore is a second
+ * thing that can replace a buffer and it raises the same flag.
  */
 
 beforeEach(() => {
@@ -181,8 +183,25 @@ describe('FileEditor', () => {
     const wrapper = mount(FileEditor)
 
     expect(wrapper.find('[data-testid="file-editor-replaced"]').text()).toContain(
-      'Replaced by the latest generation',
+      'Replaced by a newer version of this file. Your unsaved changes were discarded.',
     )
+  })
+
+  /**
+   * AC-31, D22 (Slice 11). A restore replaces buffers too, so the notice may no
+   * longer name a generation — nor may it swing the other way and name a
+   * restore, since the same notice still covers the generation case. The
+   * assertion is case-insensitive because "Generation" reads as fine prose and
+   * would otherwise slip past a substring check unnoticed.
+   */
+  it('names neither a generation nor a restore in the replaced notice', () => {
+    openFile()
+    store.fileReplaced = true
+    const wrapper = mount(FileEditor)
+
+    const notice = wrapper.find('[data-testid="file-editor-replaced"]').text()
+    expect(notice).not.toMatch(/generation/i)
+    expect(notice).not.toMatch(/restore/i)
   })
 
   it('renders no replaced notice otherwise', () => {

@@ -55,6 +55,20 @@ const text = (events: LlmEvent[]): string =>
     .map((event) => event.text)
     .join('')
 
+/**
+ * The bytes between one block's delimiters — what the writer would store for that
+ * path, and so the only thing a "these two turns differ" claim can be about.
+ */
+const block = (reply: string, path: string): string => {
+  const open = `<genesis:file path="${path}">\n`
+  const at = reply.indexOf(open)
+  if (at === -1) throw new Error(`the reply has no block for ${path}`)
+  const start = at + open.length
+  const end = reply.indexOf('\n</genesis:file>', start)
+  if (end === -1) throw new Error(`the block for ${path} never closes`)
+  return reply.slice(start, end)
+}
+
 beforeEach(() => {
   process.env['FUNCTIONS_EMULATOR'] = 'true'
 })
@@ -229,6 +243,58 @@ describe('the default fixture keeps its prose and grows files', () => {
 
     expect(reply).toContain('<genesis:file path="index.html">')
     expect(reply).not.toContain('</genesis:file>')
+  })
+})
+
+/**
+ * `__alt_files` is Slice 11's second turn (D24).
+ *
+ * A restore is only observable if two turns leave the project in *different*
+ * states, and a fake that replayed `reply.json` every time would make a restore
+ * that did nothing indistinguishable from one that worked. So the alternate
+ * fixture rewrites `index.html`, adds `about.html`, and — just as deliberately —
+ * leaves `styles.css` and `app.js` alone, so the snapshot the second turn takes
+ * holds four files of which two were carried over untouched.
+ *
+ * None of this touches `reply.json` (D26): five suites assert against its exact
+ * bytes, so the second turn is a second fixture rather than an edit to the first.
+ */
+describe('the alternate file set', () => {
+  /* That the marker is recognised at all — i.e. that it is in `MARKERS` and that
+   * its `planFor` case reaches `reply-alt.json` — is exactly what replaying prose
+   * the default fixture does not contain proves. */
+  it('replays reply-alt.json for __alt_files', async () => {
+    const events = await run('__alt_files add an about page')
+
+    expect(terminal(events)).toMatchObject({ kind: 'end', truncated: false })
+    expect(text(events)).toContain('Here is the about page you asked for.')
+  })
+
+  it('adds about.html', async () => {
+    const reply = text(await run('__alt_files add an about page'))
+
+    expect(reply).toContain('<genesis:file path="about.html">')
+  })
+
+  it('rewrites index.html to something the default reply never wrote', async () => {
+    const second = text(await run('__alt_files add an about page'))
+    const first = text(await run('build a contact dashboard'))
+
+    expect(block(second, 'index.html')).not.toBe(block(first, 'index.html'))
+  })
+
+  /*
+   * Exactly two paths, because the integration test counts: `reply.json`'s three
+   * files plus `about.html` is four, and a third path here would move that count
+   * for a reason that has nothing to do with snapshots.
+   */
+  it('writes index.html and about.html and nothing else', async () => {
+    const reply = text(await run('__alt_files add an about page'))
+
+    expect(reply.split('</genesis:file>')).toHaveLength(3)
+    for (const path of ['styles.css', 'app.js']) {
+      expect(reply).not.toContain(`<genesis:file path="${path}">`)
+    }
   })
 })
 

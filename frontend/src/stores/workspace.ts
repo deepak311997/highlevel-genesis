@@ -7,6 +7,7 @@ import { getFile, listFiles, saveFile as putFile, type FileMeta } from '@/lib/fi
 import { streamGeneration } from '@/lib/generateApi'
 import { listMessages, sendMessage, MESSAGE_LIMIT, type Message } from '@/lib/messagesApi'
 import { getProject, type Project } from '@/lib/projectsApi'
+import { listSnapshots, restoreSnapshot as postRestore, type Snapshot } from '@/lib/snapshotsApi'
 
 /**
  * One project and its conversation, as far as the browser can see it.
@@ -138,12 +139,39 @@ export interface WorkspaceStore {
   fileReplaced: ComputedRef<boolean>
   /** The last generation's `fileError`, kept apart from `generateError`. */
   generateFileError: Ref<string | null>
+  /**
+   * The project's version history — **metadata only** (D18).
+   *
+   * Newest first, as the list route answers. There is deliberately no `files`
+   * and no `content` on a `Snapshot`: a version is up to 20 files of up to
+   * 100 KB each, and opening a history sheet must not ship a megabyte of code
+   * nobody has asked to restore.
+   */
+  snapshots: Ref<Snapshot[]>
+  snapshotsLoading: Ref<boolean>
+  /**
+   * Whether a list request has completed, successfully or not — and the whole of
+   * AC-27's condition (D21).
+   *
+   * A finished generation refetches the history **only if** this is true. It
+   * gates the `done` refetch and nothing else: the sheet fetches on every open
+   * (P5), because re-opening it after a generation must not show a stale list.
+   */
+  snapshotsLoaded: Ref<boolean>
+  snapshotsError: Ref<string | null>
+  /** The snapshot a restore is in flight for, or null. Disables every row's Restore. */
+  restoringId: Ref<string | null>
+  restoreError: Ref<string | null>
   atLimit: ComputedRef<boolean>
   canSend: ComputedRef<boolean>
   open: (projectId: string) => Promise<void>
   loadMessages: () => Promise<void>
   /** The file tree's Try again — this action and nothing else. */
   loadFiles: () => Promise<void>
+  /** The history, on its own — what the sheet calls on open and on **Try again**. */
+  loadSnapshots: () => Promise<void>
+  /** Restore one version, and reconcile the tabs to what came back (AC-24, AC-25). */
+  restoreSnapshot: (snapshotId: string) => Promise<void>
   /** Open a tab for a path if there is none, then make it active (D10). */
   selectFile: (path: string) => Promise<void>
   /** Close a tab, keeping its buffer (D12). */
@@ -184,6 +212,13 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
   const filesLoading = ref(false)
   const filesLoaded = ref(false)
   const filesError = ref<string | null>(null)
+
+  const snapshots = ref<Snapshot[]>([])
+  const snapshotsLoading = ref(false)
+  const snapshotsLoaded = ref(false)
+  const snapshotsError = ref<string | null>(null)
+  const restoringId = ref<string | null>(null)
+  const restoreError = ref<string | null>(null)
 
   const selectedPath = ref<string | null>(null)
   const openTabs = ref<string[]>([])
@@ -329,7 +364,16 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
 
   const atLimit = computed(() => messages.value.length >= MESSAGE_LIMIT)
   const canSend = computed(
-    () => draft.value.trim() !== '' && !sending.value && !generating.value && !atLimit.value,
+    () =>
+      draft.value.trim() !== '' &&
+      !sending.value &&
+      !generating.value &&
+      // D18's interlock, both ways round. `restoreSnapshot` refuses to start
+      // while a generation is open; this is the same rule from the other side,
+      // because a generation committing during a restore leaves the restore
+      // holding a file list one version out of date.
+      restoringId.value === null &&
+      !atLimit.value,
   )
 
   /**
@@ -418,6 +462,7 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     streamingText.value = ''
     generateError.value = null
     clearFileState()
+    clearSnapshotState()
 
     try {
       const fetched = await getProject(id)
@@ -495,6 +540,35 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
       filesError.value = err instanceof Error ? err.message : 'Could not load these files.'
     } finally {
       if (current(gen)) filesLoading.value = false
+    }
+  }
+
+  /**
+   * The version history — the sheet's open, its **Try again**, and what a
+   * finished generation refetches (D21, AC-23).
+   *
+   * `loadFiles`'s shape one collection over, including the part that matters:
+   * a failure leaves the list alone. An emptied history under a **Restore**
+   * button would say "this project has no versions", which is a different claim
+   * from "we could not reach the server".
+   */
+  async function loadSnapshots(): Promise<void> {
+    const id = projectId.value
+    if (id === null) return
+
+    const gen = generation
+    snapshotsLoading.value = true
+    snapshotsError.value = null
+    try {
+      const fetched = await listSnapshots(id)
+      if (!current(gen)) return
+      snapshots.value = fetched
+      snapshotsLoaded.value = true
+    } catch (err) {
+      if (!current(gen)) return
+      snapshotsError.value = err instanceof Error ? err.message : 'Could not load this history.'
+    } finally {
+      if (current(gen)) snapshotsLoading.value = false
     }
   }
 
@@ -625,6 +699,34 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
   }
 
   /**
+   * Re-read one open tab, and **announce** the discard when its buffer was dirty
+   * (D16, D22).
+   *
+   * Shared verbatim by `applyGenerationFiles` and `applyRestoredFiles`, because
+   * a surviving tab is the same problem in both: the bytes behind it have been
+   * replaced by a write the user did not make, so the server's copy wins and the
+   * discard is said out loud. The notice is origin-neutral — it does not care
+   * which of the two replaced it.
+   *
+   * Returns whether the open this belonged to is still the one on screen. That
+   * is the one thing a `void` helper could not carry back: the caller has its own
+   * work to abandon after the `await`, not just this buffer's.
+   */
+  async function rereadTab(path: string, id: string, gen: number): Promise<boolean> {
+    const buffer = buffers.value[path]
+    // A tab a generation opened for itself has no buffer at all (P1), and an
+    // unread buffer is not a dirty one.
+    const wasDirty = buffer !== undefined && isDirty(buffer)
+    ensureBuffer(path)
+    await readInto(path, id, gen)
+    if (!current(gen)) return false
+    withBuffer(path, (refreshed) => {
+      refreshed.replaced = wasDirty
+    })
+    return true
+  }
+
+  /**
    * Save the buffer, and take **the server's answer** back (D20).
    *
    * The response replaces the buffer rather than the buffer being assumed
@@ -704,7 +806,17 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
    * no answer that could have changed.
    */
   async function applyGenerationFiles(written: string[], gen: number): Promise<void> {
-    if (written.length > 0) await loadFiles()
+    if (written.length > 0) {
+      await loadFiles()
+      /*
+       * A turn that stored files also recorded a version (D2, D21), so an **open**
+       * sheet would otherwise go stale while the user watches the generation
+       * finish behind it. `snapshotsLoaded` is the whole of AC-27's condition: a
+       * user who never opens the sheet must not pay for this request on every
+       * turn, and a list nobody has looked at has nothing to keep current.
+       */
+      if (snapshotsLoaded.value) await loadSnapshots()
+    }
     if (!current(gen)) return
 
     const id = projectId.value
@@ -729,16 +841,7 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
      */
     for (const path of openTabs.value) {
       if (!written.includes(path)) continue
-      const buffer = buffers.value[path]
-      // A tab this generation opened has no buffer at all (P1), and an unread
-      // buffer is not a dirty one.
-      const wasDirty = buffer !== undefined && isDirty(buffer)
-      ensureBuffer(path)
-      await readInto(path, id, gen)
-      if (!current(gen)) return
-      withBuffer(path, (refreshed) => {
-        refreshed.replaced = wasDirty
-      })
+      if (!(await rereadTab(path, id, gen))) return
     }
 
     /*
@@ -789,6 +892,119 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     dropBuffer(opened)
   }
 
+  /**
+   * Restore one version — **one request**, and the tabs reconciled to what came
+   * back (AC-24, D12).
+   *
+   * The response *is* the refetch. The server has just written the documents and
+   * answers from what it stored, so `files` is applied directly rather than
+   * bought with a second `GET …/files` asking the same server the same question
+   * one round trip later. Slice 6's D20 does not transfer: there is no streamed
+   * copy here that could disagree with the stored bytes. The *history* is
+   * refetched, because the safety snapshot (D9) means it genuinely changed.
+   *
+   * `restoringId` is held for the whole of that — the response, the history and
+   * the tab reconciliation — because a workspace that half-shows a restored
+   * version is not a workspace with its Restore buttons live again.
+   */
+  async function restoreSnapshot(snapshotId: string): Promise<void> {
+    const id = projectId.value
+    /*
+     * AC-26. The sheet disables both of these, and the store re-checks them
+     * because nothing guarantees the call came from the button.
+     *
+     * `generating` is the expensive one: a restore's batch and a generation's
+     * are two writers for one set of documents, and whichever commits second
+     * silently wins. A second *restore* is the same race against itself — the
+     * later reply may be the earlier request, and it would reconcile the tabs to
+     * a version that is no longer the project's.
+     */
+    if (id === null || generating.value || restoringId.value !== null) return
+
+    const gen = generation
+    restoringId.value = snapshotId
+    restoreError.value = null
+    try {
+      const result = await postRestore(id, snapshotId)
+      if (!current(gen)) return
+      /*
+       * All three, not just the list. `loadFiles` is the tree's other writer and
+       * it sets every one of them, which is what `FileTree.vue` renders on — so
+       * a project whose first `GET /files` failed would otherwise keep showing
+       * **Try again** over a tree the restore has just rewritten.
+       */
+      files.value = result.files
+      filesLoaded.value = true
+      filesError.value = null
+      await loadSnapshots()
+      if (!current(gen)) return
+      /*
+       * D10 — `changed: false` is the project already *being* this version.
+       * Nothing was written, so nothing on screen is stale, and re-reading the
+       * tabs would discard an unsaved edit for a change that did not happen.
+       */
+      if (result.changed) await applyRestoredFiles(result.files, gen)
+    } catch (err) {
+      if (!current(gen)) return
+      // The batch is all-or-nothing, so a failure wrote nothing: the files, the
+      // tabs and every buffer are left exactly as they were. Discarding an edit
+      // *because* the restore failed would lose work for a change that never
+      // happened.
+      restoreError.value = err instanceof Error ? err.message : 'Could not restore that version.'
+    } finally {
+      if (current(gen)) restoringId.value = null
+    }
+  }
+
+  /**
+   * What a restore does to the tabs (AC-25) — `applyGenerationFiles`'s job with
+   * one case a generation cannot produce.
+   *
+   * A generation only ever writes; a restore also **deletes** (D7), so a tab can
+   * be left pointing at a path the project no longer holds. That editor would
+   * show bytes the server has disowned, and **Save** from it would put a deleted
+   * file back — so the tab goes, which is also what puts the panel on a file that
+   * still exists.
+   */
+  async function applyRestoredFiles(restored: FileMeta[], gen: number): Promise<void> {
+    const id = projectId.value
+    if (id === null) return
+
+    const paths = new Set(restored.map((file) => file.path))
+
+    /*
+     * Over a **copy**: `closeTab` rewrites `openTabs.value`, and walking a list
+     * that is being rebuilt underneath skips the entry after every removal.
+     *
+     * Sequential rather than `Promise.all`, exactly as `applyGenerationFiles` is
+     * and for the same reason — at most a handful of tabs, and one order is
+     * easier to reason about, and to assert, than a race between reads that each
+     * write a different buffer.
+     */
+    for (const path of [...openTabs.value]) {
+      if (!paths.has(path)) {
+        closeTab(path)
+        continue
+      }
+      if (!(await rereadTab(path, id, gen))) return
+    }
+
+    /*
+     * P6. `applyGenerationFiles` drops the closed buffers a generation *rewrote*;
+     * a restore potentially rewrites or deletes every file, and the response
+     * carries no per-path record of what moved — so the equivalent set is **all
+     * of them**, the closed tabs just deleted included. The next open fetches the
+     * server's copy, which is the same guarantee reached the same way, and no
+     * request is issued for a tab nobody has open.
+     *
+     * One rebuild rather than a `dropBuffer` per path: this is a whole-map filter
+     * already, and doing it per entry would rebuild the object once per file.
+     */
+    buffers.value = Object.fromEntries(
+      Object.entries(buffers.value).filter(([path]) => openTabs.value.includes(path)),
+    )
+  }
+
   /** Every file field back to its initial value — shared by `open` and `reset`. */
   function clearFileState(): void {
     files.value = []
@@ -803,6 +1019,25 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     saveError.value = null
     streamingFiles.value = {}
     generateFileError.value = null
+  }
+
+  /**
+   * Every snapshot field back to its initial value — shared by `open` and
+   * `reset`, exactly as `clearFileState` is (AC-28).
+   *
+   * Its own function, sitting beside `clearFileState` and called from the same
+   * two places, so a seventh field cannot be added to one of the two callers and
+   * forgotten in the other. A history belongs to one project and one account: a
+   * list left behind by the project before this one would offer a **Restore**
+   * that writes one project's files over another's.
+   */
+  function clearSnapshotState(): void {
+    snapshots.value = []
+    snapshotsLoading.value = false
+    snapshotsLoaded.value = false
+    snapshotsError.value = null
+    restoringId.value = null
+    restoreError.value = null
   }
 
   /**
@@ -960,8 +1195,16 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
      * `runGeneration`'s abort of the first then lands on the second one's state:
      * `generating` cleared and an error raised for a request that is still
      * running. The draft is left alone, so the guard costs the user nothing.
+     *
+     * `restoringId` is D18's interlock in the direction it was not written for.
+     * A restore in flight is a second writer for the same file documents, and
+     * the one that commits second silently wins — but the damage here is on the
+     * client: the restore's response is a file list read *before* the
+     * generation, so applying it drops the file the generation just wrote out of
+     * the tree and closes the tab opened for it, while the file sits on the
+     * server. The restore settles in a moment; the send is not lost, only held.
      */
-    if (id === null || content === '' || generating.value) return
+    if (id === null || content === '' || generating.value || restoringId.value !== null) return
 
     const gen = generation
     sending.value = true
@@ -1015,6 +1258,7 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     streamingText.value = ''
     generateError.value = null
     clearFileState()
+    clearSnapshotState()
   }
 
   return {
@@ -1051,11 +1295,19 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     editorContent,
     fileReplaced,
     generateFileError,
+    snapshots,
+    snapshotsLoading,
+    snapshotsLoaded,
+    snapshotsError,
+    restoringId,
+    restoreError,
     atLimit,
     canSend,
     open,
     loadMessages,
     loadFiles,
+    loadSnapshots,
+    restoreSnapshot,
     selectFile,
     closeTab,
     editContent,

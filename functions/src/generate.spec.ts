@@ -40,7 +40,20 @@ vi.mock('./lib/firebase', () => ({ getDb }))
 import { handleGenerate, keepAliveMs, logGeneration } from './generate'
 import { HttpError } from './lib/errors'
 import { SYSTEM_PROMPT, type LlmStream } from './llm'
+import type { AssistantTurn } from './messages/handlers'
 import { MESSAGE_LIMIT } from './messages/schema'
+
+/**
+ * The `AssistantTurn` of the nth `appendAssistantMessage` call (R10).
+ *
+ * The three parts of a turn used to be positional, and these assertions read
+ * `call[2]` / `call[3]` / `call[4]` — three index literals whose meaning lived
+ * in the signature rather than on the page. Named through this helper, an
+ * assertion says which part of the turn it is about.
+ */
+function turnOf(index: number): AssistantTurn {
+  return appendAssistantMessage.mock.calls[index]?.[2] as AssistantTurn
+}
 
 /**
  * The two pieces of `/generate` that are pure enough to test without an emulator.
@@ -173,16 +186,25 @@ function storedFile(path: string, content: string): { id: string; data: () => un
 
 /**
  * A Firestore stand-in answering **both** reads a turn makes of the files
- * collection, told apart by the call shape rather than by a flag:
+ * collection. As of Slice 11 (D14) they share one call shape —
+ * `.orderBy('path').limit(n).get()`, whole documents — because the cap check
+ * stopped being a `select()` of ids when one read had to also answer which of
+ * the turn's writes are rewrites and what the snapshot must copy:
  *
- * - `readFilePaths` — `.limit(n).select().get()`, ids only, for the cap check;
- * - `readProjectFiles` — `.orderBy('path').limit(n).get()`, whole documents, for
- *   the context (Slice 9 T9).
+ * - `readProjectFiles` — the context read, before the model is called (Slice 9 T9);
+ * - `readStoredFiles` — the write-path read, inside `planFileWrites`.
  *
- * Keeping them distinguishable by shape is what lets `rejectProjectFiles` fail
- * exactly one of the two, which is the whole of AC-28: the *context* read
- * failing must be an ordinary pre-flush 500, and a fake that could only fail
- * both would not tell us which one the handler was waiting on.
+ * It also serves the two calls `planSnapshot` makes of the *snapshots*
+ * collection — the heads projection and the `doc()` that mints the new version's
+ * id — because a turn that writes files now writes a snapshot on the same batch.
+ * They answer an empty list, which is the state every case here starts from.
+ *
+ * `rejectProjectFiles` therefore fails whichever of the two runs, and what makes
+ * it still prove AC-28 is the *order*: the context read happens before the LLM
+ * call, so a rejection there is the one the handler is waiting on and the
+ * write-path read is never reached. The assertion — an ordinary pre-flush 500,
+ * no SSE frame — is what pins that down, since a failure at the write-path read
+ * would arrive after the stream had already flushed.
  */
 function fakeFilesDb(
   options: {
@@ -191,17 +213,23 @@ function fakeFilesDb(
   } = {},
 ): unknown {
   const files = options.files ?? []
+  const readFiles = (): Promise<unknown> =>
+    options.rejectProjectFiles === true
+      ? Promise.reject(new Error('Firestore is unavailable'))
+      : Promise.resolve({ docs: files })
+  const noHeads = { get: (): Promise<unknown> => Promise.resolve({ docs: [] }) }
+
   return {
-    collection: () => ({
-      limit: () => ({ select: () => ({ get: () => Promise.resolve({ docs: [] }) }) }),
+    collection: (path: string) => ({
       orderBy: () => ({
-        limit: () => ({
-          get: () =>
-            options.rejectProjectFiles === true
-              ? Promise.reject(new Error('Firestore is unavailable'))
-              : Promise.resolve({ docs: files }),
-        }),
+        limit: () => ({ get: readFiles }),
+        select: () => noHeads,
       }),
+      // The heads read is a projection with no ordering after F1 — served here
+      // and after `orderBy` both, so neither shape can silently stop matching.
+      select: () => noHeads,
+      // `planSnapshot` mints the new version's id from the collection.
+      doc: () => ({ id: 'snap-new', path: `${path}/snap-new` }),
     }),
   }
 }
@@ -470,8 +498,14 @@ describe('handleGenerate — the client goes away', () => {
         truncated: false,
       },
     ])
-    appendAssistantMessage.mockImplementation((_uid, _projectId, content, truncated) =>
-      Promise.resolve({ id: 'a1', role: 'assistant', content, createdAt: '', truncated }),
+    appendAssistantMessage.mockImplementation((_uid, _projectId, turn: AssistantTurn) =>
+      Promise.resolve({
+        id: 'a1',
+        role: 'assistant',
+        content: turn.content,
+        createdAt: '',
+        truncated: turn.truncated,
+      }),
     )
   })
 
@@ -503,8 +537,8 @@ describe('handleGenerate — the client goes away', () => {
      * stream**. The persisted content is still byte-identical to the token frames
      * the client received, which is the invariant that actually matters (D7).
      */
-    expect(appendAssistantMessage.mock.calls[0]?.[2]).toBe('one two')
-    expect(appendAssistantMessage.mock.calls[0]?.[3]).toBe(true)
+    expect(turnOf(0).content).toBe('one two')
+    expect(turnOf(0).truncated).toBe(true)
     // Nobody is listening, so nothing is written to the dead socket.
     expect(res.frames.filter((frame) => frame.startsWith('event: done'))).toHaveLength(0)
     expect(res.frames.filter((frame) => frame.startsWith('event: error'))).toHaveLength(0)
@@ -547,10 +581,11 @@ describe('handleGenerate — the client goes away', () => {
     await handleGenerate(fakeRequest(), res.express, 'alice')
 
     expect(stream.aborted).toBe(true)
-    const call = appendAssistantMessage.mock.calls[0] ?? []
-    expect(call[2]).toBe('Here it is.\n\n[file: app.js]')
-    expect(call[3]).toBe(true)
-    expect(call[4]).toEqual([{ path: 'app.js', content: 'const a = 1\n', size: 12, exists: false }])
+    expect(turnOf(0).content).toBe('Here it is.\n\n[file: app.js]')
+    expect(turnOf(0).truncated).toBe(true)
+    expect(turnOf(0).fileWrites).toEqual([
+      { path: 'app.js', content: 'const a = 1\n', size: 12, exists: false },
+    ])
     // And still nothing on the dead socket.
     expect(res.frames.filter((frame) => frame.startsWith('event: done'))).toHaveLength(0)
   })
@@ -567,7 +602,7 @@ describe('handleGenerate — the client goes away', () => {
 
     await handleGenerate(fakeRequest(), res.express, 'alice')
 
-    expect(appendAssistantMessage.mock.calls[0]?.[3]).toBe(false)
+    expect(turnOf(0).truncated).toBe(false)
     expect(res.frames.filter((frame) => frame.startsWith('event: done'))).toHaveLength(1)
     // `close` after `end()` must change nothing.
     res.express.emit('close')

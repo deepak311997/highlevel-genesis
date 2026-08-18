@@ -8,6 +8,7 @@ import { getDb } from '../lib/firebase'
 import { logAuthEvent } from '../lib/log'
 import { parseBody } from '../lib/parse'
 import { notFound, readProject, requireProjectId } from '../projects/handlers'
+import { stageSnapshot, type SnapshotPlan } from '../snapshots/handlers'
 import {
   createMessageBodySchema,
   MESSAGE_LIMIT,
@@ -151,17 +152,38 @@ function readBackOrFail(snapshot: DocumentSnapshot, detail: string): Message {
  * `serverTimestamp()` is a sentinel until then — so the committed document is the
  * only place the real timestamp exists.
  *
+ * **The turn is one object, not five positional parameters** (R10). The list was
+ * `(uid, projectId, content, truncated, fileWrites)` and Slice 11 adds a sixth;
+ * at that width a call reads as `(…, text, false, [], null)`, where a value in
+ * the wrong slot is caught only if its neighbours happen to have different
+ * types. The two path segments stay positional because they are what *addresses*
+ * the write; everything that *is* the turn goes in the object.
+ *
  * `seq` is 1 (D35). Both halves of a turn are written in requests of their own,
  * so their `createdAt` values genuinely differ and `seq` is belt and braces
  * rather than the tiebreak it was in Slice 4 — but the transcript query still
  * reads it, and every transcript written before this slice still needs it.
  */
+export interface AssistantTurn {
+  content: string
+  truncated: boolean
+  fileWrites: readonly FileWritePlan[]
+  /**
+   * The turn's snapshot, or `null` when it stored no files (D2, D4).
+   *
+   * Staged on this batch rather than committed after it, which is the whole of
+   * R5: writing the snapshot in its own commit afterwards is one line shorter
+   * and leaves a crash window in which the project's files moved and its history
+   * did not — a version list that is silently missing the version you are
+   * looking at.
+   */
+  snapshot: SnapshotPlan | null
+}
+
 export async function appendAssistantMessage(
   uid: string,
   projectId: string,
-  content: string,
-  truncated: boolean,
-  fileWrites: readonly FileWritePlan[],
+  turn: AssistantTurn,
 ): Promise<Message> {
   // Auto-id, minted locally: nothing is read to get it.
   const ref = getDb().collection(messagesPath(uid, projectId)).doc()
@@ -169,13 +191,16 @@ export async function appendAssistantMessage(
 
   batch.set(ref, {
     role: 'assistant',
-    content,
+    content: turn.content,
     seq: ASSISTANT_SEQ,
     createdAt: FieldValue.serverTimestamp(),
-    truncated,
+    truncated: turn.truncated,
   })
 
-  stageFileWrites(batch, uid, projectId, fileWrites)
+  stageFileWrites(batch, uid, projectId, turn.fileWrites)
+  // D4, R5. On the turn's own batch, so the files and the history cannot part
+  // company across a crash.
+  if (turn.snapshot !== null) stageSnapshot(batch, turn.snapshot)
 
   await batch.commit()
 

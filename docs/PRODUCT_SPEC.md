@@ -210,7 +210,7 @@ layout primitives", plus "a ShadCN sheet or dialog" for snapshot history:
 | `tabs`, `badge` | ✅ named explicitly | ✅ Slice 4 |
 | `resizable`, `scroll-area`, `separator` | layout primitives, three-panel workspace | ✅ Slice 4 |
 | `textarea` | not named — see below | ✅ Slice 4 |
-| `sheet` | ✅ snapshot history | Slice 11 |
+| `sheet` | ✅ snapshot history | ✅ Slice 11 |
 | `sonner` or `toast`, `skeleton` | error + loading states (F8, DoD) | Slice 12 |
 
 **`textarea` is a departure from the list, recorded rather than decided at the keyboard**

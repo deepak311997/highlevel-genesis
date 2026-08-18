@@ -14,6 +14,7 @@ import { logAuthEvent } from '../lib/log'
 import { parseBody } from '../lib/parse'
 import type { CollectResult } from '../llm/fileops'
 import { notFound, readProject, requireProjectId } from '../projects/handlers'
+import { mergeSnapshotFiles } from '../snapshots/plan'
 import {
   byteLength,
   filePathSchema,
@@ -103,36 +104,52 @@ export function fileNotFound(): HttpError {
 }
 
 /**
- * Which paths the project already holds, up to the cap.
+ * The project's files, content included, up to the cap — **one read, three
+ * questions** (D14).
  *
- * `select()` with no arguments asks for document references and no field data, so
- * this is ≤20 refs rather than ≤20 documents — `liveProjectCount` and
- * `messageCount`'s shape. It answers two questions at once: whether the union is
- * within `FILE_LIMIT`, and which of a turn's writes are rewrites rather than
- * creations.
+ * It used to be `readFilePaths`: `limit → select()`, ≤20 refs and no field data,
+ * answering whether the union is within `FILE_LIMIT` and which of a turn's writes
+ * are rewrites. Slice 11 added a third question — *what is this project's file
+ * set?*, which a snapshot copies whole — and the rejected alternative was to keep
+ * the projection and add a second full read beside it. That is the same bytes,
+ * one more round trip, and two answers to "what does this project hold" which can
+ * disagree about a document written between them. So the projection goes and the
+ * documents come back.
+ *
+ * **A document that cannot be read is omitted**, where the ref-counting version
+ * counted it (P2). That is the PRD's own position — a copy of a document nothing
+ * can read would be a copy of nothing — and it has two consequences the callers
+ * rely on rather than work around: the `FILE_LIMIT` union check counts one fewer,
+ * and a rewrite of a corrupt path is planned with `exists: false`, so it is
+ * written whole and **repaired** instead of merged into rubble.
+ *
+ * `orderBy('path')` on a single field is served by Firestore's automatic index
+ * (D30), so this adds nothing to `firestore.indexes.json`.
  *
  * Read immediately before the write and **not transactional**, exactly as the
  * other two guard-rails are (D23's last-write-wins says the same thing from the
  * other side). Two simultaneous generations at the cap can both land, which is a
  * guard-rail missing by one rather than a boundary being crossed.
  */
-export async function readFilePaths(uid: string, projectId: string): Promise<Set<string>> {
+export async function readStoredFiles(uid: string, projectId: string): Promise<StoredFile[]> {
   const snapshot = await getDb()
     .collection(filesPath(uid, projectId))
+    .orderBy('path')
     .limit(FILE_LIMIT)
-    .select()
     .get()
 
-  return new Set(snapshot.docs.map((doc) => doc.id))
+  return snapshot.docs
+    .map((doc) => parseStoredFile(doc))
+    .filter((file): file is StoredFile => file !== null)
 }
 
 /**
  * A file to write, and whether the project already holds it.
  *
  * The flag rides along rather than being re-read inside the batch, because the
- * read that answers it — `readFilePaths` — has already happened for the cap
- * check, and a second one inside the write path would be a second answer to the
- * same question.
+ * read that answers it — `readStoredFiles` — has already happened for the cap
+ * check and for the snapshot's merge, and a second one inside the write path
+ * would be a second answer to the same question.
  */
 export interface FileWritePlan extends FileWrite {
   exists: boolean
@@ -183,6 +200,16 @@ export function stageFileWrites(
 /** What a turn's files came to: what to write, and what to tell the user. */
 export interface FileWriteOutcome {
   writes: FileWritePlan[]
+  /**
+   * The project's file set as it stands **after** this turn (D1) — what a
+   * snapshot copies.
+   *
+   * Not the writes: a turn that rewrites one of three files leaves a project of
+   * three, and a copy of the one write would restore an app missing two thirds
+   * of itself. Empty exactly when `writes` is, so a turn that stores nothing
+   * plans no snapshot and issues no read to plan one.
+   */
+  resulting: FileWrite[]
   error: FileRejection | null
 }
 
@@ -219,22 +246,33 @@ export async function planFileWrites(
   const attempted = collected.ops.length > 0 || collected.unterminated !== null
 
   if (!completed) {
-    return { writes: [], error: attempted ? { reason: 'incomplete' } : null }
+    return { writes: [], resulting: [], error: attempted ? { reason: 'incomplete' } : null }
   }
 
   if (collected.unterminated !== null) {
-    return { writes: [], error: { reason: 'unterminated', path: collected.unterminated } }
+    return {
+      writes: [],
+      resulting: [],
+      error: { reason: 'unterminated', path: collected.unterminated },
+    }
   }
 
-  // A prose-only reply reads nothing at all: no cap to check, nothing to write.
-  if (collected.ops.length === 0) return { writes: [], error: null }
+  /*
+   * A prose-only reply reads nothing at all: no cap to check, nothing to write —
+   * and therefore, from Slice 11, **no merge and no snapshot** (D2). The read
+   * not happening is the whole of that clause: `mergeSnapshotFiles` is below
+   * this line, so a turn with no ops cannot reach it.
+   */
+  if (collected.ops.length === 0) return { writes: [], resulting: [], error: null }
 
-  const existing = await readFilePaths(uid, projectId)
-  const validated = validateFileOps(collected.ops, [...existing])
-  if (!validated.ok) return { writes: [], error: validated.error }
+  const existing = await readStoredFiles(uid, projectId)
+  const existingPaths = new Set(existing.map((file) => file.path))
+  const validated = validateFileOps(collected.ops, [...existingPaths])
+  if (!validated.ok) return { writes: [], resulting: [], error: validated.error }
 
   return {
-    writes: validated.writes.map((write) => ({ ...write, exists: existing.has(write.path) })),
+    writes: validated.writes.map((write) => ({ ...write, exists: existingPaths.has(write.path) })),
+    resulting: mergeSnapshotFiles(existing, validated.writes),
     error: null,
   }
 }

@@ -2558,3 +2558,614 @@ describe('the stream — files', () => {
     expect(store.streamingFiles).toEqual({})
   })
 })
+
+/**
+ * Two versions, newest first — the order the list route answers in (D16), which
+ * is also the order the sheet renders. `seq` is the human-facing version number
+ * and `id` is the document; the two are deliberately different values here, so a
+ * test that confuses them fails rather than passing by coincidence.
+ */
+const SNAPSHOT_OLD = {
+  id: 'snap-1',
+  seq: 1,
+  createdAt: '2026-08-17T09:30:00.000Z',
+  origin: 'generation' as const,
+  fileCount: 1,
+  totalBytes: 24,
+}
+
+const SNAPSHOT_NEW = {
+  id: 'snap-2',
+  seq: 2,
+  createdAt: '2026-08-17T10:00:00.000Z',
+  origin: 'generation' as const,
+  fileCount: 2,
+  totalBytes: 35,
+}
+
+/**
+ * The version history (AC-23, AC-27, AC-28, D21).
+ *
+ * The list is **asked for**, never pushed: `done`'s SSE payload is unchanged, so
+ * the only way the browser learns a version exists is a request. Which request,
+ * and when, is the whole of this block — the sheet fetches on every open (P5),
+ * and a finished generation refetches **only if** the sheet has been opened this
+ * session, because a refetch for a list nobody has looked at is a request whose
+ * answer is never rendered.
+ */
+describe('the snapshot list', () => {
+  it('fills the list and marks it loaded', async () => {
+    const store = await opened()
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+
+    await store.loadSnapshots()
+
+    expect(requests()).toEqual(['GET /api/projects/proj-1/snapshots'])
+    expect(store.snapshots).toEqual([SNAPSHOT_NEW, SNAPSHOT_OLD])
+    expect(store.snapshotsLoaded).toBe(true)
+    expect(store.snapshotsLoading).toBe(false)
+    expect(store.snapshotsError).toBeNull()
+  })
+
+  it('is loading while the list request is in flight', async () => {
+    const store = await opened()
+    const slow = deferred()
+    fetchMock.mockReturnValueOnce(slow.promise)
+
+    const loading = store.loadSnapshots()
+    await vi.waitFor(() => {
+      expect(store.snapshotsLoading).toBe(true)
+    })
+    slow.settle(response({ snapshots: [SNAPSHOT_NEW] }))
+    await loading
+
+    expect(store.snapshotsLoading).toBe(false)
+    expect(store.snapshots).toEqual([SNAPSHOT_NEW])
+  })
+
+  /*
+   * AC-23's second half, and `loadFiles`'s rule one collection over: a failed
+   * refetch emptying the list would say "this project has no history", which is a
+   * different claim from "we could not reach the server" and a much worse one to
+   * make wrongly — this one under a **Restore** button.
+   */
+  it('records a failure and leaves any existing list in place', async () => {
+    const store = await opened()
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+    await store.loadSnapshots()
+
+    fetchMock.mockResolvedValueOnce(response({ error: 'Could not load the history.' }, 500))
+    await store.loadSnapshots()
+
+    expect(store.snapshotsError).toBe('Could not load the history.')
+    expect(store.snapshots).toEqual([SNAPSHOT_NEW, SNAPSHOT_OLD])
+    expect(store.snapshotsLoading).toBe(false)
+  })
+
+  /** The sheet's **Try again** — this action and nothing else. */
+  it('re-issues the request and clears a previous failure', async () => {
+    const store = await opened()
+    fetchMock.mockResolvedValueOnce(response({ error: 'Something went wrong.' }, 500))
+    await store.loadSnapshots()
+    expect(store.snapshotsError).toBe('Something went wrong.')
+
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW] }))
+    await store.loadSnapshots()
+
+    expect(requests()).toEqual([
+      'GET /api/projects/proj-1/snapshots',
+      'GET /api/projects/proj-1/snapshots',
+    ])
+    expect(store.snapshotsError).toBeNull()
+    expect(store.snapshots).toEqual([SNAPSHOT_NEW])
+  })
+
+  it('does nothing without a project open', async () => {
+    await useWorkspaceStore().loadSnapshots()
+
+    expect(requests()).toEqual([])
+  })
+
+  /**
+   * AC-27, D21. A turn that stored files recorded a version, so an **open** sheet
+   * would otherwise go stale while the user watches the generation finish behind
+   * it. The refetch rides after the file list's, which is where the answer it
+   * depends on has just landed.
+   */
+  it('refetches the list on a done that wrote files, once it has been loaded', async () => {
+    const store = await opened()
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_OLD] }))
+    await store.loadSnapshots()
+    fetchMock.mockClear()
+
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE, APP_FILE] }))
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: ['app.js'], fileError: null }))
+    stream.close()
+    await running
+
+    expect(requests()).toEqual([
+      'POST /generate',
+      'GET /api/projects/proj-1/files',
+      'GET /api/projects/proj-1/snapshots',
+    ])
+    expect(store.snapshots).toEqual([SNAPSHOT_NEW, SNAPSHOT_OLD])
+  })
+
+  /*
+   * AC-27's condition, which is the whole point of `snapshotsLoaded`: a user who
+   * never opens the sheet must not pay for a snapshot request on every turn.
+   */
+  it('issues no snapshot request on a done when the sheet was never opened', async () => {
+    const store = await opened()
+
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE, APP_FILE] }))
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: ['app.js'], fileError: null }))
+    stream.close()
+    await running
+
+    expect(requests()).toEqual(['POST /generate', 'GET /api/projects/proj-1/files'])
+    expect(store.snapshots).toEqual([])
+    expect(store.snapshotsLoaded).toBe(false)
+  })
+
+  /*
+   * AC-27's other half, and D2 seen from the client: a turn that stored no file
+   * wrote no snapshot, so there is no answer that could have changed — even with
+   * the sheet open and loaded.
+   */
+  it('issues no snapshot request on a done that wrote nothing', async () => {
+    const store = await opened()
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_OLD] }))
+    await store.loadSnapshots()
+    fetchMock.mockClear()
+
+    fetchMock.mockResolvedValueOnce(
+      cannedStream(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null })),
+    )
+    await store.retryGeneration()
+
+    expect(requests()).toEqual(['POST /generate'])
+    expect(store.snapshots).toEqual([SNAPSHOT_OLD])
+  })
+
+  /** AC-28. A history belongs to one project and one account. */
+  it('returns every snapshot field to its initial value on reset', async () => {
+    const store = await opened()
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+    await store.loadSnapshots()
+    fetchMock.mockResolvedValueOnce(response({ error: 'Could not load the history.' }, 500))
+    await store.loadSnapshots()
+
+    store.reset()
+
+    expect(store.snapshots).toEqual([])
+    expect(store.snapshotsLoading).toBe(false)
+    expect(store.snapshotsLoaded).toBe(false)
+    expect(store.snapshotsError).toBeNull()
+    expect(store.restoringId).toBeNull()
+    expect(store.restoreError).toBeNull()
+  })
+
+  it('returns them to their initial value when another project is opened', async () => {
+    const store = await opened()
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+    await store.loadSnapshots()
+
+    fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [] }))
+    await store.open('proj-2')
+
+    expect(store.snapshots).toEqual([])
+    expect(store.snapshotsLoaded).toBe(false)
+    expect(store.snapshotsError).toBeNull()
+  })
+
+  /*
+   * AC-28's second half — the `current(gen)` guard, on the snapshot half. One
+   * project's history landing in another's sheet is not merely stale: it offers a
+   * **Restore** that would write one project's files over another's.
+   */
+  it('does not render the previous project’s history', async () => {
+    const store = await opened()
+    const slow = deferred()
+    fetchMock.mockReturnValueOnce(slow.promise)
+    const stale = store.loadSnapshots()
+
+    fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [] }))
+    await store.open('proj-2')
+
+    slow.settle(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+    await stale
+
+    expect(store.snapshots).toEqual([])
+    expect(store.snapshotsLoading).toBe(false)
+    expect(store.snapshotsLoaded).toBe(false)
+    expect(store.snapshotsError).toBeNull()
+  })
+})
+
+const ABOUT_FILE = { ...INDEX_FILE, path: 'about.html', size: 12 }
+
+/**
+ * Restore, and what it does to the tabs (AC-24, AC-25, AC-26, D12, D22, P6).
+ *
+ * The response **is** the refetch (D12): the server has just written the
+ * documents and answers from what it stored, so `files` is applied directly and
+ * no follow-up `GET …/files` is issued. The snapshot *list* is refetched
+ * separately, because the safety snapshot (D9) means it genuinely changed.
+ *
+ * The tab reconciliation is the part with teeth. A restore can rewrite every
+ * open file and can **delete** files a generation never could, so a tab left
+ * pointing at a path the project no longer holds shows bytes the server has
+ * disowned — and **Save** from it would put a deleted file back. Every discarded
+ * dirty buffer is announced (D22), origin-neutral: the notice does not care
+ * whether it was a generation or a restore that replaced it.
+ */
+describe('restoreSnapshot', () => {
+  const storedIndex = { ...INDEX_FILE, content: '<h1>Contacts</h1>\n' }
+  const storedAbout = { ...ABOUT_FILE, content: '<p>About</p>\n' }
+
+  /** A project with two files, its history loaded, and the request log cleared. */
+  async function openedWithHistory(): Promise<ReturnType<typeof useWorkspaceStore>> {
+    fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE, ABOUT_FILE] }))
+    const store = useWorkspaceStore()
+    await store.open('proj-1')
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+    await store.loadSnapshots()
+    fetchMock.mockClear()
+    return store
+  }
+
+  /** AC-24. The response is the file list; the history is asked for again. */
+  it('posts the restore, applies the returned list, and refetches the history', async () => {
+    const store = await openedWithHistory()
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE], changed: true }))
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+
+    await store.restoreSnapshot('snap-1')
+
+    expect(requests()).toEqual([
+      'POST /api/projects/proj-1/snapshots/snap-1/restore',
+      'GET /api/projects/proj-1/snapshots',
+    ])
+    expect(store.files).toEqual([INDEX_FILE])
+    expect(store.restoringId).toBeNull()
+    expect(store.restoreError).toBeNull()
+  })
+
+  /*
+   * The tree's three flags move together, or the tree does not move.
+   *
+   * D12 makes the restore's response *be* the refetch, so it writes `files`
+   * directly — but `loadFiles` is the only other writer and it sets `filesLoaded`
+   * and clears `filesError` too, which is what `FileTree.vue` renders on. A
+   * project whose first `GET /files` failed therefore keeps showing "Try again"
+   * over a tree that has just been rewritten by a successful restore: the user
+   * pressed Restore, every file changed on the server, and the panel says the
+   * files could not be loaded.
+   */
+  it('clears the tree’s error state, because the response is the refetch', async () => {
+    fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ error: 'Nope' }, 500))
+    const store = useWorkspaceStore()
+    await store.open('proj-1')
+    expect(store.filesError).not.toBeNull()
+    expect(store.filesLoaded).toBe(false)
+
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW] }))
+    await store.loadSnapshots()
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE], changed: true }))
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+    await store.restoreSnapshot('snap-1')
+
+    expect(store.files).toEqual([INDEX_FILE])
+    expect(store.filesError).toBeNull()
+    expect(store.filesLoaded).toBe(true)
+  })
+
+  /*
+   * D18's interlock, in the direction it was not written for.
+   *
+   * `restoreSnapshot` refuses to start while a generation is open, because the
+   * two are writers for one set of documents. Nothing stopped the reverse: with
+   * a restore in flight the composer stays live, and a generation that commits
+   * *after* the restore's read leaves the restore holding a file list that is
+   * now a version behind. Applying it drops the file the generation just wrote
+   * out of the tree and closes the tab opened for it, while the file sits on the
+   * server — the workspace disagreeing with Firestore until something refetches.
+   */
+  it('refuses to send while a restore is in flight', async () => {
+    const store = await openedWithHistory()
+    const slow = deferred()
+    fetchMock.mockReturnValueOnce(slow.promise)
+
+    const restoring = store.restoreSnapshot('snap-1')
+    // The POST, not just the flag: `request()` awaits an ID token first, so the
+    // flag is set a tick before the call is recorded.
+    await vi.waitFor(() => {
+      expect(requests()).toEqual(['POST /api/projects/proj-1/snapshots/snap-1/restore'])
+    })
+    store.draft = 'and now generate something over it'
+    expect(store.canSend).toBe(false)
+    fetchMock.mockClear()
+    await store.send()
+
+    expect(requests()).toEqual([])
+    // The draft is kept, exactly as the `generating` guard keeps it.
+    expect(store.draft).toBe('and now generate something over it')
+
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW] }))
+    slow.settle(response({ files: [INDEX_FILE], changed: false }))
+    await restoring
+  })
+
+  /** AC-24's flag: every row's Restore is disabled for the length of the request. */
+  it('names the snapshot being restored for the length of the request', async () => {
+    const store = await openedWithHistory()
+    const slow = deferred()
+    fetchMock.mockReturnValueOnce(slow.promise)
+
+    const restoring = store.restoreSnapshot('snap-1')
+    await vi.waitFor(() => {
+      expect(store.restoringId).toBe('snap-1')
+    })
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW] }))
+    slow.settle(response({ files: [INDEX_FILE], changed: true }))
+    await restoring
+
+    expect(store.restoringId).toBeNull()
+  })
+
+  /*
+   * AC-24's second half. A restore that failed wrote nothing — the server's
+   * batch is all-or-nothing — so the workspace must look exactly as it did
+   * before, unsaved edits included. Discarding a buffer *because* the restore
+   * failed would lose work for a change that never happened.
+   */
+  it('records a failure and leaves the files, the tabs and every buffer alone', async () => {
+    const store = await openedWithHistory()
+    fetchMock.mockResolvedValueOnce(response({ file: storedIndex }))
+    await store.selectFile('index.html')
+    store.editContent('my unsaved edit')
+    const before = JSON.parse(JSON.stringify(store.buffers)) as unknown
+    fetchMock.mockClear()
+
+    fetchMock.mockResolvedValueOnce(
+      response({ error: 'That version could not be restored. Try again.' }, 500),
+    )
+    await store.restoreSnapshot('snap-1')
+
+    expect(requests()).toEqual(['POST /api/projects/proj-1/snapshots/snap-1/restore'])
+    expect(store.restoreError).toBe('That version could not be restored. Try again.')
+    expect(store.restoringId).toBeNull()
+    expect(store.files).toEqual([INDEX_FILE, ABOUT_FILE])
+    expect(store.openTabs).toEqual(['index.html'])
+    expect(store.buffers).toEqual(before)
+  })
+
+  it('clears a previous restore error on the next successful restore', async () => {
+    const store = await openedWithHistory()
+    fetchMock.mockResolvedValueOnce(response({ error: 'Something went wrong.' }, 500))
+    await store.restoreSnapshot('snap-1')
+    expect(store.restoreError).toBe('Something went wrong.')
+
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE], changed: true }))
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW] }))
+    await store.restoreSnapshot('snap-1')
+
+    expect(store.restoreError).toBeNull()
+  })
+
+  /**
+   * AC-25, whole. Two tabs, a restored set holding one of them:
+   *
+   * - `index.html` is **re-read**, because the bytes behind it have changed;
+   * - `about.html`'s tab is **closed** and its buffer dropped, because the path
+   *   is gone and a tab over a deleted file would offer to Save it back;
+   * - the dirty buffer's discard is **announced** (D22).
+   */
+  it('re-reads a surviving tab, closes a deleted one, and announces the discard', async () => {
+    const store = await openedWithHistory()
+    fetchMock.mockResolvedValueOnce(response({ file: storedIndex }))
+    await store.selectFile('index.html')
+    fetchMock.mockResolvedValueOnce(response({ file: storedAbout }))
+    await store.selectFile('about.html')
+    await store.selectFile('index.html')
+    store.editContent('my unsaved edit')
+    fetchMock.mockClear()
+    expect(store.openTabs).toEqual(['index.html', 'about.html'])
+
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE], changed: true }))
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW, SNAPSHOT_OLD] }))
+    fetchMock.mockResolvedValueOnce(
+      response({ file: { ...INDEX_FILE, content: '<h1>Restored</h1>\n' } }),
+    )
+    await store.restoreSnapshot('snap-1')
+
+    expect(requests()).toEqual([
+      'POST /api/projects/proj-1/snapshots/snap-1/restore',
+      'GET /api/projects/proj-1/snapshots',
+      'GET /api/projects/proj-1/files/index.html',
+    ])
+    expect(store.openTabs).toEqual(['index.html'])
+    expect(store.selectedPath).toBe('index.html')
+    expect(store.buffers['about.html']).toBeUndefined()
+    expect(store.editorContent).toBe('<h1>Restored</h1>\n')
+    expect(store.fileDirty).toBe(false)
+    expect(store.fileReplaced).toBe(true)
+  })
+
+  it('re-reads a clean surviving tab without the notice', async () => {
+    const store = await openedWithHistory()
+    fetchMock.mockResolvedValueOnce(response({ file: storedIndex }))
+    await store.selectFile('index.html')
+    fetchMock.mockClear()
+
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE], changed: true }))
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW] }))
+    fetchMock.mockResolvedValueOnce(
+      response({ file: { ...INDEX_FILE, content: '<h1>Restored</h1>\n' } }),
+    )
+    await store.restoreSnapshot('snap-1')
+
+    expect(store.editorContent).toBe('<h1>Restored</h1>\n')
+    expect(store.fileReplaced).toBe(false)
+  })
+
+  /**
+   * P6. `applyGenerationFiles` drops the closed buffers a generation *rewrote*;
+   * a restore potentially rewrites or deletes everything, so the equivalent set
+   * is **all of them** — the response carries no per-path record of what moved.
+   * The next open fetches the server's copy, which is the same guarantee reached
+   * the same way, and no request is issued for a tab nobody has open.
+   */
+  it('drops every closed-but-buffered file, and the next open re-fetches it', async () => {
+    const store = await openedWithHistory()
+    fetchMock.mockResolvedValueOnce(response({ file: storedAbout }))
+    await store.selectFile('about.html')
+    store.closeTab('about.html')
+    fetchMock.mockResolvedValueOnce(response({ file: storedIndex }))
+    await store.selectFile('index.html')
+    fetchMock.mockClear()
+
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE, ABOUT_FILE], changed: true }))
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW] }))
+    fetchMock.mockResolvedValueOnce(response({ file: storedIndex }))
+    await store.restoreSnapshot('snap-1')
+
+    expect(store.buffers['about.html']).toBeUndefined()
+    expect(requests()).toEqual([
+      'POST /api/projects/proj-1/snapshots/snap-1/restore',
+      'GET /api/projects/proj-1/snapshots',
+      'GET /api/projects/proj-1/files/index.html',
+    ])
+
+    fetchMock.mockClear()
+    fetchMock.mockResolvedValueOnce(response({ file: { ...ABOUT_FILE, content: 'restored' } }))
+    await store.selectFile('about.html')
+
+    expect(requests()).toEqual(['GET /api/projects/proj-1/files/about.html'])
+    expect(store.editorContent).toBe('restored')
+  })
+
+  /*
+   * D10 from the client's side. `changed: false` is the project already being
+   * this version: nothing was written, so nothing on screen is stale — and
+   * re-reading the tabs would discard an unsaved edit for a change that did not
+   * happen. The list is still applied, because it is the server's own word.
+   */
+  it('leaves every tab and buffer alone when nothing changed', async () => {
+    const store = await openedWithHistory()
+    fetchMock.mockResolvedValueOnce(response({ file: storedIndex }))
+    await store.selectFile('index.html')
+    store.editContent('my unsaved edit')
+    const before = JSON.parse(JSON.stringify(store.buffers)) as unknown
+    fetchMock.mockClear()
+
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE, ABOUT_FILE], changed: false }))
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW] }))
+    await store.restoreSnapshot('snap-1')
+
+    expect(requests()).toEqual([
+      'POST /api/projects/proj-1/snapshots/snap-1/restore',
+      'GET /api/projects/proj-1/snapshots',
+    ])
+    expect(store.buffers).toEqual(before)
+    expect(store.editorContent).toBe('my unsaved edit')
+    expect(store.fileDirty).toBe(true)
+  })
+
+  /**
+   * AC-26. A restore and a generation are two writers for one set of documents,
+   * and the sheet is reachable while a stream is open — so the store re-checks
+   * the rule the sheet renders, because nothing guarantees the click came from
+   * the button.
+   */
+  it('issues no request while a generation is open', async () => {
+    const store = await openedWithHistory()
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+    // The stream's own request, waited for rather than assumed: `generating` is
+    // set before `fetch` is reached, so clearing the log on the flag alone races
+    // the very call this case is counting.
+    await vi.waitFor(() => {
+      expect(store.generating).toBe(true)
+      expect(requests()).toEqual(['POST /generate'])
+    })
+    fetchMock.mockClear()
+
+    await store.restoreSnapshot('snap-1')
+
+    expect(requests()).toEqual([])
+    expect(store.restoringId).toBeNull()
+
+    stream.push(frame('done', { message: ASSISTANT_MESSAGE, files: [], fileError: null }))
+    stream.close()
+    await running
+  })
+
+  /** A second restore would race its own response, and the later reply wins. */
+  it('issues no second request while a restore is already in flight', async () => {
+    const store = await openedWithHistory()
+    const slow = deferred()
+    fetchMock.mockReturnValueOnce(slow.promise)
+    const first = store.restoreSnapshot('snap-1')
+    await vi.waitFor(() => {
+      expect(store.restoringId).toBe('snap-1')
+    })
+
+    await store.restoreSnapshot('snap-2')
+
+    expect(requests()).toEqual(['POST /api/projects/proj-1/snapshots/snap-1/restore'])
+    expect(store.restoringId).toBe('snap-1')
+
+    fetchMock.mockResolvedValueOnce(response({ snapshots: [SNAPSHOT_NEW] }))
+    slow.settle(response({ files: [INDEX_FILE], changed: true }))
+    await first
+  })
+
+  it('issues no request without a project open', async () => {
+    await useWorkspaceStore().restoreSnapshot('snap-1')
+
+    expect(requests()).toEqual([])
+  })
+
+  /*
+   * AC-28's restore half. A restore answering for a project the user has left
+   * must not write another project's files into the panel in front of them.
+   */
+  it('does not apply a restore that lands after another project was opened', async () => {
+    const store = await openedWithHistory()
+    const slow = deferred()
+    fetchMock.mockReturnValueOnce(slow.promise)
+    const stale = store.restoreSnapshot('snap-1')
+
+    fetchMock.mockResolvedValueOnce(response({ project: OTHER_PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [] }))
+    await store.open('proj-2')
+    fetchMock.mockClear()
+
+    slow.settle(response({ files: [INDEX_FILE], changed: true }))
+    await stale
+
+    expect(requests()).toEqual([])
+    expect(store.files).toEqual([])
+    expect(store.restoringId).toBeNull()
+    expect(store.restoreError).toBeNull()
+  })
+})

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { compareFilePaths, mergeFileTree, utf8Bytes, type FileRow } from './files'
+import { compareFilePaths, formatBytes, mergeFileTree, utf8Bytes, type FileRow } from './files'
 import type { FileMeta } from './filesApi'
 
 /**
@@ -123,5 +123,46 @@ describe('utf8Bytes', () => {
     const text = 'const greeting = "こんにちは 🙂"\n'
 
     expect(utf8Bytes(text)).toBe(new TextEncoder().encode(text).length)
+  })
+})
+
+describe('formatBytes', () => {
+  /**
+   * Decimal KB, because that is already this codebase's unit (P7).
+   *
+   * `fileErrorCopy` on the server renders the cap as `FILE_BYTES_MAX / 1000` —
+   * "100 KB" for 100,000 bytes. A binary KiB here would make a file the editor
+   * calls "98 KB" be refused by a server that calls the same limit "100 KB",
+   * and the user would have no way to tell which of the two numbers was lying.
+   */
+  it('counts bytes below a kilobyte in bytes', () => {
+    expect(formatBytes(0)).toBe('0 bytes')
+    expect(formatBytes(512)).toBe('512 bytes')
+    expect(formatBytes(999)).toBe('999 bytes')
+  })
+
+  it('switches to decimal KB at a thousand', () => {
+    expect(formatBytes(1000)).toBe('1 KB')
+    expect(formatBytes(14_022)).toBe('14 KB')
+    expect(formatBytes(100_000)).toBe('100 KB')
+  })
+
+  /**
+   * The rounding floor. `Math.round(1400 / 1000)` is 1, but
+   * `Math.round(1499 / 1000)` is also 1 and `Math.round(1000 / 1000)` is 1 —
+   * the trap is the half that rounds *down* past it. A file over a kilobyte
+   * must never be described as "0 KB", which is what a bare `Math.round` says
+   * for anything under 500 bytes and what a naive `< 1024` boundary would say
+   * for 1000–1023.
+   */
+  it('never rounds a file that exceeds a kilobyte down to zero', () => {
+    expect(formatBytes(1000)).toBe('1 KB')
+    expect(formatBytes(1200)).toBe('1 KB')
+    expect(formatBytes(1499)).toBe('1 KB')
+  })
+
+  it('rounds to the nearest kilobyte above the floor', () => {
+    expect(formatBytes(1500)).toBe('2 KB')
+    expect(formatBytes(11_240)).toBe('11 KB')
   })
 })

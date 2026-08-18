@@ -110,11 +110,19 @@ function save(): void {
 
     <template v-else>
       <!-- D22. The server's content won; saying so is the whole decision, since
-           the alternative that was rejected is silence, not a merge UI. -->
+           the alternative that was rejected is silence, not a merge UI.
+
+           Slice 11's D22 keeps that argument and takes the origin out of the
+           copy: a **restore** now replaces buffers as well, through the same
+           re-read and the same flag, so a notice that named the generation
+           would be plainly wrong half the time it appeared. The wording states
+           what the user can act on — a newer version is on screen, the unsaved
+           edits are gone — and leaves *which* writer produced it to the history
+           sheet, which is the surface that actually knows (P8). -->
       <div v-if="workspace.fileReplaced" data-testid="file-editor-replaced" class="px-3 pt-3">
         <Alert>
           <AlertDescription>
-            Replaced by the latest generation. Your unsaved changes to this file were discarded.
+            Replaced by a newer version of this file. Your unsaved changes were discarded.
           </AlertDescription>
         </Alert>
       </div>
