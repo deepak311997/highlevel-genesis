@@ -10,6 +10,7 @@ import {
   CONTACT_COUNT,
   DEFAULT_API_BASE,
   SeedConfigError,
+  duplicateContactId,
   exitCodeFor,
   isoWithOffset,
   parseArgs,
@@ -26,6 +27,7 @@ const fixture = (name) =>
 
 const CONTACT_CREATED = fixture('contact-create')
 const APPOINTMENT_CREATED = fixture('appointment-create')
+const CONTACT_DUPLICATE = fixture('contact-duplicate')
 
 /**
  * AC-11 … AC-16 — the sandbox seeder.
@@ -410,5 +412,140 @@ describe('seed — creating contacts and appointments (AC-12)', () => {
     })
     expect(exitCodeFor(summary)).toBe(0)
     expect(errors).toEqual([])
+  })
+})
+
+describe('duplicateContactId — D10', () => {
+  it('reads the existing id out of HighLevel’s duplicate refusal', () => {
+    expect(duplicateContactId(400, CONTACT_DUPLICATE)).toBe('existingC0ntact00001')
+    expect(CONTACT_DUPLICATE.meta.contactId).toBe('existingC0ntact00001')
+  })
+
+  it('accepts a top-level contactId as well as meta.contactId', () => {
+    expect(duplicateContactId(400, { contactId: 'abc123' })).toBe('abc123')
+  })
+
+  it('is null for a success, and for a 400 that carries no contact id', () => {
+    expect(duplicateContactId(201, CONTACT_CREATED)).toBeNull()
+    expect(duplicateContactId(400, { message: 'phone is invalid' })).toBeNull()
+    expect(duplicateContactId(400, null)).toBeNull()
+  })
+})
+
+describe('seed — a re-run is not an error (AC-13)', () => {
+  async function rerun() {
+    const { fetchImpl, calls } = stubFetch((url) =>
+      url.endsWith('/contacts/') ? json(400, CONTACT_DUPLICATE) : json(200, APPOINTMENT_CREATED),
+    )
+    const { out } = collector()
+
+    const summary = await seed({
+      env: ENV,
+      argv: ['--calendar-id=cal1', '--assigned-user-id=usr1'],
+      fetchImpl,
+      now,
+      out,
+    })
+
+    return { summary, calls }
+  }
+
+  it('counts every duplicate refusal as existing, not as a failure, and exits 0', async () => {
+    const { summary } = await rerun()
+
+    expect(summary.contacts).toEqual({ created: 0, existing: CONTACT_COUNT, failed: 0 })
+    expect(summary.failures).toEqual([])
+    expect(exitCodeFor(summary)).toBe(0)
+  })
+
+  it('still creates the 8 appointments, against the ids the refusals carried', async () => {
+    const { summary, calls } = await rerun()
+
+    expect(summary.appointments).toEqual({ created: APPOINTMENT_COUNT, failed: 0 })
+    expect(appointmentCalls(calls)).toHaveLength(APPOINTMENT_COUNT)
+    for (const call of appointmentCalls(calls)) {
+      expect(call.body.contactId).toBe(CONTACT_DUPLICATE.meta.contactId)
+    }
+  })
+})
+
+describe('seed — one failure does not end the run (AC-15)', () => {
+  it('attempts the other 19 contacts when the third fails, and names it', async () => {
+    const { fetchImpl, calls } = stubFetch((url, index) => {
+      if (!url.endsWith('/contacts/')) return json(200, APPOINTMENT_CREATED)
+      return index === 2
+        ? json(500, { statusCode: 500, message: 'Internal server error' })
+        : json(201, CONTACT_CREATED)
+    })
+    const { out } = collector()
+
+    const summary = await seed({
+      env: ENV,
+      argv: ['--calendar-id=cal1', '--assigned-user-id=usr1'],
+      fetchImpl,
+      now,
+      out,
+    })
+
+    expect(contactCalls(calls)).toHaveLength(CONTACT_COUNT)
+    expect(summary.contacts).toEqual({ created: 19, existing: 0, failed: 1 })
+    expect(summary.failures).toHaveLength(1)
+    expect(summary.failures[0]).toEqual({
+      item: 'contact 3 — Dana Ruiz',
+      status: 500,
+      message: expect.stringContaining('Internal server error'),
+    })
+
+    expect(summary.appointments.created).toBe(APPOINTMENT_COUNT)
+    expect(exitCodeFor(summary)).toBe(1)
+  })
+
+  it('records a network rejection exactly as it records a 5xx', async () => {
+    const { fetchImpl, calls } = stubFetch((url, index) => {
+      if (!url.endsWith('/contacts/')) return json(200, APPOINTMENT_CREATED)
+      if (index === 3) throw new TypeError('fetch failed: socket hang up')
+      return json(201, CONTACT_CREATED)
+    })
+    const { out } = collector()
+
+    const summary = await seed({
+      env: ENV,
+      argv: ['--calendar-id=cal1', '--assigned-user-id=usr1'],
+      fetchImpl,
+      now,
+      out,
+    })
+
+    expect(contactCalls(calls)).toHaveLength(CONTACT_COUNT)
+    expect(summary.contacts.failed).toBe(1)
+    expect(summary.failures[0].item).toBe('contact 4 — Elena Fischer')
+    expect(summary.failures[0].status).toBeNull()
+    expect(summary.failures[0].message).toMatch(/socket hang up/)
+    expect(exitCodeFor(summary)).toBe(1)
+  })
+
+  it('records a failed appointment against a stable item string too', async () => {
+    const { fetchImpl } = stubFetch((url, index) => {
+      if (url.endsWith('/contacts/')) return json(201, CONTACT_CREATED)
+      return index === CONTACT_COUNT + 1
+        ? json(422, { message: ['startTime must be an ISO 8601 string'] })
+        : json(200, APPOINTMENT_CREATED)
+    })
+    const { out } = collector()
+
+    const summary = await seed({
+      env: ENV,
+      argv: ['--calendar-id=cal1', '--assigned-user-id=usr1'],
+      fetchImpl,
+      now,
+      out,
+    })
+
+    expect(summary.appointments).toEqual({ created: APPOINTMENT_COUNT - 1, failed: 1 })
+    expect(summary.failures).toHaveLength(1)
+    expect(summary.failures[0].item).toMatch(/^appointment 2 — /)
+    expect(summary.failures[0].status).toBe(422)
+    expect(summary.failures[0].message).toMatch(/ISO 8601/)
+    expect(exitCodeFor(summary)).toBe(1)
   })
 })

@@ -308,6 +308,42 @@ function contactIdOf(body) {
   return typeof id === 'string' && id !== '' ? id : null
 }
 
+/**
+ * HighLevel's duplicate refusal, or null. Accepts `meta.contactId` and `contactId`.
+ *
+ * This is the whole of the script's idempotency (D10). A location that refuses
+ * duplicates answers a second seed with `400` and the *existing* contact's id,
+ * which is exactly what the appointment step needs — so the refusal is read as
+ * success and the id carried forward. The alternative, `POST /contacts/search`,
+ * would hang a re-run's correctness on the least-verified call in the platform
+ * (`docs/HIGHLEVEL_PLATFORM.md` §6.1).
+ *
+ * Only a `400` counts: an id echoed back on any other status is not a refusal.
+ */
+export function duplicateContactId(status, body) {
+  if (status !== 400) return null
+
+  const id = body?.meta?.contactId ?? body?.contactId
+  return typeof id === 'string' && id !== '' ? id : null
+}
+
+/** What HighLevel said went wrong. `message` is sometimes an array of them. */
+function messageOf(status, body) {
+  const message = body?.message ?? body?.error
+  if (Array.isArray(message)) return `HTTP ${status}: ${message.join('; ')}`
+  if (typeof message === 'string' && message !== '') return `HTTP ${status}: ${message}`
+  return `HTTP ${status}`
+}
+
+/** A non-2xx that is not a duplicate refusal. Carries the status for the summary. */
+class SeedRequestError extends Error {
+  constructor(status, message) {
+    super(message)
+    this.name = 'SeedRequestError'
+    this.status = status
+  }
+}
+
 function emptySummary(dryRun) {
   return {
     dryRun,
@@ -364,18 +400,56 @@ export async function seed({
     return fetchImpl(url, init)
   }
 
-  const contactIds = []
-  for (const contact of contacts) {
-    const { body } = await postJson(
-      counted,
-      `${config.apiBase}/contacts/`,
-      CONTACTS_VERSION,
-      config.token,
-      contact,
-    )
+  /*
+   * Per item, not per run.
+   *
+   * One contact HighLevel dislikes must not cost the other nineteen: the loop
+   * records what failed and carries on, and the run's exit code — not its
+   * control flow — is what reports it (AC-15). A rejected promise (DNS, a reset
+   * socket) is recorded exactly as a 5xx is, with a null status because there
+   * was no response to read one from.
+   */
+  const record = (bucket, item, err) => {
+    bucket.failed += 1
+    summary.failures.push({
+      item,
+      status: err instanceof SeedRequestError ? err.status : null,
+      message: err instanceof Error ? err.message : String(err),
+    })
+  }
 
-    summary.contacts.created += 1
-    contactIds.push(contactIdOf(body))
+  out.log(`Creating ${contacts.length} contacts in ${config.locationId}…`)
+
+  const contactIds = []
+  for (const [index, contact] of contacts.entries()) {
+    const item = `contact ${index + 1} — ${contact.firstName} ${contact.lastName}`
+
+    try {
+      const { status, body } = await postJson(
+        counted,
+        `${config.apiBase}/contacts/`,
+        CONTACTS_VERSION,
+        config.token,
+        contact,
+      )
+
+      const existingId = duplicateContactId(status, body)
+      if (existingId !== null) {
+        summary.contacts.existing += 1
+        contactIds.push(existingId)
+        continue
+      }
+
+      if (status < 200 || status >= 300) throw new SeedRequestError(status, messageOf(status, body))
+
+      const id = contactIdOf(body)
+      if (id === null) throw new SeedRequestError(status, 'the response carried no contact id')
+
+      summary.contacts.created += 1
+      contactIds.push(id)
+    } catch (err) {
+      record(summary.contacts, item, err)
+    }
   }
 
   const appointments = plannedAppointments({
@@ -386,16 +460,26 @@ export async function seed({
     now: now(),
   })
 
-  for (const appointment of appointments) {
-    await postJson(
-      counted,
-      `${config.apiBase}/calendars/events/appointments`,
-      CALENDARS_VERSION,
-      config.token,
-      appointment,
-    )
+  out.log(`Creating ${appointments.length} appointments on calendar ${args.calendarId}…`)
 
-    summary.appointments.created += 1
+  for (const [index, appointment] of appointments.entries()) {
+    const item = `appointment ${index + 1} — ${appointment.startTime}`
+
+    try {
+      const { status, body } = await postJson(
+        counted,
+        `${config.apiBase}/calendars/events/appointments`,
+        CALENDARS_VERSION,
+        config.token,
+        appointment,
+      )
+
+      if (status < 200 || status >= 300) throw new SeedRequestError(status, messageOf(status, body))
+
+      summary.appointments.created += 1
+    } catch (err) {
+      record(summary.appointments, item, err)
+    }
   }
 
   return summary

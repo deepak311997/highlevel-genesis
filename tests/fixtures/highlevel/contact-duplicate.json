@@ -1,0 +1,10 @@
+{
+  "statusCode": 400,
+  "message": "This location does not allow duplicated contacts.",
+  "meta": {
+    "contactId": "existingC0ntact00001",
+    "matchingField": "email",
+    "name": "duplicated contacts response"
+  },
+  "traceId": "3c9d1b47-51fa-4c7d-9c4a-7e1b6d2f8a03"
+}
