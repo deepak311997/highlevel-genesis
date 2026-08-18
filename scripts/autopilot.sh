@@ -258,6 +258,15 @@ literally and will have no idea what you were imagining — every file path, fun
 and existing pattern you cite has to be real.
 
 Every AC in the PRD maps to at least one task. Say so explicitly for any that does not.
+
+The build session fans its tasks out across concurrent subagent lanes, and it can only do
+that safely where the plan pinned the boundaries. So make the task list legible as lanes:
+give every task the explicit list of files it creates or modifies, and pin the interface
+wherever two tasks meet — the exported signature, the route shape, the event name, the
+schema. Close the plan with a short **Lanes** section naming which task groups touch
+disjoint file sets and can run at once, and which must stay a chain and why. Where you
+have a choice, prefer a file split that keeps lanes disjoint over one that forces two
+tasks onto the same file.
 EOF
       ;;
     build)
