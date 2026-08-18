@@ -3,68 +3,41 @@ import type { HlRoute } from '../hl/routes'
 import { HL_ROUTES, isRouteEnabled } from '../hl/routes'
 
 /**
- * The HighLevel cheat-sheet — F3.2, and the thing the whole product is judged on.
+ * The HighLevel cheat-sheet — the last block of the system prompt's stable
+ * prefix, behind the `cache_control` breakpoint, and the only place the model
+ * learns that a CRM exists at all.
  *
- * `PRODUCT_SPEC.md` §1: "the AI doesn't generate generic web apps — it generates
- * apps that talk to the HighLevel platform." This module is the mechanism. It is
- * the last block of the system prompt's stable prefix, it sits behind the
- * `cache_control` breakpoint, and it is the only place the model learns that a
- * CRM exists at all.
+ * **Rendered from the allowlist, never restated.** The route table is built at
+ * module load from `HL_ROUTES`, filtered by `isRouteEnabled` — the same rows the
+ * proxy matches against. A hand-written copy would drift on the first allowlist
+ * change, and the failure mode is the worst available: the model confidently
+ * generating a route the proxy answers `403` on, with nothing failing until a user
+ * runs the app.
  *
- * ## Rendered from the allowlist, never restated (D2)
+ * Rendered **once**, at load: the prefix has to be byte-identical on every request
+ * or the cache read never happens. Flipping `HL_ALLOW_MESSAGE_SEND` therefore
+ * costs exactly one cache write, which is correct rather than a bug.
  *
- * The route table is built at module load from `HL_ROUTES`, filtered by
- * `isRouteEnabled(row, process.env)` — the same rows, from the same file, that
- * the proxy matches against. `HIGHLEVEL_PLATFORM.md` §8 asks for exactly this:
- * one table, three consumers. A hand-written copy would drift on the first
- * allowlist change and the failure mode is the worst one available — the model
- * confidently generating a route the proxy answers `403 route_not_allowed` on,
- * with nothing failing until a user runs the generated app. `hlKnowledge.spec.ts`
- * checks the correspondence in both directions (AC-1, AC-2).
+ * Deliberately absent: **any URL** (generated code cannot reach HighLevel
+ * directly, and must not learn the proxy path either — the preview is an
+ * opaque-origin iframe that cannot carry an ID token); **the `Version` values**,
+ * which are date-shaped and would look volatile inside a cached prefix; **any
+ * literal timestamp**, for the same reason; and **`/contacts/search`'s filter
+ * grammar**, which is unverified — teaching a guessed DSL yields a 400 the user
+ * reads as "Genesis is broken".
  *
- * Rendered **once**, at load, rather than per call: the prefix has to be
- * byte-identical on every request or the cache read never happens (D18). Flipping
- * `HL_ALLOW_MESSAGE_SEND` therefore changes the prefix and costs exactly one
- * cache write, which is correct rather than a bug (D3).
- *
- * ## What is deliberately absent
- *
- * - **Any URL.** No HighLevel origin, no proxy path. Generated code cannot reach
- *   HighLevel directly (no CORS, no token), and it must not be taught the proxy
- *   path either: the preview is an opaque-origin iframe that cannot carry an ID
- *   token (Slice 8 D16). One function, no URL (D4, AC-4).
- * - **The `Version` header values.** The proxy attaches them per row; they are
- *   also date-shaped, and a date in the stable prefix is what `prompt.spec.ts`'s
- *   volatility scan exists to catch.
- * - **Any literal timestamp**, including inside the response examples, for the
- *   same reason. Temporal values there are replaced by a short description of the
- *   format while every other value is copied from the recorded fixture verbatim,
- *   which keeps AC-9 a field-name check.
- * - **`/contacts/search`'s filter grammar.** `HIGHLEVEL_PLATFORM.md` §6.1 marks
- *   it unverified and §10 item 4 still does. Teaching a guessed DSL yields a
- *   `400` the user reads as "Genesis is broken"; teaching the verified shape
- *   yields an app that works and is merely less clever (D6, R4).
- *
- * ## The residual exposure
- *
- * The route table and the error codes are derived, so they cannot be wrong. The
- * per-surface *notes* below are hand-written and are the part of this file a
- * reviewer has to read against `HIGHLEVEL_PLATFORM.md` §5 and §6 (R5). The
- * response examples sit between the two: hand-trimmed, but every field name in
- * them is checked against the payload recorded from the sandbox (D10, AC-9).
+ * The derived parts cannot be wrong. The per-surface **notes** below are
+ * hand-written and are the part a reviewer has to check against the platform doc;
+ * the response examples sit between the two, hand-trimmed with every field name
+ * checked against the recorded payload.
  */
 
 /**
- * What each row is *for*, keyed by method and pattern.
+ * What each row is *for*, keyed by method **and** pattern: `GET` and
+ * `PUT /contacts/:contactId` are one pattern and two different things to say.
  *
- * Keyed by both, not by pattern alone: `GET` and `PUT /contacts/:contactId` are
- * one pattern and two different things to say about it, and a note that had to
- * cover both would say neither.
- *
- * A row with no note renders {@link NOTE_MISSING} rather than an empty dash, so
- * a route added to the allowlist without a sentence about it is a visible gap in
- * the prompt — and a reviewer reading the rendered text finds it — instead of a
- * silently unexplained line the model has to guess the purpose of.
+ * A row with no note renders {@link NOTE_MISSING} rather than an empty dash, so a
+ * route added without a sentence about it is a visible gap in the prompt.
  */
 const ROUTE_NOTES: Record<string, string> = {
   'POST /contacts/search': 'one page of contacts. This is the only way to list or search them.',
@@ -93,22 +66,14 @@ function tableLine(row: HlRoute): string {
 /**
  * One trimmed record per surface, hand-authored from the recorded payloads.
  *
- * Exported as **data** so `hlKnowledge.spec.ts` can walk each example's field
- * names and check every one of them against the fixture it names (AC-9). That
- * test is the only thing standing between a trimmed example and fiction: a
- * plausible-looking field HighLevel has never sent would produce a dashboard
- * rendering blanks over real data, which looks like our bug and is unanswerable
- * without the recorded payload to check against.
+ * Exported as **data** so the spec can walk each example's field names against the
+ * fixture it names — the only thing standing between a trimmed example and
+ * fiction. A plausible field HighLevel never sends would produce a dashboard
+ * rendering blanks over real data, which looks like our bug.
  *
- * Trimmed rather than pasted whole (D10): the fixtures are 2–20 KB each, and
- * three of them would triple the prompt for fields no small app reads. Trimmed to
- * a single record, too — `total` still reports what the recorded page held, and
- * the rendered text says so.
- *
- * Temporal values are the one thing not copied verbatim. A literal timestamp
- * would be a volatile-looking value inside the cached prefix, so each is replaced
- * by a description of its format — which is the part the model actually needs,
- * and which makes the epoch-milliseconds-in, ISO-out asymmetry legible.
+ * Trimmed rather than pasted whole: the fixtures are 2–20 KB each. Temporal values
+ * are the one thing not copied verbatim — a literal timestamp would look volatile
+ * inside the cached prefix, and the format is the part the model needs anyway.
  */
 export const RESPONSE_EXAMPLES: readonly {
   /** The route it comes back from, spelled as the table spells it. */
@@ -199,12 +164,11 @@ export const RESPONSE_EXAMPLES: readonly {
 ]
 
 /**
- * The calling convention, verbatim as `frontend/src/lib/hlProxyApi.ts` already
- * implements it and as Slice 10's preview shim must define it (D4).
+ * The calling convention, verbatim as the frontend implements it and as the
+ * preview's shim must define it.
  *
- * Told as "already defined in the page" rather than as an API to set up: the
- * model writes an application, not the plumbing under it, and every line it
- * spends importing an SDK or building a fetch wrapper is a line that cannot run.
+ * Told as "already defined in the page" rather than as an API to set up: every
+ * line the model spends importing an SDK is a line that cannot run.
  */
 const CALLING_CONVENTION = [
   'Talking to the CRM.',
@@ -225,13 +189,10 @@ const CALLING_CONVENTION = [
 ]
 
 /**
- * The two rules, stated as rules rather than as advice.
- *
- * They are the two ways a perfectly reasonable-looking generated app fails in
- * front of the person who asked for it: a parameter that is silently discarded
- * (Slice 8 P1 strips `locationId` from every row and re-adds it from the
- * connection — D8), and a list screen that exhausts the burst allowance on its
- * first render (`HIGHLEVEL_PLATFORM.md` §5, D9).
+ * The two rules, stated as rules rather than as advice — the two ways a
+ * reasonable-looking generated app fails in front of the person who asked for it:
+ * a parameter that is silently discarded, and a list screen that exhausts the
+ * burst allowance on its first render.
  */
 const HARD_RULES = [
   'Two rules, and neither has an exception.',
@@ -252,11 +213,9 @@ const HARD_RULES = [
 ]
 
 /**
- * Where `HL_ROUTES` becomes prose, filtered by the environment at load (D3).
- *
- * Reading `process.env` here rather than taking it as an argument is what keeps
- * the prompt a constant within a process — a per-call render would be a per-call
- * prefix, and the only symptom of that is the bill (D18).
+ * Where `HL_ROUTES` becomes prose, filtered by the environment at load. Reading
+ * `process.env` here rather than per call is what keeps the prefix a constant
+ * within a process — the only symptom of a per-call prefix is the bill.
  */
 const ROUTE_TABLE = [
   'The routes you may call.',
@@ -270,14 +229,13 @@ const ROUTE_TABLE = [
 ]
 
 /**
- * The per-surface parameters — the hand-written half, and the highest-value
- * lines in the file.
+ * The per-surface parameters — the hand-written half, and the highest-value lines
+ * in the file.
  *
- * The calendar note is the one that decides whether the demo shows anything at
- * all: an ISO 8601 window does not error, it answers `200` with an empty list,
- * so the wrong format is indistinguishable from an empty calendar (D7, settled
- * and measured in `HIGHLEVEL_PLATFORM.md` §6.3). The direction reverses on the
- * way back, which is why both halves are stated together.
+ * The calendar note decides whether the demo shows anything at all: an ISO 8601
+ * window does not error, it answers 200 with an empty list, so the wrong format is
+ * indistinguishable from an empty calendar. The direction reverses on the way
+ * back, which is why both halves are stated together.
  */
 const PARAMETER_NOTES = [
   'Parameters worth knowing.',
@@ -306,11 +264,8 @@ const PARAMETER_NOTES = [
   'print a raw date value at a person — format it.',
 ]
 
-/**
- * The response shapes. `HIGHLEVEL_PLATFORM.md` §9's closing note is the argument
- * for them: real payloads beat prose, and they are what makes generated code
- * render real data on the first try.
- */
+/** The response shapes: real payloads beat prose, and they are what makes
+ * generated code render real data on the first try. */
 const RESPONSE_SHAPES = [
   'What comes back.',
   '',
@@ -327,13 +282,12 @@ const RESPONSE_SHAPES = [
 ]
 
 /**
- * The error contract (D5, F8.3), with the codes read from `proxyError.ts`.
+ * The error contract, with the codes read from `proxyError.ts`.
  *
- * A rejection rather than a result union, because `try`/`catch` is the idiom
- * every JavaScript developer already writes and a union is the one a generated
- * app would forget to check. The codes are rendered from the same table the
- * proxy answers with, so generated code that branches on one cannot branch on a
- * spelling that no longer exists.
+ * A rejection rather than a result union, because `try`/`catch` is the idiom every
+ * JavaScript developer already writes. The codes are rendered from the same table
+ * the proxy answers with, so generated code cannot branch on a spelling that no
+ * longer exists.
  */
 const ERROR_CONTRACT = [
   'When a call fails.',
@@ -368,12 +322,9 @@ const ERROR_CONTRACT = [
 ]
 
 /**
- * The rendered cheat-sheet — one string, built once, and the last block of the
- * stable prefix.
- *
- * One block rather than several, on purpose: it keeps "the breakpoint is the last
- * element of the stable prefix" a one-line assertion in `prompt.spec.ts` rather
- * than a claim about an arrangement of blocks.
+ * The rendered cheat-sheet — one string, built once. One block rather than
+ * several, so "the breakpoint is the last element of the stable prefix" stays a
+ * one-line assertion.
  */
 export const HL_KNOWLEDGE: string = [
   CALLING_CONVENTION,
