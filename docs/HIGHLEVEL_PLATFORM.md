@@ -113,7 +113,7 @@ Constraints:
 - Webhooks/automations testable **at low volume** only.
 - Subject to Sandbox Fair Use guidelines.
 
-**Action item:** once created, manually seed it — ~20 contacts with real-looking names/emails/phones/tags, a calendar, and 5–10 appointments spread over the next two weeks. Your Loom demo lives or dies on this. Write it as a seed script (`scripts/seed-sandbox.ts`) using the API so you can re-run it; that's also a nice thing to point at in the README.
+**Action item:** once created, manually seed it — ~20 contacts with real-looking names/emails/phones/tags, a calendar, and 5–10 appointments spread over the next two weeks. Your Loom demo lives or dies on this. Write it as a seed script (`scripts/seed-sandbox.mjs`) using the API so you can re-run it; that's also a nice thing to point at in the README.
 
 ### Step 4 — Install the app
 
