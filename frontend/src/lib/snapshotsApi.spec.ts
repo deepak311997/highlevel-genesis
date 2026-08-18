@@ -71,10 +71,9 @@ describe('restoreSnapshot', () => {
 
   /*
    * The body is the assertion, not an aside. `restoreSnapshotBodySchema` is
-   * `z.object({}).strict()` and Express's `json()` only parses when a
-   * `Content-Type` says to — so sending `'{}'` with a header would still be a
-   * body, and sending one with a header and any key would be a 400. Absent is
-   * the only shape that cannot drift into one.
+   * `z.object({}).strict()` and Express's `json()` only parses when a `Content-Type` says to —
+   * so sending `'{}'` with a header would still be a body, and sending one with a header and any
+   * key would be a 400.
    */
   it('sends no body and no Content-Type', async () => {
     request.mockResolvedValue({ files: [], changed: false })

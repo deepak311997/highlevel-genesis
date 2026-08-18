@@ -43,10 +43,7 @@ describe('errorHandler', () => {
   })
 
   /*
-   * `detail` is upstream's own text about the *request* — HighLevel's message
-   * on a proxied call (D19). One envelope, one error handler: the alternative
-   * was the proxy writing its own error responses, which is a second failure
-   * shape for clients to learn.
+   * `detail` is upstream's own text about the *request* — HighLevel's message on a proxied call.
    */
   it('includes a detail when the error carries one', () => {
     const { res, json } = mockResponse()

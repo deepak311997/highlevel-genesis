@@ -3,15 +3,12 @@ import { describe, expect, it } from 'vitest'
 import { splitMessageContent, type MessagePart } from './messageParts'
 
 /**
- * AC-46's pure half (D29).
+ * AC-46's pure half.
  *
- * The transcript carries `[file: index.html]` marker lines rather than code (D6),
- * and rendering them as text would give a chat that reads like a build log with
- * what looks like a bug sitting in it. This is ten lines of template over a pure
- * function — not a markdown renderer, which D6 and D29 both refuse.
- *
- * The same helper renders the persisted bubble *and* the streaming placeholder,
- * which falls out of D7: the live text and the stored text are the same string.
+ * The transcript carries `[file: index.html]` marker lines rather than code, and rendering them
+ * as text would give a chat that reads like a build log with what looks like a bug sitting in
+ * it. This is ten lines of template over a pure function — not a markdown renderer, which D6 and
+ * D29 both refuse.
  */
 
 const text = (value: string): MessagePart => ({ kind: 'text', text: value })
@@ -20,7 +17,9 @@ const file = (path: string): MessagePart => ({ kind: 'file', path })
 describe('splitMessageContent', () => {
   it('splits prose and marker lines into parts, in order', () => {
     expect(
-      splitMessageContent('Here is a contact dashboard.\n\n[file: index.html]\n[file: app.js]\n\nDone.'),
+      splitMessageContent(
+        'Here is a contact dashboard.\n\n[file: index.html]\n[file: app.js]\n\nDone.',
+      ),
     ).toEqual([
       text('Here is a contact dashboard.'),
       file('index.html'),
@@ -40,14 +39,7 @@ describe('splitMessageContent', () => {
     ])
   })
 
-  /**
-   * A line that only *looks* like a marker stays text.
-   *
-   * The whole line must be the marker, exactly as the server emits it — the same
-   * line-start rule the splitter uses one layer up, and for the same reason: a
-   * loose match would let a user's own prose turn into a chip for a file that
-   * does not exist.
-   */
+  /** A line that only *looks* like a marker stays text. */
   it.each([
     'prefix [file: a.js]',
     '[file: a.js] suffix',

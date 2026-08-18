@@ -5,17 +5,10 @@ import { createSseParser, type SseEvent } from './sse'
 /**
  * The client's SSE parser — R4, and the bug that passes every hand-written test.
  *
- * `ReadableStream` chunks have nothing whatsoever to do with frame boundaries.
- * `event: to` / `ken\ndata: …` is a perfectly ordinary thing to receive, and a
- * naive per-chunk parser drops or corrupts it — while passing every test whose
- * fixtures happen to be whole frames, which is every test somebody writes by
- * hand.
- *
- * So the central case here **splits a known byte stream at every offset from 1
- * to its length** and asserts the parsed events are identical each time. That
- * covers mid-`event:`, mid-`data:`, mid-JSON and mid-terminator without anyone
- * having to guess which offsets are interesting — and it is the difference
- * between testing the parser and testing three lucky inputs.
+ * `ReadableStream` chunks have nothing whatsoever to do with frame boundaries. `event: to` /
+ * `ken\ndata: …` is a perfectly ordinary thing to receive, and a naive per-chunk parser drops or
+ * corrupts it — while passing every test whose fixtures happen to be whole frames, which is
+ * every test somebody writes by hand.
  */
 
 const frame = (event: string, data: unknown): string =>
@@ -46,19 +39,17 @@ describe('createSseParser — chunk boundaries', () => {
   })
 
   /*
-   * `Array.from` rather than a spread, which the lint rule rightly flags for
-   * splitting code points: this stream is ASCII, but a helper that quietly
-   * mangled a multi-byte character would make the payload case below pass for
-   * the wrong reason. The multi-byte case has its own test.
+   * `Array.from` rather than a spread, which the lint rule rightly flags for splitting code
+   * points: this stream is ASCII, but a helper that quietly mangled a multi-byte character would
+   * make the payload case below pass for the wrong reason.
    */
   it('parses a stream delivered one character at a time', () => {
     expect(parse(Array.from(STREAM))).toEqual(EXPECTED)
   })
 
   /*
-   * AC-28, and the case this file exists for. Every split point, not three
-   * hand-picked ones — the interesting offsets are exactly the ones nobody
-   * thinks to pick.
+   * AC-28, and the case this file exists for. Every split point, not three hand-picked ones —
+   * the interesting offsets are exactly the ones nobody thinks to pick.
    */
   it('produces identical events for every possible two-chunk split', () => {
     for (let at = 1; at < STREAM.length; at += 1) {
@@ -104,9 +95,8 @@ describe('createSseParser — what it ignores', () => {
   })
 
   /*
-   * AC-29. An unknown name is **returned**, not dropped: filtering is the
-   * caller's job, which is what lets Slice 6 add `file_start` handling without
-   * touching this file.
+   * An unknown name is **returned**, not dropped: filtering is the caller's job, which is what
+   * lets Slice 6 add `file_start` handling without touching this file.
    */
   it('returns an unknown event name rather than throwing', () => {
     expect(parse([frame('file_start', { path: 'src/app.js' })])).toEqual([
@@ -114,12 +104,7 @@ describe('createSseParser — what it ignores', () => {
     ])
   })
 
-  /*
-   * AC-29, and **the case that matters**: a malformed frame must not desync the
-   * parser. Dropping one bad frame costs a token; losing the frame boundary
-   * costs the rest of the stream, including the terminal event the store is
-   * waiting on.
-   */
+  /* AC-29, and **the case that matters**: a malformed frame must not desync the parser. */
   it('drops a frame whose data will not parse, and keeps the one after it', () => {
     const events = parse([
       frame('token', { text: 'before' }) +

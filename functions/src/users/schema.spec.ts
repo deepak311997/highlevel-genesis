@@ -6,16 +6,10 @@ import { DISPLAY_NAME_MAX, profileBodySchema, storedProfileSchema, toProfile } f
 /**
  * The two schemas that guard `users/{uid}`, from opposite directions.
  *
- * `profileBodySchema` guards what a caller may send. It is `.strict()`, and that
- * is the load-bearing call: the trap this slice exists to close is a route that
- * authenticates the caller and then trusts a uid it was handed, so a body
- * carrying `uid` or `email` has to be a refusal rather than a field we happened
- * not to read.
- *
- * `storedProfileSchema` guards what Firestore hands back. `snapshot.data() as T`
- * is a lie the compiler believes — a half-written document from an interrupted
- * write parses as a complete one — so the document is parsed, and a document
- * that cannot describe a profile is *known* not to.
+ * `profileBodySchema` guards what a caller may send. It is `.strict()`, and that is the load-
+ * bearing call: the trap this slice exists to close is a route that authenticates the caller and
+ * then trusts a uid it was handed, so a body carrying `uid` or `email` has to be a refusal
+ * rather than a field we happened not to read.
  */
 
 const complete = {
@@ -93,9 +87,8 @@ describe('storedProfileSchema — what Firestore hands back', () => {
   })
 
   /*
-   * A display name is cosmetic, so a wrong-typed one degrades to "no name"
-   * rather than condemning the whole document. `email` and the timestamps get no
-   * such fallback — without them there is nothing to render.
+   * A display name is cosmetic, so a wrong-typed one degrades to "no name" rather than
+   * condemning the whole document.
    */
   it('falls back to no display name rather than failing on a wrong-typed one', () => {
     const parsed = storedProfileSchema.parse({ ...complete, displayName: 42 })

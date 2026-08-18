@@ -24,13 +24,12 @@ const { createSessionExpiredHook } = await import('./sessionExpiry')
 /**
  * The one authenticated fetch, shared by every typed client above it.
  *
- * It exists as its own module because the alternative had already gone wrong
- * once: the same logic lived privately inside two clients, the copies diverged,
- * and the one that had lost its 429 case told a throttled user "something went
- * wrong" instead of to wait. Header assembly is the part worth testing — an ID
- * token read once and cached starts failing silently on a tab left open past its
- * hourly rotation, and a missing App Check header turns a working mutation into
- * a 401.
+ * It exists as its own module because the alternative had already gone wrong once: the same
+ * logic lived privately inside two clients, the copies diverged, and the one that had lost its
+ * 429 case told a throttled user "something went wrong" instead of to wait. Header assembly is
+ * the part worth testing — an ID token read once and cached starts failing silently on a tab
+ * left open past its hourly rotation, and a missing App Check header turns a working mutation
+ * into a 401.
  */
 
 let fetchMock: ReturnType<typeof vi.fn>
@@ -137,13 +136,12 @@ describe('request', () => {
 })
 
 /**
- * The session-expiry hook (AC-10, AC-13, AC-14, AC-15).
+ * The session-expiry hook.
  *
- * The branch is on `code`, not on `status`, because a 401 is two unrelated
- * conditions: `unauthenticated` means the session is dead, and
- * `app_check_failed` means the *page* could not be attested and reloading fixes
- * it. Signing a user out for the second destroys a perfectly good session and
- * loses whatever is in their editor buffers.
+ * The branch is on `code`, not on `status`, because a 401 is two unrelated conditions:
+ * `unauthenticated` means the session is dead, and `app_check_failed` means the *page* could not
+ * be attested and reloading fixes it. Signing a user out for the second destroys a perfectly
+ * good session and loses whatever is in their editor buffers.
  */
 describe('the session-expiry hook', () => {
   it('invokes the session hook for a 401 unauthenticated, and still throws', async () => {
@@ -233,9 +231,8 @@ describe('the session-expiry hook', () => {
   })
 
   /*
-   * `authHeaders` throws its own 401 when nobody is signed in, and a server can
-   * answer 401 with no envelope at all. Neither says the session died — one is
-   * the app noticing there never was one.
+   * `authHeaders` throws its own 401 when nobody is signed in, and a server can answer 401 with
+   * no envelope at all.
    */
   it('ignores a 401 with no code', async () => {
     const hook = vi.fn()
@@ -254,11 +251,10 @@ describe('the session-expiry hook', () => {
 /**
  * The latch across more than one death — the seam, with the real hook wired.
  *
- * The cases above assert `apiClient`'s half in isolation, with a `vi.fn()` for a
- * hook. These three are the composition, because the invariant AC-15 and E6 are
- * actually about is **one navigation**, and neither module can state that on its
- * own: `apiClient` decides how often the hook runs and `sessionExpiry` decides
- * what a run does.
+ * The cases above assert `apiClient`'s half in isolation, with a `vi.fn()` for a hook. These
+ * three are the composition, because the invariant AC-15 and E6 are actually about is **one
+ * navigation**, and neither module can state that on its own: `apiClient` decides how often the
+ * hook runs and `sessionExpiry` decides what a run does.
  */
 describe('the latch, across more than one death', () => {
   const DEAD = { error: 'Sign in and try again.', code: 'unauthenticated' }
@@ -302,16 +298,7 @@ describe('the latch, across more than one death', () => {
     expect(replace).toHaveBeenCalledTimes(1)
   })
 
-  /*
-   * The second death in a page session is a **new** death.
-   *
-   * The latch used to clear only on a call that *succeeded*, and a session that
-   * died and stayed dead cannot produce one — so a user who signed in again into
-   * an account the server no longer accepts sat on a workspace whose every panel
-   * read "Sign in and try again." with nothing to click. That is precisely the
-   * state this hook exists to get them out of, resurrected for every occurrence
-   * after the first.
-   */
+  /* The second death in a page session is a **new** death. */
   it('signs the user out again when a second session dies', async () => {
     const { replace, signedIn } = wire(() => {
       signedIn.value = false
@@ -334,9 +321,8 @@ describe('the latch, across more than one death', () => {
   })
 
   /*
-   * A sign-out that throws — `signOut(auth)` ends in a storage write, and
-   * private browsing and quota both refuse one — must not strand the session.
-   * Latching on a failed attempt would mean no later 401 ever gets its own.
+   * A sign-out that throws — `signOut(auth)` ends in a storage write, and private browsing and
+   * quota both refuse one — must not strand the session.
    */
   it('lets the next 401 try again when signing out failed', async () => {
     const signOut = vi.fn(() => Promise.reject(new Error('storage is full')))
@@ -356,13 +342,12 @@ describe('the latch, across more than one death', () => {
 })
 
 /**
- * The credential minting, shared rather than repeated (D32).
+ * The credential minting, shared rather than repeated.
  *
- * A streaming call cannot use `request` — it must not read the body as JSON —
- * so the choice was to share this or to write it twice. `apiClient` exists
- * *because* the same logic once lived privately inside two typed clients and the
- * copies diverged; adding a third copy for `generateApi` would be repeating the
- * exact mistake this module was extracted to fix.
+ * A streaming call cannot use `request` — it must not read the body as JSON — so the choice was
+ * to share this or to write it twice. `apiClient` exists *because* the same logic once lived
+ * privately inside two typed clients and the copies diverged; adding a third copy for
+ * `generateApi` would be repeating the exact mistake this module was extracted to fix.
  */
 describe('authHeaders', () => {
   it('returns both headers that authenticate a call', async () => {

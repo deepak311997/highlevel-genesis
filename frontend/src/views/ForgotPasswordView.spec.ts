@@ -42,11 +42,7 @@ describe('ForgotPasswordView', () => {
     expect(wrapper.find('[data-testid="forgot-email-error"]').exists()).toBe(true)
   })
 
-  /**
-   * "If an account exists" — conditional, and shown for every accepted
-   * submission. Confirming delivery would disclose that the address is
-   * registered on a form far easier to reach than sign-up.
-   */
+  /** "If an account exists" — conditional, and shown for every accepted submission. */
   it('confirms without saying whether the address is registered', async () => {
     const wrapper = mountView()
 
@@ -67,11 +63,7 @@ describe('ForgotPasswordView', () => {
     expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBeDefined()
   })
 
-  /**
-   * If enumeration protection is ever off, this is the code that would leak.
-   * Treated as success so the screen cannot become the oracle the endpoint
-   * design refuses to be.
-   */
+  /** If enumeration protection is ever off, this is the code that would leak. */
   it.each(['auth/user-not-found', 'auth/invalid-email'])(
     'shows the same confirmation when Firebase reports %s',
     async (code) => {

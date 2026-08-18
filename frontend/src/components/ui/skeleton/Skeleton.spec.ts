@@ -4,15 +4,14 @@ import { describe, expect, it } from 'vitest'
 import { Skeleton } from './index'
 
 /**
- * The one placeholder primitive. Before this component the app had nineteen
- * hand-rolled copies of the same three utilities, drifting in radius and
- * colour; `no-pulse.spec.ts` is what keeps a twentieth from appearing.
+ * The one placeholder primitive. Before this component the app had nineteen hand-rolled copies
+ * of the same three utilities, drifting in radius and colour; `no-pulse.spec.ts` is what keeps a
+ * twentieth from appearing.
  *
- * Two things are load-bearing and so are pinned here. The `data-slot`
- * attribute is how every component spec asserts "this loading state is the
- * shared placeholder" without reaching for a class name. And a caller's own
- * `class` has to win a Tailwind conflict, because five of the sites this
- * replaces use `rounded` rather than `rounded-md` and must keep their shape.
+ * Two things are load-bearing and so are pinned here. The `data-slot` attribute is how every
+ * component spec asserts "this loading state is the shared placeholder" without reaching for a
+ * class name. And a caller's own `class` has to win a Tailwind conflict, because five of the
+ * sites this replaces use `rounded` rather than `rounded-md` and must keep their shape.
  */
 describe('Skeleton', () => {
   it('renders a pulsing placeholder carrying the slot attribute', () => {

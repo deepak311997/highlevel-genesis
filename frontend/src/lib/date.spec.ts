@@ -5,10 +5,9 @@ import { formatDay, formatTime } from './date'
 /**
  * Two formatters — a day for the cards, a time for chat bubbles.
  *
- * The pinning is the point: left to the environment, a rendered date depends on
- * whichever machine the page — or the test — happens to run on, which turns a
- * stable assertion into a machine-dependent one and shows two users different
- * text for the same day.
+ * The pinning is the point: left to the environment, a rendered date depends on whichever
+ * machine the page — or the test — happens to run on, which turns a stable assertion into a
+ * machine-dependent one and shows two users different text for the same day.
  */
 
 describe('formatDay', () => {
@@ -22,9 +21,8 @@ describe('formatDay', () => {
   })
 
   /*
-   * A stored timestamp that does not parse is not worth a broken screen. The
-   * caller renders nothing where the date would be, and the rest of the card
-   * still says what it is about.
+   * A stored timestamp that does not parse is not worth a broken screen. The caller renders
+   * nothing where the date would be, and the rest of the card still says what it is about.
    */
   it.each(['', 'not a date', 'undefined'])('returns null for %s', (value) => {
     expect(formatDay(value)).toBeNull()

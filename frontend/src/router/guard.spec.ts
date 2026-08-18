@@ -46,10 +46,8 @@ describe('resolveNavigation — signed out', () => {
 
 describe('resolveNavigation — signed in but unverified', () => {
   /**
-   * D27, and the reason `action` is its own class. Whoever follows a
-   * verification link *is* signed in and unverified. Redirect them to the gate
-   * and the code is never applied, so they can never leave the gate — a closed
-   * loop with no way out.
+   * D27, and the reason `action` is its own class. Whoever follows a verification link *is*
+   * signed in and unverified.
    */
   it('lets an unverified user reach the action handler', () => {
     expect(resolveNavigation('action', UNVERIFIED, '/auth/action?mode=verifyEmail')).toBeNull()
@@ -91,9 +89,8 @@ describe('resolveNavigation — verified', () => {
 
 describe('the matrix as a whole', () => {
   /**
-   * Every combination resolves to something. A missing case would surface as a
-   * navigation that silently does nothing, which is far harder to notice than a
-   * wrong redirect.
+   * Every combination resolves to something. A missing case would surface as a navigation that
+   * silently does nothing, which is far harder to notice than a wrong redirect.
    */
   it('decides every state and access pair', () => {
     const states = [SIGNED_OUT, UNVERIFIED, VERIFIED]
@@ -114,10 +111,9 @@ describe('the matrix as a whole', () => {
 })
 
 /*
- * AC-43. A user can be away at HighLevel for minutes; if the session lapses
- * while they are gone, the callback must not strand them. Classing the route
- * `protected` means the guard round-trips them through sign-in and returns
- * them here, so the outcome survives.
+ * A user can be away at HighLevel for minutes; if the session lapses while they are gone, the
+ * callback must not strand them. Classing the route `protected` means the guard round-trips them
+ * through sign-in and returns them here, so the outcome survives.
  */
 describe('/hl/callback', () => {
   it('sends a signed-out visitor to sign in, and back again afterwards', () => {
@@ -144,24 +140,15 @@ describe('/hl/callback', () => {
 })
 
 /**
- * Which routes a user may be *returned to* — the allowlist `safeRedirect` is
- * handed, and a narrower thing than "every route we registered".
+ * Which routes a user may be *returned to* — the allowlist `safeRedirect` is handed, and a
+ * narrower thing than "every route we registered".
  *
- * `resolveNavigation` already says it, one way: only a `protected` route is
- * worth returning to, because the auth-flow pages and the gate are means, not
- * destinations. Both callers of `safeRedirect` were passing
- * `router.getRoutes().map((r) => r.path)` instead, so every registered route
- * was a legal `?redirect=` target — and one of them is `/auth/action`, the
- * single route exempt from the guard in every auth state, which executes a
- * Firebase action code straight off its query string.
- *
- * That made `/signin?redirect=%2Fauth%2Faction%3Fmode%3DresetPassword%26oobCode%3D<the
- * attacker's own reset code>` a working attack: the victim signs in with their
- * real password and is handed a "choose a new password" form bound to the
- * attacker's code. A password typed twice in thirty seconds is the common case,
- * and `confirmPasswordReset` then sets the *attacker's* account to the
- * *victim's* password. The `verifyEmail` variant is the quiet one — it gets an
- * attacker's address verified by the victim's click.
+ * `resolveNavigation` already says it, one way: only a `protected` route is worth returning to,
+ * because the auth-flow pages and the gate are means, not destinations. Both callers of
+ * `safeRedirect` were passing `router.getRoutes().map((r) => r.path)` instead, so every
+ * registered route was a legal `?redirect=` target — and one of them is `/auth/action`, the
+ * single route exempt from the guard in every auth state, which executes a Firebase action code
+ * straight off its query string.
  */
 describe('destinationPaths', () => {
   const ROUTES = [
@@ -188,10 +175,8 @@ describe('destinationPaths', () => {
   })
 
   /*
-   * `/hl/callback` is `protected` on purpose (Slice 2): a session that lapsed
-   * while the user was away at HighLevel round-trips through sign-in and comes
-   * back to the outcome. Keying off `access` rather than a hand-written list is
-   * what keeps that working without anyone having to remember it.
+   * `/hl/callback` is `protected` on purpose (Slice 2): a session that lapsed while the user was
+   * away at HighLevel round-trips through sign-in and comes back to the outcome.
    */
   it('keeps every route a user could be sent back to', () => {
     expect(destinationPaths(ROUTES)).toEqual([

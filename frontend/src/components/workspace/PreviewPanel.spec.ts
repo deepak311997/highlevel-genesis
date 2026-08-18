@@ -7,21 +7,13 @@ import type { FileContent, FileMeta } from '@/lib/filesApi'
 import { usePreviewStore } from '@/stores/preview'
 
 /**
- * The preview panel — its four states, its one iframe, and the banners that make
- * a HighLevel failure visible (F8.3).
+ * The preview panel — its four states, its one iframe, and the banners that make a HighLevel
+ * failure visible.
  *
- * The **real** preview store is used, with a `createPinia()` per test: every
- * criterion here is a claim about what a person sees, and the panel and its store
- * are one surface as far as those claims go. Mocking the store would leave the
- * two rebuild rules — the only interesting behaviour on this screen — asserted
- * nowhere that renders anything.
- *
- * The **workspace** store is a `reactive` fake, `EditorPanel.spec.ts`'s pattern:
- * the preview reads four fields from a thousand-line store, and standing the real
- * one up would mean standing up a stream and a transcript to move a counter.
- *
- * `fetch` is stubbed rather than `hlProxy`, for the reason `stores/preview.spec.ts`
- * gives: the brokered call has to be the one that would really have gone out.
+ * The **real** preview store is used, with a `createPinia()` per test: every criterion here is a
+ * claim about what a person sees, and the panel and its store are one surface as far as those
+ * claims go. Mocking the store would leave the two rebuild rules — the only interesting
+ * behaviour on this screen — asserted nowhere that renders anything.
  */
 
 const getIdToken = vi.hoisted(() => vi.fn())
@@ -92,11 +84,10 @@ function storeFiles(files: Record<string, string>): void {
 /**
  * **`attachTo` is load-bearing, not tidiness.**
  *
- * Measured in this repo's own jsdom: a detached `<iframe>` has
- * `contentWindow === null`, and only gains a browsing context once it is in the
- * document. The panel hands that window to the bridge as the frame's identity,
- * so without this every brokered message would be dropped — and the banner cases
- * would fail for a reason that has nothing to do with the panel.
+ * Measured in this repo's own jsdom: a detached `<iframe>` has `contentWindow === null`, and
+ * only gains a browsing context once it is in the document. The panel hands that window to the
+ * bridge as the frame's identity, so without this every brokered message would be dropped — and
+ * the banner cases would fail for a reason that has nothing to do with the panel.
  */
 const MOUNT = {
   attachTo: document.body,
@@ -134,12 +125,10 @@ function postFromFrame(wrapper: VueWrapper, data: unknown): void {
 }
 
 /**
- * The build's nonce, read from the store rather than scraped out of the
- * document.
+ * The build's nonce, read from the store rather than scraped out of the document.
  *
- * Pinia hands back the same instance the component resolved, so this is the
- * panel's own store — and the nonce is what identifies a build, so "did it
- * rebuild?" is exactly "did this change?".
+ * Pinia hands back the same instance the component resolved, so this is the panel's own store —
+ * and the nonce is what identifies a build, so "did it rebuild?" is exactly "did this change?".
  */
 function nonceOf(): string {
   return usePreviewStore().nonce ?? ''
@@ -190,9 +179,8 @@ describe('PreviewPanel — the four states', () => {
   })
 
   /*
-   * AC-2. The placeholder is the shared `Skeleton`, not a hand-rolled
-   * pulsing div — the testid still resolves to the same element, and what
-   * it holds carries the primitive's slot attribute.
+   * The placeholder is the shared `Skeleton`, not a hand-rolled pulsing div — the testid still
+   * resolves to the same element, and what it holds carries the primitive's slot attribute.
    */
   it('renders Skeleton placeholders while loading', async () => {
     const wrapper = await panel()
@@ -244,16 +232,7 @@ describe('PreviewPanel — the four states', () => {
     expect(wrapper.find('iframe').exists()).toBe(true)
   })
 
-  /**
-   * AC-27's other cause: the *list* failed, not a read.
-   *
-   * The two are different failures with different retries. A read that failed can
-   * be re-issued from here; a list that never arrived cannot — this panel has no
-   * paths to assemble from and no business fetching them, so Try again asks the
-   * workspace for the list and the store builds when it lands. The state before
-   * that fix was worse than a missing retry: the panel sat on its loading skeleton
-   * and a Refresh announced that a project with twenty files had no app yet.
-   */
+  /** AC-27's other cause: the *list* failed, not a read. */
   it('reports a failed file list and asks the workspace for it again', async () => {
     workspace.filesError = 'Could not load these files.'
 
@@ -272,15 +251,7 @@ describe('PreviewPanel — the four states', () => {
     expect(getFile).not.toHaveBeenCalled()
   })
 
-  /**
-   * AC-28 — the boundary, asserted as a literal.
-   *
-   * `allow-same-origin` is the one attribute that would undo the whole design
-   * (D9): with it the frame shares our origin, can read the Firebase session out
-   * of IndexedDB and call the API as the user. It is asserted absent as well as
-   * asserted by equality, because a future edit is far more likely to *add* a
-   * token than to rewrite the string.
-   */
+  /** AC-28 — the boundary, asserted as a literal. */
   it('renders exactly one sandboxed iframe carrying the assembled document', async () => {
     storeFiles({ 'index.html': INDEX })
     const wrapper = await panel()
@@ -344,14 +315,7 @@ describe('PreviewPanel — the controls and the rebuild triggers', () => {
     expect(wrapper.find('[data-testid="preview-stale"]').exists()).toBe(false)
   })
 
-  /**
-   * AC-32 — a save is not a generation (D12).
-   *
-   * Every rebuild re-runs the app's `hl()` calls against a 100-request/10-second
-   * account budget, so a preview that rebuilt on each save would spend the user's
-   * CRM allowance on their typing. The hint is the honest middle: never silently
-   * stale, and the user decides when to spend.
-   */
+  /** AC-32 — a save is not a generation. */
   it('offers a refresh rather than taking one when the files change under it', async () => {
     storeFiles({ 'index.html': INDEX })
     const wrapper = await panel()
@@ -494,14 +458,7 @@ describe('PreviewPanel — the banners', () => {
     expect(wrapper.find('[data-testid="preview-stale"]').exists()).toBe(false)
   })
 
-  /**
-   * AC-38 — the first half of the acceptance gate.
-   *
-   * An opaque origin arrives as the string `"null"`, which every other sandboxed
-   * frame on the page also has, so origin identifies nothing and `event.source`
-   * has to. A message from anywhere else is dropped in silence: no banner, no
-   * HighLevel call, no reply.
-   */
+  /** AC-38 — the first half of the acceptance gate. */
   it('ignores a message that did not come from its own frame', async () => {
     const wrapper = await ready()
     const request = hlRequest()
@@ -514,20 +471,7 @@ describe('PreviewPanel — the banners', () => {
     expect(wrapper.find('[data-testid="preview-runtime-error"]').exists()).toBe(false)
   })
 
-  /**
-   * The listener is the **window's**, so it has to come off when the panel goes.
-   *
-   * Asserted against `removeEventListener` rather than by dispatching after the
-   * unmount, and the difference is the whole point: once the panel is gone its
-   * frame is gone too, so a late message is dropped by the bridge's null-frame
-   * guard whether or not the listener is still installed. A dispatch-based test
-   * therefore passes over a real leak — measured, by deleting the
-   * `onBeforeUnmount` body and watching it stay green.
-   *
-   * The `lg` breakpoint swaps one component tree for another, so this unmounts
-   * on every window resize across it; a listener left behind each time is a
-   * leak with a counter on it.
-   */
+  /** The listener is the **window's**, so it has to come off when the panel goes. */
   it('takes its message listener off the window when it is unmounted', async () => {
     const added = vi.spyOn(window, 'addEventListener')
     const removed = vi.spyOn(window, 'removeEventListener')
@@ -543,21 +487,7 @@ describe('PreviewPanel — the banners', () => {
     removed.mockRestore()
   })
 
-  /**
-   * D3's stale-document race, closed a second time.
-   *
-   * Setting `srcdoc` again *is* a navigation, and a `WindowProxy` survives one —
-   * so the previous document's window would still be `===` the frame's
-   * `contentWindow`, and only the nonce would be telling the two apart. A
-   * replaced element discards the old browsing context outright instead.
-   *
-   * **The outcome is asserted, not either mechanism that produces it**, and both
-   * are real: `build()` passes through `'loading'`, which unmounts the frame, and
-   * the `:key` on the nonce would replace it even if it did not. Measured —
-   * removing the `:key` leaves this green, because the loading transition alone
-   * is enough today. That is exactly why the assertion is on the element's
-   * identity: it keeps holding whichever of the two a later refactor removes.
-   */
+  /** D3's stale-document race, closed a second time. */
   it('replaces the frame element on a rebuild rather than renavigating it', async () => {
     const wrapper = await ready()
     const first = wrapper.find('iframe').element

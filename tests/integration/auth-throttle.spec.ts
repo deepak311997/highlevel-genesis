@@ -32,12 +32,7 @@ describe('rate limiting the auth endpoints', () => {
     expect(last?.body).toEqual({ error: expect.any(String), code: 'throttled' })
   })
 
-  /**
-   * The counter has to advance identically for an address that exists and one
-   * that does not. If it only counted real accounts, the 429 boundary would
-   * answer "does this account exist?" — reintroducing, through the rate
-   * limiter, exactly the oracle the uniform registration response closes.
-   */
+  /** The counter has to advance identically for an address that exists and one that does not. */
   it('refuses at the same point for a registered and an unregistered address', async () => {
     await seedUser(EMAIL, PASSWORD, true)
 

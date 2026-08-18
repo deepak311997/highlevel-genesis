@@ -18,14 +18,10 @@ import {
 /**
  * AC-1 — the root `.env.example` is a map of every variable the project reads.
  *
- * The file already drifted once: the deploy-pipeline PR added it, and four
- * variables that only `functions/.env.example` documents never made it across.
- * The gap is exactly the failure mode the root file exists to close — "where is
- * this configured?" answered wrongly — so it is held by a test rather than by
- * remembering.
- *
- * Every check here runs twice: once over a fixture, which proves the check can
- * fail, and once over the real files, which proves it passes today.
+ * The file already drifted once: the deploy-pipeline PR added it, and four variables that only
+ * `functions/.env.example` documents never made it across. The gap is exactly the failure mode
+ * the root file exists to close — "where is this configured?" answered wrongly — so it is held
+ * by a test rather than by remembering.
  */
 
 const made = []
@@ -106,18 +102,12 @@ describe('missingFromRoot', () => {
 })
 
 /**
- * AC-2 — the credentials belong to Secret Manager, and the deploy does not get a
- * copy.
+ * AC-2 — the credentials belong to Secret Manager, and the deploy does not get a copy.
  *
- * Everything `.github/workflows/deploy.yml` writes into `functions/.env` is
- * uploaded as a plain environment variable on the Cloud Run service, where
- * anyone with Viewer on the project can read it. The seven `defineSecret`
- * declarations exist so those values are fetched at runtime instead; this pair
- * of checks is what keeps one from quietly moving back into the file.
- *
- * The spelled-out list below is the point of the first test: `defineSecret` is
- * the declaration a reviewer has to be able to enumerate, so the assertion names
- * all seven rather than counting them.
+ * Everything `.github/workflows/deploy.yml` writes into `functions/.env` is uploaded as a plain
+ * environment variable on the Cloud Run service, where anyone with Viewer on the project can
+ * read it. The seven `defineSecret` declarations exist so those values are fetched at runtime
+ * instead; this pair of checks is what keeps one from quietly moving back into the file.
  */
 describe('definedSecrets', () => {
   it('declares exactly seven secrets, every one documented in the root example', () => {
@@ -138,9 +128,8 @@ describe('definedSecrets', () => {
   })
 
   /*
-   * A spec file names secrets it does not declare — a stub, a fixture, an
-   * assertion about one — so counting those would make the list depend on the
-   * tests rather than on the deployment.
+   * A spec file names secrets it does not declare — a stub, a fixture, an assertion about one —
+   * so counting those would make the list depend on the tests rather than on the deployment.
    */
   it('reads declarations, not the specs that talk about them', () => {
     const dir = fixtureTree({
@@ -153,12 +142,10 @@ describe('definedSecrets', () => {
   })
 
   /*
-   * This list is the input to *both* halves of the check, so a declaration it
-   * cannot see is invisible twice: the name is never required in
-   * `.env.example`, and it drops out of the comparison against what the deploy
-   * writes — leaving the deploy free to write it as a plain variable.
-   * Single-quoting is a Prettier convention, not a guarantee, so the reader
-   * takes either quote and refuses to stay quiet about a form it cannot read.
+   * This list is the input to *both* halves of the check, so a declaration it cannot see is
+   * invisible twice: the name is never required in `.env.example`, and it drops out of the
+   * comparison against what the deploy writes — leaving the deploy free to write it as a plain
+   * variable.
    */
   it('reads a double-quoted declaration as well as a single-quoted one', () => {
     const dir = fixtureTree({ 'a/real.ts': 'defineSecret("DOUBLE_QUOTED")\n' })
@@ -195,16 +182,7 @@ describe('plainEnvVarsInDeploy', () => {
     expect(plainEnvVarsInDeploy(workflow)).toEqual(['FIRESTORE_DATABASE_ID', 'ANTHROPIC_API_KEY'])
   })
 
-  /*
-   * A form this cannot read is a failure, not a pass (C5).
-   *
-   * A heredoc puts the assignments on the lines *after* the redirect, so a
-   * line-wise reader returns `[]` for it — and `[]` is indistinguishable from
-   * "the deploy writes no secrets", which is the answer this check exists to
-   * give. `check-no-firestore.mjs` throws on a missing `dist` for the same
-   * reason: a check that passes on the absence of evidence is worse than no
-   * check, because it is believed.
-   */
+  /* A form this cannot read is a failure, not a pass (C5). */
   it('throws on a heredoc redirect into functions/.env rather than reading nothing', () => {
     const workflow = [
       '      - name: Write functions/.env',
@@ -219,18 +197,9 @@ describe('plainEnvVarsInDeploy', () => {
   })
 
   /*
-   * The heredoc is one instance of a class, and the class is the finding: any
-   * line that fills `functions/.env` without a readable `NAME=` on it answers
-   * `[]`, and `[]` is this check's word for "the deploy writes no secrets".
-   *
-   * The first case below is the one that would actually happen. `deploy.yml`
-   * *already* fetches the SPA's whole `.env` out of Secret Manager with
-   * `gcloud secrets versions access … > frontend/.env`; the obvious next step
-   * — giving the functions' config "one home too" — copies that idiom, and
-   * every one of the seven `defineSecret` values is then uploaded as a plain
-   * Cloud Run environment variable. Appended *beside* today's line rather than
-   * replacing it, the old reader still answered `['FIRESTORE_DATABASE_ID']`
-   * and the suite stayed green.
+   * The heredoc is one instance of a class, and the class is the finding: any line that fills
+   * `functions/.env` without a readable `NAME=` on it answers `[]`, and `[]` is this check's
+   * word for "the deploy writes no secrets".
    */
   const unreadableWrites = {
     'a secret-manager fetch appended beside the readable line': [

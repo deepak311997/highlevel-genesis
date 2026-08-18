@@ -9,15 +9,10 @@ import { MARKER, filesContainingMarker } from './check-no-firestore.mjs'
 /**
  * AC-26 — the third and last layer of the ban.
  *
- * The ESLint rule catches an import at authoring time and the source scan
- * catches one that got past it, but neither can see a *transitive* pull: a
- * dependency that imports Firestore on our behalf puts the SDK in the bundle
- * with nothing under `frontend/src` to point at. This check reads the built
- * artefact, which is the only thing that can answer that.
- *
- * Fixtures are made under the OS temp directory rather than committed, because a
- * committed fixture containing the marker would itself have to be excluded from
- * every other scanner in the repo.
+ * The ESLint rule catches an import at authoring time and the source scan catches one that got
+ * past it, but neither can see a *transitive* pull: a dependency that imports Firestore on our
+ * behalf puts the SDK in the bundle with nothing under `frontend/src` to point at. This check
+ * reads the built artefact, which is the only thing that can answer that.
  */
 
 const made = []
@@ -63,13 +58,7 @@ describe('filesContainingMarker', () => {
     expect(filesContainingMarker(dir)).toEqual([join('a', 'b', 'c', 'deep.js')])
   })
 
-  /*
-   * A missing directory is a failure, not a pass.
-   *
-   * Exiting 0 on an absent `dist` means the CI step reports success loudest
-   * exactly when the build did not run — a security check that passes on the
-   * absence of evidence is worse than no check, because it is believed.
-   */
+  /* A missing directory is a failure, not a pass. */
   it('throws on a directory that does not exist, naming the build step', () => {
     expect(() => filesContainingMarker(join(tmpdir(), 'genesis-does-not-exist'))).toThrow(
       /npm run build/,

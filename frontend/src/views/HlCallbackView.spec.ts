@@ -22,10 +22,9 @@ import HlCallbackView from './HlCallbackView.vue'
 /**
  * The landing route for the OAuth callback.
  *
- * It exists so the dashboard never has to know about OAuth: the outcome comes
- * off the URL here, goes into the store, and the URL is replaced with a clean
- * one. Two behaviours below are the reason it is a route rather than a query
- * parameter on the dashboard.
+ * It exists so the dashboard never has to know about OAuth: the outcome comes off the URL here,
+ * goes into the store, and the URL is replaced with a clean one. Two behaviours below are the
+ * reason it is a route rather than a query parameter on the dashboard.
  */
 
 function mountWith(q: Record<string, string>): ReturnType<typeof mount> {
@@ -56,9 +55,8 @@ describe('HlCallbackView', () => {
   })
 
   /*
-   * `replace`, never `push`. The callback URL carries a spent authorization
-   * code, so leaving it in history gives the back button a destination that can
-   * only fail.
+   * `replace`, never `push`. The callback URL carries a spent authorization code, so leaving it
+   * in history gives the back button a destination that can only fail.
    */
   it('replaces history rather than pushing, so Back cannot revisit a spent code', async () => {
     mountWith({ status: 'connected' })

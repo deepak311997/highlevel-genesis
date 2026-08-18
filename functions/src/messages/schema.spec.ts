@@ -6,17 +6,12 @@ import { CONTENT_MAX, messagesPath, storedMessageSchema, toMessage } from './sch
 /**
  * The three schemas around `users/{uid}/projects/{projectId}/messages/{id}`.
  *
- * The body schema is the security boundary of the slice, and `.strict()` is the
- * load-bearing call on it. `role` is the server's to assign — from Slice 5 on the
- * transcript *is* the LLM's context, so a client that could author an assistant
- * turn could write its own future prompt — and `id`, `seq` and `createdAt` are
- * the server's too. A body carrying any of them is refused rather than quietly
- * stripped, which is what makes "the server owns `role`" a property rather than
- * a promise.
- *
- * `storedMessageSchema` guards what Firestore hands back, for the same reason
- * `storedProjectSchema` does: `snapshot.data() as T` is a lie the compiler
- * believes.
+ * The body schema is the security boundary of the slice, and `.strict()` is the load-bearing
+ * call on it. `role` is the server's to assign — from Slice 5 on the transcript *is* the LLM's
+ * context, so a client that could author an assistant turn could write its own future prompt —
+ * and `id`, `seq` and `createdAt` are the server's too. A body carrying any of them is refused
+ * rather than quietly stripped, which is what makes "the server owns `role`" a property rather
+ * than a promise.
  */
 
 const complete = {
@@ -33,10 +28,8 @@ function without(field: keyof typeof complete): Record<string, unknown> {
 
 describe('messagesPath', () => {
   /*
-   * Composed in one place from `projectsPath`, so the three segments of the path
-   * cannot drift: a message lives under its project, which lives under its
-   * owner. That nesting is what makes ownership structural rather than a `where`
-   * clause someone has to remember.
+   * Composed in one place from `projectsPath`, so the three segments of the path cannot drift: a
+   * message lives under its project, which lives under its owner.
    */
   it('nests the collection under the project, under the owner', () => {
     expect(messagesPath('alice', 'proj-1')).toBe('users/alice/projects/proj-1/messages')
@@ -55,11 +48,8 @@ describe('storedMessageSchema — what Firestore hands back', () => {
   })
 
   /*
-   * AC-15. Nothing here carries a `.catch`: content is the whole message, the
-   * timestamp is how it is ordered and dated, and `seq` is what breaks the
-   * commit-timestamp tie. A document missing one of them cannot be rendered in
-   * the right place, so it is *known* to be unusable and omitted (D27) rather
-   * than drawn as a bubble with a blank in it.
+   * Nothing here carries a `.catch`: content is the whole message, the timestamp is how it is
+   * ordered and dated, and `seq` is what breaks the commit-timestamp tie.
    */
   it.each(['role', 'content', 'seq', 'createdAt'] as const)(
     'rejects a document with no %s',
@@ -72,20 +62,7 @@ describe('storedMessageSchema — what Firestore hands back', () => {
     expect(storedMessageSchema.safeParse({ ...complete, content: '' }).success).toBe(false)
   })
 
-  /**
-   * **A failed turn has no prose, and it is still a message.**
-   *
-   * `/generate` writes an assistant document with empty content and an `error`
-   * when a generation fails before its first token — that is the whole of
-   * "failures survive a refresh". A blanket `min(1)` made the server's own write
-   * unreadable on the way back out: the handler committed it, `readBackOrFail`
-   * refused to parse it, and the turn ended in an `internal` frame instead of
-   * the `upstream` one it had already decided on.
-   *
-   * So the rule is not "content is non-empty" but "a message says something":
-   * prose, or the reason there is none. Nothing else relaxes — a blank document
-   * with no error is still unreadable, by exactly the argument above it.
-   */
+  /** **A failed turn has no prose, and it is still a message.** */
   it('accepts a blank document that carries the reason it is blank', () => {
     expect(
       storedMessageSchema.safeParse({ ...complete, content: '', error: 'upstream' }).success,
@@ -93,21 +70,17 @@ describe('storedMessageSchema — what Firestore hands back', () => {
   })
 
   /*
-   * D27. A bubble that is neither the user's nor the assistant's has no side of
-   * the transcript to sit on, so an unrecognised role is unreadable by the same
-   * rule as a missing field.
+   * A bubble that is neither the user's nor the assistant's has no side of the transcript to sit
+   * on, so an unrecognised role is unreadable by the same rule as a missing field.
    */
   it.each(['system', 'tool', '', 'User'])('rejects the role %s', (role) => {
     expect(storedMessageSchema.safeParse({ ...complete, role }).success).toBe(false)
   })
 
   /*
-   * D11, and it matters far more now than it did in Slice 4. The stored schema
-   * carries **no maximum** on content: a generated reply runs to `max_tokens`,
-   * which is three orders of magnitude past the 4,000-character request-body
-   * limit. A maximum here would make the server's own write unreadable. What
-   * bounds a stored reply is the 800,000-byte accumulation cap (D22), enforced
-   * where the text is accumulated rather than where it is parsed.
+   * D11, and it matters far more now than it did in Slice 4. The stored schema carries **no
+   * maximum** on content: a generated reply runs to `max_tokens`, which is three orders of
+   * magnitude past the 4,000-character request-body limit.
    */
   it('accepts stored content longer than the request-body maximum', () => {
     const long = 'a'.repeat(CONTENT_MAX * 10)
@@ -121,12 +94,9 @@ describe('storedMessageSchema — what Firestore hands back', () => {
   })
 
   /*
-   * R7, D24. Slice 4's documents have no `truncated` key at all, and a required
-   * field here would make every message written before this slice unreadable —
-   * silently emptying every transcript that already exists. The default is a
-   * migration, and it is deliberately **not** a `.catch`: D27's rule is about a
-   * *corrupt* field, and accepting a corrupt one would be accepting a document
-   * that is wrong about itself.
+   * Slice 4's documents have no `truncated` key at all, and a required field here would make
+   * every message written before this slice unreadable — silently emptying every transcript that
+   * already exists.
    */
   it('parses a Slice-4-shaped document and reads it as not truncated', () => {
     const parsed = storedMessageSchema.safeParse(complete)
@@ -163,10 +133,8 @@ describe('toMessage', () => {
   })
 
   /*
-   * AC-2. `seq` is an ordering mechanism the server owns, and the array it
-   * produces is already in order — so it has no wire representation at all.
-   * Leaving it off the `Message` interface is what stops it reaching one by
-   * accident.
+   * `seq` is an ordering mechanism the server owns, and the array it produces is already in
+   * order — so it has no wire representation at all.
    */
   it('never emits a seq key', () => {
     const message = toMessage('msg-1', storedMessageSchema.parse({ ...complete, seq: 1 }))

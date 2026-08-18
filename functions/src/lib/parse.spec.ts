@@ -8,11 +8,10 @@ import { parseBody } from './parse'
 /**
  * The Zod half of the API boundary.
  *
- * The architecture decision has two halves — "scopes every query by the uid from
- * the token" and "parses the payload with Zod" — and this is the second. What is
- * worth testing is not that Zod works but that a rejection arrives as an
- * `HttpError` the terminal handler already knows how to render, with a code a
- * client can branch on and a message that names the offending field.
+ * The architecture decision has two halves — "scopes every query by the uid from the token" and
+ * "parses the payload with Zod" — and this is the second. What is worth testing is not that Zod
+ * works but that a rejection arrives as an `HttpError` the terminal handler already knows how to
+ * render, with a code a client can branch on and a message that names the offending field.
  */
 
 const schema = z.object({ displayName: z.string().max(5).nullable().optional() }).strict()
@@ -50,9 +49,8 @@ describe('parseBody', () => {
   })
 
   /*
-   * `express.json()` yields `{}` for a bodyless request whose content-type it
-   * does not match, and `undefined` when the middleware never ran at all. Both
-   * mean "no body", and an optional-only schema should accept both.
+   * `express.json()` yields `{}` for a bodyless request whose content-type it does not match,
+   * and `undefined` when the middleware never ran at all.
    */
   it('treats an absent body as {}', () => {
     expect(parseBody(schema, request(undefined))).toEqual({})

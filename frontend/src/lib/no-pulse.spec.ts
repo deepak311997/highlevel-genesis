@@ -6,21 +6,11 @@ import { describe, expect, it } from 'vitest'
 /**
  * AC-3 — **the placeholder pulse lives in exactly one component**.
  *
- * Before Slice 12 the app had nineteen hand-rolled copies of the same three
- * utilities spread across ten components, and they had drifted: five used
- * `rounded`, five `rounded-md`, and the heights were guessed per site. That is
- * what the audit found, and `Skeleton` is the fix. This is what keeps it fixed —
- * without a scan, the twentieth copy is one convenient `<div class="…">` away
- * and nothing fails.
- *
- * In `no-cdn.spec.ts`'s exact shape, for its reasons: the needle is built by
- * concatenation, the file skips itself, offenders are reported by path so a
- * failure names the file, and the scanner is tested before it is trusted.
- *
- * Read from the working directory rather than from `import.meta.url`, which is
- * `no-firestore.spec.ts`'s rule and for its reason: this suite runs under jsdom,
- * where `import.meta.url` is an http URL that `fileURLToPath` refuses. Vitest's
- * cwd is `frontend/`.
+ * Before Slice 12 the app had nineteen hand-rolled copies of the same three utilities spread
+ * across ten components, and they had drifted: five used `rounded`, five `rounded-md`, and the
+ * heights were guessed per site. That is what the audit found, and `Skeleton` is the fix. This
+ * is what keeps it fixed — without a scan, the twentieth copy is one convenient `<div
+ * class="…">` away and nothing fails.
  */
 
 const SRC = join(process.cwd(), 'src')
@@ -28,9 +18,8 @@ const SRC = join(process.cwd(), 'src')
 /**
  * Built by concatenation, and this file skips itself below.
  *
- * Both halves are needed for a scanner that does not trip on its own source —
- * otherwise the only way to write this test is to write it somewhere it cannot
- * see, which is worse.
+ * Both halves are needed for a scanner that does not trip on its own source — otherwise the only
+ * way to write this test is to write it somewhere it cannot see, which is worse.
  */
 const NEEDLE = 'animate-' + 'pulse'
 
@@ -95,12 +84,7 @@ function offends(path: string): boolean {
 }
 
 describe('the scan itself', () => {
-  /*
-   * The scanner is tested before it is trusted, `no-firestore.spec.ts`'s rule.
-   * `offenders).toEqual([])` reads as proof whether the scanner catches
-   * everything or nothing, so these cases are what "one placeholder" has to mean
-   * for that line to be worth anything.
-   */
+  /* The scanner is tested before it is trusted, `no-firestore.spec.ts`'s rule. */
   it.each(FORMS)('catches %s', (_label, source) => {
     expect(pulses(source)).toBe(true)
   })

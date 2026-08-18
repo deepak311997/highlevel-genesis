@@ -12,14 +12,12 @@ import {
 /**
  * The host half of the preview channel, tested as the acceptance gate it is.
  *
- * Every case below is written from the frame's side of a boundary we do not
- * trust: the preview runs in a sandboxed `srcdoc` iframe with no
- * `allow-same-origin`, so its origin is opaque and arrives as the literal
- * string `"null"` — which every other sandboxed frame on the page also has, and
- * which therefore identifies nothing. `event.source` and the per-build nonce
- * are the only two things that say "this is the document I am showing right
- * now", so the tests that matter most are the ones where a message is
- * well-formed and still ignored.
+ * Every case below is written from the frame's side of a boundary we do not trust: the preview
+ * runs in a sandboxed `srcdoc` iframe with no `allow-same-origin`, so its origin is opaque and
+ * arrives as the literal string `"null"` — which every other sandboxed frame on the page also
+ * has, and which therefore identifies nothing. `event.source` and the per-build nonce are the
+ * only two things that say "this is the document I am showing right now", so the tests that
+ * matter most are the ones where a message is well-formed and still ignored.
  */
 
 const NONCE = 'n'

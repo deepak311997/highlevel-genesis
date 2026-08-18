@@ -6,13 +6,12 @@ import type { PreviewAsset } from './previewShim'
 /**
  * The shim, evaluated for real (AC-9 … AC-16).
  *
- * D8 makes the shim a string constant rather than a function put through
- * `.toString()`, because esbuild's `keepNames` wraps functions in `__name(...)`
- * and a serialised body would then call a helper that does not exist inside the
- * iframe — a bug visible only in a production build. The cost of that decision
- * is that **nothing typechecks the shim**, so this file is what the compiler
- * would otherwise be: the source is evaluated over stubbed globals and its
- * behaviour asserted, rather than its text matched.
+ * D8 makes the shim a string constant rather than a function put through `.toString()`, because
+ * esbuild's `keepNames` wraps functions in `__name(...)` and a serialised body would then call a
+ * helper that does not exist inside the iframe — a bug visible only in a production build. The
+ * cost of that decision is that **nothing typechecks the shim**, so this file is what the
+ * compiler would otherwise be: the source is evaluated over stubbed globals and its behaviour
+ * asserted, rather than its text matched.
  */
 
 /** A message the shim posted to the host, shaped only as far as these tests read it. */
@@ -44,12 +43,11 @@ interface ShimHarness {
 /**
  * A stand-in `document`, so the asset loader can be driven without a real one.
  *
- * `__genesisAsset` is the only part of the shim that touches the DOM, and what
- * it does there is the whole of AC-2 and AC-3's "and run" — a `<style>` or a
- * `<script>` element, built through the DOM so the HTML parser never sees the
- * content (D7), swapped in at the position the reference occupied. A real jsdom
- * document would execute an inserted `<script>` for real, which is a different
- * test; this one records what was built and where it went.
+ * `__genesisAsset` is the only part of the shim that touches the DOM, and what it does there is
+ * the whole of AC-2 and AC-3's "and run" — a `<style>` or a `<script>` element, built through
+ * the DOM so the HTML parser never sees the content, swapped in at the position the reference
+ * occupied. A real jsdom document would execute an inserted `<script>` for real, which is a
+ * different test; this one records what was built and where it went.
  */
 interface FakeNode {
   tag: string
@@ -152,9 +150,8 @@ function idOf(message: PostedMessage | undefined): unknown {
 /**
  * A promise that has not settled, asserted without waiting for it to.
  *
- * `Promise.race` against an already-resolved sentinel settles on the next
- * microtask: if the call's promise were resolved or rejected it would win the
- * race, since it was created first.
+ * `Promise.race` against an already-resolved sentinel settles on the next microtask: if the
+ * call's promise were resolved or rejected it would win the race, since it was created first.
  */
 async function isPending(promise: Promise<unknown>): Promise<boolean> {
   return (
@@ -163,13 +160,7 @@ async function isPending(promise: Promise<unknown>): Promise<boolean> {
 }
 
 describe('previewShim', () => {
-  /*
-   * Fake timers for every case, not only AC-14's.
-   *
-   * Several cases deliberately leave a call pending, and a pending call holds a
-   * 30-second timer that would reject with nobody listening long after the test
-   * ended. `vi.useRealTimers()` discards them, so the suite leaves nothing armed.
-   */
+  /* Fake timers for every case, not only AC-14's. */
   beforeEach(() => {
     vi.useFakeTimers()
   })
@@ -179,10 +170,8 @@ describe('previewShim', () => {
 
   describe('encodeAssets', () => {
     /*
-     * The assets ride inside a `<script>` element, so the one byte that could
-     * end that element early must not appear. Escaping `<` — rather than only
-     * the `</script>` sequence — means the invariant is a property of the whole
-     * literal and can be asserted by looking for a single character.
+     * The assets ride inside a `<script>` element, so the one byte that could end that element
+     * early must not appear.
      */
     const risky: PreviewAsset[] = [
       { kind: 'js', content: 'const marker = "</script><img src=x>"' },
@@ -198,16 +187,7 @@ describe('previewShim', () => {
     })
   })
 
-  /**
-   * The other half of AC-2 and AC-3 — "when assembled **and run**".
-   *
-   * `previewDocument.spec.ts` proves the loader call lands where the reference
-   * was and that the content reaches the embedded payload intact. What it cannot
-   * prove is that the loader then installs anything: it asserts strings, and
-   * jsdom does not execute the document. Without these cases a `__genesisAsset`
-   * that returned early for stylesheets would leave every generated page
-   * unstyled and the whole suite green.
-   */
+  /** The other half of AC-2 and AC-3 — "when assembled **and run**". */
   describe('the asset loader', () => {
     const assets: PreviewAsset[] = [
       { kind: 'css', content: 'body { color: red }' },
@@ -328,9 +308,8 @@ describe('previewShim', () => {
     })
 
     /*
-     * AC-12 — the stale-document case: a reply for the *previous* build, whose
-     * ids collide with this one's because both count from `c1`. The nonce is
-     * what tells them apart, so it is checked before the id is looked up.
+     * AC-12 — the stale-document case: a reply for the *previous* build, whose ids collide with
+     * this one's because both count from `c1`.
      */
     it('ignores a reply carrying a different nonce', async () => {
       const { hl, posted, fire } = run('n1')
@@ -353,10 +332,8 @@ describe('previewShim', () => {
 
   describe('the budget, the timeout and the error channel', () => {
     /*
-     * AC-13 — the budget exists because a render loop in generated code is one
-     * `useEffect` away, and every call it makes lands on a real CRM. The 51st is
-     * refused locally: it never reaches the host, and it is reported once so the
-     * user sees why the app stopped rather than watching it hang.
+     * AC-13 — the budget exists because a render loop in generated code is one `useEffect` away,
+     * and every call it makes lands on a real CRM.
      */
     it('refuses the call past the limit, names it, and posts it nowhere', async () => {
       const { hl, posted } = run('n1')
@@ -374,11 +351,7 @@ describe('previewShim', () => {
       expect(reports[0]?.['message']).toContain(String(HL_CALL_LIMIT))
     })
 
-    /*
-     * AC-14 — a host that never answers must not leave the generated code
-     * awaiting forever. The timers are already fake (see the suite's
-     * `beforeEach`), which is what lets this reach the shim's own `setTimeout`.
-     */
+    /* AC-14 — a host that never answers must not leave the generated code awaiting forever. */
     it('rejects a call the host never answers, once the timeout passes', async () => {
       const { hl } = run('n1')
 
@@ -410,12 +383,7 @@ describe('previewShim', () => {
       expect(posted[0]?.['message']).toContain('nope')
     })
 
-    /*
-     * AC-16 — `connect-src 'none'` is what stops generated code calling anything
-     * itself. Naming the directive turns "nothing happened" into a message that
-     * says which rule refused, which is the difference between a bug report and
-     * a shrug.
-     */
+    /* AC-16 — `connect-src 'none'` is what stops generated code calling anything itself. */
     it('reports a content security policy violation, naming the directive', () => {
       const { posted, fire } = run('n1')
 

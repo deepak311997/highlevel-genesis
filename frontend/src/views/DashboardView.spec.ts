@@ -8,10 +8,9 @@ vi.mock('@/stores/profile', () => ({
 }))
 
 /*
- * Plain values, not refs — a Pinia store auto-unwraps its refs on the store
- * object. Mocked here rather than only in `ProjectsCard.spec` because AC-28 is
- * about the *dashboard* when the card's request has failed, which needs the real
- * card mounted inside the real view.
+ * Plain values, not refs — a Pinia store auto-unwraps its refs on the store object. Mocked here
+ * rather than only in `ProjectsCard.spec` because AC-28 is about the *dashboard* when the card's
+ * request has failed, which needs the real card mounted inside the real view.
  */
 const projects = vi.hoisted(() => ({
   projects: [] as unknown[],
@@ -69,11 +68,8 @@ describe('DashboardView', () => {
   })
 
   /*
-   * AC-21, and D17. A profile is a convenience, not a precondition for a
-   * session: when the request fails, the failure belongs to the account card and
-   * nowhere else. The rest of the dashboard keeps working, and the sign-out
-   * control — which lives in App.vue, not here, and is covered by the e2e — is
-   * unaffected for the same reason.
+   * AC-21, and D17. A profile is a convenience, not a precondition for a session: when the
+   * request fails, the failure belongs to the account card and nowhere else.
    */
   it('still renders the connection panel and the projects card when the profile fails', async () => {
     ensure.mockRejectedValue(new Error('Something went wrong.'))
@@ -85,14 +81,8 @@ describe('DashboardView', () => {
   })
 
   /*
-   * AC-28, and the one case the stub above cannot express: the projects card is
-   * mounted for real, and its list request has failed.
-   *
-   * Every other test of the failure renders the card in isolation, where a card
-   * that threw on its error path would fail only its own suite. Here it would
-   * take the whole view down and the account card and connection panel with it —
-   * which is precisely the claim AC-28 makes. The sign-out control lives in
-   * `App.vue` rather than this view, and the e2e covers it.
+   * AC-28, and the one case the stub above cannot express: the projects card is mounted for
+   * real, and its list request has failed.
    */
   it('keeps the rest of the dashboard when the project list has failed', async () => {
     projects.error = 'Could not load your projects.'
@@ -114,10 +104,8 @@ describe('DashboardView', () => {
   })
 
   /*
-   * The rail is ordered by how often you look at it: who you are signed in as
-   * first, then the HighLevel connection under it. Asserted on DOM order rather
-   * than on presence, because "both are rendered" is the one thing a reordering
-   * cannot break.
+   * The rail is ordered by how often you look at it: who you are signed in as first, then the
+   * HighLevel connection under it.
    */
   it('puts the account above the HighLevel connection in the rail', () => {
     const html = mount(DashboardView, MOUNT).html()

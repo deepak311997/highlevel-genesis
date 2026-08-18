@@ -5,12 +5,11 @@ import { reactive } from 'vue'
 /**
  * A reply, rendered.
  *
- * Two things are asserted here that the parser's own suite cannot see: that the
- * tree reaches **real elements** — `<strong>`, `<li>`, `<code>` — rather than a
- * string of markup, and that a file marker becomes a control that opens the file
- * rather than a decorative pill. The second is the whole reason the chips stopped
- * being `Badge`s: a turn's output is the most likely thing a reader wants to look
- * at next, and it was the one thing in the bubble they could not click.
+ * Two things are asserted here that the parser's own suite cannot see: that the tree reaches
+ * **real elements** — `<strong>`, `<li>`, `<code>` — rather than a string of markup, and that a
+ * file marker becomes a control that opens the file rather than a decorative pill. The second is
+ * the whole reason the chips stopped being `Badge`s: a turn's output is the most likely thing a
+ * reader wants to look at next, and it was the one thing in the bubble they could not click.
  */
 
 const store = reactive({ selectFile: vi.fn(), files: [] as { path: string }[] })
@@ -52,11 +51,9 @@ describe('markdown', () => {
   })
 
   /*
-   * Headings are **demoted**, not mapped one-to-one. A bubble sits inside a
-   * panel that already owns its own heading, so a reply opening with `#` would
-   * otherwise put an `<h1>` in the middle of the document outline — and the
-   * model chooses that character, not us. `#`/`##`/`###` become h3/h4/h5, which
-   * keeps the relative sizes the model intended and the page's outline sane.
+   * Headings are **demoted**, not mapped one-to-one. A bubble sits inside a panel that already
+   * owns its own heading, so a reply opening with `#` would otherwise put an `<h1>` in the
+   * middle of the document outline — and the model chooses that character, not us.
    */
   it.each([
     ['# Title', 'h3'],
@@ -71,9 +68,8 @@ describe('markdown', () => {
   })
 
   /*
-   * The escaping property, asserted rather than assumed. The parser produces no
-   * markup and Vue prints text nodes escaped, so a reply containing a tag shows
-   * the tag.
+   * The escaping property, asserted rather than assumed. The parser produces no markup and Vue
+   * prints text nodes escaped, so a reply containing a tag shows the tag.
    */
   it('shows markup in the reply as text rather than executing it', () => {
     const wrapper = mount(MessageBody, {

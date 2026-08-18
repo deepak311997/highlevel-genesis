@@ -17,16 +17,10 @@ const LOCATION = 'lUanVn0CtZJTlymH8ySo'
 /**
  * The allowlist, and the matcher that is the whole of the confused-deputy fix.
  *
- * Most of this file is written as **refusals**, because that is where the
- * security property lives: a matcher that is subtly too permissive — a greedy
- * parameter that swallows a `/`, a prefix match where an exact match was meant —
- * reopens every endpoint HighLevel serves to generated code (R3).
- *
- * The ordering cases matter for the same reason. `/calendars/events` and
- * `/calendars/:calendarId` are the same shape, so whichever the matcher happens
- * to try first wins; a test written from the table's own order would pass
- * against a matcher that is only accidentally right. Every ordering case here is
- * therefore run twice, once against a reversed copy of the table (AC-4).
+ * Most of this file is written as **refusals**, because that is where the security property
+ * lives: a matcher that is subtly too permissive — a greedy parameter that swallows a `/`, a
+ * prefix match where an exact match was meant — reopens every endpoint HighLevel serves to
+ * generated code.
  */
 
 /** One legal concrete path per row, in table order. */
@@ -64,9 +58,8 @@ describe('HL_ROUTES', () => {
   })
 
   /*
-   * The four D4 exclusions, asserted on the table itself rather than only
-   * through the matcher: a row added by accident would be caught here even if
-   * nothing ever called it.
+   * The four D4 exclusions, asserted on the table itself rather than only through the matcher: a
+   * row added by accident would be caught here even if nothing ever called it.
    */
   it('carries none of the routes deliberately left off it', () => {
     const keys = HL_ROUTES.map(key)
@@ -109,15 +102,7 @@ describe('matchRoute', () => {
     expect(matchRoute(method, path)).toEqual({ kind: 'not_allowed' })
   })
 
-  /*
-   * AC-3 — the path is on the table; this method is not on that row.
-   *
-   * `GET /contacts/search` is the case worth naming. `search` is a perfectly
-   * legal id shape, so a matcher that filtered by method before ranking by
-   * specificity would answer `GET /contacts/:contactId` here and forward a
-   * lookup for a contact nobody has. A literal spelled out by any row wins its
-   * position outright, and the method then picks within that class.
-   */
+  /* AC-3 — the path is on the table; this method is not on that row. */
   it.each([
     ['GET', '/contacts/search'],
     ['DELETE', '/calendars/'],
@@ -127,9 +112,8 @@ describe('matchRoute', () => {
   })
 
   /*
-   * AC-4. Run against a reversed copy as well as the real table, because the
-   * specificity rule is the property under test and "the rows happen to be in a
-   * lucky order" is not that property.
+   * Run against a reversed copy as well as the real table, because the specificity rule is the
+   * property under test and "the rows happen to be in a lucky order" is not that property.
    */
   describe.each([
     ['the table as written', HL_ROUTES],
@@ -167,11 +151,8 @@ describe('matchRoute', () => {
   })
 
   /*
-   * A slash inside a parameter is not a bad parameter — it is two segments, so
-   * it cannot reach the grammar at all. It is refused one step earlier, as a
-   * shape no row has, which is the stronger refusal: `not_allowed` happens
-   * before any Firestore read. Asserted here so the distinction is deliberate
-   * rather than discovered.
+   * A slash inside a parameter is not a bad parameter — it is two segments, so it cannot reach
+   * the grammar at all.
    */
   it('refuses a slash inside a parameter as a shape no row has', () => {
     expect(matchRoute('GET', '/contacts/a/b')).toEqual({ kind: 'not_allowed' })
@@ -208,11 +189,10 @@ describe('matchRoute', () => {
 /**
  * Assembling the upstream request.
  *
- * AC-6 is asserted on the **assembled URL** rather than on the match, because
- * the match is not the property that matters: a matcher can be right and a
- * handler can still concatenate the caller's path onto a base and undo all of
- * it. What is tested here is that there is no way to express that mistake —
- * the URL is a compile-time template plus `[A-Za-z0-9_-]` parameters, and
+ * AC-6 is asserted on the **assembled URL** rather than on the match, because the match is not
+ * the property that matters: a matcher can be right and a handler can still concatenate the
+ * caller's path onto a base and undo all of it. What is tested here is that there is no way to
+ * express that mistake — the URL is a compile-time template plus `[A-Za-z0-9_-]` parameters, and
  * nothing else.
  */
 describe('buildUpstreamUrl', () => {
@@ -242,10 +222,9 @@ describe('buildUpstreamUrl', () => {
   })
 
   /*
-   * The total form of D6. `matchRoute` can never hand this over — the grammar
-   * refuses `..` — but the claim is that the URL cannot be built from a
-   * caller-supplied string *at all*, and a claim that depends on its only
-   * caller being careful is not structural. So the assembler re-checks.
+   * The total form of D6. `matchRoute` can never hand this over — the grammar refuses `..` — but
+   * the claim is that the URL cannot be built from a caller-supplied string *at all*, and a
+   * claim that depends on its only caller being careful is not structural.
    */
   it('refuses to assemble a URL from a parameter outside the grammar', () => {
     const { row } = matched('GET', '/contacts/JwwI60NJqfc8I4Ay2MiA')
@@ -290,9 +269,8 @@ describe('buildUpstreamUrl', () => {
   })
 
   /*
-   * AC-10, and P1's stronger form: `locationId` is a reserved key on *every*
-   * row, so a caller-supplied one never reaches HighLevel even where we inject
-   * nothing of our own.
+   * AC-10, and P1's stronger form: `locationId` is a reserved key on *every* row, so a caller-
+   * supplied one never reaches HighLevel even where we inject nothing of our own.
    */
   it('adds no locationId on a row that takes none, and removes the caller’s', () => {
     const { row, params } = matched('GET', '/contacts/JwwI60NJqfc8I4Ay2MiA')
@@ -304,12 +282,8 @@ describe('buildUpstreamUrl', () => {
   })
 
   /*
-   * P1's claim is "a caller-supplied location never reaches HighLevel, on any
-   * route" — and an exact-key `delete` does not deliver it. `locationId[]=x`,
-   * `locationId[0]=x` and `LocationId=x` all survive it, and a `qs`-backed
-   * upstream (Nest's default, which HighLevel is built on) parses the first two
-   * back into the same field. Whether they would win is upstream's business;
-   * the point is that the sentence has to be true here rather than nearly true.
+   * P1's claim is "a caller-supplied location never reaches HighLevel, on any route" — and an
+   * exact-key `delete` does not deliver it.
    */
   it('drops a locationId however the caller spelled it', () => {
     const { row, params } = matched('GET', '/calendars/')
@@ -417,10 +391,9 @@ describe('isRouteEnabled', () => {
   })
 
   /*
-   * Exactly `'true'`, and nothing else. A looser reading — "anything but
-   * empty", or a truthiness check — turns a stray `HL_ALLOW_MESSAGE_SEND=0` in
-   * somebody's shell into a switch that is on, for a route that sends a real
-   * SMS or email (D5, R5).
+   * Exactly `'true'`, and nothing else. A looser reading — "anything but empty", or a truthiness
+   * check — turns a stray `HL_ALLOW_MESSAGE_SEND=0` in somebody's shell into a switch that is
+   * on, for a route that sends a real SMS or email.
    */
   it.each([
     {},

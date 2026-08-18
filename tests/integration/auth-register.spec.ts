@@ -67,12 +67,7 @@ describe('POST /auth/register — address already registered', () => {
     expect(existing.raw).toBe(fresh.raw)
   })
 
-  /**
-   * A registration request may well be an attacker probing someone else's
-   * address. It must not be able to change, resend, or reveal anything about an
-   * account it does not control — which also closes the account pre-hijacking
-   * path, because Firebase does not retire outstanding verification codes.
-   */
+  /** A registration request may well be an attacker probing someone else's address. */
   it.each([
     ['verified', true],
     ['unverified', false],
@@ -102,10 +97,9 @@ describe('POST /auth/register — address already registered', () => {
 
 describe('POST /auth/register — rejected input', () => {
   /**
-   * Validation must run before any Auth call. If a weak password were only
-   * rejected after Firebase had been consulted, the difference between
-   * "refused instantly" and "refused after a round trip" would answer the
-   * question the endpoint exists to refuse.
+   * Validation must run before any Auth call. If a weak password were only rejected after
+   * Firebase had been consulted, the difference between "refused instantly" and "refused after a
+   * round trip" would answer the question the endpoint exists to refuse.
    */
   it('rejects a password that misses the policy without creating anything', async () => {
     const res = await postJson('/auth/register', { email: EMAIL, password: 'short' })

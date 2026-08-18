@@ -14,15 +14,9 @@ import {
 /**
  * The three file routes, over the wire (AC-26 to AC-31, D19).
  *
- * F5.1 is exactly three verbs: list the tree, read a file, save an edit.
- * Splitting the list from the read is what keeps opening a workspace from
- * shipping 20 × 100 KB of code nobody has clicked on yet, so **"no `content` on a
- * list entry"** is asserted rather than assumed.
- *
- * No user identifier appears in any of these paths. The owner's uid comes from
- * the verified ID token and the collection path is composed from it, so another
- * user's files are not addressable by a request rather than merely refused —
- * which is why every cross-tenant case below is a 404 and not a 403.
+ * F5.1 is exactly three verbs: list the tree, read a file, save an edit. Splitting the list from
+ * the read is what keeps opening a workspace from shipping 20 × 100 KB of code nobody has
+ * clicked on yet, so **"no `content` on a list entry"** is asserted rather than assumed.
  */
 
 const PASSWORD = 'Correct-Horse-9'
@@ -133,12 +127,7 @@ describe('GET /api/projects/:projectId/files (AC-26)', () => {
     expect(filesOf(res).map((file) => file['path'])).toEqual(['app.js', 'index.html', 'styles.css'])
   })
 
-  /**
-   * The projection, and it is the whole reason the list is a separate route.
-   *
-   * A list that carried `content` would ship every byte of a project's code on
-   * every workspace open, for files nobody has clicked on.
-   */
+  /** The projection, and it is the whole reason the list is a separate route. */
   it('carries path, size and both timestamps, and no content at all', async () => {
     await seedFile(aliceUid, 'proj-1', 'app.js', 'const a = 1\n')
 
@@ -157,10 +146,9 @@ describe('GET /api/projects/:projectId/files (AC-26)', () => {
   })
 
   /**
-   * D13. A document whose stored `path` disagrees with its id cannot be shown in
-   * the right row or answered for the right `GET`, so it is omitted — the
-   * fail-closed rule `parseStored` set, applied to the invariant this collection
-   * adds.
+   * A document whose stored `path` disagrees with its id cannot be shown in the right row or
+   * answered for the right `GET`, so it is omitted — the fail-closed rule `parseStored` set,
+   * applied to the invariant this collection adds.
    */
   it('omits a document whose path disagrees with its id', async () => {
     await seedFile(aliceUid, 'proj-1', 'app.js', 'const a = 1\n')
@@ -224,16 +212,7 @@ describe('GET /api/projects/:projectId/files/:path (AC-27)', () => {
     },
   )
 
-  /**
-   * The percent-encoded traversal forms, which are the ones that actually arrive.
-   *
-   * A **bare** `..` segment never reaches the handler at all: URL normalisation
-   * collapses `/files/..` to `/files` before routing, so that request is a list
-   * and answers 200 with the tree. That is safe rather than lucky — the segment is
-   * gone before anything could compose a document path from it — but it means the
-   * traversal case worth asserting is the encoded one, which Express hands to
-   * `req.params` decoded and `filePathSchema` refuses for failing to be a filename.
-   */
+  /** The percent-encoded traversal forms, which are the ones that actually arrive. */
   it.each(['%2e%2e%2fsecrets.js', '%2fetc%2fpasswd', '%2e%2e%5csecrets.js'])(
     'answers 400 invalid_path for the encoded path %s',
     async (encoded) => {
@@ -244,18 +223,7 @@ describe('GET /api/projects/:projectId/files/:path (AC-27)', () => {
     },
   )
 
-  /**
-   * A whole segment of `..`, encoded or not, never reaches this handler at all.
-   *
-   * Measured rather than assumed: both `/files/..` and `/files/%2E%2E` are
-   * collapsed by URL normalisation *before routing*, so they resolve one segment
-   * up — `GET /api/projects/proj-1`, the project route. Safe rather than lucky,
-   * since the segment is gone before anything could compose a document path from
-   * it, and asserted here so a change to that normalisation shows up as a failure
-   * rather than as a surprising new answer.
-   *
-   * The claim that matters is the negative: **no file is reachable this way.**
-   */
+  /** A whole segment of `..`, encoded or not, never reaches this handler at all. */
   it.each(['..', '%2E%2E'])(
     'never reaches a file through the traversal segment %s',
     async (segment) => {
@@ -269,13 +237,7 @@ describe('GET /api/projects/:projectId/files/:path (AC-27)', () => {
     },
   )
 
-  /**
-   * The "no Firestore read" half of AC-27, made observable.
-   *
-   * A project that does not exist would answer 404 if the project were looked up
-   * first. It answers 400 instead, which is only possible if the path was refused
-   * before anything touched Firestore.
-   */
+  /** The "no Firestore read" half of AC-27, made observable. */
   it('refuses the path before it looks the project up', async () => {
     const res = await getJson(filePath('neverExisted', '../secrets.js'), auth(aliceToken))
 

@@ -26,15 +26,11 @@ import MessageComposer from './MessageComposer.vue'
 /**
  * The composer — a textarea, Enter-to-send, and the three states that stop it.
  *
- * Every case here is about *not* sending, which is where the bugs are. A blank
- * draft, a whitespace-only draft, a send already in flight and a project at its
- * message cap all have to disable submit; Shift+Enter has to insert a newline
- * rather than send, because a multi-line prompt is the normal case for this
- * product; and a failed send has to leave the text exactly where the user left it.
- *
- * The draft is read from and written to the **store**, not local state (D17, R8):
- * the `lg` breakpoint swaps one component tree for another, so a draft held here
- * would be eaten by a window resize.
+ * Every case here is about *not* sending, which is where the bugs are. A blank draft, a
+ * whitespace-only draft, a send already in flight and a project at its message cap all have to
+ * disable submit; Shift+Enter has to insert a newline rather than send, because a multi-line
+ * prompt is the normal case for this product; and a failed send has to leave the text exactly
+ * where the user left it.
  */
 
 const INPUT = '[data-testid="composer-input"]'
@@ -105,10 +101,9 @@ describe('MessageComposer', () => {
   })
 
   /*
-   * AC-33. Shift+Enter is a newline, and the draft is untouched — "build a contact
-   * dashboard with search and a list of upcoming appointments" is not a
-   * single-line prompt, and losing a paragraph to a stray Enter is the failure this
-   * prevents.
+   * Shift+Enter is a newline, and the draft is untouched — "build a contact dashboard with
+   * search and a list of upcoming appointments" is not a single-line prompt, and losing a
+   * paragraph to a stray Enter is the failure this prevents.
    */
   it('does not send on Shift+Enter, and does not clear the draft', async () => {
     store.draft = 'first line'
@@ -171,9 +166,8 @@ describe('MessageComposer', () => {
   })
 
   /*
-   * AC-34. The message is the server's, and the draft survives — a user who wrote
-   * a page of prose must not lose it to a 500, and re-submitting has to be able to
-   * send the same text again.
+   * The message is the server's, and the draft survives — a user who wrote a page of prose must
+   * not lose it to a 500, and re-submitting has to be able to send the same text again.
    */
   it("shows the server's message on a failed send and keeps the draft", () => {
     store.draft = 'build a contact dashboard'
@@ -208,13 +202,12 @@ describe('MessageComposer', () => {
 })
 
 /**
- * A stream in flight is the **third** reason not to send, beside the cap and a
- * send already going (AC-42).
+ * A stream in flight is the **third** reason not to send, beside the cap and a send already
+ * going.
  *
- * It is not politeness. Two turns interleaved for one project produce two replies
- * to one prompt — D27 declines to prevent that server-side precisely because the
- * composer covers the single-tab case, so this is the control that decision
- * relies on.
+ * It is not politeness. Two turns interleaved for one project produce two replies to one prompt
+ * — D27 declines to prevent that server-side precisely because the composer covers the single-
+ * tab case, so this is the control that decision relies on.
  */
 describe('MessageComposer while a stream is open', () => {
   it('disables the textarea and the button', () => {

@@ -6,16 +6,11 @@ import { describe, expect, it } from 'vitest'
 /**
  * What a fresh clone gets.
  *
- * `functions/.env.local` is committed so `npm run dev` and the emulator suites
- * work with no setup, and it carries two modes: a stubbed HighLevel that runs
- * offline, and a real one reached through an HTTPS tunnel. Switching to the
- * real one is a local, temporary act — and committing it by accident is easy,
- * because **nothing else notices**: the test suites set `HL_TEST_*` overrides
- * and pass either way, so the first symptom is a fresh clone that cannot run.
- *
- * That is what these assertions are for. They are unusual — a test reading a
- * config file — and they exist because this is the one file whose correctness
- * no other test can observe.
+ * `functions/.env.local` is committed so `npm run dev` and the emulator suites work with no
+ * setup, and it carries two modes: a stubbed HighLevel that runs offline, and a real one reached
+ * through an HTTPS tunnel. Switching to the real one is a local, temporary act — and committing
+ * it by accident is easy, because **nothing else notices**: the test suites set `HL_TEST_*`
+ * overrides and pass either way, so the first symptom is a fresh clone that cannot run.
  */
 
 const ENV_LOCAL = readFileSync(join(__dirname, '../../.env.local'), 'utf8')
@@ -40,9 +35,8 @@ describe('the committed functions/.env.local', () => {
   })
 
   /*
-   * A tunnel hostname is personal and ephemeral — it belongs to whoever ran
-   * ngrok that day and stops resolving afterwards. Committed, it silently
-   * breaks every other clone.
+   * A tunnel hostname is personal and ephemeral — it belongs to whoever ran ngrok that day and
+   * stops resolving afterwards.
    */
   it('carries no tunnel hostname on an active line', () => {
     for (const line of active) {
@@ -51,9 +45,8 @@ describe('the committed functions/.env.local', () => {
   })
 
   /*
-   * The real credentials are deliberately *absent*, so they fall through to
-   * `functions/.env`, which is gitignored. Defining them here — even by
-   * copying them in "just for a moment" — commits them.
+   * The real credentials are deliberately *absent*, so they fall through to `functions/.env`,
+   * which is gitignored.
    */
   it('defines no HighLevel credentials, so the real ones stay out of git', () => {
     for (const key of ['HL_CLIENT_SECRET', 'HL_CLIENT_ID', 'HL_VERSION_ID']) {

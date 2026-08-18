@@ -9,19 +9,11 @@ import { ensureSecretLocal } from './ensure-secret-local.mjs'
 /**
  * `functions/.secret.local` is gitignored, so a fresh clone does not have it.
  *
- * The functions emulator resolves a declared secret by reading that file and,
- * failing that, by calling Secret Manager — which on a demo project with no
- * credentials logs `ERROR … Unable to access secret environment variables` on the
- * first `/generate` invocation. It does not prompt and does not abort, so nothing
- * breaks; but the definition of done says the emulator run is clean from a fresh
- * clone, and a red ERROR line in every local demo is not clean.
- *
- * The placeholder it writes is never used: under the emulator `openStream` takes
- * the fake path and never constructs the SDK client.
- *
- * **Never overwriting is the case that matters.** A developer's real key lives in
- * that file for manual checks against the live API, and a script that clobbered
- * it on every `npm run dev` would be a script that deletes credentials.
+ * The functions emulator resolves a declared secret by reading that file and, failing that, by
+ * calling Secret Manager — which on a demo project with no credentials logs `ERROR … Unable to
+ * access secret environment variables` on the first `/generate` invocation. It does not prompt
+ * and does not abort, so nothing breaks; but the definition of done says the emulator run is
+ * clean from a fresh clone, and a red ERROR line in every local demo is not clean.
  */
 
 const made = []
@@ -62,19 +54,8 @@ describe('ensureSecretLocal', () => {
   })
 
   /*
-   * Adding a *key* is not overwriting a *value*, and the difference is the whole
-   * reason this branch exists.
-   *
-   * A second and a third secret were declared after this script was written —
-   * `HL_CLIENT_SECRET` and `OAUTH_STATE_SECRET` moved into Secret Manager with
-   * the deploy pipeline. Every developer who had already cloned held a
-   * `.secret.local` naming only the first one, and because the file existed the
-   * script left it alone — so they got the red `Unable to access secret
-   * environment variables` line on every emulator run, which is the exact noise
-   * this script exists to prevent, with nothing on screen to explain it.
-   *
-   * So: values are never touched, and absent keys are filled in from the
-   * example.
+   * Adding a *key* is not overwriting a *value*, and the difference is the whole reason this
+   * branch exists.
    */
   it('adds a key the example has and the file lacks', () => {
     const dir = tempDir()

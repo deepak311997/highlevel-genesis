@@ -11,16 +11,10 @@ import {
 /**
  * AC-6 – AC-9, D7, R5 — the model registry, against a hand-written fake monaco.
  *
- * Monaco itself never runs below L5 (D23): jsdom has no layout, no canvas metrics
- * and no `ResizeObserver` worth the name, so a test that mounted the real editor
- * would prove the mock works. Everything that *decides* which model the editor
- * shows is here instead, where it can be proven cheaply and repeatedly.
- *
- * The bug this module exists to close has no error attached to it. The wrapper's
- * own model management keys models by `monaco.Uri.parse(path)` in monaco's
- * **global** registry, so binding `path="index.html"` makes two different
- * projects share one model — open project B and it shows project A's code, with
- * A's undo history. AC-6 is that, asserted.
+ * Monaco itself never runs below L5: jsdom has no layout, no canvas metrics and no
+ * `ResizeObserver` worth the name, so a test that mounted the real editor would prove the mock
+ * works. Everything that *decides* which model the editor shows is here instead, where it can be
+ * proven cheaply and repeatedly.
  */
 
 /** monaco's own numbering: `EndOfLineSequence.LF` is 0 and `CRLF` is 1. */
@@ -35,17 +29,9 @@ function eolOf(model: editor.ITextModel): editor.EndOfLineSequence {
 /**
  * A model that records what was done to it, and nothing else.
  *
- * `dispose()` also unregisters it, because that is what monaco's own does — the
- * standalone model service drops a disposed model, so `getModel(uri)` answers
- * `null` afterwards. A fake that kept it would let this suite pass over an
- * implementation that hands out disposed models.
- *
- * It is born **CRLF**, which is not a detail: monaco guesses a new model's line
- * ending from the text it is created with and falls back to the platform default
- * when there is none — so a model created empty, which is every model this
- * registry makes for a file whose bytes have not arrived yet, is exactly the case
- * that can come out CRLF. Starting the fake there is what makes the normalisation
- * below a real assertion rather than a tautology.
+ * `dispose()` also unregisters it, because that is what monaco's own does — the standalone model
+ * service drops a disposed model, so `getModel(uri)` answers `null` afterwards. A fake that kept
+ * it would let this suite pass over an implementation that hands out disposed models.
  */
 function fakeModel(
   uri: Uri,
@@ -179,21 +165,7 @@ describe('createModelRegistry', () => {
     expect(monaco.created).toHaveLength(1)
   })
 
-  /**
-   * **Every model this registry hands out writes LF**, whatever it was born with.
-   *
-   * Monaco guesses a new model's line ending from the text it is created with and
-   * falls back to the platform default when there is none — and this registry
-   * creates a model the moment a tab is activated, which is *before* the file's
-   * bytes have arrived. Left alone, that empty model can come out CRLF, and then
-   * every `\n` monaco writes into it becomes `\r\n`: the first keystroke marks the
-   * whole document dirty, and **Save** stores a file in which every line changed.
-   * The e2e caught exactly this, as a two-byte difference in a 57-byte file.
-   *
-   * Pinned here rather than left to whichever value the model happened to be
-   * created from, because "it works when the content arrives first" is an
-   * accidental invariant and this one is a stated one.
-   */
+  /** **Every model this registry hands out writes LF**, whatever it was born with. */
   it('normalises every model it hands out to LF', () => {
     const registry = createModelRegistry(monaco, 'proj-1')
 
@@ -208,10 +180,9 @@ describe('createModelRegistry', () => {
   })
 
   /*
-   * `createModel` throws ERR_MODEL_ALREADY_EXISTS on a duplicate URI, and
-   * monaco's registry is global and outlives this one — a component remounted by
-   * the `lg` breakpoint builds a fresh registry over models that are still there.
-   * So the adoption path is a case, not an implementation detail.
+   * `createModel` throws ERR_MODEL_ALREADY_EXISTS on a duplicate URI, and monaco's registry is
+   * global and outlives this one — a component remounted by the `lg` breakpoint builds a fresh
+   * registry over models that are still there.
    */
   it('adopts a model monaco already holds rather than throwing', () => {
     const first = createModelRegistry(monaco, 'proj-1')
@@ -271,14 +242,7 @@ describe('createModelRegistry', () => {
     expect(host.calls).toEqual([])
   })
 
-  /**
-   * AC-9. The editor's model is detached **first**, then the models go.
-   *
-   * That order is load-bearing rather than tidy: the wrapper's own `onUnmounted`
-   * disposes `editorRef.value.getModel()`, and the `lg` breakpoint unmounts this
-   * component on a window resize — so an editor left pointing at a model we have
-   * disposed is a disposed model handed straight back out.
-   */
+  /** The editor's model is detached **first**, then the models go. */
   it('detaches the editor, disposes everything it made, and empties itself', () => {
     const registry = createModelRegistry(monaco, 'proj-1')
     const host = fakeHost()

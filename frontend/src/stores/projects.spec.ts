@@ -23,14 +23,9 @@ const { useProjectsStore } = await import('./projects')
 /**
  * The project list, as far as the browser can see it.
  *
- * Deliberately **not** mocked at the client boundary: `fetch` is what is
- * stubbed, so AC-33 — "every request carries an Authorization and an App Check
- * header" — is asserted against the request that would actually go on the wire.
- *
- * The other property under test here is D14's: after a mutation the store
- * refetches rather than splicing the returned project into the local array. The
- * list is ordered by `updatedAt` on the server, so a local edit would have to
- * re-derive that ordering client-side and would eventually get it wrong.
+ * Deliberately **not** mocked at the client boundary: `fetch` is what is stubbed, so AC-33 —
+ * "every request carries an Authorization and an App Check header" — is asserted against the
+ * request that would actually go on the wire.
  */
 
 const PROJECT = {
@@ -140,9 +135,8 @@ describe('load', () => {
 })
 
 /*
- * AC-29, AC-31, AC-32. Each mutation is followed by a `GET`, in that order —
- * D14's liveness rule, and `CLAUDE.md`'s: a refetch after a mutation, never
- * `onSnapshot`.
+ * Each mutation is followed by a `GET`, in that order — D14's liveness rule, and `CLAUDE.md`'s:
+ * a refetch after a mutation, never `onSnapshot`.
  */
 describe.each([
   ['create', 'POST', () => useProjectsStore().create({ name: 'Contact dashboard' })],
@@ -170,10 +164,9 @@ describe.each([
   })
 
   /*
-   * P6. A failed mutation rethrows and never touches `error`: `error` belongs to
-   * the list request and is what the *card* renders, while a failed create
-   * belongs inside the dialog that issued it (AC-30). Setting both would put the
-   * same message in two places, one of which the user cannot dismiss.
+   * A failed mutation rethrows and never touches `error`: `error` belongs to the list request
+   * and is what the *card* renders, while a failed create belongs inside the dialog that issued
+   * it.
    */
   it('rejects without refetching and without setting error, when the mutation fails', async () => {
     fetchMock.mockReset()
@@ -208,11 +201,9 @@ describe.each([
 
 describe('reset', () => {
   /*
-   * A project list belongs to one account, and signing out is a route change
-   * rather than a page load — so without this the next person to sign in on the
-   * same browser sees the last one's projects until their own load lands.
-   * `loaded` matters as much as the array: left true, it suppresses the loading
-   * state that would otherwise hide the stale rows.
+   * A project list belongs to one account, and signing out is a route change rather than a page
+   * load — so without this the next person to sign in on the same browser sees the last one's
+   * projects until their own load lands.
    */
   it('empties everything', async () => {
     const store = useProjectsStore()

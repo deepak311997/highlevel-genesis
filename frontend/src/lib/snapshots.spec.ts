@@ -6,23 +6,16 @@ import type { SnapshotOrigin } from './snapshotsApi'
 /**
  * The words a version is rendered with (AC-29's label half).
  *
- * The sheet is the only screen that shows a snapshot, so it would be cheap to
- * write these three strings into its template. They live here instead for the
- * reason `lib/files.ts` exists: a label is a *decision* — that `seq` is what a
- * user calls a version, that `restore` is worth naming "Before restore" rather
- * than "Restore", that one file is not "1 files" — and a decision that has its
- * own test is one that can be argued with. The same string interpolated in a
- * `.vue` file is one that gets re-derived slightly differently next time.
+ * The sheet is the only screen that shows a snapshot, so it would be cheap to write these three
+ * strings into its template. They live here instead for the reason `lib/files.ts` exists: a
+ * label is a *decision* — that `seq` is what a user calls a version, that `restore` is worth
+ * naming "Before restore" rather than "Restore", that one file is not "1 files" — and a decision
+ * that has its own test is one that can be argued with. The same string interpolated in a `.vue`
+ * file is one that gets re-derived slightly differently next time.
  */
 
 describe('versionLabel', () => {
-  /**
-   * The number the user sees is the stored `seq`, not the row's position.
-   *
-   * Position renumbers every remaining row the moment the prune drops the
-   * oldest version (D5), so the version a user was looking at a minute ago
-   * would silently become a different one.
-   */
+  /** The number the user sees is the stored `seq`, not the row's position. */
   it('names the version by its sequence number', () => {
     expect(versionLabel(1)).toBe('Version 1')
     expect(versionLabel(12)).toBe('Version 12')
@@ -30,14 +23,7 @@ describe('versionLabel', () => {
 })
 
 describe('originLabel', () => {
-  /**
-   * Two origins, two different things to say.
-   *
-   * A `generation` snapshot is the tree as some generation left it. A `restore`
-   * snapshot is the safety copy taken *before* a restore overwrote the tree
-   * (D9) — "Restore" would name what happened next rather than what the version
-   * holds, and the whole point of that row is that it is the way back.
-   */
+  /** Two origins, two different things to say. */
   it('names a generation snapshot', () => {
     expect(originLabel('generation')).toBe('Generation')
   })

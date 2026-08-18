@@ -23,11 +23,10 @@ const { useProfileStore } = await import('./profile')
 /**
  * The profile, as far as the browser can see it.
  *
- * Deliberately **not** mocked at the client boundary: `fetch` is what is stubbed,
- * so AC-22 — "the outgoing request is `PUT /api/profile` carrying an
- * Authorization and an App Check header" — is asserted against the request that
- * would actually go on the wire, rather than against a call to a function that
- * is assumed to build one.
+ * Deliberately **not** mocked at the client boundary: `fetch` is what is stubbed, so AC-22 —
+ * "the outgoing request is `PUT /api/profile` carrying an Authorization and an App Check header"
+ * — is asserted against the request that would actually go on the wire, rather than against a
+ * call to a function that is assumed to build one.
  */
 
 const PROFILE = {

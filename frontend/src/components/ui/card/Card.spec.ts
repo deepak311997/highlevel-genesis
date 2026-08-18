@@ -4,10 +4,9 @@ import { describe, expect, it } from 'vitest'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './index'
 
 /**
- * The card parts are thin presentational wrappers, so these tests are
- * correspondingly thin. They exist for two reasons that are not thin:
- * `CardTitle` must stay a heading, because every auth screen hangs its
- * accessible name off it, and `cn()` must keep merging caller classes rather
+ * The card parts are thin presentational wrappers, so these tests are correspondingly thin. They
+ * exist for two reasons that are not thin: `CardTitle` must stay a heading, because every auth
+ * screen hangs its accessible name off it, and `cn()` must keep merging caller classes rather
  * than replacing the component's own.
  */
 describe('Card', () => {

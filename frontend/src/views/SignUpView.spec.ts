@@ -86,16 +86,7 @@ describe('SignUpView', () => {
     expect(wrapper.text()).toContain('Creating')
   })
 
-  /**
-   * The screen must look the same whether the address was new or already
-   * registered. The server returns an identical response either way, and a
-   * confirmation saying "we've created your account" would leak what the
-   * response deliberately does not.
-   *
-   * It also must not promise an email: registration sends none, and telling
-   * someone to check an inbox that will stay empty is worse than saying
-   * nothing.
-   */
+  /** The screen must look the same whether the address was new or already registered. */
   it('shows a non-committal confirmation that promises no email', async () => {
     const wrapper = mountView()
 

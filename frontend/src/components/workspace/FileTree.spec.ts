@@ -144,11 +144,7 @@ describe('FileTree', () => {
     expect(store.selectFile).toHaveBeenCalledWith('app.js')
   })
 
-  /**
-   * The *writing* marker is the whole of "the tree fills in as the reply streams"
-   * (AC-39, F5.1). A row with no marker is indistinguishable from a stored file,
-   * which is exactly the wrong thing to say about bytes that are not saved yet.
-   */
+  /** The *writing* marker is the whole of "the tree fills in as the reply streams". */
   it('marks a row the generation is still writing', () => {
     store.filesLoaded = true
     store.fileTree = [
@@ -162,15 +158,7 @@ describe('FileTree', () => {
     expect(rows[1]?.text()).toContain('Writing')
   })
 
-  /**
-   * The sections, which are the only hierarchy a flat namespace has.
-   *
-   * `filePathSchema` refuses slashes, so there are no directories to draw and a
-   * twenty-row list has nothing to break it up. The partition is
-   * `groupFileTree`'s, tested in `files.spec.ts`; what is asserted here is that
-   * the template renders what it is given rather than partitioning a second
-   * time.
-   */
+  /** The sections, which are the only hierarchy a flat namespace has. */
   it('renders a heading per kind, with the rows beneath it', () => {
     store.filesLoaded = true
     store.fileTree = [
@@ -190,15 +178,7 @@ describe('FileTree', () => {
     expect(wrapper.findAll('[data-testid="file-row"]')).toHaveLength(3)
   })
 
-  /**
-   * A section folds, and `aria-expanded` says so.
-   *
-   * Twenty files is the cap, and the point of a heading you can close is that
-   * the kind you are not working in costs one line instead of eight. The role is
-   * deliberately *not* `tree`: a tree widget owes the user arrow-key traversal
-   * and typeahead, and a role promising keyboard behaviour the component does
-   * not implement is worse than the plain list it lies about.
-   */
+  /** A section folds, and `aria-expanded` says so. */
   it('folds a section from its heading', async () => {
     store.filesLoaded = true
     store.fileTree = [
@@ -235,9 +215,8 @@ describe('FileTree', () => {
   })
 
   /*
-   * A generation that streams into an empty project must replace the empty state
-   * rather than render beside it — so the branch keys off the tree, not the
-   * stored list.
+   * A generation that streams into an empty project must replace the empty state rather than
+   * render beside it — so the branch keys off the tree, not the stored list.
    */
   it('shows streaming rows in a project that has no stored files yet', async () => {
     store.filesLoaded = true

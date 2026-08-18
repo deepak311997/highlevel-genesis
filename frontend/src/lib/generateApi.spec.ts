@@ -21,16 +21,15 @@ const { registerSessionExpiredHook } = await import('./apiClient')
 const { ApiError } = await import('./api')
 
 /**
- * The streaming client — the one call in the app that cannot go through
- * `request`, because it must not read its body as JSON.
+ * The streaming client — the one call in the app that cannot go through `request`, because it
+ * must not read its body as JSON.
  *
- * **D9's two channels are one code path on this side.** A refusal decided before
- * the server flushed its headers is an ordinary JSON error with a real status,
- * so it *rejects* — before yielding anything, which is what stops a placeholder
- * bubble appearing for a request that never opened. A failure that happened
- * mid-stream arrives as an `error` event on a 200, so it is yielded like any
- * other. The caller therefore has one `try` and one loop rather than two ways to
- * learn the same thing.
+ * **D9's two channels are one code path on this side.** A refusal decided before the server
+ * flushed its headers is an ordinary JSON error with a real status, so it *rejects* — before
+ * yielding anything, which is what stops a placeholder bubble appearing for a request that never
+ * opened. A failure that happened mid-stream arrives as an `error` event on a 200, so it is
+ * yielded like any other. The caller therefore has one `try` and one loop rather than two ways
+ * to learn the same thing.
  */
 
 const frame = (event: string, data: unknown): string =>
@@ -111,10 +110,9 @@ function dropping(chunks: readonly string[], reason: Error): Response {
 /**
  * A `Response` whose reader never ends, and whose `cancel` is observable.
  *
- * The shape of a generation still in flight: the server is producing tokens and
- * will go on producing them until it is told to stop or reaches `max_tokens`.
- * What a consumer that walks away does with that is the question the tests
- * below ask.
+ * The shape of a generation still in flight: the server is producing tokens and will go on
+ * producing them until it is told to stop or reaches `max_tokens`. What a consumer that walks
+ * away does with that is the question the tests below ask.
  */
 function endless(cancel: () => Promise<void>): Response {
   const encoder = new TextEncoder()
@@ -186,11 +184,7 @@ describe('streamGeneration — the request', () => {
   })
 
   /* The prompt is not in the body (D2): the transcript is the server's record. */
-  /*
-   * The prompt travels with the request that streams the reply, so a turn
-   * cannot half-happen. Nothing else a chat payload tends to carry goes with
-   * it — no role, no model, no transcript: those are the server's.
-   */
+  /* The prompt travels with the request that streams the reply, so a turn cannot half-happen. */
   it('sends the project and the prompt, and nothing else', async () => {
     await collect()
 
@@ -292,10 +286,8 @@ describe('streamGeneration — the events', () => {
   })
 
   /*
-   * Unrecognised events are skipped rather than thrown, which is what let Slice 6
-   * add the three file events without changing anything above this line. The
-   * example moved from `file_start` to a name nothing sends, because `file_start`
-   * is recognised now.
+   * Unrecognised events are skipped rather than thrown, which is what let Slice 6 add the three
+   * file events without changing anything above this line.
    */
   it('skips an event it does not recognise', async () => {
     fetchMock.mockResolvedValue(
@@ -374,12 +366,11 @@ describe('streamGeneration — refusals', () => {
 })
 
 /**
- * AC-16. The stream is not a hole in the sign-out hook.
+ * The stream is not a hole in the sign-out hook.
  *
- * `streamGeneration` is the one call that cannot go through `request`, so
- * without this it is also the one call that could meet a dead session and say
- * nothing about it — and it is the call a user is most likely to make on a tab
- * left open long enough for the session to die.
+ * `streamGeneration` is the one call that cannot go through `request`, so without this it is
+ * also the one call that could meet a dead session and say nothing about it — and it is the call
+ * a user is most likely to make on a tab left open long enough for the session to die.
  */
 describe('streamGeneration — the session hook', () => {
   it('invokes the session hook when the stream is refused with a 401 unauthenticated', async () => {
@@ -433,13 +424,12 @@ describe('streamGeneration — the session hook', () => {
 })
 
 /**
- * The file half of the protocol (AC-36, D5).
+ * The file half of the protocol.
  *
- * Every frame repeats its path, which is what lets the store route a chunk
- * without tracking a mode — and what stops a client that dropped a `file_start`
- * from misrouting code into the chat bubble. Malformed frames are **skipped**
- * rather than thrown, because a stream that dies on one bad frame loses the whole
- * reply including the terminal event.
+ * Every frame repeats its path, which is what lets the store route a chunk without tracking a
+ * mode — and what stops a client that dropped a `file_start` from misrouting code into the chat
+ * bubble. Malformed frames are **skipped** rather than thrown, because a stream that dies on one
+ * bad frame loses the whole reply including the terminal event.
  */
 describe('the file events', () => {
   it('yields file_start, file_chunk and file_end as typed events', async () => {
@@ -482,9 +472,8 @@ describe('the file events', () => {
   })
 
   /*
-   * A `done` from a server that predates the file half — or one whose fields
-   * arrived malformed — must still replace the placeholder bubble. Defaulting is
-   * the difference between "no files were written" and a broken reply.
+   * A `done` from a server that predates the file half — or one whose fields arrived malformed —
+   * must still replace the placeholder bubble.
    */
   it.each([
     ['no new fields at all', { message: MESSAGE }],
@@ -528,13 +517,12 @@ describe('the file events', () => {
 })
 
 /**
- * AC-8. A connection that drops **after** the stream opened speaks our language.
+ * A connection that drops **after** the stream opened speaks our language.
  *
- * The opening `fetch`'s own failure was already mapped to `ApiError(…, 0)`; the
- * read loop's was not, so whatever the browser called it went straight to the
- * screen — `Failed to fetch` in Chrome, `NetworkError when attempting to fetch
- * resource.` in Firefox. Two browsers, two strings, neither ours, and F8.2 asks
- * for a retry the user understands the need for.
+ * The opening `fetch`'s own failure was already mapped to `ApiError(…, 0)`; the read loop's was
+ * not, so whatever the browser called it went straight to the screen — `Failed to fetch` in
+ * Chrome, `NetworkError when attempting to fetch resource.` in Firefox. Two browsers, two
+ * strings, neither ours, and F8.2 asks for a retry the user understands the need for.
  */
 describe('streamGeneration — a connection that drops mid-stream', () => {
   it('maps a mid-stream read failure to a message the user can act on', async () => {
@@ -581,20 +569,15 @@ describe('streamGeneration — a connection that drops mid-stream', () => {
 })
 
 /**
- * A consumer that stops reading has to stop the *request*, not just its own
- * loop.
+ * A consumer that stops reading has to stop the *request*, not just its own loop.
  *
- * Breaking out of a `for await`, or throwing inside one, finalises this
- * generator — but finalising a generator does not close a `fetch` body. The
- * socket stays open, `generate`'s `res.on('close')` never fires, and the model
- * goes on producing to `max_tokens: 64000` for a reply nobody will ever read.
- * That is a full completion billed for nothing, and the store has a real path
- * into it: any throw from the loop body in `runGeneration` — `openTab`, the
- * `messages` spread, `applyGenerationFiles` — is swallowed by the `catch` below
- * it, and its `finally` nulls the controller without aborting it.
- *
- * So the generator releases the body itself, on every exit. That is the one
- * place that cannot be forgotten by a caller.
+ * Breaking out of a `for await`, or throwing inside one, finalises this generator — but
+ * finalising a generator does not close a `fetch` body. The socket stays open, `generate`'s
+ * `res.on('close')` never fires, and the model goes on producing to `max_tokens: 64000` for a
+ * reply nobody will ever read. That is a full completion billed for nothing, and the store has a
+ * real path into it: any throw from the loop body in `runGeneration` — `openTab`, the `messages`
+ * spread, `applyGenerationFiles` — is swallowed by the `catch` below it, and its `finally` nulls
+ * the controller without aborting it.
  */
 describe('streamGeneration — a consumer that stops reading', () => {
   it('cancels the body when the consumer breaks out of the loop', async () => {

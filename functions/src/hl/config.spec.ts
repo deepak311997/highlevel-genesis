@@ -5,18 +5,12 @@ import { hlUpstreamTimeoutMs, UPSTREAM_TIMEOUT_MS } from './config'
 /**
  * The upstream timeout, and why it is read the way it is.
  *
- * `HL_ALLOW_MESSAGE_SEND` is *not* read here. The live check is
- * `isRouteEnabled(row, env)` in `routes.ts`, which takes the environment as an
- * argument so the allowlist stays pure and Slice 9 can import the table without
- * dragging `process.env` in — and its "exactly `true`" table lives beside it, in
- * `routes.spec.ts`. A second reader here would be the same policy in two places
- * with only one of them wired up, which is how a guard on a route that spends
- * money comes to be tested and not enforced.
- *
- * `HL_TEST_UPSTREAM_TIMEOUT_MS` follows `keepAliveMs()`'s precedent exactly, for
- * exactly its reason: a twenty-second case in a suite that runs on every push is
- * a case people delete. The override is honoured only under the emulator, and
- * the real default is asserted here rather than being taken on trust.
+ * `HL_ALLOW_MESSAGE_SEND` is *not* read here. The live check is `isRouteEnabled(row, env)` in
+ * `routes.ts`, which takes the environment as an argument so the allowlist stays pure and Slice
+ * 9 can import the table without dragging `process.env` in — and its "exactly `true`" table
+ * lives beside it, in `routes.spec.ts`. A second reader here would be the same policy in two
+ * places with only one of them wired up, which is how a guard on a route that spends money comes
+ * to be tested and not enforced.
  */
 
 const KEYS = ['HL_ALLOW_MESSAGE_SEND', 'HL_TEST_UPSTREAM_TIMEOUT_MS', 'FUNCTIONS_EMULATOR'] as const

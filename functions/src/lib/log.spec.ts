@@ -60,13 +60,7 @@ describe('redact', () => {
     expect(out['note']).toBe(REDACTED)
   })
 
-  /*
-   * The one exclusion from the substring net, and the reason it is by *type*.
-   * `inputTokens` and `cacheReadInputTokens` match `token`, and redacting them
-   * would empty the generation line of the only numbers it exists to carry —
-   * silently, because a redacted field still looks deliberate. Every credential
-   * this codebase handles is a string, so the type is the honest discriminator.
-   */
+  /* The one exclusion from the substring net, and the reason it is by *type*. */
   it('keeps a numeric value under a sensitive-looking name', () => {
     const out = redact({ inputTokens: 214, cacheReadInputTokens: 0, expiresIn: 3600 })
 
@@ -94,15 +88,9 @@ describe('redact', () => {
 })
 
 /*
- * OAuth adds two bearer credentials that the original patterns do not catch:
- * the authorization `code` and the `state` token. Both arrive on the callback
- * URL, and a URL is exactly the sort of thing that gets logged whole when
- * something goes wrong.
- *
- * They are matched in *query-string position only*, and that restraint is the
- * point. `code` is also the name of the field every Firebase error carries its
- * error code in — `auth/email-already-exists` — so a blanket rule would redact
- * the single most useful token in every error line we emit.
+ * OAuth adds two bearer credentials that the original patterns do not catch: the authorization
+ * `code` and the `state` token. Both arrive on the callback URL, and a URL is exactly the sort
+ * of thing that gets logged whole when something goes wrong.
  */
 describe('redact — OAuth callback credentials', () => {
   it('scrubs the authorization code and the state from a URL', () => {
@@ -134,15 +122,8 @@ describe('redact — OAuth callback credentials', () => {
   })
 
   /*
-   * `code` is deliberately NOT a redacted key name, and the asymmetry with
-   * `state` above is the decision worth recording.
-   *
-   * Every Firebase error carries its error code on a `code` property, and this
-   * slice's own callback logs which outcome it redirected with — `denied`,
-   * `invalid_state`, `exchange_failed`. Redacting the key would blind exactly
-   * the lines written to diagnose a failing OAuth flow, in exchange for
-   * covering a case we never produce: the authorization code is only ever a URL
-   * parameter, which the position-scoped rule already handles.
+   * `code` is deliberately NOT a redacted key name, and the asymmetry with `state` above is the
+   * decision worth recording.
    */
   it('keeps a `code` field, because ours name outcomes rather than credentials', () => {
     expect(JSON.stringify(redact({ code: 'invalid_state' }))).toContain('invalid_state')
@@ -230,18 +211,12 @@ describe('logAuthEvent', () => {
 })
 
 /**
- * The generation log line — F3.4's "generation metadata", in a log rather than
- * in Firestore (D25).
+ * The generation log line — F3.4's "generation metadata", in a log rather than in Firestore.
  *
- * Nothing in the product reads it, and an unread field is a schema to maintain,
- * a wire shape to version and a test to write for a value whose only consumer is
- * a human debugging. The log is where that human looks anyway, and it is also how
- * D16's cache claim gets verified in production once Slice 9 makes caching real.
- *
- * `GenerationLogContext` is a **second typed context rather than a widening of
- * `AuthLogContext`**, and the reason is the comment above that interface: it is
- * narrow on purpose, with no free-form body. A generation line that could carry
- * an arbitrary string would be one refactor away from carrying a prompt.
+ * Nothing in the product reads it, and an unread field is a schema to maintain, a wire shape to
+ * version and a test to write for a value whose only consumer is a human debugging. The log is
+ * where that human looks anyway, and it is also how D16's cache claim gets verified in
+ * production once Slice 9 makes caching real.
  */
 describe('logGenerationEvent', () => {
   let info: ReturnType<typeof vi.fn>
@@ -287,11 +262,7 @@ describe('logGenerationEvent', () => {
     })
   })
 
-  /*
-   * The enforcement point is the type, so the test asserts on the type as well
-   * as the output. A `content` or `prompt` field here would put the user's own
-   * prose — and the model's — into a log sink that outlives the request.
-   */
+  /* The enforcement point is the type, so the test asserts on the type as well as the output. */
   it('has no field for message content', () => {
     const widened: GenerationLogContext = { ...context }
     // @ts-expect-error — `content` is not part of GenerationLogContext, deliberately.
@@ -310,13 +281,12 @@ describe('logGenerationEvent', () => {
 })
 
 /**
- * A third narrow context, not a widening of either of the other two (P9).
+ * A third narrow context, not a widening of either of the other two.
  *
- * The precedent is explicit in `log.ts`: one typed context per event family is
- * what makes "no body, no token, no contact id" a property of the type rather
- * than of whoever remembered. Nothing here would survive being widened — a
- * proxy line that could carry a free-form string would be one refactor away
- * from carrying a CRM record.
+ * The precedent is explicit in `log.ts`: one typed context per event family is what makes "no
+ * body, no token, no contact id" a property of the type rather than of whoever remembered.
+ * Nothing here would survive being widened — a proxy line that could carry a free-form string
+ * would be one refactor away from carrying a CRM record.
  */
 describe('logProxyEvent', () => {
   let info: ReturnType<typeof vi.fn>
@@ -354,10 +324,9 @@ describe('logProxyEvent', () => {
   })
 
   /*
-   * No field of ProxyLogContext matches SENSITIVE_KEY, so nothing useful is
-   * redacted away — but a value arriving despite the type still goes through
-   * the same scrub, which is what makes the sink the defence rather than the
-   * call site.
+   * No field of ProxyLogContext matches SENSITIVE_KEY, so nothing useful is redacted away — but
+   * a value arriving despite the type still goes through the same scrub, which is what makes the
+   * sink the defence rather than the call site.
    */
   it('redacts a secret that reaches it despite the typed context', () => {
     logProxyEvent('hl.proxy', { ...context, accessToken: 'live-token' } as never)

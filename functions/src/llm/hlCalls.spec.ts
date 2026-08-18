@@ -10,18 +10,11 @@ import { countHlCalls, extractHlCalls } from './hlCalls'
 /**
  * The `hl()` extractor — AC-23 and AC-25.
  *
- * Read the cases below as a description of a **metric, not a parser** (D19). The
- * extractor is a regular expression over generated code: it has no idea what a
- * comment is, what a string literal is, or what scope a call sits in. Several
- * cases here pin that on purpose, because the alternative reading — that these
- * two integers are ground truth about what the generated app does — is the one
- * that would make a future reader trust them further than they can carry.
- *
- * What the counters are actually for: they are the one signal outside a fixture
- * that says whether F3.2 landed at all. A generation whose `hlCallsKnown` is zero
- * every time means the cheat-sheet is not working, and nothing else in this
- * repository can tell us that (D19; the rejected alternative was keeping the
- * extractor test-only).
+ * Read the cases below as a description of a **metric, not a parser**. The extractor is a
+ * regular expression over generated code: it has no idea what a comment is, what a string
+ * literal is, or what scope a call sits in. Several cases here pin that on purpose, because the
+ * alternative reading — that these two integers are ground truth about what the generated app
+ * does — is the one that would make a future reader trust them further than they can carry.
  */
 
 /** The recorded reply the emulator fake replays, and five suites depend on (Slice 6 R8). */
@@ -92,21 +85,8 @@ describe('extractHlCalls', () => {
   })
 
   /*
-   * Why concatenation is the sharpest of those near misses, and why it gets its
-   * own case rather than living only in the list above.
-   *
-   * The other shapes yield nothing to misread — there is no literal to capture.
-   * A concatenation *starts* with one, so a pattern that stops at the first
-   * closing quote reads `'/calendars/' + calendarId + '/events'` as the path
-   * `/calendars/` and hands `countHlCalls` a prefix of the real route. That
-   * prefix is itself an enabled row, so the call scores **known** while the path
-   * the app actually requests — `/calendars/<id>/events`, on no allowlist — is
-   * one the proxy answers `403 route_not_allowed` on.
-   *
-   * That inverts the whole point of the counters (D19): `generation.complete`
-   * would report a clean generation for precisely the failure the metric exists
-   * to surface. Under-reporting a computed path is the correct bias; reporting a
-   * truncated one is not a rougher signal but a wrong one.
+   * Why concatenation is the sharpest of those near misses, and why it gets its own case rather
+   * than living only in the list above.
    */
   it('claims nothing rather than a truncated route when the path is concatenated', () => {
     const code = "const events = await hl('GET', '/calendars/' + calendarId + '/events')"
@@ -116,11 +96,8 @@ describe('extractHlCalls', () => {
   })
 
   /*
-   * **A commented-out call is still counted, and that is not a bug.** Excluding
-   * it would mean tracking comment and string context — i.e. parsing JavaScript —
-   * to refine a number whose whole job is to be a rough signal. The limitation is
-   * asserted rather than merely documented so that nobody "fixes" it without
-   * first deciding the metric should become a parser (D19).
+   * **A commented-out call is still counted, and that is not a bug.** Excluding it would mean
+   * tracking comment and string context — i.e.
    */
   it('counts a commented-out call, because it is a metric and not a parser', () => {
     expect(extractHlCalls("// const page = await hl('POST', '/contacts/search')")).toEqual([
@@ -129,11 +106,10 @@ describe('extractHlCalls', () => {
   })
 
   /*
-   * `DELETE` is not on the allowlist and never will be by accident (Slice 8 D4).
-   * The method is captured as `[A-Z]+` rather than as an alternation of the three
-   * allowed verbs precisely so this call is *extracted* and then counted unknown —
-   * a verb the proxy refuses is exactly the signal the counters exist to carry,
-   * and a regex that skipped it would report a clean generation.
+   * `DELETE` is not on the allowlist and never will be by accident. The method is captured as
+   * `[A-Z]+` rather than as an alternation of the three allowed verbs precisely so this call is
+   * *extracted* and then counted unknown — a verb the proxy refuses is exactly the signal the
+   * counters exist to carry, and a regex that skipped it would report a clean generation.
    */
   it('extracts a DELETE call so it can be counted as unknown', () => {
     expect(extractHlCalls("await hl('DELETE', '/contacts/JwwI60NJqfc8I4Ay2MiA')")).toEqual([
@@ -156,10 +132,9 @@ describe('countHlCalls', () => {
   })
 
   /*
-   * A flag-gated row is unknown in every environment that has not set the flag —
-   * the same answer the proxy gives (`403 route_disabled`), which is the point:
-   * the counter reports what would actually happen at runtime, not what the table
-   * theoretically holds.
+   * A flag-gated row is unknown in every environment that has not set the flag — the same answer
+   * the proxy gives (`403 route_disabled`), which is the point: the counter reports what would
+   * actually happen at runtime, not what the table theoretically holds.
    */
   it('counts a flag-disabled row as unknown until the flag is set', () => {
     const calls = extractHlCalls("await hl('POST', '/conversations/messages', { message })")
@@ -176,11 +151,10 @@ describe('countHlCalls', () => {
 /**
  * AC-25 — the golden reply is HighLevel-shaped.
  *
- * `reply.json` is what the emulator fake replays and what the e2e walk reads out
- * of the editor, so this case and AC-26 assert the same artefact at two levels.
- * It is **hand-authored** to the shape the system prompt specifies and is not
- * evidence about what the real model does — see `tests/fixtures/llm/README.md`
- * (D20).
+ * `reply.json` is what the emulator fake replays and what the e2e walk reads out of the editor,
+ * so this case and AC-26 assert the same artefact at two levels. It is **hand-authored** to the
+ * shape the system prompt specifies and is not evidence about what the real model does — see
+ * `tests/fixtures/llm/README.md`.
  */
 describe('the golden reply fixture', () => {
   it('calls only routes the proxy would allow', () => {

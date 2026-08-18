@@ -34,10 +34,9 @@ const CONTACT_DUPLICATE = fixture('contact-duplicate')
 /**
  * AC-11 … AC-16 — the sandbox seeder.
  *
- * Everything the script touches is injected: `fetchImpl`, `now` and `out`. No
- * test here opens a socket, reads a clock, or spends a write against the real
- * sandbox — the live run is a human-owned line in
- * `docs/slices/13-deliverables/release-checklist.md`, deliberately.
+ * Everything the script touches is injected: `fetchImpl`, `now` and `out`. No test here opens a
+ * socket, reads a clock, or spends a write against the real sandbox — the live run is a human-
+ * owned line in `docs/slices/13-deliverables/release-checklist.md`, deliberately.
  */
 
 const ENV = {
@@ -117,13 +116,8 @@ describe('readConfig — AC-14', () => {
   })
 
   /*
-   * `HL_API_BASE=` is a documented, blank-by-default line in both
-   * `.env.example` files, so an operator who sources an env file rather than
-   * exporting two variables arrives here with `''`. `??` does not catch that,
-   * and the empty base turned every one of the 28 URLs relative — twenty
-   * contacts failing with `Failed to parse URL from /contacts/`, which reads
-   * like a HighLevel problem. Blank means unset, as it does for the two
-   * required variables beside it.
+   * `HL_API_BASE=` is a documented, blank-by-default line in both `.env.example` files, so an
+   * operator who sources an env file rather than exporting two variables arrives here with `''`.
    */
   it('treats a blank HL_API_BASE as unset rather than as an empty host', () => {
     expect(readConfig({ ...ENV, HL_API_BASE: '' }).apiBase).toBe(DEFAULT_API_BASE)
@@ -195,10 +189,8 @@ describe('parseArgs', () => {
   })
 
   /*
-   * The token is an environment variable, but the script has flags, so an
-   * operator will eventually try `--token=…`. The unknown-flag message goes to
-   * stderr, and stderr on this run ends up pasted into the release checklist's
-   * evidence slot — so it names the flag and never its value.
+   * The token is an environment variable, but the script has flags, so an operator will
+   * eventually try `--token=…`.
    */
   it('names an unknown flag without echoing the value it carried', () => {
     let message = ''
@@ -436,12 +428,10 @@ describe('seed — creating contacts and appointments (AC-12)', () => {
   })
 
   /*
-   * `contact-create.json` answers every create with the same id, so the
-   * "contacts taken in order" contract in `plannedAppointments` had no test:
-   * replacing `contactIds[index % contactIds.length]` with `contactIds[0]`
-   * booked all eight appointments against one contact — visibly wrong in the
-   * preview the Loom is built on — and every assertion above still passed.
-   * A per-call id is what makes the mapping observable.
+   * `contact-create.json` answers every create with the same id, so the "contacts taken in
+   * order" contract in `plannedAppointments` had no test: replacing `contactIds[index %
+   * contactIds.length]` with `contactIds[0]` booked all eight appointments against one contact —
+   * visibly wrong in the preview the Loom is built on — and every assertion above still passed.
    */
   it('spreads the appointments across the contacts it created, in order', async () => {
     const { fetchImpl, calls } = stubFetch((url, index) =>
@@ -735,11 +725,8 @@ describe('resolveCalendar — T6', () => {
   })
 
   /*
-   * The flag exists to stop the run choosing a calendar for you, so a value the
-   * location does not have must not fall through to whichever calendar
-   * HighLevel lists first. Silently pairing a mistyped id with a stranger's
-   * team member is the outcome --calendar-id was added to prevent, and it costs
-   * twenty real contacts before the eight appointments fail.
+   * The flag exists to stop the run choosing a calendar for you, so a value the location does
+   * not have must not fall through to whichever calendar HighLevel lists first.
    */
   it('rejects a --calendar-id the location does not have, rather than borrowing another calendar’s assignee', async () => {
     const { fetchImpl } = stubFetch(() => json(200, calendarsWithTeamMember('usr-team-1')))
@@ -812,21 +799,10 @@ describe('seed — resolution comes first, and is counted (T6)', () => {
 /**
  * AC-16 — the surfaces this script must never touch.
  *
- * The list lives here rather than in the script, because the scan reads the
- * script's whole text including its comments (plan note C4): a docblock
- * promising "never calls `POST /conversations/messages`" would itself be a
- * match, and a check that its own subject can trip is not a check.
- *
- * Why each one:
- *  - `firebase` / `firestore` — the seeder is an operator chore that writes to
- *    HighLevel only. It holds no user's data and must not reach the app's store,
- *    directly or through a package. `CLAUDE.md` puts every read and write behind
- *    an authenticated route; this script is not one, so it gets neither.
- *  - `/api/hl/proxy` — the proxy authenticates a Genesis *user* and deliberately
- *    does not allowlist appointment creation (Slice 8 D4). Seeding through it is
- *    impossible by design, and pretending otherwise would invite someone to
- *    widen the allowlist for a chore.
- *  - `/conversations/messages` — sends a real SMS or email, and costs money.
+ * The list lives here rather than in the script, because the scan reads the script's whole text
+ * including its comments (plan note C4): a docblock promising "never calls `POST
+ * /conversations/messages`" would itself be a match, and a check that its own subject can trip
+ * is not a check.
  */
 const FORBIDDEN = [
   [/firebase/i, 'a Firebase package'],

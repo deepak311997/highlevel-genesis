@@ -6,16 +6,9 @@ import { assertEmulatorBuild, signUpAndVerify } from './helpers'
 /**
  * Slice 3's one end-to-end test: the demo line, walked in a browser.
  *
- * Everything here is the real thing — a real account, a real ID token, real
- * Cloud Function routes, real Firestore documents. Nothing is stubbed, because
- * there is no third party in this slice to stub.
- *
- * **Every step survives a reload**, and that is the assertion carrying the
- * weight. A create that only updated component state would pass every check
- * except that one; reloading is what proves the row came back from
- * `GET /api/projects`, which means it was written to a collection the browser
- * cannot reach with the Firestore SDK — because there is no Firestore SDK in the
- * bundle at all.
+ * Everything here is the real thing — a real account, a real ID token, real Cloud Function
+ * routes, real Firestore documents. Nothing is stubbed, because there is no third party in this
+ * slice to stub.
  */
 
 test.describe('Slice 03 — projects', () => {

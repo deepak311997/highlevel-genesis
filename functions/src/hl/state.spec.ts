@@ -5,16 +5,14 @@ import { InvalidStateError, openState, sealState, STATE_TTL_MS } from './state'
 /**
  * The OAuth `state` parameter.
  *
- * The callback is unauthenticated — HighLevel redirects a browser to it and
- * there is no session to read — so this token is the only link back to a
- * Firebase user. Two properties matter and both are tested here:
+ * The callback is unauthenticated — HighLevel redirects a browser to it and there is no session
+ * to read — so this token is the only link back to a Firebase user. Two properties matter and
+ * both are tested here:
  *
- *  - **Unforgeable.** Anyone who could mint a state could have a connection
- *    written against a uid of their choosing.
- *  - **Opaque.** The token travels in a URL to a third party, so a *signed*
- *    token would put the uid in HighLevel's request logs and the user's
- *    history in readable base64. Encryption is what stops that, and
- *    `does not disclose the uid` is the test that proves it.
+ * - **Unforgeable.** Anyone who could mint a state could have a connection written against a uid
+ * of their choosing. - **Opaque.** The token travels in a URL to a third party, so a *signed*
+ * token would put the uid in HighLevel's request logs and the user's history in readable base64.
+ * Encryption is what stops that, and `does not disclose the uid` is the test that proves it.
  */
 
 const SECRET = 'test-secret-not-a-real-key-0123456789'

@@ -6,17 +6,10 @@ import { assertEmulatorBuild, connectHighLevel, signUpAndVerify } from './helper
 /**
  * Slice 2's one end-to-end test: the demo line, walked in a browser.
  *
- * Everything here is the real thing except the far side of the OAuth handshake.
- * The Connect button, the redirect out, the callback, the code exchange, the
- * Firestore write and the redirect back are all production code paths; only
- * HighLevel itself is substituted, by a fake mounted inside the `api` function
- * and reachable only under the emulator.
- *
- * That substitution is what makes this worth having. Hitting the callback
- * directly with a pre-sealed state would test the handler and skip the two
- * things most likely to be misconfigured — that the Connect button sends the
- * browser somewhere real, and that whatever comes back lands on a route the
- * router will actually render.
+ * Everything here is the real thing except the far side of the OAuth handshake. The Connect
+ * button, the redirect out, the callback, the code exchange, the Firestore write and the
+ * redirect back are all production code paths; only HighLevel itself is substituted, by a fake
+ * mounted inside the `api` function and reachable only under the emulator.
  */
 
 test.describe('Slice 02 — HighLevel connection', () => {
@@ -44,20 +37,7 @@ test.describe('Slice 02 — HighLevel connection', () => {
     await page.goto('/dashboard')
     await expect(page.getByTestId('connection-location')).toHaveText('India Square')
 
-    /*
-     * Slice 8's demo line, on the same walk rather than in a second connect.
-     *
-     * Idle until pressed (D30): the counts are three real HighLevel calls, and
-     * spending a rate-limit budget on every dashboard visit answers a question
-     * nobody asked. So the rows must not be there yet.
-     *
-     * A digit is the assertion, not a particular digit. The fixtures are
-     * recorded data and their sizes are theirs to change; what this proves is
-     * that a count came back through `/api/hl/proxy/**` at all — which means the
-     * ID token was verified, the connection was read, the row's `Version` went
-     * upstream and the location was injected, none of which the browser can see
-     * directly.
-     */
+    /* Slice 8's demo line, on the same walk rather than in a second connect. */
     await expect(page.getByTestId('data-access-row-contacts')).toHaveCount(0)
 
     await page.getByTestId('data-access-check').click()

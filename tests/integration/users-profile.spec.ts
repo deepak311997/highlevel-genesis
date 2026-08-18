@@ -4,19 +4,13 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { adminDb, getJson, idTokenFor, putJson, resetEmulators, seedUser } from './helpers'
 
 /**
- * `GET` and `PUT /api/profile` — the whole of the browser's access to its own
- * profile.
+ * `GET` and `PUT /api/profile` — the whole of the browser's access to its own profile.
  *
- * `users/{uid}` used to be client-written under owner-scoped rules. It is now
- * denied to every client and written only by the Admin SDK inside these routes,
- * which is the project's one data-access pattern. What that buys is checked
- * here rather than assumed: the uid comes from the token, so no request can name
- * another user, and the body is parsed `.strict()`, so a request that tries is
- * refused rather than partially honoured.
- *
- * The path is the literal `me`. There is no `:uid` parameter to confuse with the
- * token's uid, which makes the cross-tenant mistake inexpressible rather than
- * merely guarded against.
+ * `users/{uid}` used to be client-written under owner-scoped rules. It is now denied to every
+ * client and written only by the Admin SDK inside these routes, which is the project's one data-
+ * access pattern. What that buys is checked here rather than assumed: the uid comes from the
+ * token, so no request can name another user, and the body is parsed `.strict()`, so a request
+ * that tries is refused rather than partially honoured.
  */
 
 const PASSWORD = 'Correct-Horse-9'
@@ -85,11 +79,8 @@ describe('GET /api/profile', () => {
   })
 
   /*
-   * AC-4. "Verified, signed in, no profile yet" is an ordinary state — it is
-   * where a user sits between verifying and their first ensure — and it is the
-   * account card's empty state. A 404 would force the client to read a normal
-   * state out of the error channel, and the first client that forgot would show
-   * an error screen to a healthy account.
+   * "Verified, signed in, no profile yet" is an ordinary state — it is where a user sits between
+   * verifying and their first ensure — and it is the account card's empty state.
    */
   it('answers 200 with a null profile rather than 404 when there is none', async () => {
     const res = await getJson('/api/profile', auth(aliceToken))
@@ -116,9 +107,8 @@ describe('GET /api/profile', () => {
   })
 
   /*
-   * AC-11, D18. A document that cannot describe a profile is reported as no
-   * profile, not as a profile with blanks in it — truthful, and self-healing,
-   * because the next ensure rewrites it.
+   * A document that cannot describe a profile is reported as no profile, not as a profile with
+   * blanks in it — truthful, and self-healing, because the next ensure rewrites it.
    */
   it('fails closed on a stored document with no email', async () => {
     await adminDb().doc(`users/${aliceUid}`).set({ displayName: 'Alice' })
@@ -154,13 +144,8 @@ describe('PUT /api/profile', () => {
   })
 
   /*
-   * AC-2. The verb is `PUT` because the operation is an ensure — create if
-   * absent, touch if present, same result however many times it is called. A
-   * refresh, a second tab and a retry after a timeout all land here.
-   *
-   * The sleep is not padding: the wire format is millisecond-precision ISO, and
-   * two back-to-back writes can land inside a single millisecond, which would
-   * make "strictly later" a flake rather than a bug.
+   * The verb is `PUT` because the operation is an ensure — create if absent, touch if present,
+   * same result however many times it is called.
    */
   it('preserves createdAt and advances updatedAt on a second call', async () => {
     const first = profileOf((await putJson('/api/profile', {}, auth(aliceToken))).body)
@@ -188,11 +173,8 @@ describe('PUT /api/profile', () => {
   })
 
   /*
-   * AC-8, and R1's whole defence. `/me` means another user's id cannot be named
-   * in the path; `.strict()` means it cannot be smuggled in the body either. The
-   * assertion that matters is the second half — nothing was written, the
-   * caller's own document included, because the body is parsed before anything
-   * touches Firestore.
+   * AC-8, and R1's whole defence. `/me` means another user's id cannot be named in the path;
+   * `.strict()` means it cannot be smuggled in the body either.
    */
   it("rejects a body carrying another user's uid, writing nothing", async () => {
     await seedProfile(bobUid, { email: BOB })

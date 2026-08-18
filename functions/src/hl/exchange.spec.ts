@@ -10,16 +10,9 @@ import {
 /**
  * The wire shape of our calls to HighLevel.
  *
- * Asserted against a stubbed `fetch` rather than against a live server, because
- * these are the details that fail *silently* or with an unhelpful error, and a
- * server that happens to be lenient would hide them:
- *
- *  - `/oauth/token` takes **form-urlencoded**. Sending JSON is documented as
- *    the single most common failure on this endpoint, and the error it returns
- *    says nothing useful.
- *  - `/oauth/token` is the **one** endpoint that takes no `Version` header.
- *    Every other endpoint rejects a request without one.
- *  - `/oauth/locationToken` disagrees with `/oauth/token` and takes **JSON**.
+ * Asserted against a stubbed `fetch` rather than against a live server, because these are the
+ * details that fail *silently* or with an unhelpful error, and a server that happens to be
+ * lenient would hide them:
  */
 
 const LOCATION_TOKEN = {
@@ -144,15 +137,8 @@ describe('refreshTokens', () => {
   })
 
   /*
-   * The token endpoint is the one upstream call that runs **inside a Firestore
-   * transaction** (`tokenStore.ts`), so its duration is a document lock's
-   * duration. Unbounded, a HighLevel that accepts the connection and then says
-   * nothing holds `hlConnections/{uid}` until the function's own 60-second
-   * timeout kills the invocation, and every other proxied call for that user
-   * queues behind it, each burning its own budget.
-   *
-   * The proxy's own upstream call has had a bound since D27; this one is the
-   * same bound from the same setting, so there is one number rather than two.
+   * The token endpoint is the one upstream call that runs **inside a Firestore transaction**
+   * (`tokenStore.ts`), so its duration is a document lock's duration.
    */
   it('abandons a token call that never answers', async () => {
     process.env['FUNCTIONS_EMULATOR'] = 'true'

@@ -12,21 +12,10 @@ import {
 /**
  * The slice's one end-to-end test, covering the demo path.
  *
- * No mail provider is involved. Firebase sends the verification email itself,
- * and the Auth emulator exposes the code it generated, so the test can follow
- * the link without a mailbox.
+ * No mail provider is involved. Firebase sends the verification email itself, and the Auth
+ * emulator exposes the code it generated, so the test can follow the link without a mailbox.
  *
- * Two things here are worth more than the rest, because they are the ones unit
- * tests cannot see:
- *
- *  - `/auth/action` renders while the session is signed-in-and-unverified. Every
- *    other route redirects in that state, and if this one did too, verification
- *    would be unreachable — a deadlock no amount of component testing catches.
- *  - The dashboard loads *and its profile request succeeds* after verifying,
- *    which is only true because the ID token was refreshed: `withVerifiedUser`
- *    reads `email_verified` off the token on every API route, so a stale claim
- *    turns the account card into an error state. Without the refresh the page
- *    renders and then fails, which looks like a working app until it isn't.
+ * Two things here are worth more than the rest, because they are the ones unit tests cannot see:
  */
 
 test.describe('Slice 01 — account and session', () => {
@@ -82,12 +71,9 @@ test.describe('Slice 01 — account and session', () => {
     await expect(page).toHaveURL(/\/dashboard/)
 
     /*
-     * AC-28. The address on this card came from `PUT /api/profile` — there is
-     * no Firestore client in the bundle at all — so reading it means the
-     * refreshed ID token satisfied `withVerifiedUser`'s `email_verified` check
-     * on the profile route. `account-member-since` is asserted alongside it
-     * because it is derived from the stored `createdAt`, which only exists if
-     * the server actually wrote the document.
+     * The address on this card came from `PUT /api/profile` — there is no Firestore client in
+     * the bundle at all — so reading it means the refreshed ID token satisfied
+     * `withVerifiedUser`'s `email_verified` check on the profile route.
      */
     await expect(page.getByTestId('account-card')).toBeVisible()
     await expect(page.getByTestId('dashboard-email')).toHaveText(email)

@@ -8,12 +8,11 @@ import { reactive } from 'vue'
 import type { Message } from '@/lib/messagesApi'
 
 /*
- * `reactive`, not a plain object — unlike `ProjectsCard.spec.ts`, which only ever
- * sets its mocked store before mounting. AC-35 is about what happens when a message
- * is appended to a *mounted* panel, so the panel's `watch` has to actually fire, and
- * a plain object cannot make it. The store this replaces is a Pinia store, whose
- * refs are reactive and auto-unwrapped on the store object; `reactive` is the
- * closest honest stand-in.
+ * `reactive`, not a plain object — unlike `ProjectsCard.spec.ts`, which only ever sets its
+ * mocked store before mounting. AC-35 is about what happens when a message is appended to a
+ * *mounted* panel, so the panel's `watch` has to actually fire, and a plain object cannot make
+ * it. The store this replaces is a Pinia store, whose refs are reactive and auto-unwrapped on
+ * the store object; `reactive` is the closest honest stand-in.
  */
 const store = reactive({
   messages: [] as Message[],
@@ -22,11 +21,7 @@ const store = reactive({
   messagesError: null as string | null,
   generating: false,
   streamingText: '',
-  /*
-   * Read by `StreamingStatus` and `MessageBody`, which the placeholder now
-   * mounts. Present on the real store since Slice 6; absent here only because
-   * this stand-in predates the components that use them.
-   */
+  /* Read by `StreamingStatus` and `MessageBody`, which the placeholder now mounts. */
   streamingFiles: {},
   selectFile: vi.fn(),
   generateError: null as string | null,
@@ -245,10 +240,7 @@ describe('ChatPanel', () => {
   })
 
   /*
-   * AC-38's second clause. Slice 4 said the badge and the echo would go together,
-   * and they have. A source scan as well as a render check, because the string
-   * living on in a component nobody mounted in this suite would be exactly the
-   * kind of leftover a render assertion misses.
+   * AC-38's second clause. Slice 4 said the badge and the echo would go together, and they have.
    */
   it('says nothing about echo mode', () => {
     store.messagesLoaded = true
@@ -326,20 +318,7 @@ describe('ChatPanel', () => {
  * different experience from a frozen screen.
  */
 describe('bubble elevation', () => {
-  /*
-   * **No drop shadow on a bubble**, and this is a regression guard rather than a
-   * preference.
-   *
-   * The dark palette puts `--card` at `hsl(240 5% 6%)` on a `4%` page and defines
-   * `--sh-1` as a *black* shadow. A black shadow on a near-black ground cannot
-   * darken anything — it only blurs the boundary, so an elevated bubble reads as
-   * a smudge with a halo rather than as a raised surface. Elevation in this
-   * palette comes from the surface and the border (`Card.vue` uses
-   * `from-raised to-card`), which is what these bubbles do now.
-   *
-   * Asserted on the class list because that is where the mistake recurs: the
-   * utility is one convenient copy-paste away and nothing else would fail.
-   */
+  /* **No drop shadow on a bubble**, and this is a regression guard rather than a preference. */
   it('gives the assistant bubble a defined edge instead of a shadow', () => {
     store.messages = [ASSISTANT]
     store.messagesLoaded = true
@@ -375,10 +354,9 @@ describe('ChatPanel while a stream is open', () => {
     const wrapper = mount(ChatPanel, MOUNT)
 
     /*
-     * `Generating…` was one fixed string for the whole turn. It is now three
-     * states — thinking, writing prose, writing a named file — so the assertion
-     * is that the status line is present and says which; `StreamingStatus.spec.ts`
-     * owns the choice between them.
+     * `Generating…` was one fixed string for the whole turn. It is now three states — thinking,
+     * writing prose, writing a named file — so the assertion is that the status line is present
+     * and says which; `StreamingStatus.spec.ts` owns the choice between them.
      */
     expect(wrapper.find('[data-testid="streaming-status"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="streaming-status"]').text()).toContain('Writing')
@@ -403,10 +381,8 @@ describe('ChatPanel while a stream is open', () => {
   })
 
   /*
-   * The empty state cannot collide with a stream: the user's message is appended
-   * before the stream opens, so `bubbles.length` is never 0 while generating.
-   * Asserted rather than argued, because the two branches are mutually exclusive
-   * in the template and a future edit could make them overlap.
+   * The empty state cannot collide with a stream: the user's message is appended before the
+   * stream opens, so `bubbles.length` is never 0 while generating.
    */
   it('shows the placeholder rather than the empty state', () => {
     store.messagesLoaded = true
@@ -482,16 +458,7 @@ describe('ChatPanel — the generation error', () => {
     expect(mount(ChatPanel, MOUNT).find('[data-testid="generate-error"]').exists()).toBe(false)
   })
 
-  /*
-   * AC-8, at the level the user actually meets it.
-   *
-   * `generateApi` maps a dropped read to this sentence and its L1 spec pins the
-   * mapping; this is the other end of that claim — the panel renders the app's
-   * own line, and the browser's word for it appears nowhere on screen. The
-   * negative assertion is on the whole panel rather than on the alert, because
-   * "the raw message is not visible" is the claim, not "it is not in that one
-   * element".
-   */
+  /* AC-8, at the level the user actually meets it. */
   it("renders the app's own line when the stream dies mid-reply", () => {
     store.messagesLoaded = true
     store.messages = [USER]
@@ -525,9 +492,8 @@ describe('ChatPanel — the generation error', () => {
 
 describe('ChatPanel — scrolling while tokens arrive', () => {
   /*
-   * AC-43. The growing reply has to stay in view, and the two heights are the
-   * point: measuring once on mount would leave the viewport a screen behind by
-   * the third token.
+   * The growing reply has to stay in view, and the two heights are the point: measuring once on
+   * mount would leave the viewport a screen behind by the third token.
    */
   it('scrolls to the bottom as streamingText grows', async () => {
     store.messagesLoaded = true
@@ -552,12 +518,11 @@ describe('ChatPanel — scrolling while tokens arrive', () => {
 /**
  * AC-46, D29 — the transcript renders **chips, not code**.
  *
- * The stored message carries `[file: index.html]` marker lines where a file went
- * (D6), so a bubble that rendered its content raw would read like a build log with
- * what looks like a bug in it. `splitMessageContent` is the decision and has its
- * own L1 tests; what is asserted here is that both the persisted bubble and the
- * streaming placeholder use it — the live text and the stored text are the same
- * string (D7), so anything else is two renderings of one thing.
+ * The stored message carries `[file: index.html]` marker lines where a file went, so a bubble
+ * that rendered its content raw would read like a build log with what looks like a bug in it.
+ * `splitMessageContent` is the decision and has its own L1 tests; what is asserted here is that
+ * both the persisted bubble and the streaming placeholder use it — the live text and the stored
+ * text are the same string, so anything else is two renderings of one thing.
  */
 describe('ChatPanel — file chips', () => {
   const WITH_FILES: Message = {

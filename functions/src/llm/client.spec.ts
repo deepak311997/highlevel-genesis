@@ -8,17 +8,9 @@ import { ANTHROPIC_API_KEY, LOCAL_REAL_LLM, openStream, PLACEHOLDER_KEY } from '
 /**
  * Which stream `openStream` opens, and what happens when the key is missing.
  *
- * The real branch cannot be exercised here — it would call Anthropic, which the
- * testing rule forbids in every automated test — so what is asserted is the two
- * things that decide *whether* it is taken: the emulator gate, and the explicit
- * key check in front of it.
- *
- * The key check is worth a test because of how it fails otherwise.
- * `SecretParam.value()` answers `''` for a secret the function was not granted,
- * with only a `warn` in the log, so a missing binding would surface as an opaque
- * 401 from Anthropic on every request — a long way from the deploy that forgot
- * it. Answering with a message that names the secret and the command that sets
- * it turns half an hour into a minute.
+ * The real branch cannot be exercised here — it would call Anthropic, which the testing rule
+ * forbids in every automated test — so what is asserted is the two things that decide *whether*
+ * it is taken: the emulator gate, and the explicit key check in front of it.
  */
 
 const REAL_EMULATOR = process.env['FUNCTIONS_EMULATOR']
@@ -101,13 +93,7 @@ describe('openStream', () => {
 })
 
 describe('openStream — the local real-model opt-in', () => {
-  /*
-   * The whole point of the switch: under the emulator, with it on, the fake is
-   * *not* taken. The real branch cannot be exercised here — it would call
-   * Anthropic, which the testing rule forbids — so the assertion is that control
-   * reaches the key check in front of it, which with no key is a refusal naming
-   * the secret. A fake stream would have resolved instead.
-   */
+  /* The whole point of the switch: under the emulator, with it on, the fake is *not* taken. */
   it('skips the fake under the emulator when the opt-in is on', async () => {
     process.env['FUNCTIONS_EMULATOR'] = 'true'
     process.env[LOCAL_REAL_LLM] = '1'
@@ -133,10 +119,9 @@ describe('openStream — the local real-model opt-in', () => {
   })
 
   /*
-   * D20 survives the new switch. `emulatorFlag` is honoured only under
-   * FUNCTIONS_EMULATOR, so a deployed build with this variable set behaves
-   * exactly as it did before — which is the property that made a flag of our own
-   * acceptable here at all.
+   * D20 survives the new switch. `emulatorFlag` is honoured only under FUNCTIONS_EMULATOR, so a
+   * deployed build with this variable set behaves exactly as it did before — which is the
+   * property that made a flag of our own acceptable here at all.
    */
   it('changes nothing outside the emulator', async () => {
     delete process.env['FUNCTIONS_EMULATOR']
@@ -171,12 +156,9 @@ describe('openStream — the local real-model opt-in', () => {
 
 describe('PLACEHOLDER_KEY', () => {
   /*
-   * A regression guard, not an argument. The constant is only useful while it
-   * equals what `functions/.secret.local.example` actually ships — and the two
-   * live in different files, in different languages, edited for different
-   * reasons. Drift would be silent: the refusal simply stops firing, and the
-   * placeholder goes to Anthropic as a key again, which is the exact 401 this
-   * whole check exists to prevent.
+   * A regression guard, not an argument. The constant is only useful while it equals what
+   * `functions/.secret.local.example` actually ships — and the two live in different files, in
+   * different languages, edited for different reasons.
    */
   it('is the value functions/.secret.local.example ships', () => {
     const example = readFileSync(resolve(__dirname, '..', '..', '.secret.local.example'), 'utf8')

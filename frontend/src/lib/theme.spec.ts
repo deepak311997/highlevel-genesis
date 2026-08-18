@@ -6,16 +6,10 @@ import { describe, expect, it } from 'vitest'
 /**
  * The design language, asserted where it is actually defined.
  *
- * `style.css` is the whole system: every colour, radius and face resolves from
- * the token blocks there, so a change to the design is a change to that file
- * and very little else. That makes it worth a test — not for the hex values,
- * which are a judgement call and will move, but for the properties that are
- * contracts rather than taste.
- *
- * Read from the working directory rather than `import.meta.url`, which is
- * `deps.spec.ts`'s rule and for its reason: this suite runs under jsdom, where
- * `import.meta.url` is an http URL that `fileURLToPath` refuses. Vitest's cwd
- * is `frontend/`.
+ * `style.css` is the whole system: every colour, radius and face resolves from the token blocks
+ * there, so a change to the design is a change to that file and very little else. That makes it
+ * worth a test — not for the hex values, which are a judgement call and will move, but for the
+ * properties that are contracts rather than taste.
  */
 
 const css = readFileSync(join(process.cwd(), 'src/style.css'), 'utf8')
@@ -26,7 +20,10 @@ function tokensIn(selector: string): Map<string, string> {
   expect(start, `no ${selector} block in style.css`).toBeGreaterThan(-1)
   const body = css.slice(start, css.indexOf('\n}', start))
   return new Map(
-    [...body.matchAll(/^\s*(--[\w-]+):\s*([^;]+);/gm)].map((m) => [m[1] ?? '', (m[2] ?? '').trim()]),
+    [...body.matchAll(/^\s*(--[\w-]+):\s*([^;]+);/gm)].map((m) => [
+      m[1] ?? '',
+      (m[2] ?? '').trim(),
+    ]),
   )
 }
 
@@ -48,11 +45,8 @@ function vueFiles(dir: string): string[] {
 
 describe('the design tokens', () => {
   /*
-   * The bug this exists to catch: a token defined only in `:root` renders one
-   * theme's colour on the other theme's ground. It is invisible in review
-   * because reviewers read the light block, and invisible in the rest of the
-   * suite because jsdom does not resolve custom properties. Only the set
-   * difference finds it.
+   * The bug this exists to catch: a token defined only in `:root` renders one theme's colour on
+   * the other theme's ground.
    */
   it('gives every colour token a dark value too', () => {
     const light = tokensIn(':root')
@@ -82,14 +76,9 @@ describe('the design tokens', () => {
 
 describe('Instrument’s weight ceiling', () => {
   /*
-   * "Nothing heavier than semibold" is the single rule that most separates this
-   * language from the one it replaces, and it is the easiest to lose: a new
-   * screen reaches for `font-bold` because that is the habit, and the page
-   * quietly stops matching the system. Cheaper to assert than to police in
-   * review.
-   *
-   * Needles are built by concatenation so this file does not match itself —
-   * `no-firestore.spec.ts`'s trick, for its reason.
+   * "Nothing heavier than semibold" is the single rule that most separates this language from
+   * the one it replaces, and it is the easiest to lose: a new screen reaches for `font-bold`
+   * because that is the habit, and the page quietly stops matching the system.
    */
   const BANNED = ['font-' + 'bold', 'font-' + 'extrabold', 'font-' + 'black']
 

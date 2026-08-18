@@ -15,14 +15,12 @@ import {
 /**
  * `/api/projects*` — the whole of the browser's access to its projects.
  *
- * `users/{uid}/projects/{projectId}` is denied to every client by
- * `firestore.rules` and written only by the Admin SDK inside these routes. What
- * that buys is checked here rather than assumed, and the property worth the most
- * is a structural one: the document path is `users/{token uid}/projects/{id}`,
- * so another user's project is not addressable by a request at all. There is no
- * `ownerUid` comparison anywhere for a test to catch missing — which is why the
- * cross-tenant cases assert bob's document is *unchanged* rather than only that
- * alice got a 404.
+ * `users/{uid}/projects/{projectId}` is denied to every client by `firestore.rules` and written
+ * only by the Admin SDK inside these routes. What that buys is checked here rather than assumed,
+ * and the property worth the most is a structural one: the document path is `users/{token
+ * uid}/projects/{id}`, so another user's project is not addressable by a request at all. There
+ * is no `ownerUid` comparison anywhere for a test to catch missing — which is why the cross-
+ * tenant cases assert bob's document is *unchanged* rather than only that alice got a 404.
  */
 
 const PASSWORD = 'Correct-Horse-9'
@@ -164,10 +162,9 @@ describe('GET /api/projects', () => {
   })
 
   /*
-   * AC-4. "Signed in, no projects yet" is the card's empty state and an
-   * ordinary place to be — answering it through the error channel would make the
-   * first client that forgot to translate a 404 show an error to a healthy
-   * account.
+   * "Signed in, no projects yet" is the card's empty state and an ordinary place to be —
+   * answering it through the error channel would make the first client that forgot to translate
+   * a 404 show an error to a healthy account.
    */
   it('answers 200 with an empty array rather than 404 when there are none', async () => {
     const res = await getJson('/api/projects', auth(aliceToken))
@@ -193,10 +190,9 @@ describe('GET /api/projects', () => {
   })
 
   /*
-   * AC-13, and R1's whole defence. The query is
-   * `collection('users/{token uid}/projects')`, so it is scoped before a `where`
-   * clause is written — bob's projects are not filtered out, they were never in
-   * range.
+   * AC-13, and R1's whole defence. The query is `collection('users/{token uid}/projects')`, so
+   * it is scoped before a `where` clause is written — bob's projects are not filtered out, they
+   * were never in range.
    */
   it("returns only alice's projects, with bob's seeded alongside", async () => {
     await seedProject(aliceUid, 'alice-1', { name: "Alice's" })
@@ -222,11 +218,9 @@ describe('GET /api/projects', () => {
   })
 
   /*
-   * D6, and R3 from the other side. `where('deletedAt','==',null)` matches
-   * documents whose field *is* null and skips documents where it is absent — so
-   * a project written before the field existed would be invisible to its own
-   * list if the query were the only guard. It is not: the field is written
-   * explicitly on create, and this pins that a soft-deleted one is excluded.
+   * D6, and R3 from the other side. `where('deletedAt','==',null)` matches documents whose field
+   * *is* null and skips documents where it is absent — so a project written before the field
+   * existed would be invisible to its own list if the query were the only guard.
    */
   it('excludes a soft-deleted project', async () => {
     await seedProject(aliceUid, 'live', { name: 'Live' })
@@ -296,9 +290,8 @@ describe('POST /api/projects', () => {
   })
 
   /*
-   * AC-14. Every one of these is a field the server owns. The second assertion
-   * is the one that matters — nothing was written, because the body is parsed
-   * before anything touches Firestore.
+   * Every one of these is a field the server owns. The second assertion is the one that matters
+   * — nothing was written, because the body is parsed before anything touches Firestore.
    */
   it.each(['ownerUid', 'id', 'locationId', 'createdAt', 'deletedAt'])(
     'refuses a body carrying %s, writing nothing',
@@ -353,9 +346,8 @@ describe('POST /api/projects', () => {
   })
 
   /*
-   * AC-18, D8. The cap is what makes the unpaginated list honest: creation stops
-   * at exactly what the list can show, so "you are seeing all of your projects"
-   * is a guarantee rather than a hope.
+   * The cap is what makes the unpaginated list honest: creation stops at exactly what the list
+   * can show, so "you are seeing all of your projects" is a guarantee rather than a hope.
    */
   it('refuses a 101st live project with 409, writing nothing', async () => {
     await seedMany(aliceUid, 100)
@@ -395,15 +387,7 @@ describe('POST /api/projects', () => {
     expect(codeOf(res.body)).toBe('email_unverified')
   })
 
-  /*
-   * Duplicate names.
-   *
-   * Two projects called `Contact center` are one project to every reader of the
-   * dashboard, so the collection refuses the second — 409, like the cap, because
-   * the body is fine and it is the collection's state that says no. The fold is
-   * case- and whitespace-insensitive: a shifted capital is not a different
-   * project.
-   */
+  /* Duplicate names. */
   it('refuses a second project with the same name, writing nothing', async () => {
     await postJson('/api/projects', { name: 'Contact center' }, auth(aliceToken))
 
@@ -466,10 +450,8 @@ describe('GET /api/projects/:projectId', () => {
   })
 
   /*
-   * AC-12, D15. Not a policy choice between 403 and 404: the document path is
-   * `users/{token uid}/projects/{id}`, so bob's project is not at any address
-   * alice's request can name. The handler genuinely cannot tell "yours, missing"
-   * from "somebody else's".
+   * Not a policy choice between 403 and 404: the document path is `users/{token
+   * uid}/projects/{id}`, so bob's project is not at any address alice's request can name.
    */
   it("answers 404 for bob's project id presented with alice's token", async () => {
     await seedProject(bobUid, 'bob-1', { name: "Bob's" })
@@ -504,15 +486,10 @@ describe('GET /api/projects/:projectId', () => {
   })
 
   /*
-   * AC-17. `a%2Fb` is the one that earns its place: it arrives at the router as
-   * a single segment and Express decodes it to `a/b`, so it is a path separator
-   * that routing let through — exactly what the id schema exists to catch, since
-   * `getDb().doc()` composes by concatenation and a slash changes the *depth* of
-   * the path.
-   *
-   * `..` is deliberately absent from this list: the WHATWG URL parser removes
-   * double-dot segments before the request is sent, so it cannot be tested over
-   * the wire. It is covered at L1 in `functions/src/projects/schema.spec.ts`.
+   * `a%2Fb` is the one that earns its place: it arrives at the router as a single segment and
+   * Express decodes it to `a/b`, so it is a path separator that routing let through — exactly
+   * what the id schema exists to catch, since `getDb().doc()` composes by concatenation and a
+   * slash changes the *depth* of the path.
    */
   it.each(['a'.repeat(65), 'bad!id', 'a%2Fb', 'has%20space'])(
     'refuses the malformed id %s with 400',
@@ -550,10 +527,9 @@ describe('PATCH /api/projects/:projectId', () => {
   }
 
   /*
-   * AC-6. The sleep is not padding: the wire format is millisecond-precision
-   * ISO, and two back-to-back writes can land inside a single millisecond, which
-   * would make "strictly later" a flake rather than a bug.
-   * `users-profile.spec.ts` sleeps for the same reason.
+   * The sleep is not padding: the wire format is millisecond-precision ISO, and two back-to-back
+   * writes can land inside a single millisecond, which would make "strictly later" a flake
+   * rather than a bug.
    */
   it('renames, preserving createdAt and advancing updatedAt', async () => {
     const created = await createForAlice()
@@ -604,9 +580,8 @@ describe('PATCH /api/projects/:projectId', () => {
   })
 
   /*
-   * AC-16, D18. An accepted no-op would still advance `updatedAt`, which
-   * reorders a list sorted by it for a request that changed nothing — so the
-   * assertion that matters is the second one.
+   * An accepted no-op would still advance `updatedAt`, which reorders a list sorted by it for a
+   * request that changed nothing — so the assertion that matters is the second one.
    */
   it('refuses an empty body, and does not move updatedAt', async () => {
     const created = await createForAlice()
@@ -774,11 +749,9 @@ describe('DELETE /api/projects/:projectId', () => {
   })
 
   /*
-   * AC-9, D16. Idempotent because the UI cannot be certain of its own
-   * staleness — a second tab, a double click, a retry after a timeout — and
-   * answering 404 puts an error on screen for a user who already has what they
-   * asked for. The first `deletedAt` stands, so "when was this deleted" stays
-   * true.
+   * Idempotent because the UI cannot be certain of its own staleness — a second tab, a double
+   * click, a retry after a timeout — and answering 404 puts an error on screen for a user who
+   * already has what they asked for.
    */
   it('is idempotent, and does not overwrite the first deletedAt', async () => {
     const created = projectOf(
@@ -811,10 +784,8 @@ describe('DELETE /api/projects/:projectId', () => {
   })
 
   /*
-   * AC-12. 200 rather than 404 is not a leak: alice's request names
-   * `users/{alice}/projects/bob-1`, which does not exist, so the answer is the
-   * same one an id she made up would get. What matters is that bob's document is
-   * untouched and nothing was created under her own path.
+   * 200 rather than 404 is not a leak: alice's request names `users/{alice}/projects/bob-1`,
+   * which does not exist, so the answer is the same one an id she made up would get.
    */
   it("answers 200 for bob's project id and leaves his document untouched", async () => {
     await seedProject(bobUid, 'bob-1', { name: "Bob's" })

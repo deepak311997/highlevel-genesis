@@ -100,9 +100,8 @@ describe('label', () => {
   })
 
   /*
-   * `locations.readonly` is not guaranteed and the name lookup is best effort,
-   * so a connection can legitimately arrive without one. Showing the id beats
-   * showing nothing, and it is still enough to tell two locations apart.
+   * `locations.readonly` is not guaranteed and the name lookup is best effort, so a connection
+   * can legitimately arrive without one.
    */
   it('falls back to the location id when the name lookup had failed', async () => {
     getConnection.mockResolvedValue({ ...CONNECTED, locationName: null })
@@ -133,9 +132,8 @@ describe('connect', () => {
   })
 
   /*
-   * `busy` deliberately stays true on success: the browser is navigating away,
-   * and re-enabling the button in that window lets a second click mint a second
-   * state and start a second flow.
+   * `busy` deliberately stays true on success: the browser is navigating away, and re-enabling
+   * the button in that window lets a second click mint a second state and start a second flow.
    */
   it('leaves the button disabled while the browser navigates away', async () => {
     vi.stubGlobal('location', { assign: vi.fn() })
@@ -218,11 +216,10 @@ describe('noteCallbackError', () => {
 })
 
 /**
- * `detail` is upstream's own text about the request, passed through by the
- * proxy. It earns its parentheses only when it says something the message did
- * not — an empty detail, an absent one, or one that merely repeats the message
- * would otherwise render as "Could not read contacts. ()" or as the same
- * sentence twice.
+ * `detail` is upstream's own text about the request, passed through by the proxy. It earns its
+ * parentheses only when it says something the message did not — an empty detail, an absent one,
+ * or one that merely repeats the message would otherwise render as "Could not read contacts. ()"
+ * or as the same sentence twice.
  */
 describe('withDetail', () => {
   it("composes the message and upstream's own words", () => {
@@ -247,10 +244,9 @@ describe('withDetail', () => {
 /**
  * The data-access probe.
  *
- * One call per HighLevel surface, on demand (D30, D31). The behaviour worth
- * covering is what happens when *some* of it works: three surfaces is three
- * independent outcomes, and a store that collapsed them into one would blank
- * two working counts because a third failed.
+ * One call per HighLevel surface, on demand. The behaviour worth covering is what happens when
+ * *some* of it works: three surfaces is three independent outcomes, and a store that collapsed
+ * them into one would blank two working counts because a third failed.
  */
 describe('checkDataAccess', () => {
   const CONTACTS = { contacts: [{ id: 'a' }], total: 20 }
@@ -336,9 +332,8 @@ describe('checkDataAccess', () => {
   })
 
   /*
-   * AC-17. The Data access section's whole purpose is diagnosing a HighLevel
-   * call, and "Could not read contacts." alone is a shrug where
-   * "(Invalid JWT)" is a fix.
+   * The Data access section's whole purpose is diagnosing a HighLevel call, and "Could not read
+   * contacts." alone is a shrug where "(Invalid JWT)" is a fix.
    */
   it("carries upstream's own words about the request into the row", async () => {
     hlProxy.mockRejectedValue(
@@ -362,9 +357,8 @@ describe('checkDataAccess', () => {
   })
 
   /*
-   * AC-41. `total` is HighLevel's field and this slice forwards their body
-   * verbatim, so a shape change upstream must render as "—" rather than as
-   * `NaN` in a panel nobody can debug from.
+   * `total` is HighLevel's field and this slice forwards their body verbatim, so a shape change
+   * upstream must render as "—" rather than as `NaN` in a panel nobody can debug from.
    */
   it.each([
     ['a missing total', {}],
@@ -401,10 +395,9 @@ describe('checkDataAccess', () => {
   })
 
   /*
-   * P11. The PRD's failure table gives 409 exactly two meanings —
-   * `hl_reconnect_required` and `hl_not_connected` — and both are answered by
-   * the same button, so the status is enough and no error code has to be
-   * threaded through `ApiError` for this slice.
+   * The PRD's failure table gives 409 exactly two meanings — `hl_reconnect_required` and
+   * `hl_not_connected` — and both are answered by the same button, so the status is enough and
+   * no error code has to be threaded through `ApiError` for this slice.
    */
   it('flags a 409 as needing a reconnect', async () => {
     hlProxy.mockRejectedValue(new ApiError('Your HighLevel connection expired.', 409))
@@ -446,20 +439,8 @@ describe('checkDataAccess', () => {
   })
 
   /*
-   * The PRD's edge case — "the user signs out while a probe is in flight" —
-   * and the half `reset()` alone cannot deliver.
-   *
-   * Signing out is a route change rather than a page load, so Pinia survives it
-   * (`auth.ts`'s `signOutNow` exists for exactly that reason). Three proxy
-   * calls left in flight resolve *after* `reset()` has run, and a store that
-   * writes them unconditionally puts the previous account's contact,
-   * conversation and calendar counts into the panel the next person to sign in
-   * on this browser sees — with `probe` at `ready`, so nothing ever clears it,
-   * because they never ran a probe of their own.
-   *
-   * `workspace.ts` already carries the answer and says so in as many words: a
-   * generation counter that `reset()` bumps, so a request in flight when the
-   * session ends cannot repopulate the store afterwards.
+   * The PRD's edge case — "the user signs out while a probe is in flight" — and the half
+   * `reset()` alone cannot deliver.
    */
   it('drops a probe that lands after the session ended', async () => {
     let release = (): void => {}

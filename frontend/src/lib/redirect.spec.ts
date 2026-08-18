@@ -11,9 +11,8 @@ import {
 /**
  * Stands in for the router's registered paths.
  *
- * These are the *patterns* `router.getRoutes()` yields, not concrete paths —
- * including the parameterised workspace route and the catch-all, both of which
- * the real router registers.
+ * These are the *patterns* `router.getRoutes()` yields, not concrete paths — including the
+ * parameterised workspace route and the catch-all, both of which the real router registers.
  */
 const KNOWN = [
   '/',
@@ -61,10 +60,8 @@ describe('safeRedirect', () => {
   })
 
   /*
-   * The allowlist is over route *patterns*, so a concrete workspace path has to
-   * be matched against `/projects/:projectId` rather than looked up in it. A
-   * membership test returns a deep-linked user to the dashboard instead of the
-   * project they asked for (C2).
+   * The allowlist is over route *patterns*, so a concrete workspace path has to be matched
+   * against `/projects/:projectId` rather than looked up in it.
    */
   it('returns a concrete path for a parameterised route', () => {
     expect(safeRedirect('/projects/abc123', KNOWN)).toBe('/projects/abc123')

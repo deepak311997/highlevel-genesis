@@ -6,15 +6,10 @@ import FileIcon from './FileIcon.vue'
 /**
  * One glyph per kind, decided once.
  *
- * The tree and the tab strip both name files, and before this they named them in
- * two different ways. A shared component is what keeps a `.css` row and a `.css`
- * tab looking like the same file — and what makes "which icon is a script?" a
- * question with one answer rather than one per surface.
- *
- * **Monochrome, and that is a decision rather than an omission.** Instrument has
- * one blue and spends it on links, focus and the primary action (`style.css`);
- * a five-colour file-type palette would be exactly the decoration the language
- * removes. The kinds are told apart by shape.
+ * The tree and the tab strip both name files, and before this they named them in two different
+ * ways. A shared component is what keeps a `.css` row and a `.css` tab looking like the same
+ * file — and what makes "which icon is a script?" a question with one answer rather than one per
+ * surface.
  */
 
 const iconFor = (path: string): string[] =>

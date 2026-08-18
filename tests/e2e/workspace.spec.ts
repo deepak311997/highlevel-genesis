@@ -6,25 +6,9 @@ import { assertEmulatorBuild, openNewProject, signUpAndVerify } from './helpers'
 /**
  * The demo line, walked in a browser.
  *
- * Everything here is the real thing — a real account, a real ID token, real Cloud
- * Function routes, real Firestore documents, and a real SSE stream through the
- * **Vite dev proxy**. Only the model is stubbed, by the emulator-only fake (D20).
- *
- * **That proxy is the point of running the streaming assertion here** (R3). Slice
- * 0 proved the Hosting rewrite streams; nothing had proved the dev proxy does,
- * and a buffering one would make every local demo look broken while production
- * was fine. Asserting that the placeholder bubble is visible with *less* text
- * than the finished reply is what a fully buffered response cannot satisfy.
- *
- * **The transcript survives a reload and a round trip through the dashboard**, and
- * those two are the assertions carrying the weight. A send that only appended to
- * component state would pass every check except them; the reload proves the turn
- * came back from `GET /api/projects/:projectId/messages`, and the second visit
- * proves it is not sitting in a store that merely happened not to be cleared.
- *
- * Playwright's Desktop Chrome viewport is 1280×720, so this walks the **resizable**
- * tree — the tabbed one below `lg` is covered at L2, where the breakpoint can be
- * controlled rather than guessed at.
+ * Everything here is the real thing — a real account, a real ID token, real Cloud Function
+ * routes, real Firestore documents, and a real SSE stream through the **Vite dev proxy**. Only
+ * the model is stubbed, by the emulator-only fake.
  */
 
 /** `__slow` makes the stream observable: 600 ms, then a token every 150 ms. */
@@ -37,22 +21,8 @@ test.describe('Slice 05 — streaming generation', () => {
   })
 
   /**
-   * AC-44, and the demo line in full: a failed open, a Retry, a reply arriving
-   * progressively, and the whole exchange still there after a reload.
-   *
-   * **The Retry is driven by a withdrawn failure, not by a marker**, and that is
-   * not a contrivance — it is forced by D6. After a failed turn the transcript
-   * ends on the same user message, so a fake keyed on a marker in that message
-   * would fail identically forever and Retry could never succeed. Intercepting
-   * the first `POST /generate` and withdrawing the interception is a real
-   * failure the user can genuinely recover from, which is what F8.2 promises.
-   *
-   * It is `fulfill` rather than `abort`, and that is load-bearing: aborting the
-   * request mid-flight leaves the functions emulator's pooled upstream socket
-   * dirty, and the **next test's** `POST /generate` comes back as an empty 400.
-   * A refused response is the same client path — `!res.ok`, an `ApiError`, the
-   * error state, a Retry — without poisoning the connection for whatever runs
-   * after it.
+   * AC-44, and the demo line in full: a failed open, a Retry, a reply arriving progressively,
+   * and the whole exchange still there after a reload.
    */
   test('a refused generation, a resend, and a reply that arrives progressively', async ({
     page,
@@ -106,16 +76,10 @@ test.describe('Slice 05 — streaming generation', () => {
 
     const bubbles = page.getByTestId('message-bubble')
     /*
-     * **The server refused before it wrote anything, so the bubble comes back
-     * out.** A turn is one request now: the prompt is written inside
-     * `/generate`, after the checks that can refuse it — so a *status* means
-     * nothing was stored, and leaving an optimistic bubble on screen would show
-     * a turn that does not exist and would surprise the user on the next load.
-     *
-     * The words go back in the composer with the reason beside them, because
-     * that is where they can be acted on. A Retry is deliberately not offered:
-     * for a refusal that will refuse again — a project at its message cap, a
-     * malformed request — retrying is an offer to fail twice.
+     * **The server refused before it wrote anything, so the bubble comes back out.** A turn is
+     * one request now: the prompt is written inside `/generate`, after the checks that can
+     * refuse it — so a *status* means nothing was stored, and leaving an optimistic bubble on
+     * screen would show a turn that does not exist and would surprise the user on the next load.
      */
     await expect(bubbles).toHaveCount(0)
     await expect(page.getByTestId('composer-error')).toContainText(
@@ -134,10 +98,9 @@ test.describe('Slice 05 — streaming generation', () => {
     await expect(page.getByTestId('chat-generating')).toBeVisible()
 
     /*
-     * **R3's assertion.** The placeholder is visible with *part* of the reply in
-     * it, which a fully buffered dev proxy cannot produce: buffering would deliver
-     * the whole body at once and the placeholder would go from empty straight to
-     * replaced.
+     * **R3's assertion.** The placeholder is visible with *part* of the reply in it, which a
+     * fully buffered dev proxy cannot produce: buffering would deliver the whole body at once
+     * and the placeholder would go from empty straight to replaced.
      */
     const streaming = page.getByTestId('streaming-bubble')
     await expect(streaming).toBeVisible()
@@ -179,21 +142,7 @@ test.describe('Slice 05 — streaming generation', () => {
     await expect(bubbles.nth(1)).toContainText('Here is a contact dashboard.')
   })
 
-  /**
-   * AC-44's second half: an interrupted reply, preserved and marked.
-   *
-   * `__fail_midstream` is a **real** mid-stream upstream failure — two tokens,
-   * then the connection to the model dies. The server persists what it had with
-   * `truncated: true` and sends an `error` frame carrying that document, so the
-   * placeholder is replaced by the server's own record rather than by the
-   * client's copy of it (D9). That is F8.2's partial preservation, end to end.
-   *
-   * The plan's version of this movement navigated away mid-stream instead. It
-   * cannot be tested here: the functions emulator never propagates a client
-   * disconnect to the function runtime, which T11 measured — so that path is
-   * covered at L1 and hand-checked in Slice 13, and this covers the same
-   * user-visible outcome by the failure mode that *is* reachable.
-   */
+  /** AC-44's second half: an interrupted reply, preserved and marked. */
   test('an interrupted reply is preserved, marked, and offers a Retry', async ({ page }) => {
     await signUpAndVerify(page, 'workspace-interrupted')
     await openNewProject(page)
@@ -231,18 +180,8 @@ test.describe('Slice 05 — streaming generation', () => {
   })
 
   /**
-   * **Two prompts in a row** — the case that caught a real bug, and the reason it
-   * is a permanent test rather than a one-off check.
-   *
-   * `/generate` originally set `Connection: keep-alive` by hand, inherited from
-   * Slice 0. It is a hop-by-hop header the HTTP layer owns, and with it set the
-   * first generation of a session succeeded while the **second `POST /generate`
-   * on the reused socket came back as an empty 400** — so the second prompt of
-   * every conversation failed, in the running app, with nothing in the logs to
-   * say why. Every single-turn test passed throughout.
-   *
-   * One turn proves the transport works once. This proves it works twice, which
-   * is the first thing a real user does.
+   * **Two prompts in a row** — the case that caught a real bug, and the reason it is a permanent
+   * test rather than a one-off check.
    */
   test('a second prompt in the same conversation also gets a reply', async ({ page }) => {
     await signUpAndVerify(page, 'workspace-second')
@@ -269,13 +208,7 @@ test.describe('Slice 05 — streaming generation', () => {
     await expect(bubbles.nth(2)).toContainText('and add a search box')
   })
 
-  /**
-   * The model declining, which is a 200 with no content at all (D18).
-   *
-   * The prose is empty, and the turn is still written down: an assistant
-   * document carrying the reason there is nothing to show. The panel says why in
-   * the transcript rather than only in a footer a refresh would clear.
-   */
+  /** The model declining, which is a 200 with no content at all. */
   test('a refusal is explained in the transcript, and survives a reload', async ({ page }) => {
     await signUpAndVerify(page, 'workspace-refused')
     await openNewProject(page)
@@ -286,11 +219,9 @@ test.describe('Slice 05 — streaming generation', () => {
     await expect(page.getByTestId('generate-error')).toContainText('Claude declined to answer that')
 
     /*
-     * **Two bubbles, and the second one is the refusal.** The turn reached the
-     * model, so it exists: the prompt is stored, and beside it an assistant
-     * document with no prose and the reason there is none. That is what makes a
-     * failure survive a refresh — before it, a reload showed a transcript that
-     * had silently swallowed the turn.
+     * **Two bubbles, and the second one is the refusal.** The turn reached the model, so it
+     * exists: the prompt is stored, and beside it an assistant document with no prose and the
+     * reason there is none.
      */
     const bubbles = page.getByTestId('message-bubble')
     await expect(bubbles).toHaveCount(2)
@@ -308,9 +239,8 @@ test.describe('Slice 05 — streaming generation', () => {
   })
 
   /*
-   * Shift+Enter, in a real browser (AC-33). The L2 suite asserts no request is
-   * issued; what only a browser can show is that the keystroke actually inserts a
-   * newline into the textarea.
+   * Shift+Enter, in a real browser. The L2 suite asserts no request is issued; what only a
+   * browser can show is that the keystroke actually inserts a newline into the textarea.
    */
   test('Shift+Enter writes a newline instead of sending', async ({ page }) => {
     await signUpAndVerify(page, 'workspace-shift')
@@ -327,9 +257,8 @@ test.describe('Slice 05 — streaming generation', () => {
   })
 
   /*
-   * A project deleted in another tab, then opened (AC-21). The 404 is one answer for
-   * absent, soft-deleted, unreadable and somebody else's, and this is the path a real
-   * user reaches it by.
+   * A project deleted in another tab, then opened. The 404 is one answer for absent, soft-
+   * deleted, unreadable and somebody else's, and this is the path a real user reaches it by.
    */
   test('a project deleted elsewhere reads as gone, with a way back', async ({ page }) => {
     await signUpAndVerify(page, 'workspace-gone')

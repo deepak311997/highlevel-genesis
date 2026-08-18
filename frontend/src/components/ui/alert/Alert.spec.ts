@@ -5,15 +5,8 @@ import { Alert, AlertDescription, AlertTitle } from './index'
 
 describe('Alert', () => {
   /**
-   * The role follows the variant, which is the one place this component
-   * deliberately departs from upstream.
-   *
-   * shadcn hardcodes `role="alert"`. That makes a screen reader interrupt
-   * whatever the user was reading to announce "we've sent you a link" with the
-   * same urgency as "your password is wrong". `status` is the polite live
-   * region and is what a confirmation wants; `alert` is assertive and is what a
-   * failure wants. Getting this backwards is invisible to a sighted reviewer,
-   * which is exactly why it is tested.
+   * The role follows the variant, which is the one place this component deliberately departs
+   * from upstream.
    */
   it.each([
     ['destructive', 'alert'],
@@ -30,11 +23,9 @@ describe('Alert', () => {
   })
 
   /**
-   * `--accent` is reserved. style.css states it in a comment — the ember accent
-   * marks the one element per view that is *live*, "never success, never a
-   * decorative highlight" — and defines `--good` for semantic success. Five
-   * auth screens render a success alert, so spending the accent here would
-   * leave nothing to mark a running generation with in Slice 5.
+   * `--accent` is reserved. style.css states it in a comment — the ember accent marks the one
+   * element per view that is *live*, "never success, never a decorative highlight" — and defines
+   * `--good` for semantic success.
    */
   it('paints success with the semantic token, not the reserved accent', () => {
     const classes = mount(Alert, {

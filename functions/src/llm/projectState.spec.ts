@@ -7,25 +7,15 @@ import { buildProjectState, PROJECT_FILE_CLOSE, PROJECT_FILE_OPEN } from './proj
 import type { ProjectFile } from './projectState'
 
 /**
- * The project-state block — AC-14 to AC-17, and the hazard the slice must not
- * ship.
+ * The project-state block — AC-14 to AC-17, and the hazard the slice must not ship.
  *
- * R2 names it exactly: **a truncated file would silently rewrite code the user
- * never touched.** Handed half a file, the model completes it from imagination
- * and writes the whole thing back, and the user's own work is gone with no error
- * anywhere. D14 makes that unrepresentable — files are whole or absent — so the
- * assertions here are mostly negatives: no fragment of an over-budget file
- * appears anywhere in the block (AC-17), and an omitted file is *named* rather
- * than merely missing (AC-15), because a model that cannot see `app.js` concludes
- * it does not exist and creates a second one under a different name.
- *
- * ## Why the contents are distinctive rather than `'x'.repeat(n)`
- *
- * Every synthetic file below is filled with a repeated marker unique to it. A
- * block built from `'x'.repeat(n)` makes `toContain` and `not.toContain` both
- * meaningless — every file is a substring of every larger one — and AC-17's
- * assertion in particular would pass against an implementation that truncated
- * happily.
+ * R2 names it exactly: **a truncated file would silently rewrite code the user never touched.**
+ * Handed half a file, the model completes it from imagination and writes the whole thing back,
+ * and the user's own work is gone with no error anywhere. D14 makes that unrepresentable — files
+ * are whole or absent — so the assertions here are mostly negatives: no fragment of an over-
+ * budget file appears anywhere in the block, and an omitted file is *named* rather than merely
+ * missing, because a model that cannot see `app.js` concludes it does not exist and creates a
+ * second one under a different name.
  */
 
 /** Content of exactly `length` characters, made of a marker unique to the file. */
@@ -60,10 +50,9 @@ const THREE: readonly ProjectFile[] = [
 
 describe('buildProjectState', () => {
   /*
-   * AC-13's other half. A project with no files appends no block at all, so the
-   * request is byte-identical in shape to the one Slice 5 sent — and `params.ts`
-   * can keep `system` the `SYSTEM_PROMPT` array *itself*, which is what keeps the
-   * cached prefix alive.
+   * AC-13's other half. A project with no files appends no block at all, so the request is byte-
+   * identical in shape to the one Slice 5 sent — and `params.ts` can keep `system` the
+   * `SYSTEM_PROMPT` array *itself*, which is what keeps the cached prefix alive.
    */
   it('returns null for a project holding no files', () => {
     expect(buildProjectState([])).toBeNull()
@@ -85,12 +74,9 @@ describe('buildProjectState', () => {
   })
 
   /*
-   * D24. The content is the user's own — files reach Firestore only from this
-   * user's generations and this user's `PUT` — so there is no cross-tenant path
-   * and sanitising would corrupt the very code the model is being asked to
-   * change. What the distinct delimiter buys is separate: a file that happens to
-   * contain a closing tag must not read to the model as an example of how to
-   * close a block it is writing.
+   * The content is the user's own — files reach Firestore only from this user's generations and
+   * this user's `PUT` — so there is no cross-tenant path and sanitising would corrupt the very
+   * code the model is being asked to change.
    */
   it('passes a file that contains a genesis close tag through untouched', () => {
     expect(build(THREE).text).toContain(CLOSE_TAG_TRAP)
@@ -104,9 +90,8 @@ describe('buildProjectState', () => {
   })
 
   /*
-   * The block is volatile — it changes whenever the project does — so it sits
-   * *after* the breakpoint and carries none of its own (D11). A `cache_control`
-   * here would write a cache entry per project state and read one back never.
+   * The block is volatile — it changes whenever the project does — so it sits *after* the
+   * breakpoint and carries none of its own.
    */
   it('carries no cache_control of its own', () => {
     const block = build(THREE)
@@ -125,10 +110,9 @@ describe('buildProjectState', () => {
 })
 
 /*
- * AC-16. `index.html` is the entry point (Slice 6 D1) — the one file whose
- * absence changes what the app *is* — so it is first whatever it weighs. The
- * rest ascend by size, which maximises the number of complete files that fit,
- * and ties break on path so the block is byte-identical for the same project on
+ * `index.html` is the entry point — the one file whose absence changes what the app *is* — so it
+ * is first whatever it weighs. The rest ascend by size, which maximises the number of complete
+ * files that fit, and ties break on path so the block is byte-identical for the same project on
  * every request.
  */
 describe('the order files appear in', () => {
@@ -161,13 +145,7 @@ describe('the order files appear in', () => {
  * AC-15 and AC-17 — D14's budget, and the two properties that make it safe.
  */
 describe('the file budget', () => {
-  /**
-   * One omitted file's manifest entry, as its own list item.
-   *
-   * The leading `- ` is what makes the assertion mean something: an *included*
-   * file's opening delimiter also reads `<path> (<n> characters)`, so a bare
-   * containment check would report every file as omitted.
-   */
+  /** One omitted file's manifest entry, as its own list item. */
   const manifestEntry = (file: ProjectFile): string =>
     `- ${file.path} (${String(file.content.length)} characters)`
 
@@ -211,10 +189,8 @@ describe('the file budget', () => {
   })
 
   /*
-   * AC-17, asserted as a negative on a slice taken from the *middle* of the
-   * file: a truncating implementation would keep the head, so asserting on the
-   * head alone would let one through. 200 characters is long enough that its
-   * appearance anywhere in the block could not be coincidence.
+   * AC-17, asserted as a negative on a slice taken from the *middle* of the file: a truncating
+   * implementation would keep the head, so asserting on the head alone would let one through.
    */
   it('contributes no fragment at all of a file larger than the whole budget', () => {
     const huge: ProjectFile = { path: 'huge.js', content: filler('huge', PROJECT_FILE_BUDGET + 1) }
@@ -227,12 +203,7 @@ describe('the file budget', () => {
     expect(text).toContain(manifestEntry(huge))
   })
 
-  /*
-   * Why the loop continues rather than stopping at the first file that does not
-   * fit. Ascending size normally puts the oversized file last, so only
-   * `index.html` — pinned first whatever it weighs — can starve the files behind
-   * it, and that is exactly the shape of a project whose entry point grew.
-   */
+  /* Why the loop continues rather than stopping at the first file that does not fit. */
   it('keeps the small files behind an oversized index.html', () => {
     const small: readonly ProjectFile[] = [
       { path: 'app.js', content: filler('app', 200) },

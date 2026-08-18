@@ -5,23 +5,11 @@ import { generateBodySchema } from './schema'
 /**
  * `POST /generate`'s body — one turn, in one request.
  *
- * **`content` is the prompt; `retry: true` re-runs the turn already stored.**
- * The prompt travels here because a turn that took two requests could fail
- * between them: the message landed, the client died, and the transcript kept a
- * prompt no reply was coming for. The durability that split was protecting is
- * preserved by ordering inside the handler — the user turn is written before the
- * stream opens — rather than by the extra round trip.
- *
- * `.strict()` is still load-bearing, and so is the refine. Exactly one of the
- * two shapes: a body carrying both is a caller that has not decided what it
- * wants, and a body carrying neither would silently generate a second reply to
- * whatever the transcript happens to end with. `role`, `uid` and the rest stay
- * refused for Slice 4's reasons — `uid` doubly so, since a uid in a payload is a
- * second, forgeable source of identity.
- *
- * `projectId` is checked against the **same** `projectIdSchema` the path routes
- * use, so `/generate` and `/api/projects/:projectId/*` cannot disagree about what
- * an id is.
+ * **`content` is the prompt; `retry: true` re-runs the turn already stored.** The prompt travels
+ * here because a turn that took two requests could fail between them: the message landed, the
+ * client died, and the transcript kept a prompt no reply was coming for. The durability that
+ * split was protecting is preserved by ordering inside the handler — the user turn is written
+ * before the stream opens — rather than by the extra round trip.
  */
 
 const VALID = { projectId: 'proj-1', content: 'Build a contacts view' }
@@ -64,11 +52,8 @@ describe('generateBodySchema — what a caller may send', () => {
   })
 
   /*
-   * `content` is now accepted and validated; everything else a chat payload
-   * tends to carry is still the server's. `role` and `uid` are refused for the
-   * reasons Slice 4 recorded — `uid` doubly so, since a uid in a payload is a
-   * second, forgeable source of identity, and `messages` and `model` because
-   * the transcript and the model are the server's to decide.
+   * `content` is now accepted and validated; everything else a chat payload tends to carry is
+   * still the server's.
    */
   it.each(['role', 'uid', 'prompt', 'messages', 'model'])(
     'refuses a body carrying %s alongside a valid projectId',
@@ -92,10 +77,8 @@ describe('generateBodySchema — what a caller may send', () => {
   })
 
   /*
-   * The copy is deliberately the *project-shaped* one, because that is what the
-   * caller is being told: a malformed id and a stranger's id are the same answer
-   * under this path shape. `parseBody` surfaces `issues[0].message`, so this
-   * string is the 400's body.
+   * The copy is deliberately the *project-shaped* one, because that is what the caller is being
+   * told: a malformed id and a stranger's id are the same answer under this path shape.
    */
   it('refuses a malformed id with the project copy, not a regex complaint', () => {
     const parsed = generateBodySchema.safeParse({ projectId: 'bad!id' })

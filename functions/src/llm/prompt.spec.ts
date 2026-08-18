@@ -7,31 +7,22 @@ import { HL_KNOWLEDGE } from './hlKnowledge'
 import { SYSTEM_PROMPT } from './prompt'
 
 /**
- * The system prompt: the structural property (Slice 5, AC-7) and the file format
- * (Slice 6, AC-34, D25).
+ * The system prompt: the structural property and the file format.
  *
- * `CLAUDE.md` requires the HighLevel cheat-sheet pinned behind a `cache_control`
- * breakpoint. Slice 5 owed the *structure* — a stable prefix, a breakpoint at its
- * end, and nothing volatile above it; **Slice 9 supplies the cheat-sheet itself**
- * and moves the breakpoint onto it, which is what turns that structure from a
- * declaration into a cache read (D18). Nothing volatile is the part a machine can
- * check, so it is checked here rather than asserted in a comment — and it now
+ * `CLAUDE.md` requires the HighLevel cheat-sheet pinned behind a `cache_control` breakpoint.
+ * Slice 5 owed the *structure* — a stable prefix, a breakpoint at its end, and nothing volatile
+ * above it; **Slice 9 supplies the cheat-sheet itself** and moves the breakpoint onto it, which
+ * is what turns that structure from a declaration into a cache read. Nothing volatile is the
+ * part a machine can check, so it is checked here rather than asserted in a comment — and it now
  * scans three blocks rather than two.
- *
- * **Slice 6 adds the assertion that actually stops a silent failure**: the tag
- * syntax, the extension list and both caps in the prompt are read here from the
- * modules the *parser* and the *schema* use. Without it the classic drift is
- * invisible — the prompt goes on documenting a grammar the parser no longer
- * speaks, and the only symptom is the model producing output we reject.
  */
 
 /**
  * Volatile shapes, as a pattern.
  *
- * An ISO date or a long digit run is a timestamp; `uid` and `projectId` are the
- * two per-request identifiers this codebase actually names. It is not a proof
- * that nothing volatile is there — no regex could be — but it catches the ways
- * volatility has ever arrived in this project.
+ * An ISO date or a long digit run is a timestamp; `uid` and `projectId` are the two per-request
+ * identifiers this codebase actually names. It is not a proof that nothing volatile is there —
+ * no regex could be — but it catches the ways volatility has ever arrived in this project.
  */
 const VOLATILE = /\d{4}-\d{2}-\d{2}|\d{10,}|\buid\b|projectId/i
 
@@ -45,11 +36,8 @@ describe('SYSTEM_PROMPT', () => {
   })
 
   /*
-   * The breakpoint sits on the **last** block of the stable prefix, which is the
-   * last block there is — Slice 9 moved it down onto the cheat-sheet rather than
-   * adding a second one. What this pins is that exactly one breakpoint exists and
-   * that it is at the end: a breakpoint in the middle caches a prefix shorter
-   * than the stable one, and nothing errors when it does.
+   * The breakpoint sits on the **last** block of the stable prefix, which is the last block
+   * there is — Slice 9 moved it down onto the cheat-sheet rather than adding a second one.
    */
   it('carries exactly one cache_control breakpoint, on the last block', () => {
     const withBreakpoint = SYSTEM_PROMPT.filter((block) => block.cache_control != null)
@@ -66,10 +54,8 @@ describe('SYSTEM_PROMPT', () => {
   })
 
   /*
-   * Stability is the requirement the breakpoint imposes, so the prompt is a
-   * constant rather than something computed per call. A `new Date()` or a
-   * template interpolation here would make every request a cache miss, and the
-   * only symptom would be a bill.
+   * Stability is the requirement the breakpoint imposes, so the prompt is a constant rather than
+   * something computed per call.
    */
   it('is the same value every time it is read', () => {
     expect(SYSTEM_PROMPT).toEqual([...SYSTEM_PROMPT])
@@ -77,22 +63,8 @@ describe('SYSTEM_PROMPT', () => {
   })
 
   /*
-   * The needle list changes shape in Slice 9, because two of Slice 5's needles
-   * have become false in the way the plan intended. `leadconnectorhq` and
-   * `/contacts` were placeholders for "the cheat-sheet is not here yet"; the
-   * cheat-sheet is here now and names `/contacts/search` legitimately, so keeping
-   * them would assert the opposite of AC-1.
-   *
-   * What replaces them is the assertion Slice 9 actually owes (AC-4, D4): the
-   * model is taught **one function and no URL**. Not the HighLevel origin —
-   * generated code cannot reach it, having neither CORS nor a token — and not the
-   * proxy path either, because a `fetch('/api/hl/proxy/…')` from a `srcdoc`
-   * iframe has an opaque origin and cannot carry an ID token (Slice 8 D16). Both
-   * absences are re-checked on the cheat-sheet itself in `hlKnowledge.spec.ts`.
-   *
-   * The other three are unchanged and still about the file format: a
-   * triple-backtick fence is the delimiter D2 rejected, and `FILE:` and
-   * `file_start` are two spellings it is not.
+   * The needle list changes shape in Slice 9, because two of Slice 5's needles have become false
+   * in the way the plan intended.
    */
   it.each(['services.leadconnectorhq.com', '/api/hl/proxy', 'file_start', '```', 'FILE:'])(
     'says nothing about %s',
@@ -112,21 +84,17 @@ describe('SYSTEM_PROMPT', () => {
 /**
  * AC-34, D25 — **the file format, derived from the parser's own constants.**
  *
- * Every needle below is imported from the module that decides it, so a constant
- * changing on one side fails here rather than in production. That is the whole
- * point: Slice 5's D17 withheld these instructions because they would have
- * described a parser that did not exist; a hand-written copy of the grammar would
- * be the same mistake with an extra step.
+ * Every needle below is imported from the module that decides it, so a constant changing on one
+ * side fails here rather than in production. That is the whole point: Slice 5's D17 withheld
+ * these instructions because they would have described a parser that did not exist; a hand-
+ * written copy of the grammar would be the same mistake with an extra step.
  */
 describe('the file-format block', () => {
   const text = (): string => SYSTEM_PROMPT.map((block) => block.text).join('\n')
 
   /*
-   * It is the second block, and Slice 9 took the breakpoint off it: the
-   * breakpoint belongs at the end of the stable prefix, and the prefix now ends
-   * with the cheat-sheet. Asserted as an absence rather than dropped, because a
-   * *second* breakpoint here would be silently wrong — the API accepts it, and
-   * the only symptom is a shorter cached prefix.
+   * It is the second block, and Slice 9 took the breakpoint off it: the breakpoint belongs at
+   * the end of the stable prefix, and the prefix now ends with the cheat-sheet.
    */
   it('is the second block, and no longer carries the breakpoint', () => {
     expect(SYSTEM_PROMPT.length).toBeGreaterThan(2)
@@ -171,24 +139,21 @@ describe('the file-format block', () => {
 })
 
 /**
- * Slice 9 — the cheat-sheet block, and the breakpoint that is finally real
- * (AC-4, AC-10, AC-11, AC-12, D18).
+ * Slice 9 — the cheat-sheet block, and the breakpoint that is finally real.
  *
- * What is asserted here is the *arrangement*: that the HighLevel knowledge is one
- * block, that it is the last of the stable prefix, that the single breakpoint is
- * on it, and that the prefix is now long enough for the model to cache at all.
- * What the block says is `hlKnowledge.spec.ts`'s business, checked there against
- * the tables it was rendered from.
+ * What is asserted here is the *arrangement*: that the HighLevel knowledge is one block, that it
+ * is the last of the stable prefix, that the single breakpoint is on it, and that the prefix is
+ * now long enough for the model to cache at all. What the block says is `hlKnowledge.spec.ts`'s
+ * business, checked there against the tables it was rendered from.
  */
 describe('the HighLevel cheat-sheet block', () => {
   const text = (): string => SYSTEM_PROMPT.map((block) => block.text).join('\n')
 
   /*
-   * One block, not two, and not a fourth appended later. It keeps "the breakpoint
-   * is the last element of the stable prefix" a one-line assertion rather than a
-   * claim about how the blocks happen to be arranged, and it is the property
-   * `params.ts` relies on when it appends volatile project state *after* the
-   * prefix.
+   * One block, not two, and not a fourth appended later. It keeps "the breakpoint is the last
+   * element of the stable prefix" a one-line assertion rather than a claim about how the blocks
+   * happen to be arranged, and it is the property `params.ts` relies on when it appends volatile
+   * project state *after* the prefix.
    */
   it('is the third block, holding the cheat-sheet whole', () => {
     expect(SYSTEM_PROMPT).toHaveLength(3)
@@ -201,38 +166,25 @@ describe('the HighLevel cheat-sheet block', () => {
   })
 
   /*
-   * AC-4. One function and no URL: the model is taught `hl(`, and neither the
-   * HighLevel origin nor the proxy path appears anywhere in the prefix. The
-   * needle list above asserts the two absences; this states the presence they
-   * exist to protect, so a cheat-sheet that dropped the convention entirely could
-   * not pass by saying nothing.
+   * One function and no URL: the model is taught `hl(`, and neither the HighLevel origin nor the
+   * proxy path appears anywhere in the prefix.
    */
   it("teaches the hl(' convention", () => {
     expect(text()).toContain("hl('")
   })
 
   /*
-   * AC-11, D18. `claude-opus-5` caches nothing below 512 tokens, and **no error
-   * says so** — `cache_creation_input_tokens` and `cache_read_input_tokens`
-   * simply both read `0`, which is exactly what Slice 5's breakpoint did. The
-   * floor here is twice that minimum, because `estimateTokens` is four characters
-   * per token rather than the tokenizer and the margin is what makes the estimate
-   * safe to rely on.
-   *
-   * This is an estimate, not the confirmation. The confirmation is
-   * `cacheReadInputTokens > 0` on the second generation of a session, which the
-   * `generation.complete` log line already carries and which the definition of
-   * done checks by hand against real credentials.
+   * `claude-opus-5` caches nothing below 512 tokens, and **no error says so** —
+   * `cache_creation_input_tokens` and `cache_read_input_tokens` simply both read `0`, which is
+   * exactly what Slice 5's breakpoint did.
    */
   it('makes the stable prefix long enough for the model to cache', () => {
     expect(estimateTokens(text())).toBeGreaterThanOrEqual(1024)
   })
 
   /*
-   * AC-10, extended to the new block by construction: the scan at the top of this
-   * file runs over every block there is. Restated here because the cheat-sheet is
-   * the block most likely to acquire a date — the allowlist's own `version` values
-   * are `2021-`-shaped, and rendering them would have been the obvious thing to do.
+   * AC-10, extended to the new block by construction: the scan at the top of this file runs over
+   * every block there is.
    */
   it('carries nothing volatile, like every block above it', () => {
     expect(SYSTEM_PROMPT[2]?.text).not.toMatch(VOLATILE)

@@ -28,10 +28,9 @@ describe('encodeSse', () => {
 })
 
 /**
- * D5. One frame type per destination, and `file_chunk` is what keeps `token`
- * honest: reusing `token` between the boundaries would make its meaning depend
- * on a mode the client has to track, and a client that dropped a `file_start`
- * would then route code into the chat bubble.
+ * One frame type per destination, and `file_chunk` is what keeps `token` honest: reusing `token`
+ * between the boundaries would make its meaning depend on a mode the client has to track, and a
+ * client that dropped a `file_start` would then route code into the chat bubble.
  */
 describe('the file frames', () => {
   it.each(['file_start', 'file_chunk', 'file_end'] as const)('encodes %s', (name) => {

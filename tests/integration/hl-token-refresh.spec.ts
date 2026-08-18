@@ -14,36 +14,9 @@ import {
 /**
  * The token rotation, and the hazard it carries.
  *
- * Its own file because it is its own subject. `hl-proxy.spec.ts` seeds every
- * connection an hour from expiry precisely so that nothing there rotates by
- * accident; everything here is inside the five-minute skew on purpose.
- *
- * ## Why the network call is inside the transaction
- *
- * A naive reading of that says a contended retry re-sends a refresh token the
- * first attempt already spent, which is the bricked-connection scare from
- * `HIGHLEVEL_PLATFORM.md` §3. Two properties make it safe, and this file tries
- * to break both. Firestore read-write transactions are **pessimistic**, so the
- * second caller's `tx.get` blocks on the first's lock rather than racing it;
- * and the transaction body **re-reads and short-circuits** when it finds a
- * token somebody else already rotated, so a retried transaction cannot refresh
- * twice.
- *
- * **Only the second of those is observable here.** The Firestore emulator does
- * not implement the read lock, so the simultaneous case measures 3–4 refreshes
- * for three callers rather than one. That is recorded in full on the case
- * itself and in the build log; it is a property of the emulator, and the
- * connection survives it either way because §3's measured grace window accepts
- * a reused refresh token at least once. The short-circuit *is* asserted
- * exactly, by staggering the callers.
- *
- * ## What is written on a failure is the other half
- *
- * The asymmetry in D26 is the whole point and it is easy to get backwards: a
- * definitive `invalid_grant` writes `needsReconnect` and **keeps** the refresh
- * token, while a 500 or a network error writes **nothing at all**. A blip
- * recorded as a dead connection is a connection nobody can revive without
- * reinstalling.
+ * Its own file because it is its own subject. `hl-proxy.spec.ts` seeds every connection an hour
+ * from expiry precisely so that nothing there rotates by accident; everything here is inside the
+ * five-minute skew on purpose.
  */
 
 const PASSWORD = 'Correct-Horse-9'
@@ -149,15 +122,7 @@ describe('the transactional refresh', () => {
     expect(after.needsReconnect).toBe(false)
   })
 
-  /*
-   * The short-circuit, proved deterministically.
-   *
-   * Three calls, staggered so the later two arrive after the first has
-   * committed. Exactly one refresh reaches HighLevel: the others find a token
-   * somebody else already rotated and use it. This is the mechanism D23 rests
-   * on, and it is the half that can be asserted without depending on how the
-   * store schedules two simultaneous readers.
-   */
+  /* The short-circuit, proved deterministically. */
   it('reuses a token another caller already rotated', async () => {
     await seedConnection(INSIDE_SKEW_MS)
     const wait = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms))
@@ -176,33 +141,7 @@ describe('the transactional refresh', () => {
     expect(await bearerSeenUpstream()).toBe(`Bearer ${after.accessToken}`)
   })
 
-  /*
-   * The hazard itself (D23, R2) — and the one place this suite cannot assert
-   * what the PRD asks for.
-   *
-   * AC-26 says exactly one refresh request reaches HighLevel when three calls
-   * arrive at once. That rests on Firestore read-write transactions being
-   * **pessimistic**: the second caller's `tx.get` blocks on the first's lock
-   * rather than racing it. **The Firestore emulator does not implement that
-   * lock.** All three readers see the stale document, all three refresh, one
-   * commits and the rest retry — measured over six rounds as 3, 3, 4, 4, 4, 4.
-   * Never one, and never a storm.
-   *
-   * So the count is asserted as a *bound* rather than as one, and the bound is
-   * chosen to still catch the regression that matters. Delete the in-transaction
-   * re-read and each of three callers can refresh on each of five attempts —
-   * fifteen. Six is comfortably above what the emulator produces and far below
-   * that, so a short-circuit that stopped working fails this case loudly.
-   *
-   * What is asserted unconditionally is what actually protects the user, and it
-   * holds in both worlds: every caller succeeds, the connection is left usable
-   * rather than marked dead, and the token every later call carries is the one
-   * that was persisted — so the losers converged on the winner's result and did
-   * not strand themselves on a token nobody stored. §3's measured grace window
-   * (a reused refresh token still works at least once) is why the extra rotations
-   * are survivable rather than fatal, and it is the reason this is recorded as a
-   * residue rather than treated as a defect to design around.
-   */
+  /* The hazard itself — and the one place this suite cannot assert what the PRD asks for. */
   it('leaves one usable connection when three calls arrive at once', async () => {
     await seedConnection(INSIDE_SKEW_MS)
 
@@ -226,15 +165,10 @@ describe('the transactional refresh', () => {
   })
 
   /*
-   * D26's first half. `invalid_grant` is the one answer that means the grant is
-   * genuinely gone, so the flag is written — and the refresh token is left
-   * exactly as it was, because §3's first rule is never to destroy a token that
-   * may still be valid and reconnecting overwrites the document anyway.
-   *
-   * This is also P8: the transaction has to **commit** to record the flag. A
-   * body that threw to signal the refusal would discard `needsReconnect: true`
-   * with everything else, and this case would fail in a way that reads like a
-   * Firestore bug.
+   * D26's first half. `invalid_grant` is the one answer that means the grant is genuinely gone,
+   * so the flag is written — and the refresh token is left exactly as it was, because §3's first
+   * rule is never to destroy a token that may still be valid and reconnecting overwrites the
+   * document anyway.
    */
   it('marks the connection and keeps the refresh token when the grant is dead', async () => {
     await seedConnection(INSIDE_SKEW_MS, 'dead-refresh-token')
@@ -251,10 +185,8 @@ describe('the transactional refresh', () => {
   })
 
   /*
-   * D26's second half, and the asymmetry that is the whole decision. A 500 says
-   * nothing about the connection, so nothing is written — not the flag, not a
-   * cleared token, nothing. The caller retries and the next attempt may well
-   * work.
+   * D26's second half, and the asymmetry that is the whole decision. A 500 says nothing about
+   * the connection, so nothing is written — not the flag, not a cleared token, nothing.
    */
   it('writes nothing when the refresh fails transiently', async () => {
     await seedConnection(INSIDE_SKEW_MS, 'boom-refresh-token')

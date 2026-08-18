@@ -9,10 +9,8 @@ describe('Button', () => {
   })
 
   /**
-   * `<RouterLink><Button/></RouterLink>` renders `<a><button>`, which is
-   * invalid: an anchor may not contain interactive content. Screen readers
-   * announce it inconsistently and the click target is ambiguous. `as-child`
-   * merges the styling onto the link instead, leaving a single element.
+   * `<RouterLink><Button/></RouterLink>` renders `<a><button>`, which is invalid: an anchor may
+   * not contain interactive content.
    */
   it('merges into its child so a link-button is one element, not two', () => {
     const wrapper = mount(Button, {

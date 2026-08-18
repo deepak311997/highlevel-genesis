@@ -23,11 +23,10 @@ const { ApiError } = await import('./api')
 /**
  * The browser's half of the proxy.
  *
- * Thin on purpose: the argument order is `HIGHLEVEL_PLATFORM.md` §8's `hl()`
- * convention, so the string Slice 9 teaches the model, the string Slice 10's
- * shim receives and the string in the URL are all the same string. Anything
- * clever here — a per-surface method, a re-shaped response — would be a
- * translation table with nothing on the other side of it.
+ * Thin on purpose: the argument order is `HIGHLEVEL_PLATFORM.md` §8's `hl()` convention, so the
+ * string Slice 9 teaches the model, the string Slice 10's shim receives and the string in the
+ * URL are all the same string. Anything clever here — a per-surface method, a re-shaped response
+ * — would be a translation table with nothing on the other side of it.
  */
 
 let fetchMock: ReturnType<typeof vi.fn>
@@ -140,20 +139,8 @@ describe('hlProxy', () => {
   })
 
   /*
-   * The path is glued onto `/api/hl/proxy`, and a relative URL is *resolved*
-   * before it is sent — `/api/hl/proxy` + `/../../projects` is `/api/projects`.
-   * Today every caller is a literal in `stores/hl.ts`, so nothing can reach
-   * that. But this function's own docblock states the plan: Slice 10's `srcdoc`
-   * shim mirrors this signature so generated code can call `hl(...)` unchanged,
-   * and D16 puts the fetch in the *parent* precisely because the sandbox cannot
-   * mint an App Check token. The moment the path argument comes from an LLM,
-   * `hl('GET', '/../../projects')` is an attested, authenticated call to an
-   * arbitrary Genesis route from inside the sandbox — the confused deputy the
-   * server-side allowlist exists to prevent, reintroduced one layer above it.
-   *
-   * The grammar is the server's own (`routes.ts`'s `PARAM`, segment by
-   * segment), so this refuses exactly what `matchRoute` would refuse and
-   * nothing a legal HighLevel path needs.
+   * The path is glued onto `/api/hl/proxy`, and a relative URL is *resolved* before it is sent —
+   * `/api/hl/proxy` + `/../../projects` is `/api/projects`.
    */
   it.each([
     ['a parent segment', '/../../projects'],

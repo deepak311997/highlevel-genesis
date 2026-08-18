@@ -27,20 +27,14 @@ import { MESSAGE_LIMIT } from './schema'
 /**
  * The pure halves of the transcript read, plus the assistant write.
  *
- * `transcriptQuery` has a test of its own because of R1, which is the slice's one
- * real hazard and is invisible in production about half the time. A `WriteBatch`
- * resolves every `serverTimestamp()` in it to the *same* commit timestamp, so the
- * two messages of a turn are not nearly tied — they are exactly tied, on every
- * single turn. Firestore then falls through to its implicit `__name__` tiebreak,
- * and a document name here is a random auto-id, so the echo renders above the
- * prompt roughly half the time. The second `orderBy` is what stops that, and
- * deleting it would break nothing that any emulator-backed test could see
- * reliably. Asserting the call order here means it fails *here* instead.
- *
- * `parseStoredMessage` is the fail-closed step, and the log line is the part
- * worth an assertion: a corrupt message is otherwise **silent** by design — there
- * is no by-id read of a message, so omission is the whole behaviour, and the log
- * line is the only thing that says a document is broken rather than absent.
+ * `transcriptQuery` has a test of its own because of R1, which is the slice's one real hazard
+ * and is invisible in production about half the time. A `WriteBatch` resolves every
+ * `serverTimestamp()` in it to the *same* commit timestamp, so the two messages of a turn are
+ * not nearly tied — they are exactly tied, on every single turn. Firestore then falls through to
+ * its implicit `__name__` tiebreak, and a document name here is a random auto-id, so the echo
+ * renders above the prompt roughly half the time. The second `orderBy` is what stops that, and
+ * deleting it would break nothing that any emulator-backed test could see reliably. Asserting
+ * the call order here means it fails *here* instead.
  */
 
 const complete = {
@@ -97,9 +91,8 @@ describe('transcriptQuery', () => {
   })
 
   /*
-   * The cap matches the collection's own limit, so "you are seeing the whole
-   * conversation" is a guarantee rather than a hope — the same rule
-   * `LIST_LIMIT` / `PROJECT_LIMIT` follow.
+   * The cap matches the collection's own limit, so "you are seeing the whole conversation" is a
+   * guarantee rather than a hope — the same rule `LIST_LIMIT` / `PROJECT_LIMIT` follow.
    */
   it('caps at exactly the number of messages a project may hold', () => {
     expect(MESSAGE_LIMIT).toBe(200)
@@ -206,13 +199,12 @@ function storedAssistant(truncated: boolean): Record<string, unknown> {
 }
 
 /**
- * One assistant turn, with the three parts that vary defaulted (R10).
+ * One assistant turn, with the three parts that vary defaulted.
  *
- * The regrouping this helper exists for is the point of the task: the function
- * took four positional parameters and was about to take a fifth, at which point
- * `('alice', 'proj-1', text, false, [], null)` is a call nobody can read and a
- * `null` in the wrong slot is a type error only if two adjacent parameters
- * happen to have different types. An object says which is which.
+ * The regrouping this helper exists for is the point of the task: the function took four
+ * positional parameters and was about to take a fifth, at which point `('alice', 'proj-1', text,
+ * false, [], null)` is a call nobody can read and a `null` in the wrong slot is a type error
+ * only if two adjacent parameters happen to have different types. An object says which is which.
  */
 function turn(content: string, overrides: Partial<AssistantTurn> = {}): AssistantTurn {
   return { content, truncated: false, error: null, fileWrites: [], snapshot: null, ...overrides }
@@ -248,11 +240,9 @@ function snapshotPlan(overrides: Partial<SnapshotPlan> = {}): SnapshotPlan {
 
 describe('appendAssistantMessage', () => {
   /*
-   * AC-2, D35. `seq` is 1 and it is assigned here rather than derived: the
-   * assistant turn is now written in a request of its own, so its `createdAt`
-   * genuinely differs from the user message's — which is exactly what Slice 4's
-   * D8 predicted. `seq` is belt and braces rather than the tiebreak it was, and
-   * the transcript query still reads it, so it still has to be right.
+   * `seq` is 1 and it is assigned here rather than derived: the assistant turn is now written in
+   * a request of its own, so its `createdAt` genuinely differs from the user message's — which
+   * is exactly what Slice 4's D8 predicted.
    */
   it('writes the assistant document under the project, with seq 1', async () => {
     const db = fakeDb(storedAssistant(false))
@@ -327,9 +317,8 @@ describe('appendAssistantMessage', () => {
   })
 
   /*
-   * Unreachable in practice — we have just written a complete document — but it
-   * fails closed rather than answering a `done` frame describing a message that
-   * cannot be read back.
+   * Unreachable in practice — we have just written a complete document — but it fails closed
+   * rather than answering a `done` frame describing a message that cannot be read back.
    */
   it('fails closed when the document it just wrote will not parse', async () => {
     vi.spyOn(console, 'info').mockImplementation(() => undefined)
@@ -338,13 +327,7 @@ describe('appendAssistantMessage', () => {
     await expect(appendAssistantMessage('alice', 'proj-1', turn('hi'))).rejects.toThrow()
   })
 
-  /**
-   * D11, and the reason the batch exists at all.
-   *
-   * The message contains `[file: index.html]`; if that commits and the file does
-   * not, the transcript is lying about the project's contents. One batch makes
-   * the turn atomic — 21 writes at the cap, far inside Firestore's 500.
-   */
+  /** D11, and the reason the batch exists at all. */
   it('stages the message and every file into one batch, committed once', async () => {
     const db = fakeDb(storedAssistant(false))
 
@@ -379,19 +362,7 @@ describe('appendAssistantMessage', () => {
     expect(db.staged).toHaveLength(1)
   })
 
-  /**
-   * AC-9, and the whole of R5.
-   *
-   * Writing the snapshot in its own commit after the turn's is one line shorter
-   * and leaves a crash window in which the project's files moved and its history
-   * did not. The assertion is against a **recording batch**, so a second
-   * `commit()` or a write that reached Firestore some other way is a red test
-   * rather than something a reviewer has to notice.
-   *
-   * The worst case staged here is 63 writes — one message, twenty files, one
-   * snapshot, twenty copied files, one pruned snapshot and its twenty — which is
-   * comfortably inside Firestore's limit of 500.
-   */
+  /** AC-9, and the whole of R5. */
   it('stages the message, the files, the snapshot and its copies on one batch', async () => {
     const db = fakeDb(storedAssistant(false))
 
@@ -448,9 +419,8 @@ describe('appendAssistantMessage', () => {
   })
 
   /*
-   * The re-read still happens, and still happens **after** the commit:
-   * `serverTimestamp()` is a sentinel until then, so the committed document is
-   * the only place the real timestamp exists.
+   * The re-read still happens, and still happens **after** the commit: `serverTimestamp()` is a
+   * sentinel until then, so the committed document is the only place the real timestamp exists.
    */
   it('answers with the committed message even when files were written', async () => {
     fakeDb(storedAssistant(false))
@@ -472,10 +442,9 @@ describe('parseStoredMessage', () => {
   })
 
   /*
-   * AC-15's log half. Each of the three corrupt shapes is a document that cannot
-   * be rendered in the right place: no content is no message, no timestamp is no
-   * date and no position, and a role outside the two has no side of the
-   * transcript to sit on.
+   * AC-15's log half. Each of the three corrupt shapes is a document that cannot be rendered in
+   * the right place: no content is no message, no timestamp is no date and no position, and a
+   * role outside the two has no side of the transcript to sit on.
    */
   it.each([
     ['no content', { role: 'user', seq: 0, createdAt: complete.createdAt }],
@@ -493,9 +462,8 @@ describe('parseStoredMessage', () => {
   })
 
   /*
-   * No field of the document reaches the log line. A message is the user's own
-   * prose — from Slice 5 on it is also the model's — and a log sink is a
-   * disclosure channel like any other. `parseStored`'s rule, unchanged.
+   * No field of the document reaches the log line. A message is the user's own prose — from
+   * Slice 5 on it is also the model's — and a log sink is a disclosure channel like any other.
    */
   it('puts no field of the document in the log line', () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)

@@ -47,12 +47,7 @@ describe('appCheckHeader', () => {
     expect(initializeAppCheck).toHaveBeenCalledOnce()
   })
 
-  /**
-   * The emulator build has no site key, and there is no App Check emulator to
-   * mint against. The header is simply absent, which the backend's own
-   * emulator bypass expects. Attempting reCAPTCHA here would fail the e2e
-   * suite on a control those tests are not about.
-   */
+  /** The emulator build has no site key, and there is no App Check emulator to mint against. */
   it('sends no header when no site key is configured', async () => {
     const { appCheckHeader } = await load(undefined)
 
@@ -61,10 +56,9 @@ describe('appCheckHeader', () => {
   })
 
   /**
-   * A failed attestation must not swallow the request. The server is the
-   * enforcement point and will answer 401 with copy the user can act on;
-   * throwing here would instead surface a reCAPTCHA-shaped error on a sign-up
-   * form, which tells the user nothing.
+   * A failed attestation must not swallow the request. The server is the enforcement point and
+   * will answer 401 with copy the user can act on; throwing here would instead surface a
+   * reCAPTCHA-shaped error on a sign-up form, which tells the user nothing.
    */
   it('degrades to no header when the token cannot be fetched', async () => {
     getToken.mockRejectedValue(new Error('reCAPTCHA unavailable'))
