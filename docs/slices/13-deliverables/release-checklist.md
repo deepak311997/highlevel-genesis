@@ -60,8 +60,9 @@ Each is done and held true by a test; the test is what stops it drifting back.
       `scripts/check-deliverables.spec.mjs` (AC-17). Recording it is a human item below.
 - [ ] **(this PR)** This checklist, with every remaining item, its owner, its procedure and
       its evidence slot (D12). Held by `scripts/check-deliverables.spec.mjs` (AC-18).
-- [ ] **(this PR)** The tests that keep all of the above true — six checks under `scripts/`
-      plus `functions/src/hl/readme.spec.ts`, run by `npm run test:scripts` and `npm test`.
+- [ ] **(this PR)** The tests that keep all of the above true — seven `.spec.mjs` files under
+      `scripts/`, run by `npm run test:scripts`, plus `functions/src/hl/readme.spec.ts`, which
+      runs under `npm --prefix functions run test`. `npm test` covers both.
 
 ---
 
@@ -96,12 +97,19 @@ Each is done and held true by a test; the test is what stops it drifting back.
       Evidence: _____ (the printed plan, or its last ten lines)
 - [ ] **(human)** Run the seeder for real, dropping `--dry-run` and adding
       `--calendar-id` / `--assigned-user-id` if resolution failed. Expect
-      `contacts: { created: 20, existing: 0, failed: 0 }` and
-      `appointments: { created: 8, failed: 0 }`, exit `0`. Then re-run it once, unchanged: the
-      second run must report **20 existing, 0 created** and still exit `0` — that is the
+      `contacts:     20 created, 0 existing, 0 failed` and
+      `appointments: 8 created, 0 failed`, exit `0`. Then re-run it once, unchanged: the
+      second run must report `0 created, 20 existing` and still exit `0` — that is the
       idempotency claim (D10), and a re-run is the only thing that tests it. Confirm the
       contacts and appointments in the HighLevel UI afterwards.
       Evidence: _____ (both summaries, first run and re-run)
+- [ ] **(human)** Check the seeded appointment times read sensibly in the sandbox's timezone.
+      The seeder places them at **10:00 and 15:00 UTC** — `plannedAppointments` takes an
+      `offsetMinutes`, but nothing passes one, so a sandbox in US Pacific shows 03:00 and
+      08:00 local. If they read wrong on camera, move the sandbox's timezone, or add the
+      `--utc-offset` flag the review named as the follow-up (`scripts/seed-sandbox.mjs`
+      already has the plumbing and its tests; only a flag and a call site are missing).
+      Evidence: _____ (the times as HighLevel displays them, and the sandbox timezone)
 
 ### Two HighLevel body shapes only a live call can settle
 
@@ -111,7 +119,9 @@ corrected if they are wrong.
 
 - [ ] **(human)** Confirm the **duplicate-refusal body shape** (D10). After a successful seed
       run, create one contact that already exists and capture the whole refusal:
-      `curl -sS -i -X POST https://services.leadconnectorhq.com/contacts/ -H "Authorization: Bearer $HL_SEED_TOKEN" -H "Version: 2021-07-28" -H "Accept: application/json" -H "Content-Type: application/json" -d '{"locationId":"'"$HL_SEED_LOCATION_ID"'","firstName":"Ada","lastName":"Okafor","email":"ada.okafor@genesis-seed.test"}'`
+      `curl -sS -i -X POST https://services.leadconnectorhq.com/contacts/ -H "Authorization: Bearer $HL_SEED_TOKEN" -H "Version: 2021-07-28" -H "Accept: application/json" -H "Content-Type: application/json" -d '{"locationId":"'"$HL_SEED_LOCATION_ID"'","firstName":"Amara","lastName":"Osei","email":"amara.osei@genesis-seed.example.com"}'`
+      That is seed row 1, verbatim — a name and address the seeder has already created, which
+      is what makes the call a duplicate. Any other contact returns `201` and settles nothing.
       The script's `duplicateContactId` reads the existing id from `meta.contactId` and falls
       back to `contactId`. If the live body puts it somewhere else, or does not carry it at
       all, the re-run path is wrong — fix `tests/fixtures/highlevel/contact-duplicate.json`

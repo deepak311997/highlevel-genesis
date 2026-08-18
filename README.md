@@ -45,7 +45,10 @@ credentials are needed** — the emulator build's configuration lives in
 
 - Node.js 22 or newer
 - **A Java runtime** — the Firestore emulator needs it. `brew install --cask temurin` (macOS)
-  or any JDK 11+. Without it, `firebase emulators:start` fails on Firestore.
+  or any JDK 21 or newer: firebase-tools 14 warns below 21 and will stop supporting it. Without
+  a JDK at all, `firebase emulators:start` fails on Firestore.
+- No global `firebase` install is needed — `firebase-tools` is a root devDependency, so
+  `npm run install:all` brings it.
 
 **Three commands**
 
@@ -105,12 +108,13 @@ npm run test:unit         # Vitest — pure logic, Vue components, and the repo'
 npm run test:rules        # Firestore security rules against the emulator
 npm run test:integration  # Cloud Functions end to end against the emulators
 npm run test:e2e          # Playwright — starts the emulators itself
-npm run test:scripts      # just the checks under scripts/
+npm run test:scripts      # just the specs under scripts/
 npm test                  # typecheck + lint + unit + rules + integration
 ```
 
-Every suite starts its own emulators and passes its own configuration inline, so all of them
-run from a fresh clone with nothing configured. HighLevel and the LLM are always stubbed,
+`test:rules`, `test:integration` and `test:e2e` start their own emulators and pass their own
+configuration inline, so all of them run from a fresh clone with nothing configured; the unit
+suites need neither. HighLevel and the LLM are always stubbed,
 from `tests/fixtures/`.
 
 ---
@@ -180,8 +184,9 @@ path can reach HighLevel.
 ### Seeding the sandbox
 
 A fresh sandbox is empty, and the demo renders real records.
-[`scripts/seed-sandbox.mjs`](scripts/seed-sandbox.mjs) creates 20 contacts and 8 appointments
-over the next fortnight. It calls HighLevel directly — the proxy deliberately does not
+[`scripts/seed-sandbox.mjs`](scripts/seed-sandbox.mjs) creates 20 contacts and 8 appointments —
+two per business day at 10:00 and 15:00 **UTC**, so the next four business days. It calls
+HighLevel directly — the proxy deliberately does not
 allowlist appointment creation — and authenticates with a Private Integration Token or an
 OAuth access token; the API is identical either way.
 
@@ -227,9 +232,12 @@ Identity Toolkit, so client-side validation alone is bypassable;
 ## Architecture decisions
 
 1. **`srcdoc` plus a runtime shim, not Sandpack.** The preview writes the generated app into a
-   sandboxed iframe with an import shim and a `fetch` wrapper that routes HighLevel calls back
-   through the proxy. Under a five-day clock that bought full control of the boundary; a real
-   bundler runtime is the follow-up.
+   sandboxed iframe with `allow-scripts` but deliberately **no** `allow-same-origin`, so the
+   frame has an opaque origin and cannot reach `/api/**` or read the session at all. The shim
+   inlines the project's own assets and exposes `hl(method, path, payload)`, which brokers
+   every HighLevel call to the host page over `postMessage`; the host calls the proxy. Under a
+   five-day clock that bought full control of the boundary; a real bundler runtime is the
+   follow-up.
 2. **Files are Firestore documents, not Cloud Storage objects.** They are small text blobs, and
    documents make snapshot-and-restore a copy on one batch rather than a bucket-manifest
    problem.
@@ -255,9 +263,9 @@ Identity Toolkit, so client-side validation alone is bypassable;
    nothing is written until it does.
 8. **The HighLevel cheat-sheet sits behind a `cache_control` breakpoint.** It is byte-identical
    on every generation, so it should be a cache read rather than a re-send.
-9. **Two functions, not one.** `generate` carries a long timeout and a warm instance for
-   streaming; `api` stays small and fast. Merging them would make every CRUD request pay the
-   streaming function's runtime profile.
+9. **Two functions, not one.** `generate` carries a 540-second timeout and 512 MiB for
+   streaming; `api` stays at the default 60 seconds and 256 MiB. Merging them would make every
+   CRUD request pay the streaming function's runtime profile.
 10. **Vertical slices, one pull request each.** Every slice ships UI, API, data and tests
     together and is demoable when it merges — no branch accumulates a backend with no screen.
 
@@ -297,7 +305,7 @@ gh workflow run deploy.yml -f targets=hosting                # just the SPA
 gh workflow run deploy.yml -f targets=functions -f ref=<sha> # roll back the API
 ```
 
-Each run builds the SPA, re-runs the bundle's no-Firestore-SDK check, deploys functions,
+A default run builds the SPA, re-runs the bundle's no-Firestore-SDK check, deploys functions,
 Hosting and the Firestore rules and indexes, and then **smoke-tests the result**: it calls the
 deployed `/api/health`, which writes a Firestore document, reads it back and deletes it. A 200
 there proves the Hosting rewrite reaches the function, the function booted, its configuration
@@ -366,19 +374,26 @@ frontend/           Vue 3 + TypeScript + Vite + Tailwind + shadcn-vue
   src/views/          screens — auth, dashboard, workspace
   src/components/     workspace panels, editor, preview, snapshots
   src/stores/         Pinia — session, projects, files, generation
-  src/lib/            API client, validation, formatting
+  src/router/         routes and the access guard
+  src/composables/    shared reactive helpers
+  src/lib/            API client, validation, formatting, the preview shim
 functions/          Firebase Cloud Functions (TypeScript)
-  src/api/            express app — health, OAuth callback, HighLevel proxy
+  src/api/            express app assembly — CORS allowlist, router mounts, health
   src/auth/           server-side registration
-  src/hl/             OAuth, token store, the allowlist and the proxy
+  src/users/          the profile route
+  src/hl/             OAuth, callback, token store, the allowlist and the proxy
   src/llm/            Claude client, prompt assembly, stream parsing
-  src/projects/       projects, files, messages, snapshots
+  src/projects/       projects
+  src/files/          project files
+  src/messages/       chat transcript
+  src/snapshots/      versions, and restore
+  src/lib/            env, logging, error envelopes, Zod parsing helpers
   src/generate.ts     SSE streaming endpoint
 tests/rules/        Firestore security rules tests (L3)
 tests/integration/  Cloud Functions against the emulators (L4)
 tests/e2e/          Playwright end-to-end walks (L5)
 tests/fixtures/     recorded HighLevel and LLM responses — never live calls
-scripts/            repo checks and operator scripts, each with a spec beside it
+scripts/            repo checks and operator scripts — every .mjs one with a spec beside it
 brand/              logo and identity assets
 docs/               PRODUCT_SPEC · HIGHLEVEL_PLATFORM · IMPLEMENTATION_PLAN
 docs/slices/        per-slice PRD, plan, build log and review

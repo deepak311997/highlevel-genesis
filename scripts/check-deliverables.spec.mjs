@@ -154,6 +154,26 @@ describe('loomProblems — AC-17', () => {
     expect(problems.join('\n')).toMatch(/outro/)
   })
 
+  /*
+   * A row with a Length is time on the recording, whatever its Beat cell says.
+   * Skipping the rows it cannot name let a shot list buy itself as much time as
+   * it liked: an unslugged `| 0 | intro card | 0:40 | … |` costs the recorder
+   * forty seconds and cost the budget nothing, so a 5:30 document passed a 5:00
+   * cap. The cap is the brief's, so the row is counted and reported, not
+   * dropped.
+   */
+  it('counts and reports a timed row whose beat cell is not a slug', () => {
+    const shotList = loomFixture(PINNED)
+    const lines = shotList.split('\n')
+    const at = lines.findIndex((line) => line.includes('`sign-up`'))
+    lines.splice(at, 0, '| 0 | intro card | 0:40 | Title slate | "Hello" |')
+
+    const problems = loomProblems(lines.join('\n'))
+
+    expect(problems.join('\n')).toMatch(/intro card|names no beat/i)
+    expect(problems.join('\n')).toMatch(/5:30/)
+  })
+
   it('reports the missing table rather than passing an empty shot list', () => {
     const problems = loomProblems('# Loom script\n\nNo table here.\n')
 
@@ -277,10 +297,10 @@ describe('the real release-checklist.md', () => {
    * in the document — D2's three owners, and how much each is carrying. Adding
    * an item is meant to be a deliberate edit here too.
    */
-  it('carries D2s three owners: 2 automated, 6 this PR, 11 human', () => {
+  it('carries D2s three owners: 2 automated, 6 this PR, 12 human', () => {
     expect(linesFor('(automated)')).toHaveLength(2)
     expect(linesFor('(this PR)')).toHaveLength(6)
-    expect(linesFor('(human)')).toHaveLength(11)
+    expect(linesFor('(human)')).toHaveLength(12)
   })
 
   /*

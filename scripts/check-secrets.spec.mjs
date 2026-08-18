@@ -151,6 +151,28 @@ describe('definedSecrets', () => {
 
     expect(definedSecrets(dir)).toEqual(['REAL_SECRET'])
   })
+
+  /*
+   * This list is the input to *both* halves of the check, so a declaration it
+   * cannot see is invisible twice: the name is never required in
+   * `.env.example`, and it drops out of the comparison against what the deploy
+   * writes — leaving the deploy free to write it as a plain variable.
+   * Single-quoting is a Prettier convention, not a guarantee, so the reader
+   * takes either quote and refuses to stay quiet about a form it cannot read.
+   */
+  it('reads a double-quoted declaration as well as a single-quoted one', () => {
+    const dir = fixtureTree({ 'a/real.ts': 'defineSecret("DOUBLE_QUOTED")\n' })
+
+    expect(definedSecrets(dir)).toEqual(['DOUBLE_QUOTED'])
+  })
+
+  it('throws on a defineSecret whose name it cannot read, rather than skipping it', () => {
+    const dir = fixtureTree({
+      'a/real.ts': 'const NAME = `HL_${suffix}`\nexport const K = defineSecret(NAME)\n',
+    })
+
+    expect(() => definedSecrets(dir)).toThrow(/defineSecret/)
+  })
 })
 
 describe('plainEnvVarsInDeploy', () => {
@@ -194,5 +216,54 @@ describe('plainEnvVarsInDeploy', () => {
     ].join('\n')
 
     expect(() => plainEnvVarsInDeploy(workflow)).toThrow(/heredoc/i)
+  })
+
+  /*
+   * The heredoc is one instance of a class, and the class is the finding: any
+   * line that fills `functions/.env` without a readable `NAME=` on it answers
+   * `[]`, and `[]` is this check's word for "the deploy writes no secrets".
+   *
+   * The first case below is the one that would actually happen. `deploy.yml`
+   * *already* fetches the SPA's whole `.env` out of Secret Manager with
+   * `gcloud secrets versions access … > frontend/.env`; the obvious next step
+   * — giving the functions' config "one home too" — copies that idiom, and
+   * every one of the seven `defineSecret` values is then uploaded as a plain
+   * Cloud Run environment variable. Appended *beside* today's line rather than
+   * replacing it, the old reader still answered `['FIRESTORE_DATABASE_ID']`
+   * and the suite stayed green.
+   */
+  const unreadableWrites = {
+    'a secret-manager fetch appended beside the readable line': [
+      '          echo "FIRESTORE_DATABASE_ID=$DATABASE" > functions/.env',
+      '          gcloud secrets versions access latest --secret=FUNCTIONS_ENV >> functions/.env',
+    ].join('\n'),
+    'a quoted redirect target': '          echo "ANTHROPIC_API_KEY=$KEY" > "functions/.env"',
+    'a redirect through a path prefix':
+      '          echo "ANTHROPIC_API_KEY=$KEY" > $GITHUB_WORKSPACE/functions/.env',
+    'a clobbering redirect': '          echo "ANTHROPIC_API_KEY=$KEY" >| functions/.env',
+    'a pipe into tee': '          echo "ANTHROPIC_API_KEY=$KEY" | tee functions/.env',
+    'a copy over the file': '          cp .ci/functions.env functions/.env',
+    'a redirect whose assignments are on the previous line': '          > functions/.env',
+    'an expanded variable carrying the whole line':
+      '          echo "$SECRET_LINE" > functions/.env',
+  }
+
+  for (const [name, workflow] of Object.entries(unreadableWrites)) {
+    it(`throws rather than reading nothing from ${name}`, () => {
+      expect(() => plainEnvVarsInDeploy(workflow)).toThrow(/functions\/\.env/)
+    })
+  }
+
+  it('still reads the plain form, and leaves reads of the file alone', () => {
+    const workflow = [
+      '      # functions/.env.example says the database id must match firebase.json',
+      '      - name: Write functions/.env',
+      '        run: |',
+      '          echo "FIRESTORE_DATABASE_ID=$DATABASE" > functions/.env',
+      '          cat functions/.env',
+      '          grep -c . functions/.env',
+    ].join('\n')
+
+    expect(plainEnvVarsInDeploy(workflow)).toEqual(['FIRESTORE_DATABASE_ID'])
   })
 })

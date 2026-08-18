@@ -368,6 +368,46 @@ describe('compareAllowlist', () => {
     expect(differences).toContainEqual(expect.stringContaining('README has 14 rows'))
   })
 
+  /*
+   * The sentence above the table is prose, so `compareAllowlist` cannot see it.
+   * Add a fourteenth route and the table is forced to grow — but "forwards only
+   * these thirteen routes" stays, and the Loom's ninth beat says "thirteen"
+   * out loud. The count is a claim about `HL_ROUTES`, so it is checked against
+   * `HL_ROUTES`.
+   */
+  it('agrees with the prose count above the table, and with the Loom script', () => {
+    const words = [
+      'zero',
+      'one',
+      'two',
+      'three',
+      'four',
+      'five',
+      'six',
+      'seven',
+      'eight',
+      'nine',
+      'ten',
+      'eleven',
+      'twelve',
+      'thirteen',
+      'fourteen',
+      'fifteen',
+    ]
+    const spelled = words[HL_ROUTES.length]
+    expect(spelled).toBeDefined()
+
+    // Whitespace collapsed: the sentence wraps mid-phrase in the file.
+    const prose = readme.replace(/\s+/g, ' ')
+    expect(prose).toContain(`only these ${String(spelled)} routes`)
+
+    const loom = readFileSync(
+      join(__dirname, '../../../docs/slices/13-deliverables/loom-script.md'),
+      'utf8',
+    )
+    expect(loom.toLowerCase()).toContain(`${String(spelled)} routes`)
+  })
+
   it('fails loudly when the README has no allowlist section at all', () => {
     expect(compareAllowlist('# Genesis\n\nNo table here.\n', HL_ROUTES)).toEqual([
       'README has no `### HighLevel API allowlist` heading',

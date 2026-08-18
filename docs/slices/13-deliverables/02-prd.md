@@ -230,8 +230,13 @@ No new screen, so no loading/empty/error states are owed (D14).
 | AC-14 | L1 | `scripts/seed-sandbox.spec.mjs` | Missing env → non-zero, zero requests, variable named |
 | AC-15 | L1 | `scripts/seed-sandbox.spec.mjs` | One 500 → rest attempted, failure reported, exit non-zero |
 | AC-16 | L1 | `scripts/seed-sandbox.spec.mjs` | Source scan: no Firebase import, no proxy URL, no message send |
-| AC-17 | L1 | `scripts/check-readme.spec.mjs` | Loom script: nine beats in order, timings ≤ 300s |
-| AC-18 | L1 | `scripts/check-readme.spec.mjs` | Every checkbox line carries exactly one owner tag |
+| AC-17 | L1 | `scripts/check-deliverables.spec.mjs` | Loom script: nine beats in order, timings ≤ 300s |
+| AC-18 | L1 | `scripts/check-deliverables.spec.mjs` | Every checkbox line carries exactly one owner tag |
+
+> **Corrected in review.** These two rows named `check-readme.spec.mjs` when written. The
+> plan moved them to `check-deliverables.spec.mjs` (plan C2, build log D-B2) for lane
+> disjointness and because a module should be named for what it checks; same level, same
+> suite, same assertions. The matrix was never updated to match — it is now.
 | — | L5 | *(none — D15)* | The existing e2e suite is the regression gate; the demo is the Loom |
 
 Every check runs over the **real** README, root `.env.example`, `deploy.yml` and checklist —

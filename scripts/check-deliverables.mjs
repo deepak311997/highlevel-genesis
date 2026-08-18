@@ -82,6 +82,14 @@ function formatSeconds(total) {
  * Parsing by column *content* rather than by column index is deliberate — the
  * shape that matters is "a slug and a duration on the same row", and a doc that
  * grows a column should not fail a check about beats.
+ *
+ * **The duration is what makes a row a row.** A line carrying `m:ss` is time on
+ * the recording whatever its Beat cell says, so it is kept with `beat: null`
+ * rather than skipped, and `loomProblems` reports it. Dropping the rows it
+ * could not name is how a shot list bought itself unbudgeted time: one
+ * unslugged `| 0 | intro card | 0:40 | … |` cost the recorder forty seconds and
+ * the budget nothing. Rows with no duration — the header and the separator —
+ * are not rows.
  */
 export function loomShotList(text) {
   const heading = text.indexOf(SHOT_LIST_HEADING)
@@ -92,20 +100,19 @@ export function loomShotList(text) {
     // The next `## ` ends the section: a later table is a different subject.
     if (line.startsWith('## ')) break
     if (!line.trim().startsWith('|')) {
-      // Blank lines and prose sit between the heading and the table; only a run
-      // of table lines *after* the first row ends it.
-      if (rows.length > 0 && line.trim() !== '') break
+      // Prose and blank lines sit between the heading and the table; once the
+      // table has started, the first line that is not part of it ends it.
+      if (rows.length > 0) break
       continue
     }
 
     const cells = line.split('|').slice(1, -1)
-    const beat = cells.map((cell) => /^\s*`([a-z0-9-]+)`\s*$/.exec(cell)).find((m) => m !== null)
-    if (beat === null || beat === undefined) continue
-
     const seconds = cells.map(parseLength).find((value) => value !== null)
     if (seconds === undefined) continue
 
-    rows.push({ beat: beat[1], seconds })
+    const beat = cells.map((cell) => /^\s*`([a-z0-9-]+)`\s*$/.exec(cell)).find((m) => m !== null)
+
+    rows.push({ beat: beat === undefined ? null : beat[1], seconds })
   }
 
   return rows
@@ -126,8 +133,16 @@ export function loomProblems(text) {
   }
 
   const problems = []
-  const named = rows.map((row) => row.beat)
+  const named = rows.filter((row) => row.beat !== null).map((row) => row.beat)
 
+  for (const [index, row] of rows.entries()) {
+    if (row.beat === null) {
+      problems.push(
+        `Row ${index + 1} spends ${formatSeconds(row.seconds)} and names no beat — ` +
+          'every row on the recording belongs to one of the nine.',
+      )
+    }
+  }
   for (const beat of LOOM_BEATS) {
     if (!named.includes(beat)) problems.push(`Missing beat: \`${beat}\` is in the brief's path.`)
   }

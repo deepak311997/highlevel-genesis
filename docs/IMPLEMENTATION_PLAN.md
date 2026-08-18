@@ -899,8 +899,8 @@ of it.
 
 ## 7. Repo setup — as built
 
-The repository exists and CI runs. `main` carries Slice 0; `slice/01-account-session` is
-open and awaiting merge.
+The repository exists and CI runs. `main` carries every slice through 12; §1's table above
+is the live status.
 
 | | |
 |---|---|
@@ -915,7 +915,7 @@ open and awaiting merge.
 repository that now exists, and a script whose preconditions can never recur again is not
 history, it is a trap for whoever runs it next.
 
-**Running it:**
+**Running the project:**
 
 ```bash
 npm run install:all      # root + frontend + functions
@@ -932,8 +932,8 @@ the SPA proxied `/api` to the deployed functions. Nothing could be tried before 
 
 It starts auth, firestore and functions, imports and re-exports `.emulator-data` so a local
 account survives a restart, and wires a stubbed HighLevel so the whole OAuth loop runs
-offline. Slice 13 still owes the README a walked-through version of this, because the brief
-names `firebase emulators:start` explicitly.
+offline. Slice 13 walked this from a fresh clone into the README's **Local setup**, which
+names `firebase emulators:start` explicitly because the brief does.
 
 ---
 

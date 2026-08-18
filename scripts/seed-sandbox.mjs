@@ -36,7 +36,14 @@ export const SEED_TAG = 'genesis-seed'
 const UNRESOLVED = '<resolved at run time>'
 
 const DAY_MS = 24 * 60 * 60 * 1000
-/** Two per business day, 30 minutes each — 10:00 and 15:00 local to the offset. */
+/**
+ * Two per business day, 30 minutes each, at 10:00 and 15:00 **UTC**.
+ *
+ * `plannedAppointments` takes an `offsetMinutes`, but `seed()` passes none, so
+ * every run renders `+00:00`. For a sandbox in a distant timezone that is not
+ * the local business hours the README describes — see the note in
+ * `release-checklist.md`, and the `--utc-offset` flag named there as the fix.
+ */
 const APPOINTMENT_HOURS = [10, 15]
 const APPOINTMENT_MINUTES = 30
 
@@ -107,8 +114,10 @@ export function parseArgs(argv) {
 
     const key = VALUE_FLAGS.get(name)
     if (key === undefined) {
+      // `name`, never `arg`: an operator who guesses at a `--token=…` flag must
+      // not have the token echoed to stderr, where it outlives the run.
       throw new SeedConfigError(
-        `Unknown option ${arg}. Usage: node scripts/seed-sandbox.mjs ` +
+        `Unknown option ${name}. Usage: node scripts/seed-sandbox.mjs ` +
           '[--dry-run] [--calendar-id ID] [--assigned-user-id ID]',
       )
     }
@@ -146,12 +155,19 @@ function required(env, name) {
  *
  * `HL_API_BASE` is read too, but is not required: it defaults to the public
  * host and exists so a run can be pointed at a stand-in without editing code.
+ * **Blank counts as unset**, as it does for the two variables above — it is a
+ * documented, blank-by-default line in both `.env.example` files, so an
+ * operator who sources one arrives here with `''`, and an empty base makes
+ * every URL relative and every one of the 28 requests fail on a message that
+ * reads like HighLevel's fault.
  */
 export function readConfig(env) {
+  const apiBase = (env.HL_API_BASE ?? '').trim()
+
   return {
     token: required(env, 'HL_SEED_TOKEN'),
     locationId: required(env, 'HL_SEED_LOCATION_ID'),
-    apiBase: (env.HL_API_BASE ?? DEFAULT_API_BASE).replace(/\/+$/, ''),
+    apiBase: (apiBase === '' ? DEFAULT_API_BASE : apiBase).replace(/\/+$/, ''),
   }
 }
 
@@ -380,7 +396,27 @@ export async function resolveCalendar({ fetchImpl, config, calendarId, assignedU
   }
 
   const calendars = Array.isArray(body?.calendars) ? body.calendars : []
-  const calendar = calendars.find((entry) => entry?.id === calendarId) ?? calendars[0]
+  const named =
+    calendarId === null ? undefined : calendars.find((entry) => entry?.id === calendarId)
+
+  /*
+   * A --calendar-id the location does not have is a typo, not a preference.
+   * Falling through to `calendars[0]` here would pair the id the operator typed
+   * with a *different* calendar's team member — precisely the "seed against
+   * whichever calendar HighLevel lists first" outcome the flag exists to
+   * prevent — and the run would only discover it after creating twenty real
+   * contacts, when all eight appointments failed.
+   */
+  if (calendarId !== null && named === undefined) {
+    throw new SeedConfigError(
+      `No calendar ${calendarId} in location ${config.locationId}. It lists ` +
+        `${calendars.length === 0 ? 'none' : calendars.map((entry) => entry?.id).join(', ')}. ` +
+        'Check --calendar-id, or pass --assigned-user-id as well to skip this lookup ' +
+        'entirely if the calendar exists but is not listed.',
+    )
+  }
+
+  const calendar = named ?? calendars[0]
 
   if (calendar === undefined || typeof calendar.id !== 'string') {
     throw new SeedConfigError(
@@ -553,7 +589,7 @@ export async function seed({
 }
 
 /**
- * The run, in six lines. Shared by `--dry-run` and by a real run, so an
+ * The run, in four lines. Shared by `--dry-run` and by a real run, so an
  * operator reads the same shape whichever they did.
  */
 export function printSummary(summary, out) {

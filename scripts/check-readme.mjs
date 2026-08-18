@@ -19,9 +19,11 @@
  *   - local setup names the emulator (AC-8);
  *   - it claims no client-side Firestore access anywhere (AC-10).
  *
- * Everything is a pure function over text, so `check-readme.spec.mjs` can assert
- * twice: once over a fixture that proves the check can fail, and once over the
- * real README that proves it passes today.
+ * The text checks are pure functions over the README. The five that also need
+ * to resolve something — `npm run` names against a package.json, paths against
+ * the filesystem — take that resolver as an injectable argument. Either way
+ * `check-readme.spec.mjs` can assert twice: once over a fixture that proves the
+ * check can fail, and once over the real README that proves it passes today.
  *
  *   node scripts/check-readme.mjs
  */
@@ -88,9 +90,17 @@ export function sectionBody(text, heading) {
   return [lines[start], ...(end === -1 ? rest : rest.slice(0, end))].join('\n')
 }
 
-/** Lines matching /^\d+\.\s/ with no leading whitespace — top-level items only. */
-export function orderedItemCount(body) {
-  return body.split('\n').filter((line) => /^\d+\.\s/.test(line)).length
+/**
+ * Top-level list items — numbered, dashed or starred — with no leading
+ * whitespace, so nested items and continuation lines do not count.
+ *
+ * Every marker, because the brief's caps are on *items* and a cap that only
+ * sees `1. ` is a cap on one markdown syntax. Counting numbered lines alone,
+ * the same section rewritten with dashes counted zero and both caps passed
+ * silently — on fourteen decisions as readily as on none.
+ */
+export function topLevelItemCount(body) {
+  return body.split('\n').filter((line) => /^(?:\d+\.|[-*])\s/.test(line)).length
 }
 
 /** Readable problems: a required section absent, or a capped list over its cap. */
@@ -102,8 +112,8 @@ export function sectionProblems(text) {
   )
 
   const over = Object.entries(BULLET_CAPS).flatMap(([heading, cap]) => {
-    const count = orderedItemCount(sectionBody(text, heading))
-    return count > cap ? [`${heading}: ${String(count)} numbered items, cap is ${String(cap)}`] : []
+    const count = topLevelItemCount(sectionBody(text, heading))
+    return count > cap ? [`${heading}: ${String(count)} items, cap is ${String(cap)}`] : []
   })
 
   return [...missing, ...over]
@@ -310,8 +320,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       process.exit(1)
     }
 
-    const decisions = orderedItemCount(sectionBody(text, 'Architecture decisions'))
-    const improvements = orderedItemCount(sectionBody(text, 'What I would improve'))
+    const decisions = topLevelItemCount(sectionBody(text, 'Architecture decisions'))
+    const improvements = topLevelItemCount(sectionBody(text, 'What I would improve'))
 
     console.log(
       `README.md — all ${String(REQUIRED_SECTIONS.length)} required sections; ` +

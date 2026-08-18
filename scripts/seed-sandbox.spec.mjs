@@ -115,6 +115,20 @@ describe('readConfig — AC-14', () => {
       'https://example.test',
     )
   })
+
+  /*
+   * `HL_API_BASE=` is a documented, blank-by-default line in both
+   * `.env.example` files, so an operator who sources an env file rather than
+   * exporting two variables arrives here with `''`. `??` does not catch that,
+   * and the empty base turned every one of the 28 URLs relative — twenty
+   * contacts failing with `Failed to parse URL from /contacts/`, which reads
+   * like a HighLevel problem. Blank means unset, as it does for the two
+   * required variables beside it.
+   */
+  it('treats a blank HL_API_BASE as unset rather than as an empty host', () => {
+    expect(readConfig({ ...ENV, HL_API_BASE: '' }).apiBase).toBe(DEFAULT_API_BASE)
+    expect(readConfig({ ...ENV, HL_API_BASE: '   ' }).apiBase).toBe(DEFAULT_API_BASE)
+  })
 })
 
 describe('seed — the config guard runs before any request (AC-14)', () => {
@@ -178,6 +192,24 @@ describe('parseArgs', () => {
 
   it('throws SeedConfigError when a flag that takes a value has none', () => {
     expect(() => parseArgs(['--calendar-id'])).toThrow(SeedConfigError)
+  })
+
+  /*
+   * The token is an environment variable, but the script has flags, so an
+   * operator will eventually try `--token=…`. The unknown-flag message goes to
+   * stderr, and stderr on this run ends up pasted into the release checklist's
+   * evidence slot — so it names the flag and never its value.
+   */
+  it('names an unknown flag without echoing the value it carried', () => {
+    let message = ''
+    try {
+      parseArgs(['--token=pit-a-real-looking-secret'])
+    } catch (err) {
+      message = err.message
+    }
+
+    expect(message).toContain('--token')
+    expect(message).not.toContain('pit-a-real-looking-secret')
   })
 })
 
@@ -401,6 +433,34 @@ describe('seed — creating contacts and appointments (AC-12)', () => {
         new Date(call.body.startTime).getTime(),
       )
     }
+  })
+
+  /*
+   * `contact-create.json` answers every create with the same id, so the
+   * "contacts taken in order" contract in `plannedAppointments` had no test:
+   * replacing `contactIds[index % contactIds.length]` with `contactIds[0]`
+   * booked all eight appointments against one contact — visibly wrong in the
+   * preview the Loom is built on — and every assertion above still passed.
+   * A per-call id is what makes the mapping observable.
+   */
+  it('spreads the appointments across the contacts it created, in order', async () => {
+    const { fetchImpl, calls } = stubFetch((url, index) =>
+      url.endsWith('/contacts/')
+        ? json(201, { contact: { id: `seed-contact-${String(index)}` } })
+        : json(200, APPOINTMENT_CREATED),
+    )
+
+    await seed({
+      env: ENV,
+      argv: ['--calendar-id=cal1', '--assigned-user-id=usr1'],
+      fetchImpl,
+      now,
+      out: collector().out,
+    })
+
+    expect(appointmentCalls(calls).map((call) => call.body.contactId)).toEqual(
+      Array.from({ length: APPOINTMENT_COUNT }, (_, index) => `seed-contact-${String(index)}`),
+    )
   })
 
   it('counts what it created and exits 0', async () => {
@@ -672,6 +732,42 @@ describe('resolveCalendar — T6', () => {
         assignedUserId: null,
       }),
     ).toEqual({ calendarId: second.id, assignedUserId: 'usr-second' })
+  })
+
+  /*
+   * The flag exists to stop the run choosing a calendar for you, so a value the
+   * location does not have must not fall through to whichever calendar
+   * HighLevel lists first. Silently pairing a mistyped id with a stranger's
+   * team member is the outcome --calendar-id was added to prevent, and it costs
+   * twenty real contacts before the eight appointments fail.
+   */
+  it('rejects a --calendar-id the location does not have, rather than borrowing another calendar’s assignee', async () => {
+    const { fetchImpl } = stubFetch(() => json(200, calendarsWithTeamMember('usr-team-1')))
+
+    const rejection = resolveCalendar({
+      fetchImpl,
+      config,
+      calendarId: 'cal-that-does-not-exist',
+      assignedUserId: null,
+    })
+
+    await expect(rejection).rejects.toBeInstanceOf(SeedConfigError)
+    await expect(rejection).rejects.toThrow(/cal-that-does-not-exist/)
+    await expect(rejection).rejects.toThrow(/--assigned-user-id/)
+  })
+
+  it('does not look the calendar up at all when --assigned-user-id is given too', async () => {
+    const { fetchImpl, calls } = stubFetch(noFetch)
+
+    expect(
+      await resolveCalendar({
+        fetchImpl,
+        config,
+        calendarId: 'cal-not-in-any-list',
+        assignedUserId: 'usr1',
+      }),
+    ).toEqual({ calendarId: 'cal-not-in-any-list', assignedUserId: 'usr1' })
+    expect(calls).toHaveLength(0)
   })
 })
 

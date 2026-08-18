@@ -48,6 +48,20 @@ import { pathToFileURL } from 'node:url'
 /** Repo root, resolved from this file so the checks work from any cwd. */
 export const ROOT = join(import.meta.dirname, '..')
 
+/**
+ * The only variables the deploy may write into `functions/.env` as plain values.
+ *
+ * An allowlist, not a denylist. Comparing what the deploy writes against the
+ * `defineSecret` *names* proves only that no secret is written under its own
+ * name — `echo "ANTHROPIC_KEY=$ANTHROPIC_API_KEY" > functions/.env` passes that
+ * comparison and uploads the key anyway. Naming what may be plain leaves
+ * nothing for a rename to hide behind.
+ *
+ * `FIRESTORE_DATABASE_ID` is not a secret: it names a database that security
+ * rules protect, and the deploy reads it out of the committed `firebase.json`.
+ */
+export const ALLOWED_PLAIN_VARS = ['FIRESTORE_DATABASE_ID']
+
 export const PACKAGE_EXAMPLES = ['frontend/.env.example', 'functions/.env.example']
 export const ROOT_EXAMPLE = '.env.example'
 export const DEPLOY_WORKFLOW = '.github/workflows/deploy.yml'
@@ -80,7 +94,17 @@ export function missingFromRoot(rootText, packages) {
   )
 }
 
-/** Every `defineSecret('NAME')` under functions/src, excluding *.spec.ts. */
+/**
+ * Every `defineSecret('NAME')` under functions/src, excluding *.spec.ts.
+ *
+ * Either quote is read, and a call whose name is **not** a quoted literal
+ * throws. This list feeds both halves of the check, so a declaration it cannot
+ * see is invisible twice over: the name is never required in `.env.example`,
+ * and it drops out of the comparison against what the deploy writes — which
+ * would leave the deploy free to write that very name as a plain variable with
+ * this check reporting nothing. Same rule as `plainEnvVarsInDeploy`: a form it
+ * cannot read is a failure, not a pass.
+ */
 export function definedSecrets(dir = join(ROOT, 'functions/src')) {
   const walk = (current) =>
     readdirSync(current, { withFileTypes: true }).flatMap((entry) => {
@@ -89,14 +113,41 @@ export function definedSecrets(dir = join(ROOT, 'functions/src')) {
       // A spec names secrets it does not declare — a stub, or an assertion about
       // one — so reading them would make the list depend on the tests.
       if (!entry.name.endsWith('.ts') || entry.name.endsWith('.spec.ts')) return []
-      const declarations = readFileSync(path, 'utf8').matchAll(
-        /defineSecret\(\s*'([A-Z0-9_]+)'\s*\)/g,
-      )
-      return [...declarations].map((match) => match[1])
+
+      const source = readFileSync(path, 'utf8')
+      const named = [...source.matchAll(/defineSecret\(\s*['"]([A-Z0-9_]+)['"]\s*\)/g)]
+      const calls = [...source.matchAll(/\bdefineSecret\(/g)]
+
+      if (calls.length !== named.length) {
+        throw new Error(
+          `${path} calls defineSecret with a name this check cannot read — it takes a quoted ` +
+            'literal, so that a secret cannot be declared under a name nothing here knows ' +
+            `about. ${calls.length} call(s), ${named.length} readable.`,
+        )
+      }
+
+      return named.map((match) => match[1])
     })
 
   return [...new Set(walk(dir))].sort()
 }
+
+/** `functions/.env` itself — never `.env.example`, never `.env.local`. */
+const ENV_FILE = String.raw`functions\/\.env(?![.\w])`
+
+/** Mentions the file at all. Lines that do not are none of this function's business. */
+const MENTIONS_ENV_FILE = new RegExp(ENV_FILE)
+
+/**
+ * Puts content *into* it, in any form — a redirect, a heredoc, or a command
+ * that writes its destination as an argument. `cat functions/.env` and
+ * `- name: Write functions/.env` mention the file without filling it, and are
+ * left alone.
+ */
+const FILLS_ENV_FILE = new RegExp(String.raw`>|<<|\b(?:tee|cp|mv|dd|rsync|install)\b`)
+
+/** The one form this reader can decompose: `NAME=value` to the left of `> functions/.env`. */
+const READABLE_REDIRECT = new RegExp(String.raw`(>>?)\s*${ENV_FILE}`)
 
 /**
  * Variable names the workflow writes into functions/.env.
@@ -105,25 +156,46 @@ export function definedSecrets(dir = join(ROOT, 'functions/src')) {
  *
  *   echo "FIRESTORE_DATABASE_ID=$DATABASE" > functions/.env
  *
- * Throws on a heredoc redirect into that file — a form this cannot read is a
- * failure, not a pass (C5). A heredoc puts its assignments on the lines after
- * the redirect, so a line-wise reader answers `[]` for it, and `[]` is this
+ * **A form this cannot read throws.** That is the whole design of this
+ * function, and the default is inverted for it: a line-wise reader answers `[]`
+ * for a heredoc, for `cp x functions/.env`, for `… | tee functions/.env`, for a
+ * quoted or path-prefixed redirect target, and for
+ * `gcloud secrets versions access … > functions/.env` — and `[]` is this
  * check's word for "the deploy writes no secrets". Silence that reads as an
- * all-clear is the one answer it must never give.
+ * all-clear is the one answer it must never give, so "I could not read this"
+ * and "there is nothing here" are kept apart.
+ *
+ * The last of those forms is not hypothetical: `deploy.yml` already fetches the
+ * SPA's whole `.env` out of Secret Manager that way, and giving the functions'
+ * configuration the same single home is the obvious next change. Appended
+ * *beside* the readable line rather than replacing it, it would have uploaded
+ * all seven `defineSecret` values as plain Cloud Run environment variables with
+ * the suite still green.
  */
 export function plainEnvVarsInDeploy(text) {
   const written = text.split('\n').flatMap((line) => {
-    const redirect = /(>>?)\s*functions\/\.env(?![.\w])/.exec(line)
-    if (redirect === null) return []
-    if (line.includes('<<')) {
+    if (!MENTIONS_ENV_FILE.test(line)) return []
+    if (!FILLS_ENV_FILE.test(line)) return []
+
+    const redirect = READABLE_REDIRECT.exec(line)
+    const names =
+      redirect === null
+        ? []
+        : [...line.slice(0, redirect.index).matchAll(/\b([A-Z_][A-Z0-9_]*)=/g)].map(
+            (match) => match[1],
+          )
+
+    if (names.length === 0) {
       throw new Error(
-        `${DEPLOY_WORKFLOW} writes functions/.env with a heredoc, which this check cannot read:\n` +
+        `${DEPLOY_WORKFLOW} fills functions/.env in a form this check cannot read` +
+          `${line.includes('<<') ? ' — a heredoc' : ''}:\n` +
           `  ${line.trim()}\n` +
-          'Write it as `echo "NAME=value" > functions/.env` lines, or teach this function the form.',
+          'It cannot tell whether that line carries a secret, and it must not guess. Write it ' +
+          'as `echo "NAME=value" > functions/.env` lines, or teach this function the form.',
       )
     }
-    const echoed = line.slice(0, redirect.index)
-    return [...echoed.matchAll(/\b([A-Z_][A-Z0-9_]*)=/g)].map((match) => match[1])
+
+    return names
   })
 
   return [...new Set(written)]
@@ -152,11 +224,14 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
         .map((name) => `defineSecret('${name}') is not documented in ${ROOT_EXAMPLE}.`),
 
       ...plain
-        .filter((name) => secrets.includes(name))
-        .map(
-          (name) =>
-            `${name} is a defineSecret, and ${DEPLOY_WORKFLOW} writes it into functions/.env — ` +
-            'which uploads it as a plain Cloud Run environment variable.',
+        .filter((name) => !ALLOWED_PLAIN_VARS.includes(name))
+        .map((name) =>
+          secrets.includes(name)
+            ? `${name} is a defineSecret, and ${DEPLOY_WORKFLOW} writes it into functions/.env — ` +
+              'which uploads it as a plain Cloud Run environment variable.'
+            : `${DEPLOY_WORKFLOW} writes ${name} into functions/.env, and it is not one of the ` +
+              `values allowed to be plain (${ALLOWED_PLAIN_VARS.join(', ')}). If it is not a ` +
+              'secret, add it to ALLOWED_PLAIN_VARS; if it is, move it to Secret Manager.',
         ),
     ]
 

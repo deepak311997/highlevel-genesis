@@ -15,7 +15,7 @@ import {
   localSetupProblems,
   missingPaths,
   npmScriptsNamed,
-  orderedItemCount,
+  topLevelItemCount,
   pathsNamed,
   scriptCommand,
   scriptsOf,
@@ -81,13 +81,24 @@ describe('sectionBody', () => {
   })
 })
 
-describe('orderedItemCount', () => {
+describe('topLevelItemCount', () => {
   it('counts only top-level `1. ` lines, not indented or continuation ones', () => {
     const body = ['1. One', '   1. Nested', '   continued', '2. Two', 'prose 3. not an item'].join(
       '\n',
     )
 
-    expect(orderedItemCount(body)).toBe(2)
+    expect(topLevelItemCount(body)).toBe(2)
+  })
+
+  /*
+   * The brief's caps are on *items*, not on a markdown syntax. Counting `1. `
+   * alone meant a list rewritten with dashes counted zero, so both caps passed
+   * on a section with any number of entries in it — including none.
+   */
+  it('counts dashed and starred items the same way', () => {
+    const body = ['- One', '* Two', '  - Nested', 'prose - not an item'].join('\n')
+
+    expect(topLevelItemCount(body)).toBe(2)
   })
 })
 
@@ -106,7 +117,9 @@ describe('required sections — AC-5', () => {
 describe('bullet caps — AC-6', () => {
   it('the real README stays inside both caps', () => {
     for (const [heading, cap] of Object.entries(BULLET_CAPS)) {
-      expect(orderedItemCount(sectionBody(readme, heading))).toBeLessThanOrEqual(cap)
+      const count = topLevelItemCount(sectionBody(readme, heading))
+      expect(count).toBeLessThanOrEqual(cap)
+      expect(count).toBeGreaterThan(0)
     }
 
     expect(sectionProblems(readme)).toEqual([])
@@ -115,15 +128,20 @@ describe('bullet caps — AC-6', () => {
   it('names the section and the count when an eleventh decision is added', () => {
     const fixture = readmeFixture({ 'Architecture decisions': numbered(11) })
 
-    expect(sectionProblems(fixture)).toEqual([
-      'Architecture decisions: 11 numbered items, cap is 10',
-    ])
+    expect(sectionProblems(fixture)).toEqual(['Architecture decisions: 11 items, cap is 10'])
   })
 
   it('names the section and the count when a sixth improvement is added', () => {
     const fixture = readmeFixture({ 'What I would improve': numbered(6) })
 
-    expect(sectionProblems(fixture)).toEqual(['What I would improve: 6 numbered items, cap is 5'])
+    expect(sectionProblems(fixture)).toEqual(['What I would improve: 6 items, cap is 5'])
+  })
+
+  it('holds a dash-bulleted list to the same cap as a numbered one', () => {
+    const bulleted = Array.from({ length: 14 }, (_, i) => `- Decision ${String(i + 1)}.`).join('\n')
+    const fixture = readmeFixture({ 'Architecture decisions': bulleted })
+
+    expect(sectionProblems(fixture)).toEqual(['Architecture decisions: 14 items, cap is 10'])
   })
 })
 
