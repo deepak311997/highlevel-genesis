@@ -163,6 +163,55 @@
 
   --font-sans: 'Geist Variable', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'Geist Mono Variable', ui-monospace, Menlo, monospace;
+
+  /*
+   * Generation feedback, and deliberately not the Skeleton primitive's pulse —
+   * that utility is reserved to `components/ui/skeleton` and `no-pulse.spec.ts`
+   * enforces it. These say something different anyway: a skeleton means "content
+   * is coming", these two mean "the model is writing right now".
+   *
+   * `steps(1)` on the caret so it snaps like a terminal cursor rather than
+   * fading, which at 1.1s reads as a breathing glow instead of a cursor.
+   */
+  --animate-caret: caret-blink 1.1s steps(1) infinite;
+  --animate-thinking: thinking-drift 1.4s ease-in-out infinite;
+}
+
+@keyframes caret-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  50.01%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/*
+ * Three dots share one keyframe and are offset by animation-delay at the call
+ * site, so the wave is one definition rather than three near-copies.
+ */
+@keyframes thinking-drift {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* Respect the OS setting: motion here is decorative, and the text says the same
+   thing without it. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-caret,
+  .animate-thinking {
+    animation: none;
+  }
 }
 
 @layer base {

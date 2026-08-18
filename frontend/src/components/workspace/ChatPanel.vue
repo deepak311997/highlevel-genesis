@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 
 import MessageBody from '@/components/workspace/MessageBody.vue'
+import StreamingStatus from '@/components/workspace/StreamingStatus.vue'
 import MessageComposer from '@/components/workspace/MessageComposer.vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -164,8 +165,8 @@ function retry(): void {
               :key="message.id"
               data-testid="message-bubble"
               :data-role="message.role"
-              class="flex max-w-[85%] flex-col gap-1 rounded-md border border-border px-3 py-2"
-              :class="message.role === 'user' ? 'self-end bg-secondary' : 'self-start bg-card'"
+              class="flex max-w-[85%] flex-col gap-1 rounded-md border border-border-strong px-3 py-2"
+              :class="message.role === 'user' ? 'self-end bg-secondary' : 'self-start bg-raised'"
             >
               <!-- Prose and chips, never code (D6, D29). The same component the
                    placeholder below uses, because they render the same string. -->
@@ -203,10 +204,24 @@ function retry(): void {
               key="__streaming"
               data-testid="streaming-bubble"
               data-role="assistant"
-              class="flex max-w-[85%] flex-col gap-1 self-start rounded-lg border border-border bg-card p-3"
+              class="flex max-w-[94%] flex-col gap-2 self-start rounded-md border border-border-strong bg-raised px-3 py-2"
             >
-              <MessageBody :content="workspace.streamingText" />
-              <span class="text-xs text-muted-foreground">Generating…</span>
+              <!--
+                `streaming` draws the caret. The same component as the persisted
+                bubble, for D7's reason: one string, one rendering.
+              -->
+              <MessageBody
+                v-if="workspace.streamingText !== ''"
+                :content="workspace.streamingText"
+                streaming
+              />
+              <!--
+                Below the prose and separated, because it describes the turn
+                rather than being part of the reply. It is the whole bubble while
+                the model is still thinking, which is the several seconds this
+                panel previously spent looking hung.
+              -->
+              <StreamingStatus />
             </li>
           </ul>
 

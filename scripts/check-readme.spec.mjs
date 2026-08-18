@@ -235,6 +235,32 @@ describe('path existence — AC-4', () => {
     expect(missingPaths(readme)).toEqual([])
   })
 
+  /*
+   * A file that is gitignored *by design* still deserves to be named in the
+   * README — `functions/.secret.local` is where a local Anthropic key goes, and
+   * a setup guide that cannot say so is not a setup guide. It never exists in a
+   * fresh clone, which is exactly the state this check runs in on CI.
+   *
+   * The exemption is the repository's own convention rather than a list: a
+   * committed `<path>.example` sitting beside it is what marks a path as
+   * "created by the developer, not by git". A typo'd path has no example next to
+   * it and is still reported, which is the property that keeps the check worth
+   * having.
+   */
+  it('accepts a gitignored path whose committed .example exists', () => {
+    const exists = (path) => path === 'functions/.secret.local.example'
+
+    expect(missingPaths('Put a key in `functions/.secret.local`.', exists)).toEqual([])
+  })
+
+  it('still reports a missing path that has no .example beside it', () => {
+    const exists = () => false
+
+    expect(missingPaths('See `functions/.secret.typo`.', exists)).toEqual([
+      'functions/.secret.typo',
+    ])
+  })
+
   it('reports a script that no longer exists', () => {
     const fixture = 'Run `node scripts/set-verified.mjs <email>` to skip the gate.\n'
 

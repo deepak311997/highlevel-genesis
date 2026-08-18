@@ -58,6 +58,22 @@ npm run install:all      # root + frontend + functions
 npm run dev              # emulators + Vite, one command
 ```
 
+`npm run dev` calls the **real** model, so it needs a real Anthropic key. Put one in
+`functions/.secret.local` — it is gitignored, and `scripts/ensure-secret-local.mjs` creates
+the file from its committed example on every run:
+
+```
+ANTHROPIC_API_KEY=sk-ant-…
+```
+
+Until you do, the first generation refuses with a message naming that file rather than
+sending the example's placeholder to Anthropic and getting an opaque 401 back.
+
+**No key, or offline?** `npm run dev:stub` is the same loop with the fixture LLM
+(`functions/src/llm/fake.ts`) instead — it costs nothing and needs no network, but it answers
+every prompt with the same canned reply, so it is for exercising the app rather than for
+watching a generation.
+
 Then open **http://localhost:5173**. Sign up with any address: the Auth emulator issues the
 verification link instead of sending mail, and serves it from its own endpoint —
 
@@ -91,7 +107,17 @@ UI would show is on the endpoints above, which is why the verification link is f
 `oobCodes` rather than clicked out of a console.
 
 The emulators run under the throwaway project id `demo-genesis`, which keeps everything local
-and offline. A real Firebase project is needed only to deploy.
+and offline — with one deliberate exception under `npm run dev`, which reaches Anthropic. Auth,
+Firestore and HighLevel all stay faked; only the model is real, and only in that script.
+
+**Which model a local run gets, and why it is a switch rather than a default.** `openStream`
+(`functions/src/llm/client.ts`) takes the fake path under `FUNCTIONS_EMULATOR` *unless*
+`GENESIS_LOCAL_REAL_LLM=1`, which `npm run dev` sets and nothing else does. The direction of
+that default is load-bearing: `test:unit`, `test:integration` and `test:e2e` all run under the
+emulator and inherit the stub by construction, so CLAUDE.md's "the LLM is always stubbed in
+automated tests" holds for a suite nobody has written yet. The variable is read through
+`emulatorFlag`, so it appears in no `.env` file and a deployed build cannot reach it however
+its environment is set.
 
 **Running against real Firebase instead.** `npm run dev:cloud` points the SPA at whatever
 project is configured beside `frontend/.env.example` (copy it, then fill it in). The emulator
