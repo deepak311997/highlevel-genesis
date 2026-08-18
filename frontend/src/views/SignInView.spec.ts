@@ -15,9 +15,14 @@ vi.mock('vue-router', () => ({
     // What the real router reports: patterns, including the parameterised
     // workspace route a signed-out user is most often deep-linked to.
     getRoutes: () => [
-      { path: '/dashboard' },
-      { path: '/signup' },
-      { path: '/projects/:projectId' },
+      { path: '/dashboard', meta: { access: 'protected' } },
+      { path: '/signup', meta: { access: 'auth-flow' } },
+      { path: '/projects/:projectId', meta: { access: 'protected' } },
+      // Exempt from the guard in every auth state, and it runs a Firebase
+      // action code off its own query string — so it must never be a
+      // destination. See the `destinationPaths` cases in `guard.spec.ts`.
+      { path: '/auth/action', meta: { access: 'action' } },
+      { path: '/hl/callback', meta: { access: 'protected' } },
     ],
   }),
   useRoute: () => ({ query: query.value }),
@@ -57,13 +62,19 @@ describe('SignInView', () => {
     expect(push).toHaveBeenCalledWith('/dashboard')
   })
 
+  /*
+   * `/hl/callback` rather than an auth-flow page: only a route a user could
+   * actually be *returned to* is a legal target, and Slice 2 made this one
+   * `protected` precisely so a session that lapsed at HighLevel round-trips
+   * through here and comes back to its outcome.
+   */
   it('honours a safe redirect target', async () => {
-    query.value = { redirect: '/signup' }
+    query.value = { redirect: '/hl/callback' }
     const wrapper = mountView()
 
     await submit(wrapper)
 
-    expect(push).toHaveBeenCalledWith('/signup')
+    expect(push).toHaveBeenCalledWith('/hl/callback')
   })
 
   it.each([
@@ -172,6 +183,36 @@ describe('SignInView — the reason notice', () => {
     const wrapper = mountView()
 
     await submit(wrapper)
+
+    expect(push).toHaveBeenCalledWith('/projects/p1')
+  })
+})
+
+/**
+ * A `?redirect=` is attacker-controllable, and the victim reaches it having
+ * *just* typed their password — which is what makes the one guard-exempt route
+ * worth refusing by name.
+ *
+ * `/auth/action?mode=resetPassword&oobCode=…` renders a "choose a new password"
+ * form bound to whatever code the link carried. Handed the attacker's own reset
+ * code, a user who types the password they typed thirty seconds ago has just
+ * set the attacker's account to it.
+ */
+describe('where a successful sign-in may be sent', () => {
+  it('refuses the action handler as a destination', async () => {
+    query.value = { redirect: '/auth/action?mode=resetPassword&oobCode=attacker-code' }
+    signIn.mockResolvedValue(undefined)
+
+    await submit(mountView())
+
+    expect(push).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('still returns a deep-linked user to their project', async () => {
+    query.value = { redirect: '/projects/p1' }
+    signIn.mockResolvedValue(undefined)
+
+    await submit(mountView())
 
     expect(push).toHaveBeenCalledWith('/projects/p1')
   })
