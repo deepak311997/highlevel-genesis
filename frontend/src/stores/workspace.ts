@@ -604,6 +604,21 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
     // is `reloadFile()`. Either way there is nothing to ask for.
     if (buffers.value[path] !== undefined) return
 
+    /*
+     * **Being written right now, so there is nothing stored to read.**
+     *
+     * A turn commits its files on one batch when the stream closes, which means a
+     * file the user can see arriving does not exist server-side yet. Reading it
+     * would 404 — on a project's first generation *every* streamed path 404s — and
+     * the 404 lands in the buffer as `fileError`, which the editor renders instead
+     * of the content the user is watching arrive.
+     *
+     * No buffer is created either: `editorContent` already prefers the streaming
+     * document, and `applyGenerationFiles` re-reads every open tab the turn wrote
+     * once it commits — the same path a tab the generation opened for itself takes.
+     */
+    if (documents.content(path) !== undefined) return
+
     ensureBuffer(path)
     await readInto(path, id, generation)
   }
@@ -839,8 +854,20 @@ export const useWorkspaceStore = defineStore('workspace', (): WorkspaceStore => 
      * tabs, and one order is easier to reason about than a race between reads that
      * each write a different buffer.
      */
+    /*
+     * A tab the **user** opened with no buffer is re-read whether or not the turn
+     * wrote it: `selectFile` deliberately reads nothing while a file is streaming,
+     * and the streamed text is dropped the moment the turn ends. If the file
+     * landed, this is what fills it; if it was refused, the 404 is the honest
+     * answer, where silence — an empty read-only editor — reads as "it is empty".
+     *
+     * Not the tab the *generation* opened for itself: `closeAutoSelected` takes
+     * that one back when the turn did not write it, so reading it first would be a
+     * request for a file nobody is going to be looking at.
+     */
     for (const path of openTabs.value) {
-      if (!written.includes(path)) continue
+      const unread = buffers.value[path] === undefined && path !== autoSelected
+      if (!written.includes(path) && !unread) continue
       if (!(await rereadTab(path, id, gen))) return
     }
 
