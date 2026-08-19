@@ -1835,6 +1835,16 @@ describe('the stream — files', () => {
   const listed = { files: [INDEX_FILE, APP_FILE] }
 
   /** Open a project that already has two files, and clear the request log. */
+  /** A brand-new project: opened, and holding nothing. */
+  async function openedEmpty(): Promise<ReturnType<typeof useWorkspaceStore>> {
+    fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }))
+    fetchMock.mockResolvedValueOnce(response({ files: [] }))
+    const store = useWorkspaceStore()
+    await store.open('proj-1')
+    fetchMock.mockClear()
+    return store
+  }
   async function openedWithFiles(): Promise<ReturnType<typeof useWorkspaceStore>> {
     fetchMock.mockResolvedValueOnce(response({ project: PROJECT }))
     fetchMock.mockResolvedValueOnce(response({ messages: [] }))
@@ -1936,6 +1946,106 @@ describe('the stream — files', () => {
 
     expect(store.openTabs).toEqual(['index.html'])
     expect(store.selectedPath).toBe('index.html')
+  })
+
+  /*
+   * Switching between files **while they stream**, on a project that has none yet.
+   *
+   * The reported break: the first generation of a new project streams two files,
+   * the user clicks the second, and the editor shows "That file no longer exists."
+   * over content that is visibly arriving. Nothing is stored until the stream
+   * closes — `planFileWrites` commits the whole set on one batch at the end — so
+   * the read `selectFile` fired could only ever 404, and the 404 rendered instead
+   * of the editor.
+   */
+  it('shows a streaming file that was never stored, without reading it', async () => {
+    const store = await openedEmpty()
+    /** Reads of a single file — `GET /api/projects/:id/files/:path`. */
+    const fileReads = (): unknown[] =>
+      fetchMock.mock.calls.filter(([url]) => String(url).includes('/files/'))
+
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+
+    stream.push(frame('file_start', { path: 'index.html', mode: 'create' }))
+    stream.push(frame('file_chunk', { path: 'index.html', text: '<h1>' }))
+    stream.push(frame('file_start', { path: 'app.js', mode: 'create' }))
+    stream.push(frame('file_chunk', { path: 'app.js', text: 'const x' }))
+    await vi.waitFor(() => {
+      expect(store.streamingContent('app.js')).toBe('const x')
+    })
+
+    // The second file, chosen by hand while it is still being written.
+    await store.selectFile('app.js')
+
+    expect(store.fileError).toBeNull()
+    expect(store.editorContent).toBe('const x')
+    // The whole of the fix: nothing was read for a file that cannot exist yet.
+    // Counted rather than asserting no call at all — the open stream is one.
+    expect(fileReads()).toHaveLength(0)
+
+    // And back to the first, which is equally unstored.
+    await store.selectFile('index.html')
+
+    expect(store.fileError).toBeNull()
+    expect(store.editorContent).toBe('<h1>')
+    expect(fileReads()).toHaveLength(0)
+
+    fetchMock.mockResolvedValueOnce(response({ files: [INDEX_FILE, APP_FILE] }))
+    fetchMock.mockResolvedValueOnce(response({ file: { ...INDEX_FILE, content: '<h1>hi</h1>' } }))
+    fetchMock.mockResolvedValueOnce(response({ file: { ...APP_FILE, content: 'const x = 1' } }))
+    stream.push(
+      frame('done', {
+        message: ASSISTANT_MESSAGE,
+        files: ['app.js', 'index.html'],
+        fileError: null,
+      }),
+    )
+    stream.close()
+    await running
+
+    // Once the turn commits, the tabs hold the server's copy — the streamed text
+    // was never the stored bytes.
+    expect(store.fileError).toBeNull()
+    expect(store.editorContent).toBe('<h1>hi</h1>')
+  })
+
+  /*
+   * The other side of not reading a streaming file: the turn refuses it.
+   *
+   * Nothing is committed, `documents` is dropped, and the tab the user opened by
+   * hand is left holding neither streamed text nor a buffer. Silence there is the
+   * one unacceptable answer — an empty read-only editor reads as "this file is
+   * empty" — so the tab is re-read and the 404 it earns is the truth.
+   */
+  it('tells the user when a file it streamed was refused', async () => {
+    const store = await openedEmpty()
+
+    const stream = pushableStream()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const running = store.retryGeneration()
+
+    stream.push(frame('file_start', { path: 'secrets.js', mode: 'create' }))
+    stream.push(frame('file_chunk', { path: 'secrets.js', text: 'nope' }))
+    await vi.waitFor(() => {
+      expect(store.streamingContent('secrets.js')).toBe('nope')
+    })
+    await store.selectFile('secrets.js')
+
+    fetchMock.mockResolvedValueOnce(response({ error: 'That file no longer exists.' }, 404))
+    stream.push(
+      frame('done', {
+        message: ASSISTANT_MESSAGE,
+        files: [],
+        fileError: 'Genesis could not save the generated files.',
+      }),
+    )
+    stream.close()
+    await running
+
+    expect(store.openTabs).toEqual(['secrets.js'])
+    expect(store.fileError).toBe('That file no longer exists.')
   })
 
   /** AC-39's last clause: the first streamed file opens itself, once. */
