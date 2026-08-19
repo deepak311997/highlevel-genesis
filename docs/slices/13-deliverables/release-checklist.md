@@ -155,14 +155,14 @@ corrected if they are wrong.
       nothing about the SPA, Auth, or the OAuth loop against the real marketplace app. Do this
       **before** recording, not during.
       Evidence: _____ (the three data-access counts, and the date you checked)
-- [ ] **(human)** Record the Loom and link it. Follow
+- [x] **(human)** Record the Loom and link it. Follow
       [`loom-script.md`](loom-script.md) — its preconditions first, then the nine beats at the
       pinned timings; **≤ 5 minutes**, one take. Then set the video to _anyone with the link
       can view_ and check that in a private window, paste the URL into the README's **Live
       URLs** table (the _Loom walkthrough_ row, which currently reads _pending_ and points
       here), and paste the same URL into the submission email. Two places, both required by
       the brief.
-      Evidence: _____ (the Loom URL, and the README commit that carries it)
+      Evidence: https://www.loom.com/share/f77abdb006c847cb8c761defe092f562 — in the README's **Live URLs** table.
 
 ### The two hand-checks §9 owes this slice
 

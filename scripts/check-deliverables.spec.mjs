@@ -286,15 +286,44 @@ describe('the real release-checklist.md', () => {
    * Per item, not per file. Counting `Evidence:` over the whole document would
    * also count the paragraph that explains the convention and any item another
    * owner chose to leave a slot on — a number that happens to match, rather than
-   * the claim, which is that no human item is missing its slot.
+   * the claim, which is that no human item is missing somewhere to record it.
+   *
+   * **A slot that has been filled in passes.** This document is worked through
+   * during a release, so a check that accepted only the empty `_____` would turn
+   * CI red on the first piece of evidence anyone recorded — which is exactly what
+   * happened when the Loom URL was written in. The claim worth enforcing is that
+   * no human item has *nowhere* to record its evidence, so the line must exist and
+   * carry something: the blank slot before the release, the evidence after it.
    */
-  it('gives every human item an evidence slot to fill in', () => {
+  it('gives every human item an evidence line', () => {
     const withoutSlot = itemBlocks(text)
       .filter((block) => block.owners[0] === '(human)')
-      .filter((block) => !block.body.includes('Evidence: _____'))
+      .filter((block) => !/^\s*Evidence: \S/m.test(block.body))
       .map((block) => block.line)
 
     expect(withoutSlot).toEqual([])
+  })
+
+  /*
+   * The relaxation above, held honest. Accepting a filled slot must not become
+   * accepting no slot, so the two cases that should still fail are named here
+   * rather than left to the real document happening to be correct.
+   */
+  it('still catches a human item with nowhere to record evidence', () => {
+    const missing = ['- [ ] **(human)** Do the thing.', '      No evidence line at all.'].join('\n')
+    const empty = ['- [ ] **(human)** Do the thing.', '      Evidence:'].join('\n')
+    const filled = ['- [ ] **(human)** Do the thing.', '      Evidence: https://example.test'].join(
+      '\n',
+    )
+
+    const withoutSlot = (markdown) =>
+      itemBlocks(markdown)
+        .filter((block) => block.owners[0] === '(human)')
+        .filter((block) => !/^\s*Evidence: \S/m.test(block.body))
+
+    expect(withoutSlot(missing)).toHaveLength(1)
+    expect(withoutSlot(empty)).toHaveLength(1)
+    expect(withoutSlot(filled)).toHaveLength(0)
   })
 
   it('carries the two hand-checks section 9 owes this slice', () => {
